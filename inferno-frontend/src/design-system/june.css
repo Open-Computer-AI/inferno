@@ -29,6 +29,9 @@
 @import './hugeicons.css';
 /* Inferno's own additions, last so they can build on anything above. */
 @import './inferno.css';
+/* Re-skins the legacy `.btn*` classes still used by unconverted views. Must stay
+ * last: it wins over `style.css` on source order, not on specificity. */
+@import './legacy-bridge.css';
 
 /* Icons are fixed chrome: they do NOT scale with the text-size preference, so
  * they never inherit --font-scale. Every usage sizes explicitly; this is only
