@@ -1078,3 +1078,117 @@ But `useChartTokens.ts`'s `resolveColorExpr` was exercised directly in the live 
   so admins never see the customer-only layout. Needs a non-admin test account.
 - **Chart canvas pixels** — needs seeded usage data.
 - **Row height under many rows** — only ever had 0-1 rows.
+
+## The 4 reported findings — resolved
+
+### 1. Legacy teal CTA — FIXED, and generalised
+
+`btn btn-primary` appears **185 times** across views phase 5 has not reached. Converting
+them one by one is that phase's job — but the teal lived in ONE class definition, so
+re-skinning it retires the teal everywhere at once.
+
+New file `src/design-system/legacy-bridge.css`, imported last from `june.css`. Re-skins
+`.btn` and every variant in June tokens, mirroring `Button.vue` exactly.
+
+**Why a new file rather than editing `style.css`.** That file is 773 lines of the original
+Tailwind component layer and is still byte-identical to pristine `frontend/`. Editing it
+would pull the whole thing into june-lint's scope, where its 7 unrelated gradients and 34
+shadow utilities would fail the gate for things this change is not fixing — and it would
+turn every future upstream sync of that file into a merge. Leaving it untouched keeps
+those syncs conflict-free, which is the entire point of the two-tree layout.
+
+**The non-obvious part:** `bg-gradient-to-r` sets `background-image`, not
+`background-color`. Setting a background colour alone would have painted *underneath* the
+gradient and changed nothing on screen. `background-image: none` is what actually removes
+the teal.
+
+Payment-provider buttons (`btn-stripe`, `btn-alipay`, `btn-wxpay`, `btn-airwallex`) keep
+their brand hue deliberately — ground rule 5 bans colour that encodes a *category*, but a
+provider's colour is its identity, not a classification we invented. They inherit June
+geometry from `.btn` and only lose the glow.
+
+Verified in a live browser, not inferred:
+
+| property | before | after |
+|---|---|---|
+| `background-image` | `linear-gradient(#14b8a6,#0d9488)` | `none` |
+| `background-color` | teal | `oklch(0.34 0.008 84.59)` = `--primary` |
+| `box-shadow` | `shadow-md shadow-primary-500/25` | `none` |
+| `height` | padding-derived | `36px` = `--s2a-h-md` |
+| `transition-property` | `all` | `background` (ground rule 6) |
+| `border-radius` / `font-weight` | `rounded-xl` | `8px` = `--r-md` / `600` = `--fw-medium` |
+
+Override order confirmed in the shipped bundle: legacy gradient rule at char 30807, June
+override at 664249. It wins on **source order, not specificity** — so the `@import` must
+stay last in `june.css`. That ordering is load-bearing.
+
+### 2. Runaway tour navigation — FIXED (root cause was not where it looked)
+
+The two `.click()` calls are not autonomous; they are Enter/Next handlers. The actual cause
+is that `globalKeyboardHandler` is registered on `document` with `capture: true` and its
+Enter branch exempted only `INPUT`/`TEXTAREA`. While the tour was active, Enter on **any**
+button or link anywhere in the app was `preventDefault`ed, `stopPropagation`ed and
+redirected into clicking the tour's current target.
+
+That is the cascade: each Enter activated whichever nav row the tour pointed at, AppSidebar
+advanced the tour to the next row, and the next Enter did it again — walking the app
+through most of the admin routes without the user ever choosing a destination.
+
+Fix: one `ownsKeyboard()` guard, applied to all three of Enter / ArrowRight / ArrowLeft
+(which had three inconsistent guards between them). It yields whenever focus is on
+something that genuinely owns those keys. Focus on the body still falls through to the
+tour, so the popover's own "press Enter to continue" hint keeps working, and driver.js's
+buttons are real `<button>`s so they yield and their native click runs `onNextClick` —
+the intended interactive advance is unchanged.
+
+### 3. Section switcher desync on hard reload — FIXED without breaking the tour
+
+The old cold start always defaulted to Accounts, so a bookmark or hard reload into any
+other section showed the wrong one until the next in-app navigation.
+
+Naively deriving the section from the route reintroduces the exact failure the old comment
+guarded against: the tour's first two interactive steps target `#sidebar-group-manage` and
+`#sidebar-channel-manage`, both inside Accounts, and they fire before any navigation — so a
+fresh admin landing on Overview would have both targets hidden and the tour would break.
+
+`initialSection()` now returns the route's section, *except* for an admin who has not yet
+seen the tour. Read via a new `composables/onboardingTourStorage.ts` rather than a local
+localStorage read, for two reasons: calling `useOnboardingTour()` would register lifecycle
+hooks and an auto-start timer (starting a second tour just to read a flag), and even a
+type-only path through that module pulls `driver.js` plus its stylesheet into every sidebar
+unit test. Keeping the key derivation in one place also matters because it embeds
+`STORAGE_VERSION` — two copies would drift on the next bump and the sidebar would believe
+the tour was pending forever.
+
+### 4. 36px row height — NOT A BUG. Do not "fix" it.
+
+`height` on a table row is a **minimum**: CSS table layout grows a row to fit its tallest
+cell, and there is no honoured `max-height` for `display: table-row`. `--dt-row-h` sets the
+density floor and cannot enforce a ceiling.
+
+The measured 46.5px on `/admin/users` is not a DataTable defect. UsersView is unconverted
+and renders its groups cell as a vertically stacked chip list (`flex flex-col`,
+`UsersView.vue:335`), which is genuinely taller than one line. Clamping the cell would
+have traded a visible height for invisible data loss.
+
+If a table needs taller rows, `data-density` is the knob and `twoLine` already exists.
+Reasoning recorded in `DataTable.vue` above `.dt-tr` so nobody re-derives it wrongly.
+
+### Bonus, found while verifying #1: the last teal a customer saw on every page
+
+`NavigationProgress.vue` is global chrome rendered above every route — the one teal surface
+still visible on every navigation, converted views included. It was a four-stop teal
+gradient plus a second hard-coded teal gradient for dark mode.
+
+Now a solid `var(--brand)` bar at 32% width. One declaration covers both themes because the
+token is already redefined per theme, so the two can no longer drift. The keyframe end
+value is 313%, not 100%: `translateX` percentages resolve against the element's **own**
+width, so a 32%-wide bar needs 100/32 to clear a full track.
+
+Verified live: `background-image: none`, `background-color: rgb(181,85,31)`, byte-identical
+to the resolved `--brand`.
+
+Gate after all of the above: vue-tsc **0 errors** · june-lint clean across **68** files ·
+`vite build` ok · vitest **1536/1536** across 220 files. Thin-fork invariant re-checked and
+still empty (the build writes into `backend/internal/web/dist`, which is gitignored at
+`.gitignore:102`).
