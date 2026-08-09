@@ -19,12 +19,14 @@
  *   node scripts/june-lint.mjs --all     lint everything (will be very noisy)
  */
 
+import { execFileSync } from 'node:child_process'
 import { readFileSync, existsSync, statSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
 import { join, relative, resolve } from 'node:path'
 
 const ROOT = resolve(import.meta.dirname, '..')
-const REFERENCE = resolve(ROOT, '../frontend')
+const REPO_ROOT = resolve(ROOT, '..')
+const REFERENCE = resolve(REPO_ROOT, 'frontend')
 const SRC = join(ROOT, 'src')
 const ALL = process.argv.includes('--all')
 
@@ -146,8 +148,51 @@ async function walk(dir, out = []) {
   return out
 }
 
-/** Converted = differs from the pristine upstream copy, or is new. */
-function isConverted(abs) {
+/**
+ * Converted = a file WE changed. Asked of git, not computed by diffing trees.
+ *
+ * The obvious implementation -- "differs from ../frontend" -- is correct right
+ * up until the first upstream sync, and wrong forever after. A sync advances
+ * the mirror, so our untouched copy of any file upstream edited now differs
+ * from it purely by being older. The first real sync put 578 violations on
+ * screen that way, 284 of them upstream's own font-medium usage in stock
+ * components. A lint that reports upstream's code as our violations gets muted,
+ * and then it catches nothing.
+ *
+ * `git diff --name-only upstream/main..HEAD` lists exactly the files our own
+ * commits touch, and stays correct across any number of rebases. One git call,
+ * not one per file.
+ */
+function ourChangedFiles() {
+  try {
+    // The baseline is the commit that vendored the pristine copy, found by its
+    // subject rather than its hash -- hashes change on every rebase, subjects
+    // do not. Diffing from there gives exactly the files June has touched
+    // since, which is the real definition of "converted".
+    //
+    // Not upstream/main: inferno-frontend/ does not exist there at all, so
+    // every one of its ~730 files would count as changed.
+    const base = execFileSync(
+      'git',
+      ['log', '--format=%H', '-1', '--grep=vendor upstream frontend as the redesign target'],
+      { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
+    ).trim()
+    if (!base) return null
+    const out = execFileSync(
+      'git',
+      ['diff', '--name-only', `${base}..HEAD`, '--', relative(REPO_ROOT, ROOT)],
+      { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
+    )
+    return new Set(
+      out.split('\n').filter(Boolean).map((p) => relative(ROOT, join(REPO_ROOT, p)))
+    )
+  } catch {
+    return null
+  }
+}
+
+/** Fallback for a non-git checkout: the old tree comparison, with its caveat. */
+function differsFromMirror(abs) {
   const rel = relative(ROOT, abs)
   const ref = join(REFERENCE, rel)
   if (!existsSync(ref)) return true
@@ -171,7 +216,18 @@ function checkReducedMotion(text, rel, findings) {
 const files = (await walk(SRC)).filter(
   (f) => !EXEMPT.some((re) => re.test(f)) && /\.(vue|ts|css)$/.test(f)
 )
-const scoped = ALL ? files : files.filter(isConverted)
+const ours = ALL ? null : ourChangedFiles()
+if (!ALL && !ours) {
+  console.warn(
+    'june-lint: no git base found (upstream/main, origin/main, main). Falling back to a\n' +
+    '           mirror comparison, which over-reports after an upstream sync.'
+  )
+}
+const scoped = ALL
+  ? files
+  : ours
+    ? files.filter((f) => ours.has(relative(ROOT, f)))
+    : files.filter(differsFromMirror)
 
 const findings = []
 for (const abs of scoped) {
