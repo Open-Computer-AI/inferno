@@ -597,3 +597,76 @@ column entirely. **Not decided — flagging rather than shipping it silently.**
 - `Column.align` not added — `Column` lives in `types.ts`, which no agent owned.
 - `EmptyState` has no `kind` prop, so part 04's four empty variants
   (new / filtered / search / error) are not available yet.
+
+## Part 04's three open calls, researched against the real code
+
+Read before deciding any of them. The spec's prose understates two and
+mis-frames one.
+
+### 1. Merge UserTokenRanking + TopUsersLeaderboard? -- a refactor, not a rename
+
+They are less alike than the spec implies:
+
+  admin/usage/UserTokenRanking.vue      a real <table>. Fetches its own data via
+                                        getUserBreakdown(), owns sort state,
+                                        ranks by tokens.
+  admin/payment/TopUsersLeaderboard.vue NOT a table today. A card of flex rows
+                                        grouped by currency, fed pre-grouped
+                                        data as a prop, fetches nothing.
+
+They share no data shape. One fetches by date range and filters; the other
+receives Record<string, TopUserPaymentStats[]>. Merging means choosing one
+data-flow pattern and migrating the other's caller.
+
+Worth knowing: both already drifted. Gold/silver/bronze badges use bg-amber-100
+in one and bg-yellow-100 in the other -- same intent, two implementations. That
+drift is the actual argument for merging.
+
+### 2. Usage-log tooltip -> row expansion -- ALREADY DESIGNED, flagged for blast radius
+
+This is not an undecided design. The spec names the exact pattern to reuse:
+UserBreakdownSubTable.vue (section 12), described as "the pattern for every row
+expansion in the product, including the usage log tooltip replacement". It sits
+in `calls` because it touches the busiest screen, not because anything is
+unresolved. Read it as "confirm before I touch your most-viewed table".
+
+Today UsageTable.vue teleports a floating panel on mouseenter/mouseleave showing
+the full token breakdown -- input/output split by text vs image, cache creation
+split by 5m/1h TTL. Real depth, visible only while the pointer holds still.
+
+A row expansion instead: the numbers become selectable and copyable (a hover
+tooltip vanishes the moment you move toward it), it works on touch where hover
+does not exist, it cannot be clipped at a viewport edge, and it stays open while
+you cross-reference another row or screenshot it.
+
+### 3. visibleColumnKeys -- the same feature exists three times
+
+  UserErrorRequestsTable.vue  a real `visibleColumnKeys?: string[]` prop,
+                              filtering a 12-column list
+  OpsErrorLogTable.vue        the identical filter pattern, copy-pasted
+  KeysView / UsersView        a THIRD, unrelated implementation: a hand-rolled
+                              column-settings dropdown in the view, which
+                              pre-filters and passes the result as `columns`
+
+So "let the user hide columns" has been reinvented three times with three UIs.
+Moving it onto DataTable gives all 22 consumers the affordance for free. It is
+flagged as a call only because it means touching the one file 22 tables depend on.
+
+### stickyActionsColumn -- why it was not flipped, in detail
+
+`getStickyColumnClass()` pins the actions column `position: sticky; right: 0` so
+it stays reachable while scrolling a wide table. UsersView and AccountsView carry
+10+ columns; without pinning you scroll right to reach edit/delete, then back.
+
+A second mechanism is entangled with it: `expandableActions` + `actionsCount` +
+`checkActionsColumnWidth()` measures whether a row's action BUTTONS overflow
+(AccountsView passes actions-count="7") and grows the column to fit them inline.
+
+The row-actions menu replaces both at once: one 28px trigger and a popover
+holding all nine actions, which needs no pinning because it teleports beside the
+trigger. That is why three spec items are really one dependency -- the menu, the
+sticky default, and the last gradient shadows. Flipping the default before the
+menu exists would drop the actions column with nothing in its place.
+
+DataTable needs NO new API to support it: the existing `cell-actions` slot is
+already sufficient.
