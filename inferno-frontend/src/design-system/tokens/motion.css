@@ -1,0 +1,22 @@
+/* Motion. Fast and eased; nothing bounces for its own sake. */
+:root{
+  --ease-linear:linear; /* @kind other */
+  --ease-out:cubic-bezier(0.22,1,0.36,1); /* @kind other */
+  --ease-in-out:cubic-bezier(0.65,0,0.35,1); /* @kind other */
+  --ease-spring:cubic-bezier(0.32,0.72,0,1); /* @kind other */
+  --ease-pop:cubic-bezier(0.34,1.45,0.64,1); /* @kind other */
+  --t-fast:100ms; /* @kind other */
+  --t-med:160ms; /* @kind other */
+  --t-slow:240ms; /* @kind other */
+  /* Streaming / presence timings from the agent surfaces. */
+  --stream-word-fade-dur:1500ms; /* @kind other */
+  --icon-swap-dur:250ms; /* @kind other */
+  --icon-swap-blur:2px;
+  --home-typing-breath-dur:1900ms; /* @kind other */
+  --home-presence-float-dur:7s; /* @kind other */
+  /* Semantic aliases */
+  --motion-hover:var(--t-fast) var(--ease-out); /* @kind other */
+  --motion-enter:var(--t-med) var(--ease-spring); /* @kind other */
+  --motion-layout:var(--t-slow) var(--ease-spring); /* @kind other */
+}
+@media (prefers-reduced-motion:reduce){:root{--t-fast:0ms; /* @kind other */--t-med:0ms; /* @kind other */--t-slow:0ms; /* @kind other */}}
