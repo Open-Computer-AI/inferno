@@ -224,6 +224,17 @@ export default {
       subscriptionExpires: '到期',
       // 容量状态提示
       capacity: {
+        dimension: {
+          concurrency: '并发',
+          windowCost: '5 小时费用',
+          sessions: '会话',
+          rpm: 'RPM',
+          quotaDaily: '每日额度',
+          quotaWeekly: '每周额度',
+          quotaTotal: '总额度'
+        },
+        moreLimits: '另有 {count} 项',
+        hideLimits: '收起其他限制',
         windowCost: {
           blocked: '5h窗口费用超限，账号暂停调度',
           stickyOnly: '5h窗口费用达阈值，仅允许粘性会话',
@@ -398,6 +409,16 @@ export default {
         }
       },
       usageWindow: {
+        fiveHour: '5 小时',
+        sevenDay: '7 天',
+        sevenDaySonnet: '7 天 Sonnet',
+        sevenDayFable: '7 天 Fable',
+        thirtyDay: '30 天',
+        oneDay: '1 天',
+        total: '总计',
+        grok24h: '24 小时',
+        moreWindows: '另有 {count} 项',
+        hideWindows: '收起其他窗口',
         statsTitle: '5小时窗口用量统计',
         statsTitleDaily: '每日用量统计',
         geminiProDaily: 'Pro',
