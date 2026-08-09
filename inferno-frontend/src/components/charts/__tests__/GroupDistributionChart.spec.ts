@@ -1,20 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 
 import GroupDistributionChart from '../GroupDistributionChart.vue'
 
 const messages: Record<string, string> = {
   'admin.dashboard.groupDistribution': 'Group Distribution',
-  'admin.dashboard.group': 'Group',
   'admin.dashboard.noGroup': 'No Group',
-  'admin.dashboard.requests': 'Requests',
-  'admin.dashboard.tokens': 'Tokens',
-  'admin.dashboard.actual': 'Actual',
   'admin.dashboard.accountCost': 'Account Cost',
-  'admin.dashboard.standard': 'Standard',
-  'admin.dashboard.metricTokens': 'By Tokens',
-  'admin.dashboard.metricActualCost': 'By Actual Cost',
   'admin.dashboard.noDataAvailable': 'No data available',
+  'charts.distribution.othersCount': '{count} others',
+  'charts.distribution.entityGroups': 'groups',
+  'charts.distribution.subtitleTokens': '{value} across {count} {entity}',
+  'charts.distribution.subtitleCost': '{value} across {count} {entity}',
 }
 
 vi.mock('vue-i18n', async () => {
@@ -22,16 +19,21 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => messages[key] ?? key,
+      t: (key: string, params?: Record<string, unknown>) => {
+        const message = messages[key] ?? key
+        return params
+          ? message.replace(/\{(\w+)\}/g, (_, name: string) => String(params[name]))
+          : message
+      },
     }),
   }
 })
 
-vi.mock('vue-chartjs', () => ({
-  Doughnut: {
-    props: ['data'],
-    template: '<div class="chart-data">{{ JSON.stringify(data) }}</div>',
-  },
+// The doughnut is gone -- see ModelDistributionChart.spec.ts for the same
+// note. getUserBreakdown is the one real side effect a row click causes.
+const getUserBreakdown = vi.fn()
+vi.mock('@/api/admin/dashboard', () => ({
+  getUserBreakdown: (...args: unknown[]) => getUserBreakdown(...args),
 }))
 
 describe('GroupDistributionChart', () => {
@@ -55,77 +57,77 @@ describe('GroupDistributionChart', () => {
   ]
 
   it('uses total_tokens and token ordering by default', () => {
+    // Before: doughnut `data.labels`/`data.datasets[0].data` order plus a
+    // Chart.js tooltip callback producing "label: value (pct%)". Now: the
+    // same three facts (rank, formatted value, share of total) read directly
+    // off the bar-list row, since there is no chart and no tooltip callback.
     const wrapper = mount(GroupDistributionChart, {
-      props: {
-        groupStats,
-      },
-      global: {
-        stubs: {
-          LoadingSpinner: true,
-        },
-      },
+      props: { groupStats },
+      global: { stubs: { LoadingSpinner: true } },
     })
 
-    const chartData = JSON.parse(wrapper.find('.chart-data').text())
-    expect(chartData.labels).toEqual(['group-a', 'group-b'])
-    expect(chartData.datasets[0].data).toEqual([1200, 600])
+    const rows = wrapper.findAll('.dist2__row')
+    expect(rows).toHaveLength(2)
+    expect(rows.map((r) => r.find('.dist2__label').text())).toEqual(['group-a', 'group-b'])
+    expect(rows.map((r) => r.find('.dist2__value').text())).toEqual(['1.20K', '600'])
 
-    const rows = wrapper.findAll('tbody tr')
-    expect(rows[0].text()).toContain('group-a')
-    expect(rows[1].text()).toContain('group-b')
-
-    const options = (wrapper.vm as any).$?.setupState.doughnutOptions
-    const label = options.plugins.tooltip.callbacks.label({
-      label: 'group-a',
-      raw: 1200,
-      dataset: { data: [1200, 600] },
-    })
-    expect(label).toBe('group-a: 1.20K (66.7%)')
+    const total = 1200 + 600
+    const pctA = (1200 / total) * 100
+    const pctB = (600 / total) * 100
+    expect(parseFloat(rows[0].find('.dist2__fill').element.style.width)).toBeCloseTo(pctA, 6)
+    expect(parseFloat(rows[1].find('.dist2__fill').element.style.width)).toBeCloseTo(pctB, 6)
   })
 
   it('uses actual_cost and reorders rows in actual cost mode', () => {
     const wrapper = mount(GroupDistributionChart, {
-      props: {
-        groupStats,
-        metric: 'actual_cost',
-      },
-      global: {
-        stubs: {
-          LoadingSpinner: true,
-        },
-      },
+      props: { groupStats, metric: 'actual_cost' },
+      global: { stubs: { LoadingSpinner: true } },
     })
 
-    const chartData = JSON.parse(wrapper.find('.chart-data').text())
-    expect(chartData.labels).toEqual(['group-b', 'group-a'])
-    expect(chartData.datasets[0].data).toEqual([0.9, 0.1])
+    const rows = wrapper.findAll('.dist2__row')
+    // Reordered: group-b ($0.900) outranks group-a ($0.100) in cost mode.
+    expect(rows.map((r) => r.find('.dist2__label').text())).toEqual(['group-b', 'group-a'])
+    expect(rows.map((r) => r.find('.dist2__value').text())).toEqual(['$0.900', '$0.100'])
 
-    const rows = wrapper.findAll('tbody tr')
-    expect(rows[0].text()).toContain('group-b')
-    expect(rows[1].text()).toContain('group-a')
-
-    const options = (wrapper.vm as any).$?.setupState.doughnutOptions
-    const label = options.plugins.tooltip.callbacks.label({
-      label: 'group-b',
-      raw: 0.9,
-      dataset: { data: [0.9, 0.1] },
-    })
-    expect(label).toBe('group-b: $0.900 (90.0%)')
+    const total = 0.9 + 0.1
+    expect(parseFloat(rows[0].find('.dist2__fill').element.style.width)).toBeCloseTo((0.9 / total) * 100, 6)
+    expect(parseFloat(rows[1].find('.dist2__fill').element.style.width)).toBeCloseTo((0.1 / total) * 100, 6)
   })
 
-  it('can hide account cost for user usage stats without account_cost', () => {
-    const wrapper = mount(GroupDistributionChart, {
-      props: {
-        groupStats,
-        showAccountCost: false,
-      },
-      global: {
-        stubs: {
-          LoadingSpinner: true,
+  it('can hide account cost for user usage stats without account_cost', async () => {
+    // Same re-expression as ModelDistributionChart: the old side table's
+    // <thead th>/<tbody td> count is gone with the table itself; the column
+    // set `showAccountCost` gates still exists, in UserBreakdownSubTable,
+    // shown once a group row is expanded.
+    getUserBreakdown.mockReset()
+    getUserBreakdown.mockResolvedValue({
+      users: [
+        {
+          user_id: 1,
+          email: 'user1@example.com',
+          requests: 4,
+          input_tokens: 10,
+          output_tokens: 5,
+          cache_tokens: 0,
+          total_tokens: 15,
+          cost: 0.02,
+          actual_cost: 0.01,
+          account_cost: 0.03,
         },
-      },
+      ],
+      start_date: '2026-08-01',
+      end_date: '2026-08-08',
     })
 
+    const wrapper = mount(GroupDistributionChart, {
+      props: { groupStats, showAccountCost: false },
+      global: { stubs: { LoadingSpinner: true } },
+    })
+
+    await wrapper.findAll('.dist2__row')[0].trigger('click')
+    await flushPromises()
+
+    expect(getUserBreakdown).toHaveBeenCalledWith(expect.objectContaining({ group_id: 1 }))
     expect(wrapper.text()).not.toContain('Account Cost')
     expect(wrapper.findAll('thead th')).toHaveLength(5)
     expect(wrapper.findAll('tbody tr')[0].findAll('td')).toHaveLength(5)
