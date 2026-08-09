@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 
 import ModelDistributionChart from '../ModelDistributionChart.vue'
 
@@ -8,21 +8,15 @@ const messages: Record<string, string> = {
   'admin.dashboard.spendingRankingTitle': 'User Spending Ranking',
   'admin.dashboard.viewModelDistribution': 'Model Distribution',
   'admin.dashboard.viewSpendingRanking': 'User Spending Ranking',
-  'admin.dashboard.spendingRankingUser': 'User',
-  'admin.dashboard.spendingRankingRequests': 'Requests',
-  'admin.dashboard.spendingRankingTokens': 'Tokens',
-  'admin.dashboard.spendingRankingSpend': 'Spend',
   'admin.dashboard.spendingRankingOther': 'Others',
-  'admin.dashboard.model': 'Model',
-  'admin.dashboard.requests': 'Requests',
-  'admin.dashboard.tokens': 'Tokens',
-  'admin.dashboard.actual': 'Actual',
   'admin.dashboard.accountCost': 'Account Cost',
-  'admin.dashboard.standard': 'Standard',
-  'admin.dashboard.metricTokens': 'By Tokens',
-  'admin.dashboard.metricActualCost': 'By Actual Cost',
   'admin.dashboard.noDataAvailable': 'No data available',
   'admin.redeem.userPrefix': 'User #{id}',
+  'charts.distribution.othersCount': '{count} others',
+  'charts.distribution.entityModels': 'models',
+  'charts.distribution.entityUsers': 'users',
+  'charts.distribution.subtitleTokens': '{value} across {count} {entity}',
+  'charts.distribution.subtitleCost': '{value} across {count} {entity}',
 }
 
 vi.mock('vue-i18n', async () => {
@@ -40,11 +34,13 @@ vi.mock('vue-i18n', async () => {
   }
 })
 
-vi.mock('vue-chartjs', () => ({
-  Doughnut: {
-    props: ['data'],
-    template: '<div class="chart-data">{{ JSON.stringify(data) }}</div>',
-  },
+// The doughnut and its `Doughnut`/`chart-data` stub are gone -- distribution
+// is a ranked bar list now (dist2__row / dist2__label / dist2__value /
+// dist2__fill), so there is nothing in vue-chartjs left for this component to
+// mock. getUserBreakdown is the one real side effect a row click causes.
+const getUserBreakdown = vi.fn()
+vi.mock('@/api/admin/dashboard', () => ({
+  getUserBreakdown: (...args: unknown[]) => getUserBreakdown(...args),
 }))
 
 describe('ModelDistributionChart', () => {
@@ -74,83 +70,109 @@ describe('ModelDistributionChart', () => {
   ]
 
   it('uses total_tokens and token ordering by default', () => {
+    // Before the redesign this asserted the doughnut's `data.labels`/
+    // `data.datasets[0].data` order plus a Chart.js tooltip callback that
+    // formatted "label: value (pct%)". There is no doughnut and no tooltip
+    // callback any more -- the same three facts (which entry is on top,
+    // its formatted value, its share of the total) are now read straight off
+    // the row instead of out of a mocked chart prop / a tooltip formatter.
     const wrapper = mount(ModelDistributionChart, {
-      props: {
-        modelStats,
-      },
-      global: {
-        stubs: {
-          LoadingSpinner: true,
-        },
-      },
+      props: { modelStats },
+      global: { stubs: { LoadingSpinner: true } },
     })
 
-    const chartData = JSON.parse(wrapper.find('.chart-data').text())
-    expect(chartData.labels).toEqual(['model-a', 'model-b'])
-    expect(chartData.datasets[0].data).toEqual([1000, 500])
+    const rows = wrapper.findAll('.dist2__row')
+    expect(rows).toHaveLength(2)
 
-    const rows = wrapper.findAll('tbody tr')
-    expect(rows[0].text()).toContain('model-a')
-    expect(rows[1].text()).toContain('model-b')
+    // Ordering: model-a (1000 tokens) outranks model-b (500 tokens).
+    expect(rows.map((r) => r.find('.dist2__label').text())).toEqual(['model-a', 'model-b'])
+    // Formatted value, same formatTokens() the old tooltip used.
+    expect(rows.map((r) => r.find('.dist2__value').text())).toEqual(['1.00K', '500'])
+    // Model identifiers render mono (prototype's own barList example puts
+    // every named row in --font-mono).
+    expect(rows[0].find('.dist2__label').classes()).toContain('dist2__label--mono')
 
-    const options = (wrapper.vm as any).$?.setupState.doughnutOptions
-    const label = options.plugins.tooltip.callbacks.label({
-      label: 'model-a',
-      raw: 1000,
-      dataset: { data: [1000, 500] },
-    })
-    expect(label).toBe('model-a: 1.00K (66.7%)')
+    // Share of the metric total -- what the old tooltip's "(66.7%)" was.
+    // Computed the same way the component computes it, so this is an exact
+    // check, not a rounded approximation.
+    const total = 1000 + 500
+    const pctA = (1000 / total) * 100
+    const pctB = (500 / total) * 100
+    expect(parseFloat(rows[0].find('.dist2__fill').element.style.width)).toBeCloseTo(pctA, 6)
+    expect(parseFloat(rows[1].find('.dist2__fill').element.style.width)).toBeCloseTo(pctB, 6)
   })
 
   it('uses actual_cost and reorders rows in actual cost mode', () => {
     const wrapper = mount(ModelDistributionChart, {
-      props: {
-        modelStats,
-        metric: 'actual_cost',
-      },
-      global: {
-        stubs: {
-          LoadingSpinner: true,
-        },
-      },
+      props: { modelStats, metric: 'actual_cost' },
+      global: { stubs: { LoadingSpinner: true } },
     })
 
-    const chartData = JSON.parse(wrapper.find('.chart-data').text())
-    expect(chartData.labels).toEqual(['model-b', 'model-a'])
-    expect(chartData.datasets[0].data).toEqual([1.4, 0.2])
+    const rows = wrapper.findAll('.dist2__row')
+    // Reordered: model-b ($1.40) outranks model-a ($0.200) in cost mode.
+    expect(rows.map((r) => r.find('.dist2__label').text())).toEqual(['model-b', 'model-a'])
+    expect(rows.map((r) => r.find('.dist2__value').text())).toEqual(['$1.40', '$0.200'])
 
-    const rows = wrapper.findAll('tbody tr')
-    expect(rows[0].text()).toContain('model-b')
-    expect(rows[1].text()).toContain('model-a')
-
-    const options = (wrapper.vm as any).$?.setupState.doughnutOptions
-    const label = options.plugins.tooltip.callbacks.label({
-      label: 'model-b',
-      raw: 1.4,
-      dataset: { data: [1.4, 0.2] },
-    })
-    expect(label).toBe('model-b: $1.40 (87.5%)')
+    const total = 1.4 + 0.2
+    expect(parseFloat(rows[0].find('.dist2__fill').element.style.width)).toBeCloseTo((1.4 / total) * 100, 6)
+    expect(parseFloat(rows[1].find('.dist2__fill').element.style.width)).toBeCloseTo((0.2 / total) * 100, 6)
   })
 
-  it('can hide account cost for user usage stats without account_cost', () => {
-    const wrapper = mount(ModelDistributionChart, {
-      props: {
-        modelStats,
-        showAccountCost: false,
-      },
-      global: {
-        stubs: {
-          LoadingSpinner: true,
+  it('can hide account cost for user usage stats without account_cost', async () => {
+    // The old assertion counted <thead th>/<tbody td> on the side-by-side
+    // table that used to sit next to the doughnut -- that table is gone, the
+    // bar list has no columns at all. The `showAccountCost` prop still
+    // exists, but it now only reaches the one place a column set still
+    // renders: UserBreakdownSubTable, shown when a row is expanded. Same
+    // guarantee (hiding account cost drops one column), re-expressed against
+    // where the column set actually lives now.
+    getUserBreakdown.mockReset()
+    getUserBreakdown.mockResolvedValue({
+      users: [
+        {
+          user_id: 1,
+          email: 'user1@example.com',
+          requests: 4,
+          input_tokens: 10,
+          output_tokens: 5,
+          cache_tokens: 0,
+          total_tokens: 15,
+          cost: 0.02,
+          actual_cost: 0.01,
+          account_cost: 0.03,
         },
-      },
+      ],
+      start_date: '2026-08-01',
+      end_date: '2026-08-08',
     })
 
+    const wrapper = mount(ModelDistributionChart, {
+      props: { modelStats, showAccountCost: false },
+      global: { stubs: { LoadingSpinner: true } },
+    })
+
+    await wrapper.findAll('.dist2__row')[0].trigger('click')
+    await flushPromises()
+
+    expect(getUserBreakdown).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'model-a', model_source: 'requested' })
+    )
     expect(wrapper.text()).not.toContain('Account Cost')
     expect(wrapper.findAll('thead th')).toHaveLength(5)
     expect(wrapper.findAll('tbody tr')[0].findAll('td')).toHaveLength(5)
   })
 
-  it('uses the dashboard user label policy and renders Others with a dedicated chart color', async () => {
+  it('uses the dashboard user label policy, collapses the remainder into one Others row styled off-brand, and emits ranking-click', async () => {
+    // Same guarantees as before the redesign -- username-over-email-over-
+    // "User #id" labelling, an aggregated Others row, Others visually
+    // distinguished from the ranked entries -- re-expressed against the bar
+    // list. The old test read a Chart.js `backgroundColor` array for the
+    // "dedicated colour" guarantee (two hardcoded hex values that were never
+    // June tokens to begin with); the redesign spends colour on state, not
+    // category, so the real distinguishing signal now is that Others uses
+    // `var(--muted-foreground)` where every ranked row uses `var(--brand)`,
+    // and Others is not clickable while ranked rows are (and emit
+    // `ranking-click`, a guarantee the old test never actually exercised).
     const wrapper = mount(ModelDistributionChart, {
       props: {
         modelStats: [],
@@ -164,38 +186,34 @@ describe('ModelDistributionChart', () => {
         rankingTotalRequests: 20,
         rankingTotalTokens: 2000,
       },
-      global: {
-        stubs: {
-          LoadingSpinner: true,
-        },
-      },
+      global: { stubs: { LoadingSpinner: true } },
     })
 
     const rankingButton = wrapper.findAll('button').find((button) => button.text() === 'User Spending Ranking')
     expect(rankingButton).toBeTruthy()
     await rankingButton!.trigger('click')
 
-    const chartData = JSON.parse(wrapper.find('.chart-data').text())
-    expect(chartData.labels).toEqual([
+    const rows = wrapper.findAll('.dist2__row')
+    expect(rows).toHaveLength(4)
+    expect(rows.map((r) => r.find('.dist2__label').text())).toEqual([
       '#1 alpha',
       '#2 beta@example.com',
       '#3 User #3',
       'Others',
     ])
-    expect(chartData.datasets[0].data).toEqual([12, 8, 0, 10])
-    expect(chartData.datasets[0].backgroundColor[0]).toBe('#3b82f6')
-    expect(chartData.datasets[0].backgroundColor[3]).toBe('#94a3b8')
-    expect(chartData.datasets[0].backgroundColor[3]).not.toBe(chartData.datasets[0].backgroundColor[0])
+    expect(rows.map((r) => r.find('.dist2__value').text())).toEqual(['$12.00', '$8.00', '$0.0000', '$10.00'])
 
-    const rows = wrapper.findAll('tbody tr')
-    expect(rows).toHaveLength(4)
-    expect(rows[0].text()).toContain('alpha')
-    expect(rows[0].text()).not.toContain('alpha@example.com')
-    expect(rows[1].text()).toContain('beta@example.com')
-    expect(rows[2].text()).toContain('User #3')
-    expect(rows[3].text()).toContain('Others')
-    expect(rows[3].text()).toContain('4')
-    expect(rows[3].text()).toContain('400')
-    expect(rows[3].text()).toContain('$10.00')
+    const othersRow = rows[3]
+    expect(othersRow.attributes('data-clickable')).toBeUndefined()
+    expect(othersRow.find('.dist2__value').classes()).toContain('dist2__value--muted')
+    expect(othersRow.find('.dist2__fill').attributes('style')).toContain('var(--muted-foreground)')
+
+    const alphaRow = rows[0]
+    expect(alphaRow.attributes('data-clickable')).toBeDefined()
+    expect(alphaRow.find('.dist2__fill').attributes('style')).toContain('var(--brand)')
+
+    await alphaRow.trigger('click')
+    expect(wrapper.emitted('ranking-click')).toHaveLength(1)
+    expect(wrapper.emitted('ranking-click')![0][0]).toMatchObject({ user_id: 1, actual_cost: 12 })
   })
 })
