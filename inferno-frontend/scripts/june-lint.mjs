@@ -50,7 +50,11 @@ const EXEMPT = [/src\/design-system\//, /node_modules/, /\.spec\.ts$/, /__tests_
 const TOUCHED_NOT_CONVERTED = [
   /src\/components\/account\/CreateAccountModal\.vue$/,
   /src\/components\/account\/EditAccountModal\.vue$/,
-  /src\/views\/admin\/ProxiesView\.vue$/
+  /src\/views\/admin\/ProxiesView\.vue$/,
+  // AccountsView: one native confirm() removed so the June ConfirmDialog is not
+  // shown twice. The view itself is a large unconverted Tailwind screen and
+  // lands with part 14; remove this line then.
+  /src\/views\/admin\/AccountsView\.vue$/
 ]
 
 const RULES = [
