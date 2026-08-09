@@ -1,5 +1,17 @@
 <!doctype html>
-<html lang="zh-CN">
+<!--
+  lang MUST match the default locale (src/i18n/index.ts DEFAULT_LOCALE = 'en').
+
+  This shipped as zh-CN, which made Chrome offer every visitor a "translate this
+  page from Chinese?" prompt on an entirely English UI. i18n already syncs
+  documentElement.lang at runtime (initI18n / setLocale), but the browser reads
+  THIS attribute from the served HTML before any JS runs, so the runtime fix
+  never got the chance to matter.
+
+  It is not only the prompt: `lang` drives screen-reader pronunciation, CJK font
+  fallback, hyphenation and quotation marks.
+-->
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
