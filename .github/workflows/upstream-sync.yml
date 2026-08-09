@@ -2,7 +2,7 @@
 #
 # Inferno is a thin fork: it never edits an upstream file, so upstream's commits
 # replay onto our work cleanly and this can run unattended. Upstream ships
-# roughly 40 commits a day, so this runs every two hours -- small, reviewable
+# roughly 40 commits a day, so this runs every six hours -- small, reviewable
 # increments rather than a 1,800-commit archaeology project six weeks from now,
 # which is exactly how the previous fork died.
 #
@@ -20,7 +20,7 @@ name: Upstream sync
 
 on:
   schedule:
-    - cron: '0 */2 * * *'
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 concurrency:
@@ -34,7 +34,7 @@ permissions:
 
 env:
   UPSTREAM: https://github.com/Wei-Shaw/sub2api.git
-  TARGET_BRANCH: june-redesign
+  TARGET_BRANCH: inferno-redesign
   SYNC_BRANCH: sync/upstream
 
 jobs:
