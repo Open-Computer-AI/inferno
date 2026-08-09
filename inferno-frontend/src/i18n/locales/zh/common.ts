@@ -166,6 +166,42 @@ export default {
     }
   },
 
+  shell: {
+    mainNavigation: '主导航',
+    sectionsListLabel: '分区',
+    switchSection: '切换分区',
+    collapseSidebar: '收起侧边栏',
+    expandSidebar: '展开侧边栏',
+    openMenu: '打开菜单',
+    accountMenu: '账户菜单',
+    myAccount: '我的账户',
+    preferences: '偏好设置',
+    language: '语言',
+    lightMode: '浅色模式',
+    darkMode: '深色模式',
+    roleAdministrator: '管理员',
+    roleMember: '成员',
+    overview: '概览',
+    traffic: '流量',
+    people: '用户',
+    system: '系统',
+    billing: '账单',
+    accessGroup: '接入',
+    apiKeys: 'API 密钥',
+    modelPlaza: '模型广场',
+    monitor: '监控',
+    referrals: '推荐返利',
+    auditLogs: '审计日志',
+    promptAudit: '提示词审计',
+    riskControl: '风控',
+    redeemCodes: '兑换码',
+    promoCodes: '优惠码',
+    paymentDashboard: '支付看板',
+    affiliateInvites: '邀请记录',
+    affiliateRebates: '返利记录',
+    affiliateTransfers: '转账记录'
+  },
+
   // Navigation
   nav: {
     dashboard: '仪表盘',
