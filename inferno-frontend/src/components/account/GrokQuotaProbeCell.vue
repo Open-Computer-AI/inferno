@@ -1,50 +1,53 @@
 <template>
-  <div v-if="visible" class="space-y-1">
-    <div class="flex flex-wrap items-center gap-1.5">
-      <button
-        type="button"
-        class="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-cyan-700 transition-colors hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-cyan-300 dark:hover:bg-cyan-900/30"
+  <div v-if="visible" class="gqp">
+    <div class="gqp-row">
+      <Button
+        variant="ghost"
+        size="xs"
+        :icon="loading ? undefined : 'hgi-refresh-01'"
+        :loading="loading"
         :disabled="loading"
         :title="t('admin.accounts.usageWindow.grokProbeTooltip')"
         @click="handleProbe"
       >
-        <svg
-          class="h-2.5 w-2.5"
-          :class="{ 'animate-spin': loading }"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-          />
-        </svg>
         {{ t('admin.accounts.usageWindow.grokProbe') }}
-      </button>
+      </Button>
     </div>
 
     <!-- Compact mode: parent already shows 7d/30d/prepaid or 24h — only surface errors. -->
-    <div
-      v-if="!compact && summary"
-      class="text-[10px] text-gray-600 dark:text-gray-300"
-    >
+    <div v-if="!compact && summary" class="gqp-summary">
       {{ summary }}
     </div>
-    <div v-if="error" class="truncate text-[10px] text-red-600 dark:text-red-400" :title="error">
+    <div v-if="error" class="gqp-error" :title="error">
       {{ truncatedError }}
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+/**
+ * GrokQuotaProbeCell — part 08, kind F ("action"). Implements the approved
+ * UX departure "a cell never fetches" (part 08, "Three decisions, taken").
+ *
+ * This cell never fetched automatically: `handleProbe` only ever ran from
+ * the button's click handler, so there was no per-render request to strip
+ * out here (unlike the batched cells in the same departure). The bug the
+ * departure targets was one level up: AccountUsageCell used to embed this
+ * button inline on every visible Grok row, which normalizes a real billable
+ * xAI call as an ordinary per-row action. That embedding is now removed
+ * (see AccountUsageCell.vue's file header). This component's own contract
+ * is unchanged: it still takes `account` and `compact`, and it is meant to
+ * be composed wherever a probe affordance belongs -- today nowhere by
+ * default, per the departure "off by default, and the switch says what
+ * turning it on costs." See the build report for what an opt-in column
+ * needs from the table that would host it.
+ */
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type { GrokQuotaProbeResult } from '@/api/admin/grok'
 import type { Account } from '@/types'
+import Button from '@/components/common/Button.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -120,3 +123,32 @@ watch(
   }
 )
 </script>
+
+<style scoped>
+.gqp {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.gqp-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gqp-summary {
+  font-size: var(--fs-sm);
+  color: var(--body-copy);
+}
+
+.gqp-error {
+  overflow: hidden;
+  max-width: 220px;
+  color: var(--destructive);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>
+</content>
