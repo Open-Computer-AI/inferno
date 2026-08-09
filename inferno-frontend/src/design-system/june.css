@@ -1,0 +1,41 @@
+/* June design system — entry point.
+ *
+ * Import order is load-bearing and mirrors the <helmet> block the prototypes
+ * use. fonts before colors, because @font-face must register before anything
+ * asks for the family. base after the token layers, because it consumes them.
+ * Reordering silently changes the cascade.
+ *
+ * Everything under tokens/ and components/ is copied BYTE-IDENTICAL from the
+ * design bundle and is the spec (01-TOKENS.md: "These are the spec. Read them;
+ * do not retype the values"). Never hand-edit them — they get re-synced when
+ * the design system moves, and a local edit turns every future sync into a
+ * merge. Anything Inferno needs to add goes below, in this file.
+ *
+ * This is imported globally, not scoped. Unconverted Tailwind screens will
+ * inherit June's body, headings, links and form chrome and look wrong until
+ * they are rebuilt. That is intended: there is no v1 to protect here, and a
+ * screen that looks wrong is a screen you can see is unconverted. */
+
+@import './tokens/fonts.css';
+@import './tokens/colors.css';
+@import './tokens/typography.css';
+@import './tokens/spacing.css';
+@import './tokens/radius.css';
+@import './tokens/elevation.css';
+@import './tokens/motion.css';
+@import './tokens/controls.css';
+@import './tokens/base.css';
+@import './components/june-components.css';
+@import './hugeicons.css';
+/* Inferno's own additions, last so they can build on anything above. */
+@import './inferno.css';
+
+/* Icons are fixed chrome: they do NOT scale with the text-size preference, so
+ * they never inherit --font-scale. Every usage sizes explicitly; this is only
+ * the floor so an unsized glyph is visible rather than 0px. */
+.hgi-stroke {
+  font-size: 16px;
+  line-height: 1;
+  display: inline-block;
+  vertical-align: middle;
+}
