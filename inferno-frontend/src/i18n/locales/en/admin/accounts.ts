@@ -276,6 +276,17 @@ export default {
       subscriptionExpires: 'Expires',
       // Capacity status tooltips
       capacity: {
+        dimension: {
+          concurrency: 'Concurrency',
+          windowCost: '5 hour cost',
+          sessions: 'Sessions',
+          rpm: 'RPM',
+          quotaDaily: 'Daily quota',
+          quotaWeekly: 'Weekly quota',
+          quotaTotal: 'Total quota'
+        },
+        moreLimits: '{count} more',
+        hideLimits: 'Hide extra limits',
         windowCost: {
           blocked: '5h window cost exceeded, account scheduling paused',
           stickyOnly: '5h window cost at threshold, only sticky sessions allowed',
@@ -1422,6 +1433,16 @@ export default {
         noData: 'No usage data available for this account'
       },
       usageWindow: {
+        fiveHour: '5 hour',
+        sevenDay: '7 day',
+        sevenDaySonnet: '7 day Sonnet',
+        sevenDayFable: '7 day Fable',
+        thirtyDay: '30 day',
+        oneDay: '1 day',
+        total: 'Total',
+        grok24h: '24 hour',
+        moreWindows: '{count} more',
+        hideWindows: 'Hide extra windows',
         statsTitle: '5-Hour Window Usage Statistics',
         statsTitleDaily: 'Daily Usage Statistics',
         geminiProDaily: 'Pro',
