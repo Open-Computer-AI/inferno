@@ -670,3 +670,35 @@ menu exists would drop the actions column with nothing in its place.
 
 DataTable needs NO new API to support it: the existing `cell-actions` slot is
 already sufficient.
+
+## CORRECTION: the action menu does NOT yet unblock the sticky column
+
+I claimed AccountActionMenu would unblock three spec items at once (the row
+actions menu, stickyActionsColumn defaulting false, and the last gradient
+shadows). That was wrong, and the agent that built it checked rather than
+assumed.
+
+`AccountActionMenu.vue` is ONLY the popover content, driven by show/account/
+position props. Three things it does not own still live in `AccountsView.vue`
+(~lines 432-446 and 1648-1698):
+
+  - the 28px hgi-more-horizontal trigger
+  - the separate inline Edit and Delete buttons
+  - openMenu()'s position math
+
+So a row today renders three inline buttons PLUS this menu -- not the "one
+trigger and a menu" the spec describes. `stickyActionsColumn` must stay true.
+
+**The follow-up, in AccountsView.vue:**
+1. Collapse the inline Edit / Delete / More into ONE 28px trigger that opens
+   this menu with every action in it.
+2. Put aria-haspopup and aria-expanded on that trigger, and return focus to it
+   when the menu closes. AccountActionMenu cannot own these -- it never renders
+   the trigger. This is a real accessibility gap until then, reported not hidden.
+3. Only then flip DataTable's stickyActionsColumn default to false and retire
+   expandableActions / actionsCount / checkActionsColumnWidth(), and the last
+   gradient shadows go with them.
+
+Note the menu also has no destructive group: account deletion is a separate
+inline button in AccountsView, not one of this component's eleven emits. When
+delete moves into the menu it becomes the fourth, --destructive, last group.
