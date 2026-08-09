@@ -1,65 +1,98 @@
-<template>
-  <div
-    :class="['spinner', sizeClasses, colorClass]"
-    role="status"
-    :aria-label="t('common.loading')"
-  >
-    <span class="sr-only">{{ t('common.loading') }}</span>
-  </div>
-</template>
-
 <script setup lang="ts">
-import { computed } from 'vue'
+/**
+ * LoadingSpinner — part 03, section 14/15.
+ *
+ * Migration note from the prototype:
+ *   "The source has four colours: primary, secondary, white and gray. Two of
+ *    them are the same grey and the teal one is the loudest thing on a
+ *    loading screen. Neutral, or on-solid inside a filled control. Nothing
+ *    else."
+ *
+ * `size` keeps its four values, now at 16 / 24 / 32 / 44 (was 16 / 32 / 48 /
+ * 64). `color` changes shape from the four-value enum to 'neutral' | 'onSolid'
+ * — an explicit prop type change the spec calls for, safe here because none of
+ * the 16 call sites pass `color` at all; every one either takes the default or
+ * sets only `size`.
+ *
+ * The ring reuses inferno.css's shared `s2a-spin` keyframe rather than
+ * declaring its own: that file's prefers-reduced-motion guard matches on any
+ * class containing "s2a-spinner", so this component carries that class
+ * instead of a local @keyframes + media query.
+ */
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
 
 type SpinnerSize = 'sm' | 'md' | 'lg' | 'xl'
-type SpinnerColor = 'primary' | 'secondary' | 'white' | 'gray'
+type SpinnerColor = 'neutral' | 'onSolid'
 
-interface Props {
-  size?: SpinnerSize
-  color?: SpinnerColor
-}
-
-const props = withDefaults(defineProps<Props>(), {
-  size: 'md',
-  color: 'primary'
-})
-
-const sizeClasses = computed(() => {
-  const sizes: Record<SpinnerSize, string> = {
-    sm: 'w-4 h-4 border-2',
-    md: 'w-8 h-8 border-2',
-    lg: 'w-12 h-12 border-[3px]',
-    xl: 'w-16 h-16 border-4'
-  }
-  return sizes[props.size]
-})
-
-const colorClass = computed(() => {
-  const colors: Record<SpinnerColor, string> = {
-    primary: 'text-primary-500',
-    secondary: 'text-gray-500 dark:text-dark-400',
-    white: 'text-white',
-    gray: 'text-gray-400 dark:text-dark-500'
-  }
-  return colors[props.color]
-})
+withDefaults(
+  defineProps<{
+    size?: SpinnerSize
+    color?: SpinnerColor
+  }>(),
+  { size: 'md', color: 'neutral' }
+)
 </script>
 
+<template>
+  <span class="spin2 s2a-spinner" :data-size="size" :data-color="color" role="status" :aria-label="t('common.loading')">
+    <span class="spin2__sr">{{ t('common.loading') }}</span>
+  </span>
+</template>
+
 <style scoped>
-.spinner {
-  @apply inline-block rounded-full border-solid border-current border-r-transparent;
-  animation: spin 0.75s linear infinite;
+.spin2 {
+  position: relative;
+  display: inline-block;
+  border-style: solid;
+  border-radius: 50%;
+  border-color: var(--spinner-neutral);
+  border-top-color: transparent;
+  animation: s2a-spin 0.7s linear infinite;
 }
 
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+/* Diameter and ring width travel together, same as every other size scale in
+ * this system. */
+.spin2[data-size='sm'] {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+}
+.spin2[data-size='md'] {
+  width: 24px;
+  height: 24px;
+  border-width: 2px;
+}
+.spin2[data-size='lg'] {
+  width: 32px;
+  height: 32px;
+  border-width: 3px;
+}
+.spin2[data-size='xl'] {
+  width: 44px;
+  height: 44px;
+  border-width: 4px;
+}
+
+/* The only other colour that survives: inside a filled control the ring has
+ * to read against --primary (or another solid fill), not the page. */
+.spin2[data-color='onSolid'] {
+  border-color: var(--primary-foreground);
+  border-top-color: transparent;
+}
+
+/* Visually hidden, not `sr-only` from Tailwind: this file has no Tailwind
+ * utilities, only tokens. */
+.spin2__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 </style>
