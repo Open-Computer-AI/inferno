@@ -6,12 +6,10 @@ import { describe, expect, it } from 'vitest'
 
 const componentPath = resolve(dirname(fileURLToPath(import.meta.url)), '../AppSidebar.vue')
 const componentSource = readFileSync(componentPath, 'utf8')
-const stylePath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../style.css')
-const styleSource = readFileSync(stylePath, 'utf8')
 
 describe('AppSidebar custom SVG styles', () => {
   it('does not override uploaded SVG fill or stroke colors', () => {
-    expect(componentSource).toContain('.sidebar-svg-icon {')
+    expect(componentSource).toContain('.sidebar-svg-icon')
     expect(componentSource).toContain('color: currentColor;')
     expect(componentSource).toContain('display: block;')
     expect(componentSource).not.toContain('stroke: currentColor;')
@@ -22,11 +20,11 @@ describe('AppSidebar custom SVG styles', () => {
 describe('AppSidebar scroll position persistence', () => {
   it('binds a template ref to the sidebar nav element', () => {
     expect(componentSource).toContain('ref="sidebarNavRef"')
-    expect(componentSource).toContain('sidebar-nav')
+    expect(componentSource).toContain('rail__nav')
   })
 
   it('declares sidebarNavRef in script setup', () => {
-    expect(componentSource).toContain("const sidebarNavRef = ref<HTMLElement | null>(null)")
+    expect(componentSource).toContain('const sidebarNavRef = ref<HTMLElement | null>(null)')
   })
 
   it('saves scroll position on beforeUnmount', () => {
@@ -42,14 +40,21 @@ describe('AppSidebar scroll position persistence', () => {
   })
 })
 
-describe('AppSidebar header styles', () => {
-  it('does not clip the version badge dropdown', () => {
-    const sidebarHeaderBlockMatch = styleSource.match(/\.sidebar-header\s*\{[\s\S]*?\n {2}\}/)
-    const sidebarBrandBlockMatch = componentSource.match(/\.sidebar-brand\s*\{[\s\S]*?\n\}/)
+describe('AppSidebar popover positioning', () => {
+  // Part 07 v2 moves the version badge's dropdown-clipping fix (the reason
+  // this file originally existed) into a structural guarantee instead of a
+  // one-off style rule: every interactive popover -- the section switcher,
+  // the preferences menu, the avatar menu -- is teleported to <body> and
+  // positioned off its trigger's own bounding rect, the same pattern
+  // Select.vue uses. A popover living outside the rail's DOM subtree cannot
+  // be clipped by an ancestor's overflow, whatever that ancestor's CSS says.
+  it('teleports every popover to <body> instead of nesting it under an overflow ancestor', () => {
+    const teleportCount = (componentSource.match(/<Teleport to="body">/g) ?? []).length
+    expect(teleportCount).toBe(3)
+  })
 
-    expect(sidebarHeaderBlockMatch).not.toBeNull()
-    expect(sidebarBrandBlockMatch).not.toBeNull()
-    expect(sidebarHeaderBlockMatch?.[0]).not.toContain('@apply overflow-hidden;')
-    expect(sidebarBrandBlockMatch?.[0]).not.toContain('overflow: hidden;')
+  it('positions each popover from its own trigger rect, not a static offset', () => {
+    expect(componentSource).toContain('getBoundingClientRect()')
+    expect(componentSource).toContain("position: 'fixed'")
   })
 })
