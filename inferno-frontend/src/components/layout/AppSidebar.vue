@@ -261,6 +261,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, onUnmounted, ref, watch
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
+import { hasSeenOnboardingTour } from '@/composables/onboardingTourStorage'
 import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
@@ -559,19 +560,31 @@ function persistSection(key: SectionKey) {
   }
 }
 
-// Cold start (no persisted preference) defaults to Accounts, not Overview or
-// the current route's section. Two reasons, and both have to hold together:
-//   1. It is the section the prototype's own mockup shows pre-selected
-//      (part 07 v2 section 03, the `sections` array).
-//   2. The admin onboarding tour's first two interactive steps target
-//      `#sidebar-group-manage` and `#sidebar-channel-manage`, both inside
-//      Accounts, and they fire before any navigation happens -- a fresh
-//      admin's landing route (Overview) would otherwise hide both targets
-//      and silently break the tour, the exact failure this task was warned
-//      about. Once an admin picks a section it persists, and route changes
-//      keep the switcher honest from then on (see the watcher below) --
-///     this default only governs the very first paint.
-const activeSection = ref<SectionKey>(loadPersistedSection() ?? 'accounts')
+// The switcher must name the section containing the current route. The watcher
+// below enforces that after every navigation; this computes the same thing for
+// the first paint, which a `watch` without `immediate` cannot do.
+//
+// The one case where the route does NOT win is a fresh admin who is about to be
+// walked through the onboarding tour. Its first two interactive steps target
+// `#sidebar-group-manage` and `#sidebar-channel-manage`, both inside Accounts,
+// and they fire before any navigation -- so a fresh admin landing on Overview
+// would have both targets hidden and the tour would silently break.
+//
+// Asked via `hasSeenOnboardingTour` rather than a local localStorage read so the
+// key stays derived in exactly one place; `useOnboardingTour` itself cannot be
+// called here because instantiating it would start a second tour.
+//
+// Previously this always cold-started at Accounts, which meant a hard reload or
+// a bookmark straight into any other section showed the wrong section until the
+// next in-app navigation.
+function initialSection(): SectionKey {
+  if (isAdmin.value && !hasSeenOnboardingTour('admin_guide', authStore.user?.id, authStore.user?.role)) {
+    return 'accounts'
+  }
+  return sectionForRoute(route.path) ?? loadPersistedSection() ?? 'accounts'
+}
+
+const activeSection = ref<SectionKey>(initialSection())
 const activeSectionDef = computed(() => adminSections.value.find((s) => s.key === activeSection.value) ?? adminSections.value[0])
 
 function selectSection(key: SectionKey) {
