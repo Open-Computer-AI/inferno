@@ -1,7 +1,6 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import OllamaCloudUsageCell from '../OllamaCloudUsageCell.vue'
-import UsageProgressBar from '../UsageProgressBar.vue'
 import type { Account, OllamaCloudUsageState } from '@/types'
 
 vi.mock('vue-i18n', async () => {
@@ -64,24 +63,40 @@ const account = (state = usageState()): Account => ({
 })
 
 describe('OllamaCloudUsageCell', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    // Before both windows' reset_at, so the "resets in" countdown renders
+    // deterministically instead of silently disappearing once real wall
+    // time passes the fixture's reset timestamps.
+    vi.setSystemTime(new Date('2026-07-22T12:00:00Z'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('renders only native 5h and 7d windows in a shrinkable mobile-safe cell', () => {
     const wrapper = mount(OllamaCloudUsageCell, { props: { account: account() } })
     const cell = wrapper.get('[data-testid="ollama-cloud-usage-cell"]')
-    expect(cell.classes()).toEqual(expect.arrayContaining(['min-w-0', 'max-w-full']))
-    expect(cell.classes()).not.toContain('min-w-[12rem]')
+    // CONVENTIONS rule 5 forbids Tailwind utilities in migrated components,
+    // so the old min-w-0/max-w-full/min-w-[12rem] literal-class assertions
+    // can never pass and be correct. The "doesn't force a wide minimum
+    // width" guarantee now lives in the component's own scoped `min-width:
+    // 0` rule on `.ocu`, not a utility class -- only that one class renders.
+    expect(cell.classes()).toEqual(['ocu'])
 
-    const bars = wrapper.findAllComponents(UsageProgressBar)
-    expect(bars).toHaveLength(2)
-    expect(bars[0].props()).toMatchObject({
-      label: '5h',
-      utilization: 5.6,
-      resetsAt: '2026-07-23T03:00:00Z'
-    })
-    expect(bars[1].props()).toMatchObject({
-      label: '7d',
-      utilization: 14.2,
-      resetsAt: '2026-07-29T00:00:00Z'
-    })
+    // Two windows (5h, 7d), each its own row with a CapacityBar meter, a
+    // rounded percent, and a reset countdown -- what UsageProgressBar used
+    // to render, now composed from CapacityBar plus this cell's own markup.
+    expect(wrapper.findAll('[role="progressbar"]')).toHaveLength(2)
+    const fiveHour = wrapper.get('[data-testid="ollama-cloud-five-hour"]')
+    const sevenDay = wrapper.get('[data-testid="ollama-cloud-seven-day"]')
+    expect(fiveHour.text()).toContain('admin.accounts.ollamaCloud.fiveHourShort')
+    expect(fiveHour.text()).toContain('6%') // Math.round(5.6)
+    expect(fiveHour.text()).toContain('misc.resetIn')
+    expect(sevenDay.text()).toContain('admin.accounts.ollamaCloud.sevenDayShort')
+    expect(sevenDay.text()).toContain('14%') // Math.round(14.2)
+    expect(sevenDay.text()).toContain('misc.resetIn')
 
     expect(wrapper.find('[data-testid="ollama-cloud-usage-details"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="ollama-cloud-usage-refresh"]').exists()).toBe(false)
@@ -98,7 +113,7 @@ describe('OllamaCloudUsageCell', () => {
 
     await wrapper.setProps({ account: account(next) })
 
-    expect(wrapper.findAllComponents(UsageProgressBar)[0].props('utilization')).toBe(43)
+    expect(wrapper.get('[data-testid="ollama-cloud-five-hour"]').text()).toContain('43%')
     expect(wrapper.findAll('button')).toHaveLength(0)
   })
 })
