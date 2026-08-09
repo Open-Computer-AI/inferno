@@ -68,6 +68,11 @@ export default {
     searchPlaceholder: '搜索...',
     noOptionsFound: '无匹配选项',
     noGroupsAvailable: '无可用分组',
+    sectionedDialog: {
+      railLabel: '表单分区',
+      sectionGated: '请先完成上一步',
+      stepOf: '第 {current} 步，共 {total} 步'
+    },
     searchGroupsPlaceholder: '搜索分组',
     groupSelectorMixedSchedulingHint: '混合调度未开启，已隐藏 Gemini 和 Anthropic 分组。开启后即可查看。',
     groupSelectorPlatformHint: '已隐藏其他平台的分组。',

@@ -68,6 +68,11 @@ export default {
     searchPlaceholder: 'Search...',
     noOptionsFound: 'No options found',
     noGroupsAvailable: 'No groups available',
+    sectionedDialog: {
+      railLabel: 'Form sections',
+      sectionGated: 'Answer the previous step first',
+      stepOf: 'Step {current} of {total}'
+    },
     searchGroupsPlaceholder: 'Search groups',
     groupSelectorMixedSchedulingHint:
       'Gemini and Anthropic groups are hidden because mixed scheduling is off. Turn it on to see them.',
