@@ -195,7 +195,12 @@ describe('UpstreamBillingRateCell', () => {
     expect(tooltip.textContent).toContain('admin.accounts.upstreamBilling.elapsedSince:admin.accounts.upstreamBilling.hoursAgo:2')
     expect(tooltip.textContent).toContain('admin.accounts.upstreamBilling.nextProbeAt:')
     expect(tooltip.textContent).not.toContain('admin.accounts.upstreamBilling.stale')
-    expect(tooltip.querySelector('[data-testid="upstream-billing-probe-state"] span')?.className).toContain('text-emerald-400')
+    // State is expressed by the rendered word (enabled/disabled), not a
+    // Tailwind colour class -- CONVENTIONS rule 5 forbids the latter in
+    // migrated components, and the word is the more robust hook anyway.
+    expect(tooltip.querySelector('[data-testid="upstream-billing-probe-state"] span')?.textContent).toBe(
+      'admin.accounts.upstreamBilling.enabled'
+    )
 
     await wrapper.setProps({
       account: makeAccount({
@@ -210,7 +215,9 @@ describe('UpstreamBillingRateCell', () => {
       })
     })
     expect(tooltip.querySelector('[data-testid="upstream-billing-next-probe"]')).toBeNull()
-    expect(tooltip.querySelector('[data-testid="upstream-billing-probe-state"] span')?.className).toContain('text-red-400')
+    expect(tooltip.querySelector('[data-testid="upstream-billing-probe-state"] span')?.textContent).toBe(
+      'admin.accounts.upstreamBilling.disabled'
+    )
     wrapper.unmount()
   })
 
@@ -240,9 +247,9 @@ describe('UpstreamBillingRateCell', () => {
     const tooltip = tooltips[tooltips.length - 1] as HTMLElement
     const accountState = tooltip.querySelector('[data-testid="upstream-billing-probe-state"]')
     const globalState = tooltip.querySelector('[data-testid="upstream-billing-global-probe-state"]')
-    expect(accountState?.querySelector('span')?.className).toContain('text-emerald-400')
+    expect(accountState?.querySelector('span')?.textContent).toBe('admin.accounts.upstreamBilling.enabled')
     expect(globalState?.textContent).toContain('admin.accounts.upstreamBilling.globalProbeState')
-    expect(globalState?.querySelector('span')?.className).toContain('text-red-400')
+    expect(globalState?.querySelector('span')?.textContent).toBe('admin.accounts.upstreamBilling.disabled')
     expect(tooltip.querySelector('[data-testid="upstream-billing-next-probe"]')).toBeNull()
 
     await wrapper.setProps({ globalProbeEnabled: true })
@@ -255,7 +262,7 @@ describe('UpstreamBillingRateCell', () => {
         extra: { upstream_billing_probe_enabled: false }
       })
     })
-    expect(accountState?.querySelector('span')?.className).toContain('text-red-400')
+    expect(accountState?.querySelector('span')?.textContent).toBe('admin.accounts.upstreamBilling.disabled')
     expect(tooltip.querySelector('[data-testid="upstream-billing-global-probe-state"]')).not.toBeNull()
     expect(tooltip.querySelector('[data-testid="upstream-billing-next-probe"]')).toBeNull()
     wrapper.unmount()
