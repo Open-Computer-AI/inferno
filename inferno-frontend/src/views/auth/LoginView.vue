@@ -1,15 +1,11 @@
 <template>
   <AuthLayout>
-    <div class="space-y-6">
-      <!-- Title -->
-      <div class="text-center">
-        <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
-          {{ t('auth.welcomeBack') }}
-        </h2>
-        <p class="mt-2 text-sm text-gray-500 dark:text-dark-400">
-          {{ t('auth.signInToAccount') }}
-        </p>
-      </div>
+    <div class="lg-form">
+      <!-- Left aligned, sentence case, and no second line. The wordmark above is
+           the layout's; this is the one sentence saying what the screen is. -->
+      <h2 class="lg-form__title">
+        {{ t('auth.welcomeBack') }}
+      </h2>
       <!-- Login Form -->
       <form @submit.prevent="handleLogin" class="space-y-5">
         <!-- Email Input -->
@@ -18,9 +14,6 @@
             {{ t('auth.emailLabel') }}
           </label>
           <div class="relative">
-            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
-              <Icon name="mail" size="md" class="text-gray-400 dark:text-dark-500" />
-            </div>
             <input
               id="email"
               v-model="formData.email"
@@ -29,7 +22,7 @@
               autofocus
               autocomplete="email"
               :disabled="authActionDisabled"
-              class="input pl-11"
+              class="input"
               :class="{ 'input-error': errors.email }"
               :placeholder="t('auth.emailPlaceholder')"
             />
@@ -42,9 +35,6 @@
             {{ t('auth.passwordLabel') }}
           </label>
           <div class="relative">
-            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
-              <Icon name="lock" size="md" class="text-gray-400 dark:text-dark-500" />
-            </div>
             <input
               id="password"
               v-model="formData.password"
@@ -52,7 +42,7 @@
               required
               autocomplete="current-password"
               :disabled="authActionDisabled"
-              class="input pl-11 pr-11"
+              class="input pr-9"
               :class="{ 'input-error': errors.password }"
               :placeholder="t('auth.passwordPlaceholder')"
             />
@@ -60,19 +50,14 @@
               type="button"
               @click="showPassword = !showPassword"
               :disabled="authActionDisabled"
-              class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-dark-300"
+              class="lg-form__reveal"
             >
               <Icon v-if="showPassword" name="eyeOff" size="md" />
               <Icon v-else name="eye" size="md" />
             </button>
           </div>
-          <div class="mt-1 flex items-center justify-between">
-            <span></span>
-            <router-link
-              v-if="passwordResetEnabled && !backendModeEnabled"
-              to="/forgot-password"
-              class="text-sm font-medium text-primary-600 transition-colors hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
-            >
+          <div v-if="passwordResetEnabled && !backendModeEnabled" class="lg-form__aside">
+            <router-link to="/forgot-password" class="lg-form__link">
               {{ t('auth.forgotPassword') }}
             </router-link>
           </div>
@@ -103,27 +88,10 @@
           :disabled="authActionDisabled || (turnstileEnabled && !turnstileToken)"
           class="btn btn-primary w-full"
         >
-          <svg
-            v-if="isLoading"
-            class="-ml-1 mr-2 h-4 w-4 animate-spin text-white"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <circle
-              class="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              stroke-width="4"
-            ></circle>
-            <path
-              class="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            ></path>
-          </svg>
-          <Icon v-else name="login" size="md" class="mr-2" />
+          <!-- Inherits currentColor, so it is correct on any button variant.
+               The old one hard-coded text-white, which assumed the primary fill
+               was dark. --primary-foreground is a token and need not be. -->
+          <span v-if="isLoading" class="lg-form__spinner" aria-hidden="true" />
           {{ isLoading ? t('auth.signingIn') : t('auth.signIn') }}
         </button>
 
@@ -140,12 +108,8 @@
         />
 
         <div v-if="showPasskeyLogin || showOAuthLogin" class="space-y-3 pt-1">
-          <div class="flex items-center gap-3">
-            <div class="h-px flex-1 bg-gray-200 dark:bg-dark-700"></div>
-            <span class="text-xs text-gray-500 dark:text-dark-400">
-              {{ t('auth.oauthOrContinue') }}
-            </span>
-            <div class="h-px flex-1 bg-gray-200 dark:bg-dark-700"></div>
+          <div class="lg-form__rule">
+            <span class="lg-form__rule-label">{{ t('auth.oauthOrContinue') }}</span>
           </div>
 
           <button
@@ -198,14 +162,9 @@
 
     <!-- Footer -->
     <template v-if="!backendModeEnabled" #footer>
-      <p class="text-gray-500 dark:text-dark-400">
+      <p class="lg-form__signup">
         {{ t('auth.dontHaveAccount') }}
-        <router-link
-          to="/register"
-          class="font-medium text-primary-600 transition-colors hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
-        >
-          {{ t('auth.signUp') }}
-        </router-link>
+        <router-link to="/register" class="lg-form__link">{{ t('auth.signUp') }}</router-link>
       </p>
     </template>
   </AuthLayout>
@@ -732,9 +691,116 @@ function handle2FACancel(): void {
 </script>
 
 <style scoped>
+.lg-form__title {
+  margin: 0 0 24px;
+  color: var(--foreground);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-medium);
+  line-height: 1.25;
+}
+
+/* Right aligned under the field it belongs to. A left-aligned link here reads
+   as a second label for the password. */
+.lg-form__aside {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.lg-form__link {
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+  /* Underlined rather than coloured: ground rule 5 reserves colour for state,
+     and "this is a link" is not a state. */
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--border);
+  transition: text-decoration-color var(--motion-hover);
+}
+
+.lg-form__link:hover {
+  text-decoration-color: var(--foreground);
+}
+
+/* The reveal toggle. Sized to the field, not to the icon, so its hit area
+   matches the control it sits in. */
+.lg-form__reveal {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  height: var(--s2a-h-md);
+  width: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: color var(--motion-hover);
+}
+
+.lg-form__reveal:hover:not(:disabled) {
+  color: var(--foreground);
+}
+
+.lg-form__reveal:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* One hairline with the label sitting on it, rather than two flex spacers.
+   `background` on the pseudo-element, so nothing here transitions a border. */
+.lg-form__rule {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.lg-form__rule::before {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: var(--border-subtle);
+  content: '';
+}
+
+.lg-form__rule-label {
+  position: relative;
+  padding: 0 10px;
+  background: var(--background);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.lg-form__spinner {
+  display: inline-block;
+  height: 13px;
+  width: 13px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  opacity: 0.7;
+  /* Shared keyframe from inferno.css; it carries its own reduced-motion guard. */
+  animation: s2a-spin 0.7s linear infinite;
+}
+
+.lg-form__signup {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-md);
+}
+
+/* Was `all`, which animates border-color too (ground rule 6). These are the two
+   properties the transition actually changes. */
 .fade-enter-active,
 .fade-leave-active {
-  transition: all 0.3s ease;
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease;
 }
 
 .fade-enter-from,
