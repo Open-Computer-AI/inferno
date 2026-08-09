@@ -124,9 +124,21 @@ report success without the output.
 
 ```sh
 cd /Users/saksham/OpenComputerV2/inferno/inferno-frontend
-node scripts/june-lint.mjs          # must be clean for your files
-npx vue-tsc --noEmit -p tsconfig.json   # must be 0 errors
+node scripts/june-lint.mjs               # must be clean for your files
+npx vue-tsc --noEmit -p tsconfig.json    # must be 0 errors
+npx vite build                           # MUST succeed -- see below
 ```
+
+**`vite build` is not optional, and it is not redundant with the typecheck.**
+On 2026-08-09 three components shipped with a stray `</content>` tag after
+`</style>`. `vue-tsc` reported 0 errors, the lint was clean, and the production
+build failed with "Invalid end tag" -- because `vue-tsc` checks types, while
+only Vue's SFC compiler parses the file's block structure. A malformed template
+passes the first two gates and breaks the build.
+
+Also: if your file ends with a tag that is not `</template>`, `</script>` or
+`</style>`, you have written a wrapper artifact into the source. Check the last
+line before you report done.
 
 Then report back:
 1. Files you created or modified, full paths.
