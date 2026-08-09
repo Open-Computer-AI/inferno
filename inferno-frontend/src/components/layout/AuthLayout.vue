@@ -1,77 +1,64 @@
 <template>
-  <div class="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
-    <!-- Background -->
-    <div
-      class="absolute inset-0 bg-gradient-to-br from-gray-50 via-primary-50/30 to-gray-100 dark:from-dark-950 dark:via-dark-900 dark:to-dark-950"
-    ></div>
+  <div class="auth">
+    <!-- Left: the field. Order matters for keyboard and screen readers -- the
+         panel is decoration, so the form column comes first in the DOM and is
+         placed right by the grid, not by source order. -->
+    <div class="auth__col auth__col--form">
+      <div class="auth__inner">
+        <header class="auth__head">
+          <!-- The wordmark IS the logo: the site name set in the serif, no tile
+               and no monogram. A letter in a coloured square is worse than the
+               name itself set properly. An operator-uploaded logo still wins,
+               because that is their brand and not ours to override. -->
+          <img v-if="settingsLoaded && siteLogo" :src="siteLogo" alt="" class="auth__logo" />
+          <h1 v-else class="auth__wordmark">{{ siteName }}</h1>
+        </header>
 
-    <!-- Decorative Elements -->
-    <div class="pointer-events-none absolute inset-0 overflow-hidden">
-      <!-- Gradient Orbs -->
-      <div
-        class="absolute -right-40 -top-40 h-80 w-80 rounded-full bg-primary-400/20 blur-3xl"
-      ></div>
-      <div
-        class="absolute -bottom-40 -left-40 h-80 w-80 rounded-full bg-primary-500/15 blur-3xl"
-      ></div>
-      <div
-        class="absolute left-1/2 top-1/2 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary-300/10 blur-3xl"
-      ></div>
+        <div class="auth__body">
+          <slot />
+        </div>
 
-      <!-- Grid Pattern -->
-      <div
-        class="absolute inset-0 bg-[linear-gradient(rgba(20,184,166,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(20,184,166,0.03)_1px,transparent_1px)] bg-[size:64px_64px]"
-      ></div>
+        <div class="auth__foot">
+          <slot name="footer" />
+        </div>
+
+        <p class="auth__legal">
+          <span>&copy; {{ currentYear }} {{ siteName }}</span>
+        </p>
+      </div>
     </div>
 
-    <!-- Content Container -->
-    <div class="relative z-10 w-full max-w-md">
-      <!-- Logo/Brand -->
-      <div class="mb-8 text-center">
-        <!-- Custom Logo or Default Logo -->
-        <template v-if="settingsLoaded">
-          <div
-            class="mb-4 inline-flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl shadow-lg shadow-primary-500/30"
-          >
-            <img :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
-          </div>
-          <h1 class="text-gradient mb-2 text-3xl font-bold">
-            {{ siteName }}
-          </h1>
-          <p class="text-sm text-gray-500 dark:text-dark-400">
-            {{ siteSubtitle }}
-          </p>
-        </template>
-      </div>
-
-      <!-- Card Container -->
-      <div class="card-glass rounded-2xl p-8 shadow-glass">
-        <slot />
-      </div>
-
-      <!-- Footer Links -->
-      <div class="mt-6 text-center text-sm">
-        <slot name="footer" />
-      </div>
-
-      <!-- Copyright -->
-      <div class="mt-8 text-center text-xs text-gray-400 dark:text-dark-500">
-        &copy; {{ currentYear }} {{ siteName }}. All rights reserved.
-      </div>
+    <!-- Right: one surface, and things taken out of it. Hidden below the
+         breakpoint rather than stacked -- a decorative panel above a sign-in
+         form on a phone is just something to scroll past. -->
+    <div class="auth__col auth__col--panel">
+      <AuthFieldPanel />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+/**
+ * The split screen behind every auth route: panel on one side, a single column
+ * on the other. Nine views render through this slot (login, register, forgot,
+ * reset, verify, and the four OAuth callbacks), so the shape is defined once
+ * here and none of them position anything themselves.
+ *
+ * The column is deliberately plainer than anything else in the library, because
+ * a front door has exactly one job. No card, no glass, no shadow -- the form
+ * sits directly on the page.
+ */
 import { computed, onMounted } from 'vue'
 import { useAppStore } from '@/stores'
 import { sanitizeUrl } from '@/utils/url'
+import AuthFieldPanel from '@/components/auth/AuthFieldPanel.vue'
 
 const appStore = useAppStore()
 
 const siteName = computed(() => appStore.siteName || 'Sub2API')
-const siteLogo = computed(() => sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
-const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || 'Subscription to API Conversion Platform')
+const siteLogo = computed(() =>
+  sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true })
+)
 const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
 
 const currentYear = computed(() => new Date().getFullYear())
@@ -82,7 +69,87 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.text-gradient {
-  @apply bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent;
+.auth {
+  display: grid;
+  /* The form column is fixed and the panel takes the rest, so the reading
+     measure never stretches on a wide monitor -- the panel absorbs the width
+     instead. */
+  grid-template-columns: minmax(0, 560px) 1fr;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--background);
+}
+
+.auth__col {
+  min-width: 0;
+}
+
+.auth__col--form {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 40px;
+}
+
+.auth__col--panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.auth__inner {
+  display: flex;
+  width: 100%;
+  max-width: 380px;
+  flex-direction: column;
+}
+
+.auth__head {
+  margin-bottom: 32px;
+}
+
+.auth__wordmark {
+  margin: 0;
+  color: var(--foreground);
+  font-family: var(--font-serif);
+  font-size: 30px;
+  font-weight: 400;
+  /* Slightly tight, because the serif is drawn generous and the wordmark is the
+     only place it appears at this size. */
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+
+.auth__logo {
+  display: block;
+  height: 34px;
+  width: auto;
+  max-width: 200px;
+  object-fit: contain;
+}
+
+.auth__foot:not(:empty) {
+  margin-top: 24px;
+}
+
+.auth__legal {
+  margin: 40px 0 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+/* Below this the panel is dropped rather than stacked. The form keeps the exact
+   same column it had, so nothing about it reflows -- it just centres. */
+@media (max-width: 900px) {
+  .auth {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .auth__col--panel {
+    display: none;
+  }
+
+  .auth__col--form {
+    padding: 40px 24px;
+  }
 }
 </style>
