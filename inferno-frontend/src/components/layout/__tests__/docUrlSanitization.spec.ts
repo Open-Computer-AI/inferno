@@ -5,17 +5,28 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const dir = dirname(fileURLToPath(import.meta.url))
-const headerSource = readFileSync(resolve(dir, '../AppHeader.vue'), 'utf8')
+// AppHeader.vue was deleted in the part 07 v2 shell rewrite (no header at
+// all -- see AppLayout.vue and AppSidebar.vue). Its `docUrl` link had no new
+// home in the redesign (part 07 v2 lists the header's whole inventory as
+// four items -- breadcrumb, notifications, language/theme, avatar menu --
+// and a docs link is not one of them), so the shell renders no doc_url
+// anywhere any more. The two tests below replace the old
+// "AppHeader applies sanitizeUrl to docUrl" pair: they guard against the
+// regression the original bug class actually was -- a raw, unsanitized
+// doc_url reaching the DOM -- now scoped to the files that make up the
+// shell instead of a file that no longer exists.
+const layoutSource = readFileSync(resolve(dir, '../AppLayout.vue'), 'utf8')
+const sidebarSource = readFileSync(resolve(dir, '../AppSidebar.vue'), 'utf8')
 const homeViewSource = readFileSync(resolve(dir, '../../../views/HomeView.vue'), 'utf8')
 const keyUsageViewSource = readFileSync(resolve(dir, '../../../views/KeyUsageView.vue'), 'utf8')
 
 describe('doc_url sanitization', () => {
-  it('AppHeader imports sanitizeUrl', () => {
-    expect(headerSource).toContain("import { sanitizeUrl } from '@/utils/url'")
+  it('AppLayout does not render a raw docUrl', () => {
+    expect(layoutSource).not.toMatch(/\bdocUrl\b/)
   })
 
-  it('AppHeader applies sanitizeUrl to docUrl', () => {
-    expect(headerSource).toContain('sanitizeUrl(appStore.docUrl)')
+  it('AppSidebar does not render a raw docUrl', () => {
+    expect(sidebarSource).not.toMatch(/\bdocUrl\b/)
   })
 
   it('HomeView imports sanitizeUrl', () => {
