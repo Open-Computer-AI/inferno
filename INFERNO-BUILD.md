@@ -355,7 +355,7 @@ pushed. `git push` is rejected: the gh OAuth token lacks the `workflow` scope.
 Fix, once:
 
     gh auth refresh -h github.com -s workflow
-    git push origin june-redesign
+    git push origin inferno-redesign
 
 Every 2h: fetch, rebase onto upstream/main, run the gate (june-lint, vue-tsc,
 vitest) on the rebased tree, publish `sync/upstream` only if green, open one
@@ -370,7 +370,7 @@ Intended shape: cron `30 3 * * *` (09:00 Asia/Calcutta), model claude-sonnet-5,
 source `github.com/Open-Computer-AI/inferno`. It answers "does it matter":
 diff `frontend/src/{api,stores,composables,utils,types}` since the last reviewed
 SHA, decide what affects converted components, port only that, run the gate,
-open a PR against `june-redesign` — never push to it. It records what it skipped
+open a PR against `inferno-redesign` — never push to it. It records what it skipped
 and why, and advances the reviewed SHA, so "what have I not looked at" stays
 answerable.
 
