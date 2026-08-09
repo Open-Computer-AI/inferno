@@ -1,0 +1,31 @@
+/* Control heights and shared layout contracts. Controls that share a row must
+ * line up, so heights come from these tokens, never a raw min-height. */
+:root{
+  --control-xs:22px; /* @kind spacing */
+  --control-sm:26px; /* @kind spacing */
+  --control-md:28px; /* @kind spacing */
+  --control-lg:32px; /* @kind spacing */
+  --control-xl:36px; /* @kind spacing */
+
+  /* Shell geometry */
+  --sidebar-w:240px; /* @kind spacing */
+  --sidebar-w-collapsed:56px; /* @kind spacing */
+  --sidebar-section-title-h:22px; /* @kind spacing */
+  --titlebar-h:28px; /* @kind spacing */
+  --titlebar-controls-end:70px; /* @kind spacing */
+  --titlebar-controls-gap:var(--sp-4); /* @kind spacing */
+  --titlebar-tabs-clearance:var(--sp-8); /* @kind spacing */
+  --titlebar-controls-nudge:2px; /* @kind spacing */
+  --card-top:calc(var(--titlebar-h) + var(--sp-2)); /* @kind spacing */
+  --detail-bar-h:46px; /* @kind spacing */
+  --scrollbar-w:8px; /* @kind spacing */
+  --resize-grabber-h:200px; /* @kind spacing */
+
+  /* Reading columns. Every primary view shares --content-max so they line up;
+   * chat reads as a conversation, not a document, so it is narrower. */
+  --content-max:760px; /* @kind spacing */
+  --chat-max:680px; /* @kind spacing */
+}
+/* The column keeps pace with the viewport instead of stranding itself. */
+@media (min-width:1440px){:root{--content-max:880px;--chat-max:768px}}
+@media (min-width:1920px){:root{--content-max:1000px;--chat-max:820px}}

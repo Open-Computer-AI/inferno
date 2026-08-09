@@ -1,0 +1,17 @@
+/* Radii. Pick by what the element IS, not by its pixel size:
+ *  --r-xs  keycaps, badges, chips, checkboxes
+ *  --r-sm  square icon buttons and small interactive controls
+ *  --r-md  cards, inputs, popovers, rows
+ *  --r-lg  settings cards, toasts, chat bubbles
+ *  --r-xl  dialogs, the composer squircle
+ *  --r-window  matches the native macOS window curve, for inset surfaces */
+:root{
+  --r-xs:4px;
+  --r-sm:6px;
+  --r-md:8px;
+  --r-lg:10px;
+  --r-xl:14px;
+  --r-2xl:18px;
+  --r-pill:999px;
+  --r-window:10px;
+}
