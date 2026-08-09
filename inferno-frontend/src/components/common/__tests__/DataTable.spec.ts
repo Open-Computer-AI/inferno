@@ -47,7 +47,14 @@ describe('DataTable', () => {
     localStorage.clear()
   })
 
-  it('renders paired sort arrows and highlights the active direction', async () => {
+  it('marks the sorted column with a single directional caret, not a permanent chevron pair', async () => {
+    // June's redesign replaced the old always-on up+down chevron pair (rendered on
+    // every sortable header) with one caret on the sorted column only, whose icon
+    // swaps between hgi-arrow-up-01/hgi-arrow-down-01 by direction (opacity 0 at
+    // rest / 1 when sorted is CSS-only and not something jsdom computes, so the
+    // guarantee under test is the DOM state that CSS keys off: which column is
+    // marked sorted, via `data-sorted` and `aria-sort`, and which way the one
+    // caret points).
     const wrapper = mount(DataTable, {
       props: {
         columns: [
@@ -68,19 +75,28 @@ describe('DataTable', () => {
 
     await wrapper.vm.$nextTick()
 
-    const nameHeader = wrapper.findAll('th')[0]
+    const [nameHeader, createdHeader] = wrapper.findAll('th')
     expect(nameHeader.find('[data-test="custom-name-header"]').exists()).toBe(true)
+
+    // The sorted column is marked and points up for ascending...
     expect(nameHeader.attributes('aria-sort')).toBe('ascending')
-    expect(nameHeader.findAll('svg')).toHaveLength(2)
-    expect(nameHeader.findAll('svg')[0].classes()).toContain('text-primary-600')
-    expect(nameHeader.findAll('svg')[1].classes()).toContain('text-gray-300')
+    expect(nameHeader.attributes('data-sorted')).toBeDefined()
+    expect(nameHeader.find('.dt-th__caret').classes()).toContain('hgi-arrow-up-01')
+    expect(nameHeader.find('.dt-th__caret').classes()).not.toContain('hgi-arrow-down-01')
+
+    // ...while the other sortable column is not marked as sorted at all.
+    expect(createdHeader.attributes('aria-sort')).toBe('none')
+    expect(createdHeader.attributes('data-sorted')).toBeUndefined()
 
     await nameHeader.trigger('click')
     await wrapper.vm.$nextTick()
 
+    // Clicking the already-sorted column flips direction: mark stays on the same
+    // column, the one caret now points down.
     expect(nameHeader.attributes('aria-sort')).toBe('descending')
-    expect(nameHeader.findAll('svg')[0].classes()).toContain('text-gray-300')
-    expect(nameHeader.findAll('svg')[1].classes()).toContain('text-primary-600')
+    expect(nameHeader.attributes('data-sorted')).toBeDefined()
+    expect(nameHeader.find('.dt-th__caret').classes()).toContain('hgi-arrow-down-01')
+    expect(nameHeader.find('.dt-th__caret').classes()).not.toContain('hgi-arrow-up-01')
   })
 
   it('renders every row with no virtual padding spacer for small datasets (virtualization off)', async () => {
@@ -303,7 +319,7 @@ describe('DataTable', () => {
     const rowCheckboxes = wrapper.findAll<HTMLInputElement>('[data-test="select-row"]')
     expect(rowCheckboxes.every((checkbox) => checkbox.element.checked)).toBe(true)
 
-    await rowCheckboxes[0].setValue(false)
+    await rowCheckboxes[0].trigger('click')
 
     expect(wrapper.emitted('update:selectedKeys')?.at(-1)?.[0]).toEqual([99, 2])
     expect(wrapper.emitted('selectionChange')?.at(-1)?.[0]).toEqual([99, 2])
