@@ -18,12 +18,17 @@ describe('Prompt Audit integration surface', () => {
     expect(route).toContain('requiresRiskControl: true')
   })
 
-  it('keeps the legacy content moderation route and adds both pages under an expand-only security group', () => {
+  it('keeps the legacy content moderation route reachable from the System section', () => {
+    // Part 07 v2 replaces the old two-level "security audit" expand-only
+    // group with the six-section admin switcher (layout/AppSidebar.vue):
+    // Risk control moves to System per the redesign's explicit instruction,
+    // and Prompt audit -- inspecting the same traffic Audit logs and Usage
+    // cover -- moves to Traffic. Both are flat rows now, not a nested pair
+    // under an expand-only parent, but both destinations are still built and
+    // still reachable from the sidebar.
     const sidebar = read('../../../components/layout/AppSidebar.vue')
-    const group = sidebar.slice(sidebar.indexOf("path: '/admin/security-audit'"), sidebar.indexOf("path: '/admin/redeem'"))
-    expect(group).toContain('expandOnly: true')
-    expect(group).toContain("path: '/admin/risk-control'")
-    expect(group).toContain("path: '/admin/prompt-audit'")
+    expect(sidebar).toContain("path: '/admin/risk-control'")
+    expect(sidebar).toContain("path: '/admin/prompt-audit'")
   })
 
   it('keeps Prompt Audit locale trees symmetric and all operational controls named', () => {
