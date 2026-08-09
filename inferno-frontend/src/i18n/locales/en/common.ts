@@ -167,6 +167,46 @@ export default {
     }
   },
 
+  // June app shell (part 07). Deliberately does NOT reuse nav.apiKeys,
+  // nav.lightMode, nav.darkMode or nav.channelManagement: those values are
+  // Title Case, which breaks ground rule 1 even when a string is merely moved.
+  // The nav.* keys stay for unconverted screens and die with their last consumer.
+  shell: {
+    mainNavigation: 'Main navigation',
+    sectionsListLabel: 'Sections',
+    switchSection: 'Switch section',
+    collapseSidebar: 'Collapse sidebar',
+    expandSidebar: 'Expand sidebar',
+    openMenu: 'Open menu',
+    accountMenu: 'Account menu',
+    myAccount: 'My account',
+    preferences: 'Preferences',
+    language: 'Language',
+    lightMode: 'Light mode',
+    darkMode: 'Dark mode',
+    roleAdministrator: 'Administrator',
+    roleMember: 'Member',
+    overview: 'Overview',
+    traffic: 'Traffic',
+    people: 'People',
+    system: 'System',
+    billing: 'Billing',
+    accessGroup: 'Access',
+    apiKeys: 'API keys',
+    modelPlaza: 'Model plaza',
+    monitor: 'Monitor',
+    referrals: 'Referrals',
+    auditLogs: 'Audit logs',
+    promptAudit: 'Prompt audit',
+    riskControl: 'Risk control',
+    redeemCodes: 'Redeem codes',
+    promoCodes: 'Promo codes',
+    paymentDashboard: 'Payment dashboard',
+    affiliateInvites: 'Affiliate invites',
+    affiliateRebates: 'Affiliate rebates',
+    affiliateTransfers: 'Affiliate transfers'
+  },
+
   // Navigation
   nav: {
     dashboard: 'Dashboard',
