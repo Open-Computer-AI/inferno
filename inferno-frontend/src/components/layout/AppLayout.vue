@@ -1,21 +1,26 @@
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-dark-950">
-    <!-- Background Decoration -->
-    <div class="pointer-events-none fixed inset-0 bg-mesh-gradient"></div>
-
-    <!-- Sidebar -->
+  <div class="shell" :class="{ 'shell--collapsed': sidebarCollapsed }">
     <AppSidebar />
 
-    <!-- Main Content Area -->
-    <div
-      class="relative min-h-screen transition-all duration-300"
-      :class="[sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-64']"
-    >
-      <!-- Header -->
-      <AppHeader />
+    <div class="shell__content">
+      <!-- The header's hamburger needed a new home once the header was
+           deleted (part 07 v2 #header). Below the rail's own breakpoint the
+           sidebar is an off-canvas overlay again, so this corner button is
+           the only way back in on a narrow viewport. Desktop-first, so the
+           prototype (a 1280px preview) never shows it. -->
+      <button
+        type="button"
+        class="shell__mobile-toggle"
+        :aria-label="t('shell.openMenu')"
+        @click="appStore.toggleMobileSidebar()"
+      >
+        <i class="hgi-stroke hgi-menu-01" aria-hidden="true" />
+      </button>
 
-      <!-- Main Content -->
-      <main class="p-4 md:p-6 lg:p-8">
+      <!-- The content card: June's one shell exception to "cards have no
+           shadow" (ground rule 9). 10px --r-window radius, --shadow-sm plus
+           --shadow-inset, inset 7px on three sides. -->
+      <main class="shell__card">
         <slot />
       </main>
     </div>
@@ -23,15 +28,26 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * AppLayout -- part 07 v2, sections 01 and 02.
+ *
+ * 37 views wrap themselves in this component; its default slot and its
+ * `defineExpose({ replayTour })` are the entire public contract, and both are
+ * unchanged from the previous shell. What moved is everything inside: no
+ * header (AppHeader.vue is deleted, see the report for where its four jobs
+ * went), and the sidebar now sits on the tinted canvas instead of inside the
+ * same white surface as the content.
+ */
 import '@/styles/onboarding.css'
 import { computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores'
 import { useAuthStore } from '@/stores/auth'
 import { useOnboardingTour } from '@/composables/useOnboardingTour'
 import { useOnboardingStore } from '@/stores/onboarding'
 import AppSidebar from './AppSidebar.vue'
-import AppHeader from './AppHeader.vue'
 
+const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)
@@ -50,3 +66,95 @@ onMounted(() => {
 
 defineExpose({ replayTour })
 </script>
+
+<style scoped>
+/* Geometry (part 07 v2 #geometry): one tinted canvas, full bleed -- it is the
+   window, not a panel -- with the rail and the content card as its two
+   children. --sidebar-w / --sidebar-w-collapsed drive both this grid and the
+   rail's own width, so they can never drift apart. */
+.shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  min-height: 100vh;
+  background: var(--sidebar);
+  transition: grid-template-columns var(--motion-layout);
+}
+.shell--collapsed {
+  grid-template-columns: var(--sidebar-w-collapsed) minmax(0, 1fr);
+}
+
+.shell__content {
+  min-width: 0;
+  position: relative;
+}
+
+.shell__mobile-toggle {
+  display: none;
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 10;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  color: var(--foreground);
+  cursor: pointer;
+  transition: background var(--motion-hover);
+}
+.shell__mobile-toggle:hover {
+  background: var(--sidebar-accent);
+}
+.shell__mobile-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+.shell__mobile-toggle i {
+  font-size: 15px; /* june-lint-disable ground-rule-4: icon glyph */
+}
+
+/* The content card: --r-window matches the native window curve, and this is
+   the one surface in the whole shell allowed a shadow -- ground rule 9 says
+   cards carry none, and this composite of --shadow-sm plus --shadow-inset is
+   the shell's documented exception to it, not an oversight. */
+.shell__card {
+  margin: 7px 7px 7px 0;
+  min-height: calc(100vh - 14px);
+  border-radius: var(--r-window);
+  background: var(--card);
+  box-shadow: var(--shadow-sm), var(--shadow-inset);
+  overflow: auto;
+  padding: 16px;
+}
+
+@media (min-width: 768px) {
+  .shell__card {
+    padding: 24px;
+  }
+}
+@media (min-width: 1024px) {
+  .shell__card {
+    padding: 32px;
+  }
+}
+
+@media (max-width: 1023px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .shell__mobile-toggle {
+    display: grid;
+  }
+  .shell__card {
+    margin: 7px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell {
+    transition: none;
+  }
+}
+</style>
