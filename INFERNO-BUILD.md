@@ -813,3 +813,40 @@ CapacityBar's label typography is --fs-md/--foreground at every size; the usage
 cell's anatomy wants --fs-sm/muted in a table-cell context. The agent composed
 the shared component as-is rather than forking its styling. If a cell label
 looks too heavy, that is why, and the fix belongs in CapacityBar.
+
+## Accurate red-test count at the end of phase 3: 38, across 9 files
+
+Not the 20 previously recorded. The full list:
+
+  components/common/__tests__/DataTable.spec.ts
+  components/layout/__tests__/TablePageLayout.spec.ts
+  components/account/__tests__/AccountUsageCell.spec.ts
+  components/account/__tests__/OllamaCloudUsageCell.spec.ts
+  components/account/__tests__/UpstreamBillingRateCell.spec.ts
+  components/user/__tests__/UserPlatformQuotaCell.spec.ts
+  components/charts/__tests__/ModelDistributionChart.spec.ts
+  components/charts/__tests__/GroupDistributionChart.spec.ts
+  components/charts/__tests__/TokenUsageTrend.spec.ts
+
+Every one is the same category: it asserts pre-June behaviour the redesign
+deliberately removes. Four recurring causes:
+
+1. **Literal Tailwind classes** (`text-emerald-400`, `text-primary-600`).
+   CONVENTIONS rule 5 forbids Tailwind in converted components, so these cannot
+   pass AND be correct.
+2. **Removed DOM**: the doughnut markup, `UsageProgressBar`, the paired sort
+   chevrons, the exhaustive per-window listing.
+3. **`.setValue()` on a June Checkbox.** It listens on `click`, not `change`,
+   because jsdom does not synthesise `change` for a programmatic click. Every
+   such test breaks as Checkbox.vue is adopted -- ~40 raw inputs still to
+   migrate, so this recurs.
+4. **jsdom cannot resolve `color-mix()`/`oklch()`**, so `useChartTokens` returns
+   empty strings under test. New chart tests must stub `tokens` rather than
+   assert resolved colour values.
+
+**Do not weaken these.** They need rewriting against the new behaviour, which is
+a real task -- roughly one pass per file -- and is the largest single piece of
+outstanding work in the project.
+
+Green at push time: build succeeds, vue-tsc 0 errors, lint clean across 65
+files, 1490/1528 passing.

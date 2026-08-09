@@ -171,6 +171,18 @@ export default {
   // nav.lightMode, nav.darkMode or nav.channelManagement: those values are
   // Title Case, which breaks ground rule 1 even when a string is merely moved.
   // The nav.* keys stay for unconverted screens and die with their last consumer.
+  charts: {
+    distribution: {
+      subtitleTokens: '{value} tokens across {count} {entity}',
+      subtitleCost: '{value} across {count} {entity}',
+      othersCount: '{count} others',
+      entityModels: 'models',
+      entityGroups: 'groups',
+      entityEndpoints: 'endpoints',
+      entityUsers: 'users'
+    }
+  },
+
   shell: {
     mainNavigation: 'Main navigation',
     sectionsListLabel: 'Sections',
