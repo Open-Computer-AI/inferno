@@ -1,0 +1,18 @@
+/* Spacing scale — every gap, padding, and margin. 2px to 40px, deliberately
+ * NOT a strict 4/8 grid (6px and 10px steps carry the app's density). */
+:root{
+  --sp-px:2px;
+  --sp-1:4px;
+  --sp-2:6px;
+  --sp-3:8px;
+  --sp-4:10px;
+  --sp-5:12px;
+  --sp-6:16px;
+  --sp-7:20px;
+  --sp-8:24px;
+  --sp-10:32px;
+  --sp-12:40px;
+  --border-width:1px; /* @kind spacing */
+  --line-width:1px; /* @kind spacing */
+  --focus-outline-width:3px; /* @kind spacing */
+}
