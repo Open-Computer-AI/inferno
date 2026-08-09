@@ -1,5 +1,5 @@
 <template>
-  <div class="tpl" :data-mobile="isMobile || undefined">
+  <div class="tpl" :data-width="width" :data-mobile="isMobile || undefined">
     <!-- Title is a display moment (part 07 v2 #header): AppHeader.vue is deleted and
          nothing else in the shell renders a page heading, so this layout owns it now
          ("the page owns its title... recovering 44px everywhere"). No existing call
@@ -58,12 +58,14 @@
  * views stop spacing themselves differently") and the page title, which has nowhere
  * else to live now that AppHeader.vue is deleted (part 07 v2 #header).
  *
- * `title` / `description` are the only additions to the public surface, and both are
- * optional with no default: no existing call site passes either today, since there was
- * nowhere for a title to go before this rewrite. `actions`, `filters`, `table` and
- * `pagination` are the same four named slots, with the same no-payload signature, all
- * fifteen call sites already use -- verified against every current consumer, not just
- * assumed.
+ * `title` / `description` / `width` are the only additions to the public surface.
+ * `title` and `description` are optional with no default: no existing call site
+ * passes either today, since there was nowhere for a title to go before this rewrite.
+ * `width` defaults to `'reading'`, so it is also a no-op for every existing call site
+ * until an orchestrator-approved view opts a wide table into `'wide'` (see the prop's
+ * own doc for the ruling). `actions`, `filters`, `table` and `pagination` are the same
+ * four named slots, with the same no-payload signature, all fifteen call sites already
+ * use -- verified against every current consumer, not just assumed.
  */
 import { ref, onMounted, onUnmounted } from 'vue'
 
@@ -78,9 +80,22 @@ interface Props {
    *  cooldown" (Library 04 Tables, spec.pagelayout demo). --font-sans --fs-sm
    *  --muted-foreground -- never the title's serif, and never rendered without a title. */
   description?: string
+  /** Opt out of the reading column for pages whose table is wide, not prose. Ruling:
+   *  spec.pagelayout.tokens lists "--content-max column" first, but 01-TOKENS
+   *  (controls.css) defines --content-max under "Reading columns" -- prose and forms,
+   *  where a narrow measure aids reading; it is the same token note-editor uses
+   *  elsewhere in the app. A dense admin table with 10+ columns is not a reading
+   *  column, and the prototype's own table demo backs that: it ships
+   *  `max-width:1080px` on the table page, not the --content-max token, contradicting
+   *  spec.pagelayout.tokens' own line. 'reading' keeps today's centred, capped column
+   *  -- the default, so all fifteen existing call sites are unchanged since none pass
+   *  this prop yet. 'wide' drops the cap so the table fills the shell's inset card. */
+  width?: 'reading' | 'wide'
 }
 
-defineProps<Props>()
+withDefaults(defineProps<Props>(), {
+  width: 'reading'
+})
 
 const isMobile = ref(false)
 
@@ -129,6 +144,14 @@ onUnmounted(() => {
   .tpl {
     height: calc(100vh - 78px);
   }
+}
+
+/* Wide opt-out (see the `width` prop doc for the ruling): a data table is not prose,
+ * so it does not owe the reading column anything. Dropping the cap here, rather than
+ * skipping it above, keeps the default rule the single source of truth for the
+ * reading case and this the single override for the wide one. */
+.tpl[data-width='wide'] {
+  max-width: none;
 }
 
 /* Mobile: DataTable itself swaps to a stacked card list below 768px, and that list
