@@ -1,59 +1,28 @@
-<template>
-  <div class="flex flex-col gap-1">
-    <!-- 并发槽位 -->
-    <div class="flex items-center gap-1">
-      <span
-        :class="[
-          'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium',
-          capacityClass(concurrencyUsed, concurrencyMax)
-        ]"
-      >
-        <svg class="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
-        </svg>
-        <span class="font-mono">{{ concurrencyUsed }}</span>
-        <span class="text-gray-400 dark:text-gray-500">/</span>
-        <span class="font-mono">{{ concurrencyMax }}</span>
-      </span>
-    </div>
-
-    <!-- 会话数 -->
-    <div v-if="sessionsMax > 0" class="flex items-center gap-1">
-      <span
-        :class="[
-          'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium',
-          capacityClass(sessionsUsed, sessionsMax)
-        ]"
-      >
-        <svg class="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
-        </svg>
-        <span class="font-mono">{{ sessionsUsed }}</span>
-        <span class="text-gray-400 dark:text-gray-500">/</span>
-        <span class="font-mono">{{ sessionsMax }}</span>
-      </span>
-    </div>
-
-    <!-- RPM -->
-    <div v-if="rpmMax > 0" class="flex items-center gap-1">
-      <span
-        :class="[
-          'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium',
-          capacityClass(rpmUsed, rpmMax)
-        ]"
-      >
-        <svg class="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-        </svg>
-        <span class="font-mono">{{ rpmUsed }}</span>
-        <span class="text-gray-400 dark:text-gray-500">/</span>
-        <span class="font-mono">{{ rpmMax }}</span>
-      </span>
-    </div>
-  </div>
-</template>
-
 <script setup lang="ts">
+/**
+ * GroupCapacityBadge — part 03, section 07 to 09 (capacity, quota, usage bar).
+ *
+ * Migration note from the prototype:
+ *   "Four components measuring how full something is, in four visual
+ *    languages. They keep their props and their separate jobs, but share one
+ *    threshold rule: accent under 80 percent, attention to 100, destructive
+ *    over."
+ *   "Group capacity, three dimensions in one 104px cell" — three 4px bars
+ *    keyed C, S and R, replacing the three separate coloured pills.
+ *   "GroupCapacityBadge stops rendering three separate coloured pills."
+ *
+ * CapacityBadge, QuotaBadge and UsageProgressBar carry the same threshold
+ * rule but are not owned by this pass (only GroupCapacityBadge.vue is), so
+ * the threshold function is duplicated here rather than centralized in a
+ * shared util. See the report for that gap.
+ *
+ * Prop surface (concurrencyUsed/Max, sessionsUsed/Max, rpmUsed/Max) is
+ * unchanged; sessions and RPM stay hidden when their max is 0, same as
+ * before.
+ */
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
 interface Props {
   concurrencyUsed: number
   concurrencyMax: number
@@ -63,7 +32,7 @@ interface Props {
   rpmMax: number
 }
 
-withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<Props>(), {
   concurrencyUsed: 0,
   concurrencyMax: 0,
   sessionsUsed: 0,
@@ -72,13 +41,120 @@ withDefaults(defineProps<Props>(), {
   rpmMax: 0
 })
 
-function capacityClass(used: number, max: number): string {
-  if (max > 0 && used >= max) {
-    return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-  }
-  if (used > 0) {
-    return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
-  }
-  return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+const { t } = useI18n()
+
+// Accent under 80%, attention to 100%, destructive over. No max (never seen
+// today, since a group always has a concurrency cap) falls back to neutral.
+function pctOf(used: number, max: number): number | null {
+  return max > 0 ? (used / max) * 100 : null
 }
+
+function barColor(pct: number | null): string {
+  if (pct === null) return 'var(--muted)'
+  if (pct > 100) return 'var(--destructive)'
+  if (pct >= 80) return 'var(--s2a-attn-bg)'
+  return 'var(--brand)'
+}
+
+function inkColor(pct: number | null): string {
+  if (pct === null) return 'var(--muted-foreground)'
+  if (pct > 100) return 'var(--destructive)'
+  if (pct >= 80) return 'var(--s2a-attn)'
+  return 'var(--body-copy)'
+}
+
+interface Dim {
+  key: string
+  widthPct: number
+  color: string
+  ink: string
+  text: string
+}
+
+function buildDim(key: string, used: number, max: number): Dim {
+  const pct = pctOf(used, max)
+  return {
+    key,
+    widthPct: pct === null ? 0 : Math.min(pct, 100),
+    color: barColor(pct),
+    ink: inkColor(pct),
+    text: `${used}/${max}`
+  }
+}
+
+const dims = computed<Dim[]>(() => {
+  const list: Dim[] = [
+    buildDim(t('common.groupCapacity.concurrencyAbbr'), props.concurrencyUsed, props.concurrencyMax)
+  ]
+  if (props.sessionsMax > 0) {
+    list.push(buildDim(t('common.groupCapacity.sessionsAbbr'), props.sessionsUsed, props.sessionsMax))
+  }
+  if (props.rpmMax > 0) {
+    list.push(buildDim(t('common.groupCapacity.rpmAbbr'), props.rpmUsed, props.rpmMax))
+  }
+  return list
+})
 </script>
+
+<template>
+  <div class="gcap">
+    <div v-for="dim in dims" :key="dim.key" class="gcap__row">
+      <span class="gcap__key">{{ dim.key }}</span>
+      <span class="gcap__track"><span class="gcap__fill" :style="{ width: dim.widthPct + '%', background: dim.color }" /></span>
+      <span class="gcap__val" :style="{ color: dim.ink }">{{ dim.text }}</span>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+/* "Three dimensions in one 104px cell", so it drops into a table column
+   without reflowing it. */
+.gcap {
+  display: flex;
+  flex-direction: column;
+  width: 104px;
+}
+
+.gcap__row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.gcap__row:last-child {
+  margin-bottom: 0;
+}
+
+.gcap__key {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--muted-foreground);
+}
+
+.gcap__track {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--muted);
+  overflow: hidden;
+}
+
+.gcap__fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  transition: width var(--t-med) var(--ease-out);
+}
+
+.gcap__val {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gcap__fill {
+    transition: none;
+  }
+}
+</style>
