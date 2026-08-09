@@ -494,3 +494,54 @@ Notes that change behaviour, not just looks:
   excluded** from the C migration. Part 05's own `#calls` calls them "a project
   rather than a pass" — they need a credential component per platform behind one
   interface before the archetype pays off.
+
+## BLOCKING: 32 i18n keys pending for the part 07 shell
+
+The shell renders raw key paths until these are added under `shell.*` in en and
+zh. The orchestrator owns src/i18n/; workers report keys (CONVENTIONS rule 6).
+
+accessGroup Access · accountMenu Account menu · affiliateInvites Affiliate
+invites · affiliateRebates Affiliate rebates · affiliateTransfers Affiliate
+transfers · apiKeys API keys · auditLogs Audit logs · billing Billing ·
+collapseSidebar Collapse sidebar · darkMode Dark mode · expandSidebar Expand
+sidebar · language Language · lightMode Light mode · mainNavigation Main
+navigation · modelPlaza Model plaza · monitor Monitor · myAccount My account ·
+openMenu Open menu · overview Overview · paymentDashboard Payment dashboard ·
+people People · preferences Preferences · promoCodes Promo codes · promptAudit
+Prompt audit · redeemCodes Redeem codes · referrals Referrals · riskControl Risk
+control · roleAdministrator Administrator · roleMember Member · sectionsListLabel
+Sections · switchSection Switch section · system System · traffic Traffic
+
+Note: the shell deliberately does NOT reuse the existing nav.lightMode,
+nav.darkMode, nav.apiKeys, nav.channelManagement keys. Their values are Title
+Case ("Light Mode", "API Keys"), which violates ground rule 1 even when merely
+moved. The old keys stay for unconverted screens; these replace them as screens
+convert, and the old ones die with their last consumer.
+
+## AppHeader deletion: what lost its home
+
+Eight functions had no destination in v2's four-item header inventory and were
+dropped. Listed because a header deletion is exactly where a feature disappears
+unnoticed:
+
+| Dropped | Note |
+|---|---|
+| **Balance pill + hover panel** | **Customer-visible.** Customers could read their balance from any screen; now nowhere until part 15 Billing exists. The most significant of these. |
+| SubscriptionProgressMini | Same class; belongs on Billing. |
+| Docs link | No home specified. |
+| GitHub link (admin) | No home. |
+| Contact support | No home. |
+| "Restart tour" button | The MECHANISM is intact (onboardingStore.replay, AppLayout's defineExpose). Only the UI trigger is gone, because the prototype fixes the avatar menu at three items. |
+
+Rehomed rather than dropped: AnnouncementBell and LocaleSwitcher to the sidebar
+footer, Model Plaza to a customer nav row, the user dropdown to the avatar menu.
+A mobile hamburger was ADDED to AppLayout (not in the prototype, which previews
+at 1280px) so mobile nav does not break under 1024px.
+
+## Routes now unreachable from the nav
+
+Intended: /profile, /monitor, /redeem, /orders.
+**Unintended, flagged:** /batch-image and /purchase are absent from the
+prototype's 7-row userNav array and were not among the five named deletions, so
+building the nav exactly as drawn dropped them too. Routes still work; they just
+have no sidebar entry. Needs a decision.
