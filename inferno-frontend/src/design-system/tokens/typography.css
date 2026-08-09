@@ -1,0 +1,49 @@
+/* Type tokens. The --fs-* tokens are registered as lengths so their computed
+ * value resolves to concrete px instead of an unevaluated calc() token stream.
+ * Sizes come ONLY from this scale — never hand-code a font-size. */
+@property --fs-2xs{syntax:"<length>";inherits:true;initial-value:10px}
+@property --fs-xs{syntax:"<length>";inherits:true;initial-value:11px}
+@property --fs-sm{syntax:"<length>";inherits:true;initial-value:12px}
+@property --fs-md{syntax:"<length>";inherits:true;initial-value:13px}
+@property --fs-lg{syntax:"<length>";inherits:true;initial-value:14px}
+@property --fs-xl{syntax:"<length>";inherits:true;initial-value:16px}
+@property --fs-2xl{syntax:"<length>";inherits:true;initial-value:20px}
+@property --fs-display{syntax:"<length>";inherits:true;initial-value:30px}
+
+:root{
+  /* Families. Sans is the voice; serif for headings/display moments only;
+   * mono only for code and technical identifiers. */
+  --font-sans:"ABC Diatype",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --font-serif:"Martina Plantijn","Iowan Old Style",Georgia,serif;
+  --font-mono:"Berkeley Mono","SFMono-Regular",Consolas,"Liberation Mono",monospace;
+
+  /* Global text-size multiplier (Appearance > Text size overrides this on
+   * <html>). Every --fs-* below is base * --font-scale. Line-heights are
+   * unitless and control heights stay fixed, so text grows within the chrome. */
+  --font-scale:1; /* @kind other */
+
+  --fs-2xs:calc(10px * var(--font-scale));
+  --fs-xs:calc(11px * var(--font-scale));
+  --fs-sm:calc(12px * var(--font-scale));
+  --fs-md:calc(13px * var(--font-scale));
+  --fs-lg:calc(14px * var(--font-scale));
+  --fs-xl:calc(16px * var(--font-scale));
+  --fs-2xl:calc(20px * var(--font-scale));
+  --fs-display:calc(30px * var(--font-scale));
+
+  /* The ONLY non-400 weight. Raw 500/700 lie: the family has two faces. */
+  --fw-medium:600; /* @kind other */
+
+  /* Semantic type aliases (role -> token), from the heading mapping table. */
+  --text-body:var(--fs-md);
+  --text-support:var(--fs-sm);
+  --text-label:var(--fs-xs);
+  --text-micro:var(--fs-2xs);
+  --text-row-title:var(--fs-lg);
+  --text-view-title:var(--fs-xl);
+  --text-heading:var(--fs-2xl);
+  --text-display:var(--fs-display);
+  --font-display:var(--font-serif);
+  --font-body:var(--font-sans);
+  --font-code:var(--font-mono);
+}
