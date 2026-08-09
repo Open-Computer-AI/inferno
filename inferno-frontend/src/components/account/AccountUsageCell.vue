@@ -1,5 +1,5 @@
 <template>
-  <div ref="rootRef" v-if="showUsageWindows">
+  <div ref="rootRef" v-if="showUsageWindows" class="uc">
     <!-- Anthropic OAuth and Setup Token accounts: fetch real usage data -->
     <template
       v-if="
@@ -7,136 +7,115 @@
         (account.type === 'oauth' || account.type === 'setup-token')
       "
     >
-      <!-- Loading state -->
-      <div v-if="loading" class="space-y-1.5">
-        <!-- OAuth: 3 rows, Setup Token: 1 row -->
-        <div class="flex items-center gap-1">
-          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-          <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
-          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-        </div>
-        <template v-if="account.type === 'oauth'">
-          <div class="flex items-center gap-1">
-            <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-            <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
-            <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-          </div>
-          <div class="flex items-center gap-1">
-            <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-            <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
-            <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
+      <div v-if="loading" class="uc-skel">
+        <span class="uc-skel__label" />
+        <span class="uc-skel__bar" />
+      </div>
+
+      <div v-else-if="error" class="uc-error">{{ error }}</div>
+
+      <div v-else-if="usageInfo" class="uc-body">
+        <div v-if="usageInfo.error" class="uc-inline-warn" :title="usageInfo.error">{{ usageInfo.error }}</div>
+
+        <template v-if="primaryWindow">
+          <CapacityBar
+            size="sm"
+            :percent="primaryWindow.percent"
+            :label="primaryWindow.label"
+            :trailing="pctLabel(primaryWindow.percent)"
+          />
+          <button
+            v-if="otherWindows.length"
+            type="button"
+            class="uc-expand"
+            :aria-expanded="expanded"
+            @click="expanded = !expanded"
+          >
+            <i
+              class="hgi-stroke hgi-arrow-down-01 uc-expand__chevron"
+              :class="{ 'uc-expand__chevron--open': expanded }"
+              aria-hidden="true"
+              style="font-size: 9px; /* june-lint-disable ground-rule-4: icon glyph */"
+            />
+            {{ expanded ? t('admin.accounts.usageWindow.hideWindows') : t('admin.accounts.usageWindow.moreWindows', { count: otherWindows.length }) }}
+          </button>
+          <div v-if="expanded" class="uc-expandlist">
+            <CapacityBar
+              v-for="w in otherWindows"
+              :key="w.key"
+              size="sm"
+              :percent="w.percent"
+              :label="w.label"
+              :trailing="pctLabel(w.percent)"
+            >
+              {{ resetsLabel(w.resetsAt, w.percent) }}
+            </CapacityBar>
           </div>
         </template>
-      </div>
+        <div v-else class="uc-muted">-</div>
 
-      <!-- Error state -->
-      <div v-else-if="error" class="text-xs text-red-500">
-        {{ error }}
-      </div>
-
-      <!-- Usage data -->
-      <div v-else-if="usageInfo" class="space-y-1">
-        <!-- API error (degraded response) -->
-        <div v-if="usageInfo.error" class="text-xs text-amber-600 dark:text-amber-400 truncate max-w-[200px]" :title="usageInfo.error">
-          {{ usageInfo.error }}
-        </div>
-        <!-- 5h Window -->
-        <UsageProgressBar
-          v-if="usageInfo.five_hour"
-          label="5h"
-          :utilization="usageInfo.five_hour.utilization"
-          :resets-at="usageInfo.five_hour.resets_at"
-          :window-stats="usageInfo.five_hour.window_stats"
-          color="indigo"
-        />
-
-        <!-- 7d Window (OAuth only) -->
-        <UsageProgressBar
-          v-if="usageInfo.seven_day"
-          label="7d"
-          :utilization="usageInfo.seven_day.utilization"
-          :resets-at="usageInfo.seven_day.resets_at"
-          color="emerald"
-        />
-
-        <!-- 7d Sonnet Window (OAuth only) -->
-        <UsageProgressBar
-          v-if="usageInfo.seven_day_sonnet"
-          label="7d S"
-          :utilization="usageInfo.seven_day_sonnet.utilization"
-          :resets-at="usageInfo.seven_day_sonnet.resets_at"
-          color="purple"
-        />
-
-        <!-- 7d Fable Window (7d_oi) -->
-        <UsageProgressBar
-          v-if="usageInfo.seven_day_fable"
-          label="7d F"
-          :utilization="usageInfo.seven_day_fable.utilization"
-          :resets-at="usageInfo.seven_day_fable.resets_at"
-          color="amber"
-        />
-
-        <!-- Passive sampling label + active query button -->
-        <div class="flex items-center gap-1.5 mt-0.5">
-          <span
-            v-if="usageInfo.source === 'passive'"
-            class="text-[9px] text-gray-400 dark:text-gray-500 italic"
-          >
+        <div class="uc-actionrow">
+          <span v-if="usageInfo.source === 'passive'" class="uc-hint">
             {{ t('admin.accounts.usageWindow.passiveSampled') }}
           </span>
           <button
             type="button"
-            class="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[9px] font-medium text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-colors"
+            class="uc-linkbtn"
             :disabled="activeQueryLoading"
             @click="loadActiveUsage"
           >
-            <svg
-              class="h-2.5 w-2.5"
-              :class="{ 'animate-spin': activeQueryLoading }"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
+            <i
+              class="hgi-stroke hgi-refresh-01"
+              :class="{ 's2a-spinner': activeQueryLoading }"
+              aria-hidden="true"
+              style="font-size: 10px; /* june-lint-disable ground-rule-4: icon glyph */"
+            />
             {{ t('admin.accounts.usageWindow.activeQuery') }}
           </button>
         </div>
       </div>
 
       <!-- No data yet -->
-      <div v-else class="space-y-1">
-        <div class="text-xs text-gray-400">-</div>
-      </div>
+      <div v-else class="uc-muted">-</div>
     </template>
 
     <!-- OpenAI OAuth accounts: single source from /usage API -->
     <template v-else-if="account.platform === 'openai' && account.type === 'oauth'">
-      <div v-if="hasOpenAIUsageFallback" class="space-y-1">
-        <UsageProgressBar
-          v-if="usageInfo?.five_hour"
-          label="5h"
-          :utilization="usageInfo.five_hour.utilization"
-          :resets-at="usageInfo.five_hour.resets_at"
-          :window-stats="usageInfo.five_hour.window_stats"
-          :show-now-when-idle="true"
-          color="indigo"
+      <div v-if="hasOpenAIUsageFallback && primaryWindow" class="uc-body">
+        <CapacityBar
+          size="sm"
+          :percent="primaryWindow.percent"
+          :label="primaryWindow.label"
+          :trailing="pctLabel(primaryWindow.percent)"
         />
-        <UsageProgressBar
-          v-if="usageInfo?.seven_day"
-          label="7d"
-          :utilization="usageInfo.seven_day.utilization"
-          :resets-at="usageInfo.seven_day.resets_at"
-          :window-stats="usageInfo.seven_day.window_stats"
-          :show-now-when-idle="true"
-          color="emerald"
-        />
+        <button
+          v-if="otherWindows.length"
+          type="button"
+          class="uc-expand"
+          :aria-expanded="expanded"
+          @click="expanded = !expanded"
+        >
+          <i
+            class="hgi-stroke hgi-arrow-down-01 uc-expand__chevron"
+            :class="{ 'uc-expand__chevron--open': expanded }"
+            aria-hidden="true"
+            style="font-size: 9px; /* june-lint-disable ground-rule-4: icon glyph */"
+          />
+          {{ expanded ? t('admin.accounts.usageWindow.hideWindows') : t('admin.accounts.usageWindow.moreWindows', { count: otherWindows.length }) }}
+        </button>
+        <div v-if="expanded" class="uc-expandlist">
+          <CapacityBar
+            v-for="w in otherWindows"
+            :key="w.key"
+            size="sm"
+            :percent="w.percent"
+            :label="w.label"
+            :trailing="pctLabel(w.percent)"
+          >
+            {{ resetsLabel(w.resetsAt, w.percent) }}
+          </CapacityBar>
+        </div>
+
         <!--
           Upstream codex /wham/usage quota query + reset. The local active-sampling
           refresh button is rendered via the pre-actions slot so the user sees a
@@ -146,47 +125,31 @@
           <template #pre-actions>
             <button
               type="button"
-              class="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+              class="uc-linkbtn"
               :disabled="activeQueryLoading"
               @click="loadActiveUsage"
             >
-              <svg
-                class="h-2.5 w-2.5"
-                :class="{ 'animate-spin': activeQueryLoading }"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                />
-              </svg>
+              <i
+                class="hgi-stroke hgi-refresh-01"
+                :class="{ 's2a-spinner': activeQueryLoading }"
+                aria-hidden="true"
+                style="font-size: 10px; /* june-lint-disable ground-rule-4: icon glyph */"
+              />
               {{ t('admin.accounts.usageWindow.activeQuery') }}
             </button>
           </template>
         </OpenAIQuotaResetCell>
       </div>
-      <div v-else-if="loading" class="space-y-1.5">
-        <div class="flex items-center gap-1">
-          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-          <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
-          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-        </div>
-        <div class="flex items-center gap-1">
-          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-          <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
-          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-        </div>
+      <div v-else-if="loading" class="uc-skel">
+        <span class="uc-skel__label" />
+        <span class="uc-skel__bar" />
       </div>
-      <div v-else>
-        <div class="text-xs text-gray-400">-</div>
+      <div v-else class="uc-body">
+        <div class="uc-muted">-</div>
         <!-- Always allow on-demand upstream quota query, even before local data exists. -->
         <OpenAIQuotaResetCell
           :account="account"
-          class="mt-1"
+          class="uc-mt"
           @account-updated="handleQuotaResetAccountUpdated"
         />
       </div>
@@ -194,63 +157,36 @@
 
     <!-- Antigravity OAuth accounts: fetch usage from API -->
     <template v-else-if="account.platform === 'antigravity' && account.type === 'oauth'">
-      <!-- 账户类型徽章 -->
-      <div v-if="antigravityTierLabel" class="mb-1 flex items-center gap-1">
-        <span
-          :class="[
-            'inline-block rounded px-1.5 py-0.5 text-[10px] font-medium',
-            antigravityTierClass
-          ]"
-        >
-          {{ antigravityTierLabel }}
-        </span>
-        <!-- 不合格账户警告图标 -->
-        <span
-          v-if="hasIneligibleTiers"
-          class="group relative cursor-help"
-        >
-          <svg
-            class="h-3.5 w-3.5 text-red-500"
-            fill="currentColor"
-            viewBox="0 0 20 20"
-          >
-            <path
-              fill-rule="evenodd"
-              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-              clip-rule="evenodd"
-            />
-          </svg>
-          <span
-            class="pointer-events-none absolute left-0 top-full z-50 mt-1 w-80 whitespace-normal break-words rounded bg-gray-900 px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:bg-gray-700"
-          >
-            {{ t('admin.accounts.ineligibleWarning') }}
-          </span>
+      <!-- Account tier badge -->
+      <div v-if="antigravityTierLabel" class="uc-badgerow">
+        <span class="uc-badge">{{ antigravityTierLabel }}</span>
+        <!-- Ineligible-account warning -->
+        <span v-if="hasIneligibleTiers" class="uc-tip" tabindex="0">
+          <i
+            class="hgi-stroke hgi-alert-circle"
+            aria-hidden="true"
+            style="font-size: 13px; color: var(--destructive); /* june-lint-disable ground-rule-4: icon glyph */"
+          />
+          <span class="uc-tip__bubble uc-tip__bubble--wide">{{ t('admin.accounts.ineligibleWarning') }}</span>
         </span>
       </div>
 
       <!-- Forbidden state (403) -->
-      <div v-if="isForbidden" class="space-y-1">
-        <span
-          :class="[
-            'inline-block rounded px-1.5 py-0.5 text-[10px] font-medium',
-            forbiddenBadgeClass
-          ]"
-        >
-          {{ forbiddenLabel }}
-        </span>
-        <div v-if="validationURL" class="flex items-center gap-1">
+      <div v-if="isForbidden" class="uc-body">
+        <span class="uc-badge" :data-tone="forbiddenTone">{{ forbiddenLabel }}</span>
+        <div v-if="validationURL" class="uc-actionrow">
           <a
             :href="validationURL"
             target="_blank"
             rel="noopener noreferrer"
-            class="text-[10px] text-blue-600 hover:text-blue-800 hover:underline dark:text-blue-400 dark:hover:text-blue-300"
+            class="uc-linkbtn"
             :title="t('admin.accounts.openVerification')"
           >
             {{ t('admin.accounts.openVerification') }}
           </a>
           <button
             type="button"
-            class="text-[10px] text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            class="uc-linkbtn"
             :title="t('admin.accounts.copyLink')"
             @click="copyValidationURL"
           >
@@ -260,273 +196,221 @@
       </div>
 
       <!-- Needs reauth (401) -->
-      <div v-else-if="needsReauth" class="space-y-1">
-        <span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
-          {{ t('admin.accounts.needsReauth') }}
-        </span>
+      <div v-else-if="needsReauth" class="uc-body">
+        <span class="uc-badge" data-tone="attn">{{ t('admin.accounts.needsReauth') }}</span>
       </div>
 
       <!-- Degraded error (non-403, non-401) -->
-      <div v-else-if="usageInfo?.error" class="space-y-1">
-        <span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-          {{ usageErrorLabel }}
-        </span>
+      <div v-else-if="usageInfo?.error" class="uc-body">
+        <span class="uc-badge" data-tone="attn">{{ usageErrorLabel }}</span>
       </div>
 
       <!-- Loading state -->
-      <div v-else-if="loading" class="space-y-1.5">
-        <div class="flex items-center gap-1">
-          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-          <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
-          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-        </div>
+      <div v-else-if="loading" class="uc-skel">
+        <span class="uc-skel__label" />
+        <span class="uc-skel__bar" />
       </div>
 
       <!-- Error state -->
-      <div v-else-if="error" class="text-xs text-red-500">
-        {{ error }}
-      </div>
+      <div v-else-if="error" class="uc-error">{{ error }}</div>
 
       <!-- Usage data from API -->
-      <div v-else-if="hasAntigravityQuotaFromAPI" class="space-y-1">
-        <!-- Gemini 3 Pro -->
-        <UsageProgressBar
-          v-if="antigravity3ProUsageFromAPI !== null"
-          :label="t('admin.accounts.usageWindow.gemini3Pro')"
-          :utilization="antigravity3ProUsageFromAPI.utilization"
-          :resets-at="antigravity3ProUsageFromAPI.resetTime"
-          color="indigo"
-        />
-
-        <!-- Gemini 3 Flash -->
-        <UsageProgressBar
-          v-if="antigravity3FlashUsageFromAPI !== null"
-          :label="t('admin.accounts.usageWindow.gemini3Flash')"
-          :utilization="antigravity3FlashUsageFromAPI.utilization"
-          :resets-at="antigravity3FlashUsageFromAPI.resetTime"
-          color="emerald"
-        />
-
-        <!-- Gemini 3 Image -->
-        <UsageProgressBar
-          v-if="antigravity3ImageUsageFromAPI !== null"
-          :label="t('admin.accounts.usageWindow.gemini3Image')"
-          :utilization="antigravity3ImageUsageFromAPI.utilization"
-          :resets-at="antigravity3ImageUsageFromAPI.resetTime"
-          color="purple"
-        />
-
-        <!-- Claude -->
-        <UsageProgressBar
-          v-if="antigravityClaudeUsageFromAPI !== null"
-          :label="t('admin.accounts.usageWindow.claude')"
-          :utilization="antigravityClaudeUsageFromAPI.utilization"
-          :resets-at="antigravityClaudeUsageFromAPI.resetTime"
-          color="amber"
-        />
-
-        <div v-if="aiCreditsDisplay" class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
-          💳 {{ t('admin.accounts.aiCreditsBalance') }}: {{ aiCreditsDisplay }}
+      <div v-else-if="hasAntigravityQuotaFromAPI" class="uc-body">
+        <template v-if="primaryWindow">
+          <CapacityBar
+            size="sm"
+            :percent="primaryWindow.percent"
+            :label="primaryWindow.label"
+            :trailing="pctLabel(primaryWindow.percent)"
+          />
+          <button
+            v-if="otherWindows.length"
+            type="button"
+            class="uc-expand"
+            :aria-expanded="expanded"
+            @click="expanded = !expanded"
+          >
+            <i
+              class="hgi-stroke hgi-arrow-down-01 uc-expand__chevron"
+              :class="{ 'uc-expand__chevron--open': expanded }"
+              aria-hidden="true"
+              style="font-size: 9px; /* june-lint-disable ground-rule-4: icon glyph */"
+            />
+            {{ expanded ? t('admin.accounts.usageWindow.hideWindows') : t('admin.accounts.usageWindow.moreWindows', { count: otherWindows.length }) }}
+          </button>
+          <div v-if="expanded" class="uc-expandlist">
+            <CapacityBar
+              v-for="w in otherWindows"
+              :key="w.key"
+              size="sm"
+              :percent="w.percent"
+              :label="w.label"
+              :trailing="pctLabel(w.percent)"
+            >
+              {{ resetsLabel(w.resetsAt, w.percent) }}
+            </CapacityBar>
+          </div>
+        </template>
+        <div v-if="aiCreditsDisplay" class="uc-muted uc-mt">
+          {{ t('admin.accounts.aiCreditsBalance') }}: {{ aiCreditsDisplay }}
         </div>
       </div>
-      <div v-else-if="aiCreditsDisplay" class="text-[10px] text-gray-500 dark:text-gray-400">
-        💳 {{ t('admin.accounts.aiCreditsBalance') }}: {{ aiCreditsDisplay }}
+      <div v-else-if="aiCreditsDisplay" class="uc-muted">
+        {{ t('admin.accounts.aiCreditsBalance') }}: {{ aiCreditsDisplay }}
       </div>
-      <div v-else class="text-xs text-gray-400">-</div>
+      <div v-else class="uc-muted">-</div>
     </template>
 
     <!-- Grok OAuth accounts: passive xAI quota headers + local Sub2API usage -->
     <template v-else-if="account.platform === 'grok' && account.type === 'oauth'">
-      <div v-if="loading" class="space-y-1.5">
-        <div class="flex items-center gap-1">
-          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-          <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
-          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-        </div>
+      <div v-if="loading" class="uc-skel">
+        <span class="uc-skel__label" />
+        <span class="uc-skel__bar" />
       </div>
-      <div v-else-if="error" class="text-xs text-red-500">
-        {{ error }}
+      <div v-else-if="error" class="uc-error">{{ error }}</div>
+      <div v-else-if="needsReauth" class="uc-body">
+        <span class="uc-badge" data-tone="attn">{{ t('admin.accounts.needsReauth') }}</span>
       </div>
-      <div v-else-if="needsReauth" class="space-y-1">
-        <span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
-          {{ t('admin.accounts.needsReauth') }}
-        </span>
+      <div v-else-if="isForbidden" class="uc-body">
+        <span class="uc-badge" data-tone="danger">{{ usageInfo?.grok_entitlement_status || t('admin.accounts.forbidden') }}</span>
       </div>
-      <div v-else-if="isForbidden" class="space-y-1">
-        <span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
-          {{ usageInfo?.grok_entitlement_status || t('admin.accounts.forbidden') }}
-        </span>
-      </div>
-      <div v-else-if="usageInfo" class="space-y-1">
-        <!-- Free: only rolling 24h soft-gate bar. Paid: 7d + 30d + prepaid money. -->
-        <template v-if="grokIsFree">
-          <UsageProgressBar
-            v-if="grokFreeTokenBar"
-            label="24h"
-            :title="t('admin.accounts.usageWindow.grokFreeQuota24hHint', { limit: formatCompactNumber(grokFreeTokenBar.limit) })"
-            :utilization="grokFreeTokenBar.utilization"
-            :show-now-when-idle="true"
-            color="emerald"
+      <div v-else-if="usageInfo" class="uc-body">
+        <!-- Free: only rolling 24h soft-gate bar. Paid: 7d + 30d billing. -->
+        <template v-if="primaryWindow">
+          <CapacityBar
+            size="sm"
+            :percent="primaryWindow.percent"
+            :label="primaryWindow.label"
+            :trailing="pctLabel(primaryWindow.percent)"
           />
-          <div v-else-if="grokQuotaUnknown" class="text-[10px] text-gray-500 dark:text-gray-400">
-            {{ grokQuotaUnknownLabel }}
-          </div>
-        </template>
-        <template v-else>
-          <UsageProgressBar
-            v-if="grokWeeklyBillingBar"
-            label="7d"
-            :utilization="grokWeeklyBillingBar.utilization"
-            :resets-at="grokWeeklyBillingBar.resetsAt"
-            :show-now-when-idle="true"
-            color="indigo"
-          />
-          <UsageProgressBar
-            v-if="grokMonthlyBillingBar"
-            label="30d"
-            :utilization="grokMonthlyBillingBar.utilization"
-            :resets-at="grokMonthlyBillingBar.resetsAt"
-            :show-now-when-idle="true"
-            color="indigo"
-          />
-          <div
-            v-if="grokPrepaidMoneyLine"
-            class="flex flex-wrap items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400"
+          <button
+            v-if="otherWindows.length"
+            type="button"
+            class="uc-expand"
+            :aria-expanded="expanded"
+            @click="expanded = !expanded"
           >
-            <span
-              class="rounded bg-emerald-50 px-1 py-0.5 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
-              :title="t('admin.accounts.usageWindow.grokPrepaid')"
+            <i
+              class="hgi-stroke hgi-arrow-down-01 uc-expand__chevron"
+              :class="{ 'uc-expand__chevron--open': expanded }"
+              aria-hidden="true"
+              style="font-size: 9px; /* june-lint-disable ground-rule-4: icon glyph */"
+            />
+            {{ expanded ? t('admin.accounts.usageWindow.hideWindows') : t('admin.accounts.usageWindow.moreWindows', { count: otherWindows.length }) }}
+          </button>
+          <div v-if="expanded" class="uc-expandlist">
+            <CapacityBar
+              v-for="w in otherWindows"
+              :key="w.key"
+              size="sm"
+              :percent="w.percent"
+              :label="w.label"
+              :trailing="pctLabel(w.percent)"
             >
-              {{ t('admin.accounts.usageWindow.grokPrepaid') }} ${{ grokPrepaidMoneyLine.prepaid }}
-            </span>
-            <span :title="t('admin.accounts.usageWindow.grokMonthlyLimit')">
-              {{ t('admin.accounts.usageWindow.grokUsed') }}
-              {{ grokPrepaidMoneyLine.used }}/{{ grokPrepaidMoneyLine.limit }}
-            </span>
-          </div>
-          <div v-if="grokQuotaUnknown" class="text-[10px] text-gray-500 dark:text-gray-400">
-            {{ grokQuotaUnknownLabel }}
+              {{ resetsLabel(w.resetsAt, w.percent) }}
+            </CapacityBar>
           </div>
         </template>
-        <div v-if="usageInfo.error" class="truncate text-xs text-amber-600 dark:text-amber-400 max-w-[200px]" :title="usageInfo.error">
-          {{ usageErrorLabel }}
+        <div v-else-if="grokQuotaUnknown" class="uc-muted">{{ grokQuotaUnknownLabel }}</div>
+        <div v-else class="uc-muted">-</div>
+
+        <div v-if="grokPrepaidMoneyLine" class="uc-moneyrow">
+          <span class="uc-chip uc-chip--brand" :title="t('admin.accounts.usageWindow.grokPrepaid')">
+            {{ t('admin.accounts.usageWindow.grokPrepaid') }} ${{ grokPrepaidMoneyLine.prepaid }}
+          </span>
+          <span class="uc-hint" :title="t('admin.accounts.usageWindow.grokMonthlyLimit')">
+            {{ t('admin.accounts.usageWindow.grokUsed') }}
+            {{ grokPrepaidMoneyLine.used }}/{{ grokPrepaidMoneyLine.limit }}
+          </span>
         </div>
-        <div v-if="grokRetryAfterLabel" class="text-[10px] text-amber-600 dark:text-amber-400">
+        <div v-if="usageInfo.error" class="uc-inline-warn" :title="usageInfo.error">{{ usageErrorLabel }}</div>
+        <div v-if="grokRetryAfterLabel" class="uc-inline-warn">
           {{ t('admin.accounts.usageWindow.grokRetryAfter', { time: grokRetryAfterLabel }) }}
         </div>
-        <GrokQuotaProbeCell :account="account" compact @probed="handleGrokProbed" />
       </div>
-      <div v-else class="space-y-1">
-        <div class="text-xs text-gray-400">-</div>
-        <GrokQuotaProbeCell :account="account" compact @probed="handleGrokProbed" />
-      </div>
+      <div v-else class="uc-muted">-</div>
     </template>
 
     <!-- Gemini platform: show quota + local usage window -->
     <template v-else-if="account.platform === 'gemini'">
       <!-- Auth Type + Tier Badge (first line) -->
-      <div v-if="geminiAuthTypeLabel" class="mb-1 flex items-center gap-1">
-        <span
-          :class="[
-            'inline-block rounded px-1.5 py-0.5 text-[10px] font-medium',
-            geminiTierClass
-          ]"
-        >
-          {{ geminiAuthTypeLabel }}
-        </span>
+      <div v-if="geminiAuthTypeLabel" class="uc-badgerow">
+        <span class="uc-badge">{{ geminiAuthTypeLabel }}</span>
         <!-- Help icon -->
-        <span
-          class="group relative cursor-help"
-        >
-          <svg
-            class="h-3.5 w-3.5 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-            fill="currentColor"
-            viewBox="0 0 20 20"
-          >
-            <path
-              fill-rule="evenodd"
-              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z"
-              clip-rule="evenodd"
-            />
-          </svg>
-          <span
-            class="pointer-events-none absolute left-0 top-full z-50 mt-1 w-80 whitespace-normal break-words rounded bg-gray-900 px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:bg-gray-700"
-          >
-            <div class="font-semibold mb-1">{{ t('admin.accounts.gemini.quotaPolicy.title') }}</div>
-            <div class="mb-2 text-gray-300">{{ t('admin.accounts.gemini.quotaPolicy.note') }}</div>
-            <div class="space-y-1">
-              <div><strong>{{ geminiQuotaPolicyChannel }}:</strong></div>
-              <div class="pl-2">• {{ geminiQuotaPolicyLimits }}</div>
-              <div class="mt-2">
-                <a :href="geminiQuotaPolicyDocsUrl" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline">
-                  {{ t('admin.accounts.gemini.quotaPolicy.columns.docs') }} →
-                </a>
-              </div>
-            </div>
+        <span class="uc-tip" tabindex="0">
+          <i
+            class="hgi-stroke hgi-help-circle"
+            aria-hidden="true"
+            style="font-size: 13px; /* june-lint-disable ground-rule-4: icon glyph */"
+          />
+          <span class="uc-tip__bubble uc-tip__bubble--wide">
+            <span class="uc-tip__title">{{ t('admin.accounts.gemini.quotaPolicy.title') }}</span>
+            <span class="uc-tip__note">{{ t('admin.accounts.gemini.quotaPolicy.note') }}</span>
+            <span class="uc-tip__row"><strong>{{ geminiQuotaPolicyChannel }}</strong></span>
+            <span class="uc-tip__row">{{ geminiQuotaPolicyLimits }}</span>
+            <a :href="geminiQuotaPolicyDocsUrl" target="_blank" rel="noopener noreferrer" class="uc-tip__link">
+              {{ t('admin.accounts.gemini.quotaPolicy.columns.docs') }}
+            </a>
           </span>
         </span>
       </div>
 
       <!-- Usage data or unlimited flow -->
-      <div class="space-y-1">
-        <div
-          v-if="showGeminiTodayStats && todayStats"
-          class="mb-0.5 flex items-center"
-        >
-          <div class="flex items-center gap-1.5 text-[9px] text-gray-500 dark:text-gray-400">
-            <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
-              {{ formatKeyRequests }} req
-            </span>
-            <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
-              {{ formatKeyTokens }}
-            </span>
-            <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800" :title="t('usage.accountBilled')">
-              A ${{ formatKeyCost }}
-            </span>
-            <span
-              v-if="todayStats.user_cost != null"
-              class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800"
-              :title="t('usage.userBilled')"
-            >
-              U ${{ formatKeyUserCost }}
-            </span>
-          </div>
+      <div class="uc-body">
+        <div v-if="showGeminiTodayStats && todayStats" class="uc-chips">
+          <span class="uc-chip">{{ formatKeyRequests }} req</span>
+          <span class="uc-chip">{{ formatKeyTokens }}</span>
+          <span class="uc-chip" :title="t('usage.accountBilled')">A ${{ formatKeyCost }}</span>
+          <span v-if="todayStats.user_cost != null" class="uc-chip" :title="t('usage.userBilled')">
+            U ${{ formatKeyUserCost }}
+          </span>
         </div>
-        <div
-          v-else-if="showGeminiTodayStats && todayStatsLoading"
-          class="mb-0.5 flex items-center gap-1"
-        >
-          <div class="h-3 w-10 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-          <div class="h-3 w-8 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-          <div class="h-3 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
+        <div v-else-if="showGeminiTodayStats && todayStatsLoading" class="uc-chips-skel" />
+
+        <div v-if="loading" class="uc-skel">
+          <span class="uc-skel__label" />
+          <span class="uc-skel__bar" />
         </div>
-        <div v-if="loading" class="space-y-1">
-          <div class="flex items-center gap-1">
-            <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-            <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
-            <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-          </div>
-        </div>
-        <div v-else-if="error" class="text-xs text-red-500">
-          {{ error }}
-        </div>
-        <!-- Gemini: show daily usage bars when available -->
-        <div v-else-if="geminiUsageAvailable" class="space-y-1">
-          <UsageProgressBar
-            v-for="bar in geminiUsageBars"
-            :key="bar.key"
-            :label="bar.label"
-            :utilization="bar.utilization"
-            :resets-at="bar.resetsAt"
-            :window-stats="bar.windowStats"
-            :color="bar.color"
+        <div v-else-if="error" class="uc-error">{{ error }}</div>
+        <!-- Gemini: show daily usage bar(s) when available -->
+        <template v-else-if="geminiUsageAvailable && primaryWindow">
+          <CapacityBar
+            size="sm"
+            :percent="primaryWindow.percent"
+            :label="primaryWindow.label"
+            :trailing="pctLabel(primaryWindow.percent)"
           />
-          <p class="mt-1 text-[9px] leading-tight text-gray-400 dark:text-gray-500 italic">
-            * {{ t('admin.accounts.gemini.quotaPolicy.simulatedNote') || 'Simulated quota' }}
-          </p>
-        </div>
+          <button
+            v-if="otherWindows.length"
+            type="button"
+            class="uc-expand"
+            :aria-expanded="expanded"
+            @click="expanded = !expanded"
+          >
+            <i
+              class="hgi-stroke hgi-arrow-down-01 uc-expand__chevron"
+              :class="{ 'uc-expand__chevron--open': expanded }"
+              aria-hidden="true"
+              style="font-size: 9px; /* june-lint-disable ground-rule-4: icon glyph */"
+            />
+            {{ expanded ? t('admin.accounts.usageWindow.hideWindows') : t('admin.accounts.usageWindow.moreWindows', { count: otherWindows.length }) }}
+          </button>
+          <div v-if="expanded" class="uc-expandlist">
+            <CapacityBar
+              v-for="w in otherWindows"
+              :key="w.key"
+              size="sm"
+              :percent="w.percent"
+              :label="w.label"
+              :trailing="pctLabel(w.percent)"
+            >
+              {{ resetsLabel(w.resetsAt, w.percent) }}
+            </CapacityBar>
+          </div>
+          <p class="uc-footnote">* {{ t('admin.accounts.gemini.quotaPolicy.simulatedNote') || 'Simulated quota' }}</p>
+        </template>
         <!-- AI Studio Client OAuth: show unlimited flow (no usage tracking) -->
-        <div v-else class="text-xs text-gray-400">
+        <div v-else class="uc-muted">
           {{ t('admin.accounts.gemini.rateLimit.unlimited') }}
         </div>
       </div>
@@ -534,97 +418,126 @@
 
     <!-- Other accounts: no usage window -->
     <template v-else>
-      <div class="text-xs text-gray-400">-</div>
+      <div class="uc-muted">-</div>
     </template>
   </div>
 
   <!-- Non-OAuth/Setup-Token accounts -->
-  <div ref="rootRef" v-else>
+  <div ref="rootRef" v-else class="uc">
     <!-- Gemini API Key accounts: show quota info -->
     <AccountQuotaInfo v-if="account.platform === 'gemini'" :account="account" />
     <!-- Key/Bedrock accounts: show today stats + optional quota bars -->
-    <div v-else class="space-y-1">
+    <div v-else class="uc-body">
       <OllamaCloudUsageCell
         v-if="account.ollama_cloud_usage?.eligible"
         :account="account"
       />
       <!-- Today stats row (requests, tokens, cost, user_cost) -->
-      <div
-        v-if="todayStats"
-        class="mb-0.5 flex items-center"
-      >
-        <div class="flex items-center gap-1.5 text-[9px] text-gray-500 dark:text-gray-400">
-          <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
-            {{ formatKeyRequests }} req
-          </span>
-          <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
-            {{ formatKeyTokens }}
-          </span>
-          <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800" :title="t('usage.accountBilled')">
-            A ${{ formatKeyCost }}
-          </span>
-          <span
-            v-if="todayStats.user_cost != null"
-            class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800"
-            :title="t('usage.userBilled')"
-          >
-            U ${{ formatKeyUserCost }}
-          </span>
-        </div>
+      <div v-if="todayStats" class="uc-chips">
+        <span class="uc-chip">{{ formatKeyRequests }} req</span>
+        <span class="uc-chip">{{ formatKeyTokens }}</span>
+        <span class="uc-chip" :title="t('usage.accountBilled')">A ${{ formatKeyCost }}</span>
+        <span v-if="todayStats.user_cost != null" class="uc-chip" :title="t('usage.userBilled')">
+          U ${{ formatKeyUserCost }}
+        </span>
       </div>
       <!-- Loading skeleton for today stats -->
-      <div
-        v-else-if="todayStatsLoading"
-        class="mb-0.5 flex items-center gap-1"
-      >
-        <div class="h-3 w-10 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-        <div class="h-3 w-8 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-        <div class="h-3 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-      </div>
+      <div v-else-if="todayStatsLoading" class="uc-chips-skel" />
 
-      <!-- API Key accounts with quota limits: show progress bars -->
-      <UsageProgressBar
-        v-if="quotaDailyBar"
-        label="1d"
-        :utilization="quotaDailyBar.utilization"
-        :resets-at="quotaDailyBar.resetsAt"
-        color="indigo"
-      />
-      <UsageProgressBar
-        v-if="quotaWeeklyBar"
-        label="7d"
-        :utilization="quotaWeeklyBar.utilization"
-        :resets-at="quotaWeeklyBar.resetsAt"
-        color="emerald"
-      />
-      <UsageProgressBar
-        v-if="quotaTotalBar"
-        label="total"
-        :utilization="quotaTotalBar.utilization"
-        color="purple"
-      />
+      <!-- API Key accounts with quota limits: closest-limit bar + expansion -->
+      <template v-if="primaryWindow">
+        <CapacityBar
+          size="sm"
+          :percent="primaryWindow.percent"
+          :label="primaryWindow.label"
+          :trailing="pctLabel(primaryWindow.percent)"
+        />
+        <button
+          v-if="otherWindows.length"
+          type="button"
+          class="uc-expand"
+          :aria-expanded="expanded"
+          @click="expanded = !expanded"
+        >
+          <i
+            class="hgi-stroke hgi-arrow-down-01 uc-expand__chevron"
+            :class="{ 'uc-expand__chevron--open': expanded }"
+            aria-hidden="true"
+            style="font-size: 9px; /* june-lint-disable ground-rule-4: icon glyph */"
+          />
+          {{ expanded ? t('admin.accounts.usageWindow.hideWindows') : t('admin.accounts.usageWindow.moreWindows', { count: otherWindows.length }) }}
+        </button>
+        <div v-if="expanded" class="uc-expandlist">
+          <CapacityBar
+            v-for="w in otherWindows"
+            :key="w.key"
+            size="sm"
+            :percent="w.percent"
+            :label="w.label"
+            :trailing="pctLabel(w.percent)"
+          >
+            {{ resetsLabel(w.resetsAt, w.percent) }}
+          </CapacityBar>
+        </div>
+      </template>
 
       <!-- No data at all -->
       <div
         v-if="!todayStats && !todayStatsLoading && !hasApiKeyQuota && !account.ollama_cloud_usage?.eligible"
-        class="text-xs text-gray-400"
+        class="uc-muted"
       >-</div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+/**
+ * AccountUsageCell — part 08, section 02 ("the hardest cell in the
+ * product"). Implements the approved UX departure "one bar, with a window
+ * picker on the column" (part 08, "Three decisions, taken").
+ *
+ * Migration note from the prototype:
+ *   "The 1,599 lines are mostly derivation and they all stay. The change is
+ *    in the template: pick the maximum utilisation window, render one bar,
+ *    move the rest into the expansion... Delete the color field from the
+ *    bar objects."
+ *
+ * Every platform derivation below is unchanged from before this pass (the
+ * per-platform computed values that used to feed a stack of
+ * `UsageProgressBar`s). What changed is that they now all funnel into one
+ * normalized `UsageWindowBar[]` per platform, from which the template
+ * renders exactly one `CapacityBar` (sm, the 6px continuous fill, since a
+ * 36px table cell has no room for ticks) — the window closest to its limit
+ * — colour spent on risk via CapacityBar's own threshold, never on which
+ * window it is. Every other window is one click away in a local disclosure
+ * (`expanded`) rather than a table-owned row expansion: this file does not
+ * own DataTable, and DataTable.vue's virtualizer already remeasures a row
+ * when its rendered content grows (it hooks a ResizeObserver via
+ * `measureElement`), so a cell that grows its own height on expand works
+ * today without any DataTable change.
+ *
+ * A column-header window picker (pin the column to one window, e.g. "5
+ * hour", so every row shows that window and the column sorts by it) is a
+ * DataTable column-header concern, not this cell's — see `pinnedWindowKey`
+ * below and the build report for exactly what the header needs to pass in.
+ *
+ * GrokQuotaProbeCell no longer renders inside this cell: its probe is a
+ * real billable call to xAI, so per the same "three decisions" it becomes
+ * its own opt-in column, off by default, rather than an affordance offered
+ * on every visible Grok row. See the build report for what that column
+ * needs.
+ */
 import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch } from 'vue'
+import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type { Account, AccountUsageInfo, GeminiCredentials, WindowStats } from '@/types'
 import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
 import { formatCompactNumber } from '@/utils/format'
-import UsageProgressBar from './UsageProgressBar.vue'
+import CapacityBar from '@/components/common/CapacityBar.vue'
 import AccountQuotaInfo from './AccountQuotaInfo.vue'
 import OpenAIQuotaResetCell from './OpenAIQuotaResetCell.vue'
-import GrokQuotaProbeCell from './GrokQuotaProbeCell.vue'
 import OllamaCloudUsageCell from './OllamaCloudUsageCell.vue'
 
 // Module-level cache shared across all AccountUsageCell instances
@@ -643,6 +556,14 @@ const props = withDefaults(
     batchedUsageError?: string | null
     batchedUsageLoading?: boolean
     requestBatchedUsage?: ((account: Account, options?: { force?: boolean }) => void) | null
+    /**
+     * External override for which window the primary bar shows, keyed by
+     * the same `key` used in the expansion list (e.g. "five_hour"). Not
+     * used by any current caller: it exists so a future column-header
+     * picker can pin every row to one window without this cell changing.
+     * Falls back to "closest to its limit" when unset or not found.
+     */
+    pinnedWindowKey?: string | null
   }>(),
   {
     todayStats: null,
@@ -651,7 +572,8 @@ const props = withDefaults(
     batchedUsage: null,
     batchedUsageError: null,
     batchedUsageLoading: false,
-    requestBatchedUsage: null
+    requestBatchedUsage: null,
+    pinnedWindowKey: null
   }
 )
 
@@ -664,7 +586,10 @@ const { t } = useI18n()
 const desktopViewportQuery = '(min-width: 768px)'
 
 const unmounted = ref(false)
-onBeforeUnmount(() => { unmounted.value = true })
+onBeforeUnmount(() => {
+  unmounted.value = true
+  pauseExpandedClock()
+})
 
 const loading = ref(false)
 const activeQueryLoading = ref(false)
@@ -933,30 +858,6 @@ const geminiAuthTypeLabel = computed(() => {
   return geminiUserLevel.value ? `${geminiChannelShort.value} ${geminiUserLevel.value}` : geminiChannelShort.value
 })
 
-// Gemini 账户类型徽章样式（统一样式）
-const geminiTierClass = computed(() => {
-  // Use channel+level to choose a stable color without depending on raw tier_id variants.
-  const channel = geminiChannelShort.value
-  const level = geminiUserLevel.value
-
-  if (channel === 'client' || channel === 'ai studio') {
-    return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
-  }
-
-  if (channel === 'google one') {
-    if (level === 'ultra') return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
-    if (level === 'pro') return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
-    return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-  }
-
-  if (channel === 'gcp') {
-    if (level === 'enterprise') return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
-    return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
-  }
-
-  return ''
-})
-
 // Gemini 配额政策信息
 const geminiQuotaPolicyChannel = computed(() => {
   if (geminiOAuthType.value === 'google_one') {
@@ -1023,7 +924,6 @@ const geminiUsageBars = computed(() => {
     utilization: number
     resetsAt: string | null
     windowStats?: WindowStats | null
-    color: 'indigo' | 'emerald'
   }> = []
 
   if (geminiUsesSharedDaily.value) {
@@ -1031,11 +931,10 @@ const geminiUsageBars = computed(() => {
     if (sharedDaily) {
       bars.push({
         key: 'shared_daily',
-        label: '1d',
+        label: t('admin.accounts.usageWindow.oneDay'),
         utilization: sharedDaily.utilization,
         resetsAt: sharedDaily.resets_at,
-        windowStats: sharedDaily.window_stats,
-        color: 'indigo'
+        windowStats: sharedDaily.window_stats
       })
     }
     return bars
@@ -1045,23 +944,21 @@ const geminiUsageBars = computed(() => {
   if (pro) {
     bars.push({
       key: 'pro_daily',
-      label: 'pro',
+      label: t('admin.accounts.usageWindow.geminiProDaily'),
       utilization: pro.utilization,
       resetsAt: pro.resets_at,
-      windowStats: pro.window_stats,
-      color: 'indigo'
-      })
+      windowStats: pro.window_stats
+    })
   }
 
   const flash = usageInfo.value.gemini_flash_daily
   if (flash) {
     bars.push({
       key: 'flash_daily',
-      label: 'flash',
+      label: t('admin.accounts.usageWindow.geminiFlashDaily'),
       utilization: flash.utilization,
       resetsAt: flash.resets_at,
-      windowStats: flash.window_stats,
-      color: 'emerald'
+      windowStats: flash.window_stats
     })
   }
 
@@ -1210,20 +1107,6 @@ const antigravityTierLabel = computed(() => {
   }
 })
 
-// 账户类型徽章样式
-const antigravityTierClass = computed(() => {
-  switch (antigravityTier.value) {
-    case 'free-tier':
-      return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-    case 'g1-pro-tier':
-      return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
-    case 'g1-ultra-tier':
-      return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
-    default:
-      return ''
-  }
-})
-
 // 检测账户是否有不合格状态（ineligibleTiers）
 const hasIneligibleTiers = computed(() => {
   const extra = props.account.extra as Record<string, unknown> | undefined
@@ -1262,12 +1145,9 @@ const forbiddenLabel = computed(() => {
   }
 })
 
-const forbiddenBadgeClass = computed(() => {
-  if (forbiddenType.value === 'validation') {
-    return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300'
-  }
-  return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
-})
+// Colour is risk, never category (ground rule 5): validation is a
+// recoverable state (attention), a violation ban is not (danger).
+const forbiddenTone = computed(() => (forbiddenType.value === 'validation' ? 'attn' : 'danger'))
 
 const linkCopied = ref(false)
 const copyValidationURL = async () => {
@@ -1284,6 +1164,182 @@ const copyValidationURL = async () => {
 const isAnthropicOAuthOrSetupToken = computed(() => {
   return props.account.platform === 'anthropic' && (props.account.type === 'oauth' || props.account.type === 'setup-token')
 })
+
+// ===== One dimension object per window, normalized across platforms =====
+// (the same shape the departure asks for on the quota family, applied here
+// to the bars this cell already derives above; see the build report for
+// why QuotaLimitCard/QuotaDimensionRow are a separate file this pass does
+// not own).
+interface UsageWindowBar {
+  key: string
+  label: string
+  percent: number
+  resetsAt: string | null
+}
+
+const anthropicWindows = computed<UsageWindowBar[]>(() => {
+  if (!isAnthropicOAuthOrSetupToken.value || !usageInfo.value) return []
+  const info = usageInfo.value
+  const windows: UsageWindowBar[] = []
+  if (info.five_hour) {
+    windows.push({ key: 'five_hour', label: t('admin.accounts.usageWindow.fiveHour'), percent: info.five_hour.utilization, resetsAt: info.five_hour.resets_at })
+  }
+  if (info.seven_day) {
+    windows.push({ key: 'seven_day', label: t('admin.accounts.usageWindow.sevenDay'), percent: info.seven_day.utilization, resetsAt: info.seven_day.resets_at })
+  }
+  if (info.seven_day_sonnet) {
+    windows.push({ key: 'seven_day_sonnet', label: t('admin.accounts.usageWindow.sevenDaySonnet'), percent: info.seven_day_sonnet.utilization, resetsAt: info.seven_day_sonnet.resets_at })
+  }
+  if (info.seven_day_fable) {
+    windows.push({ key: 'seven_day_fable', label: t('admin.accounts.usageWindow.sevenDayFable'), percent: info.seven_day_fable.utilization, resetsAt: info.seven_day_fable.resets_at })
+  }
+  return windows
+})
+
+const openAIWindows = computed<UsageWindowBar[]>(() => {
+  if (!hasOpenAIUsageFallback.value) return []
+  const windows: UsageWindowBar[] = []
+  if (usageInfo.value?.five_hour) {
+    windows.push({ key: 'five_hour', label: t('admin.accounts.usageWindow.fiveHour'), percent: usageInfo.value.five_hour.utilization, resetsAt: usageInfo.value.five_hour.resets_at })
+  }
+  if (usageInfo.value?.seven_day) {
+    windows.push({ key: 'seven_day', label: t('admin.accounts.usageWindow.sevenDay'), percent: usageInfo.value.seven_day.utilization, resetsAt: usageInfo.value.seven_day.resets_at })
+  }
+  return windows
+})
+
+const antigravityWindows = computed<UsageWindowBar[]>(() => {
+  if (!hasAntigravityQuotaFromAPI.value) return []
+  const windows: UsageWindowBar[] = []
+  if (antigravity3ProUsageFromAPI.value) {
+    windows.push({ key: 'gemini3_pro', label: t('admin.accounts.usageWindow.gemini3Pro'), percent: antigravity3ProUsageFromAPI.value.utilization, resetsAt: antigravity3ProUsageFromAPI.value.resetTime })
+  }
+  if (antigravity3FlashUsageFromAPI.value) {
+    windows.push({ key: 'gemini3_flash', label: t('admin.accounts.usageWindow.gemini3Flash'), percent: antigravity3FlashUsageFromAPI.value.utilization, resetsAt: antigravity3FlashUsageFromAPI.value.resetTime })
+  }
+  if (antigravity3ImageUsageFromAPI.value) {
+    windows.push({ key: 'gemini3_image', label: t('admin.accounts.usageWindow.gemini3Image'), percent: antigravity3ImageUsageFromAPI.value.utilization, resetsAt: antigravity3ImageUsageFromAPI.value.resetTime })
+  }
+  if (antigravityClaudeUsageFromAPI.value) {
+    windows.push({ key: 'claude', label: t('admin.accounts.usageWindow.claude'), percent: antigravityClaudeUsageFromAPI.value.utilization, resetsAt: antigravityClaudeUsageFromAPI.value.resetTime })
+  }
+  return windows
+})
+
+const grokWindows = computed<UsageWindowBar[]>(() => {
+  const windows: UsageWindowBar[] = []
+  if (grokIsFree.value) {
+    if (grokFreeTokenBar.value) {
+      windows.push({ key: 'grok_24h', label: t('admin.accounts.usageWindow.grok24h'), percent: grokFreeTokenBar.value.utilization, resetsAt: null })
+    }
+    return windows
+  }
+  if (grokWeeklyBillingBar.value) {
+    windows.push({ key: 'grok_7d', label: t('admin.accounts.usageWindow.sevenDay'), percent: grokWeeklyBillingBar.value.utilization, resetsAt: grokWeeklyBillingBar.value.resetsAt })
+  }
+  if (grokMonthlyBillingBar.value) {
+    windows.push({ key: 'grok_30d', label: t('admin.accounts.usageWindow.thirtyDay'), percent: grokMonthlyBillingBar.value.utilization, resetsAt: grokMonthlyBillingBar.value.resetsAt })
+  }
+  return windows
+})
+
+const geminiWindows = computed<UsageWindowBar[]>(() =>
+  geminiUsageBars.value.map((bar) => ({ key: bar.key, label: bar.label, percent: bar.utilization, resetsAt: bar.resetsAt }))
+)
+
+const keyAccountWindows = computed<UsageWindowBar[]>(() => {
+  const windows: UsageWindowBar[] = []
+  if (quotaDailyBar.value) {
+    windows.push({ key: 'quota_daily', label: t('admin.accounts.usageWindow.oneDay'), percent: quotaDailyBar.value.utilization, resetsAt: quotaDailyBar.value.resetsAt })
+  }
+  if (quotaWeeklyBar.value) {
+    windows.push({ key: 'quota_weekly', label: t('admin.accounts.usageWindow.sevenDay'), percent: quotaWeeklyBar.value.utilization, resetsAt: quotaWeeklyBar.value.resetsAt })
+  }
+  if (quotaTotalBar.value) {
+    windows.push({ key: 'quota_total', label: t('admin.accounts.usageWindow.total'), percent: quotaTotalBar.value.utilization, resetsAt: null })
+  }
+  return windows
+})
+
+// The one list this cell actually renders: whichever platform's windows
+// apply to this row. Only one of the source lists above is ever non-empty
+// for a given account, so this is a lookup, not a merge.
+const activeWindows = computed<UsageWindowBar[]>(() => {
+  if (props.account.platform === 'anthropic') return anthropicWindows.value
+  if (props.account.platform === 'openai') return openAIWindows.value
+  if (props.account.platform === 'antigravity') return antigravityWindows.value
+  if (props.account.platform === 'grok') return grokWindows.value
+  if (props.account.platform === 'gemini') return geminiWindows.value
+  if (props.account.type === 'apikey' || props.account.type === 'bedrock') return keyAccountWindows.value
+  return []
+})
+
+// The bar shown is the window closest to its limit -- the only one that
+// can cause an incident -- unless a caller has pinned the column to a
+// specific window.
+const primaryWindow = computed<UsageWindowBar | null>(() => {
+  const windows = activeWindows.value
+  if (!windows.length) return null
+  if (props.pinnedWindowKey) {
+    const pinned = windows.find((w) => w.key === props.pinnedWindowKey)
+    if (pinned) return pinned
+  }
+  return windows.reduce((max, w) => (w.percent > max.percent ? w : max), windows[0])
+})
+
+const otherWindows = computed<UsageWindowBar[]>(() => {
+  const primary = primaryWindow.value
+  if (!primary) return []
+  return activeWindows.value.filter((w) => w.key !== primary.key)
+})
+
+// Local disclosure rather than a table-owned row expansion (see the file
+// header comment). Collapses whenever the row now refers to a different
+// account, so a virtualized row recycled for a new account never opens
+// pre-expanded.
+const expanded = ref(false)
+watch(
+  () => [props.account.id, props.account.platform, props.account.type] as const,
+  () => { expanded.value = false }
+)
+
+const pctLabel = (percent: number) => {
+  const rounded = Math.round(percent)
+  return rounded > 999 ? '>999%' : `${rounded}%`
+}
+
+// Countdown clock for the expansion's reset column only: ticking a timer
+// per row for a bar nobody has opened is the exact per-row cost this
+// redesign removes elsewhere, so it only runs while `expanded` is true.
+const expandedClockNow = ref(new Date())
+const { pause: pauseExpandedClock, resume: resumeExpandedClock } = useIntervalFn(
+  () => { expandedClockNow.value = new Date() },
+  60_000,
+  { immediate: false }
+)
+watch(expanded, (isExpanded) => {
+  if (isExpanded) {
+    expandedClockNow.value = new Date()
+    resumeExpandedClock()
+  } else {
+    pauseExpandedClock()
+  }
+})
+
+const resetsLabel = (resetsAt: string | null, percent: number) => {
+  if (!resetsAt) return t('usage.resetNow')
+  const date = new Date(resetsAt)
+  const diffMs = date.getTime() - expandedClockNow.value.getTime()
+  if (diffMs <= 0) return percent > 0 ? t('usage.resetPending') : t('usage.resetNow')
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+  const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
+  if (diffHours >= 24) {
+    const days = Math.floor(diffHours / 24)
+    return `${days}d ${diffHours % 24}h`
+  }
+  if (diffHours > 0) return `${diffHours}h ${diffMins}m`
+  return `${diffMins}m`
+}
 
 const requestParentBatchUsage = (options?: { force?: boolean }) => {
   if (!isBatchManaged.value || !shouldFetchUsage.value) return
@@ -1395,12 +1451,6 @@ const loadActiveUsage = async () => {
   } finally {
     activeQueryLoading.value = false
   }
-}
-
-// The probe persists upstream quota state; refresh this cell so its compact
-// bars and entitlement status reflect the newly observed snapshot.
-const handleGrokProbed = async () => {
-  await loadUsage({ source: 'active', bypassCache: true })
 }
 
 // ===== API Key quota progress bars =====
@@ -1628,3 +1678,259 @@ onUnmounted(() => {
   desktopViewportMediaQuery = null
 })
 </script>
+
+<style scoped>
+.uc {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.uc-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.uc-muted {
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.uc-mt {
+  margin-top: 4px;
+}
+
+.uc-error {
+  font-size: var(--fs-sm);
+  color: var(--destructive);
+}
+
+.uc-inline-warn {
+  overflow: hidden;
+  max-width: 200px;
+  color: var(--s2a-attn);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Loading: flat static bars, no pulse (ground rule 7 / the loading rule). */
+.uc-skel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.uc-skel__label {
+  width: 32px;
+  height: 12px;
+  border-radius: var(--r-xs);
+  background: var(--surface-subtle);
+}
+.uc-skel__bar {
+  flex: 1;
+  min-width: 24px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-subtle);
+}
+
+.uc-badgerow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Tier/channel labels are category, not state (ground rule 5): one flat
+   neutral pill regardless of which tier. `data-tone` is reserved for the
+   genuinely risk-bearing badges (forbidden, reauth, degraded). */
+.uc-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: var(--r-xs);
+  background: var(--sidebar-accent);
+  color: var(--muted-foreground);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+}
+.uc-badge[data-tone='attn'] {
+  background: var(--s2a-attn-soft);
+  color: var(--s2a-attn);
+}
+.uc-badge[data-tone='danger'] {
+  background: var(--destructive-soft);
+  color: var(--destructive);
+}
+
+/* Hover-disclosed tooltip, plain CSS in place of the old group-hover
+   Tailwind pattern. Opacity only, never a layout change. */
+.uc-tip {
+  position: relative;
+  display: inline-flex;
+  cursor: help;
+}
+.uc-tip__bubble {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: max-content;
+  max-width: 260px;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  background: var(--foreground);
+  color: var(--on-solid);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-hover);
+}
+.uc-tip__bubble--wide {
+  max-width: 320px;
+}
+.uc-tip:hover .uc-tip__bubble,
+.uc-tip:focus-visible .uc-tip__bubble {
+  opacity: 1;
+}
+.uc-tip__title {
+  font-weight: var(--fw-medium);
+}
+.uc-tip__note {
+  color: color-mix(in oklch, var(--on-solid) 75%, transparent);
+}
+.uc-tip__link {
+  color: color-mix(in oklch, var(--on-solid) 85%, var(--brand-tint));
+  text-decoration: underline;
+}
+
+.uc-actionrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.uc-hint {
+  font-size: var(--fs-2xs);
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+.uc-linkbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 0;
+  border-radius: var(--r-xs);
+  padding: 1px 5px;
+  background: transparent;
+  color: var(--brand);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background var(--motion-hover);
+}
+.uc-linkbtn:hover:not(:disabled) {
+  background: var(--sidebar-accent);
+}
+.uc-linkbtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.uc-linkbtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* Every other window is one click away (part 08's migration note). */
+.uc-expand {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 3px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: var(--fs-2xs);
+  cursor: pointer;
+}
+.uc-expand:hover {
+  color: var(--foreground);
+}
+.uc-expand:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+.uc-expand__chevron {
+  transition: transform var(--t-fast) var(--ease-out);
+}
+.uc-expand__chevron--open {
+  transform: rotate(180deg);
+}
+
+.uc-expandlist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 0 2px;
+}
+
+.uc-moneyrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-2xs);
+  color: var(--muted-foreground);
+}
+
+.uc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.uc-chips-skel {
+  height: 12px;
+  width: 60%;
+  border-radius: var(--r-xs);
+  background: var(--surface-subtle);
+}
+
+.uc-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: var(--r-xs);
+  background: var(--sidebar-accent);
+  color: var(--muted-foreground);
+  font-size: var(--fs-2xs);
+  white-space: nowrap;
+}
+.uc-chip--brand {
+  background: var(--brand-tint);
+  color: var(--brand);
+}
+
+.uc-footnote {
+  margin: 2px 0 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-2xs);
+  font-style: italic;
+  line-height: 1.4;
+}
+</style>
+</content>
