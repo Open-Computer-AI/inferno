@@ -1,0 +1,164 @@
+/* June color system.
+ *
+ * ONE accent drives the palette: --brand, plus its chroma-capped companion
+ * --brand-wash. Surface neutrals mix a sliver of the wash so a high-chroma
+ * accent (clay) tints the greys exactly as much as a dusty one (rose).
+ * Foreground/text tokens stay pure neutral for legibility.
+ *
+ * Both are @property-registered colors so a theme change interpolates instead
+ * of snapping every color-mix consumer in one repaint.
+ *
+ * Five presets ship — clay (default), rose, sage, ocean, plum — applied by
+ * setting --brand + --brand-wash on <html>. See guidelines/brand-presets.
+ * Light and dark are a separate concern: [data-theme="dark"]. */
+@property --brand{syntax:"<color>";inherits:true;initial-value:#b5551f}
+@property --brand-wash{syntax:"<color>";inherits:true;initial-value:#976851}
+
+:root{
+  /* Accent ---------------------------------------------------------- */
+  --brand:#b5551f;
+  --brand-wash:#976851;
+
+  /* Surfaces + text — light theme. */
+  --background:color-mix(in oklch,oklch(95.13% 0.0015 84.59),var(--brand-wash) 3%);
+  --foreground:oklch(27.24% 0.0015 84.59);
+  --card:color-mix(in oklch,oklch(100% 0 none),var(--brand-wash) 2%);
+  --card-foreground:oklch(27.24% 0.0015 84.59);
+  --popover:color-mix(in oklch,oklch(100% 0 none),var(--brand-wash) 2%);
+  --popover-foreground:oklch(27.24% 0.0015 84.59);
+  --primary:oklch(34% 0.008 84.59);
+  --primary-foreground:oklch(100% 0 none);
+  /* Text/icons on FIXED brand, gradient, or destructive solids. Stays white in
+   * both themes, unlike --primary-foreground which inverts. */
+  --on-solid:oklch(100% 0 none);
+  --secondary:color-mix(in oklch,oklch(97.03% 0 none),var(--brand-wash) 3%);
+  --secondary-foreground:oklch(20.44% 0 none);
+  --muted:color-mix(in oklch,oklch(92.87% 0.0015 84.59),var(--brand-wash) 4%);
+  --muted-foreground:oklch(55.8% 0.0015 84.59);
+  --accent:color-mix(in oklch,oklch(97.03% 0 none),var(--brand-wash) 3%);
+  --accent-foreground:oklch(20.44% 0 none);
+  --border:color-mix(in oklch,oklch(86.91% 0.0015 84.59),var(--brand-wash) 5%);
+  --input:color-mix(in oklch,oklch(86.91% 0.0015 84.59),var(--brand-wash) 5%);
+  --ring:oklch(75% 0.0015 84.59);
+
+  /* Sidebar tint (outside) vs card (inside) — the inset-card layout. */
+  --sidebar:color-mix(in oklch,oklch(95.13% 0.0015 84.59),var(--brand-wash) 4%);
+  --sidebar-foreground:oklch(27.24% 0.0015 84.59);
+  --sidebar-accent:color-mix(in oklch,oklch(92.87% 0.0015 84.59),var(--brand-wash) 5%);
+  --sidebar-border:color-mix(in oklch,oklch(86.91% 0.0015 84.59),var(--brand-wash) 5%);
+
+  /* Semantic status. All held inside the earthy chroma register (~0.12-0.15) —
+   * a neon red was the one element that fought the low-chroma surfaces. */
+  --destructive:oklch(57% 0.15 30);
+  --destructive-soft:oklch(95% 0.025 30);
+  --success:oklch(48% 0.12 150);
+  /* The live recording red stays its own value on purpose. */
+  --record:oklch(60% 0.22 27);
+
+  /* Quiet derived surfaces + hairlines. */
+  --surface-subtle:color-mix(in oklch,var(--muted) 65%,transparent);
+  --border-subtle:color-mix(in oklch,var(--border) 55%,transparent);
+  --detail-bar-border:color-mix(in oklch,var(--border-subtle) 58%,transparent);
+  --body-copy:color-mix(in oklch,var(--foreground) 86%,var(--muted-foreground));
+  --popover-border:color-mix(in oklch,var(--foreground) 10%,transparent);
+  --spinner-neutral:color-mix(in oklch,var(--muted-foreground) 45%,var(--foreground));
+
+  /* Brand-derived family. Everything re-mixes from --brand, so recoloring the
+   * accent recolors the whole UI. Spend these sparingly — hovers, rows, nav and
+   * menus stay neutral grey; the tint belongs only on surfaces that already
+   * carry the accent (send affordances, record controls, onboarding heroes). */
+  --brand-tint:color-mix(in oklch,var(--brand) 12%,var(--card));
+  --brand-tint-strong:color-mix(in oklch,var(--brand) 20%,var(--card));
+  --brand-line:color-mix(in oklch,var(--brand) 14%,var(--card));
+  --brand-line-strong:color-mix(in oklch,var(--brand) 30%,var(--card));
+  --warm-soft:color-mix(in oklch,var(--brand) 16%,var(--card));
+  --warm-strong:color-mix(in oklch,var(--brand) 88%,black);
+  --brand-bright:color-mix(in oklch,var(--brand) 72%,var(--on-solid));
+  --hero-wash:color-mix(in oklch,var(--brand) 11%,transparent);
+  --hero-wash-rim:color-mix(in oklch,var(--card) 70%,transparent);
+  --search-match:color-mix(in oklch,var(--brand) 28%,var(--card));
+  --search-match-active:color-mix(in oklch,var(--brand) 48%,var(--card));
+  --search-match-active-ring:color-mix(in oklch,var(--brand) 70%,var(--foreground));
+
+  /* Focus, selection, scrim. Warm-grey, never a cool macOS blue. */
+  --ring-focus:color-mix(in oklch,var(--foreground) 30%,transparent);
+  --focus-ring:oklch(60% 0.03 84.59 / 22%);
+  --selection:oklch(93% 0.0015 84.59);
+  --selection-foreground:var(--foreground);
+  --scrim:color-mix(in oklch,var(--foreground) 12%,transparent);
+
+  /* Semantic aliases (role -> token) */
+  --text-primary:var(--foreground);
+  --text-secondary:var(--muted-foreground);
+  --surface-page:var(--background);
+  --surface-card:var(--card);
+  --surface-rail:var(--sidebar);
+  --surface-hover:var(--sidebar-accent);
+
+  transition:--brand 220ms var(--ease-out);
+}
+
+/* The luminous clay glint: only the active brand's HUE is inherited; lightness
+ * and chroma are pinned per theme so the spark separates from its field. */
+@supports (color:oklch(from red l c h)){
+  :root{--brand-bright:oklch(from var(--brand) 0.7 0.19 h)}
+  [data-theme="dark"]{--brand-bright:oklch(from var(--brand) 0.72 0.15 h)}
+}
+
+[data-theme="light"]{color-scheme:light}
+
+[data-theme="dark"]{
+  color-scheme:dark;
+  --background:color-mix(in oklch,oklch(0.165 0.0015 84.59),var(--brand-wash) 6%);
+  --foreground:oklch(0.985 0.0015 84.59);
+  --card:color-mix(in oklch,oklch(0.195 0.0015 84.59),var(--brand-wash) 6%);
+  --card-foreground:oklch(0.985 0.0015 84.59);
+  --popover:color-mix(in oklch,oklch(0.195 0.0015 84.59),var(--brand-wash) 6%);
+  --popover-foreground:oklch(0.985 0.0015 84.59);
+  --primary:oklch(0.86 0.008 84.59);
+  --primary-foreground:oklch(0.216 0.0015 84.59);
+  --secondary:color-mix(in oklch,oklch(0.268 0.0015 84.59),var(--brand-wash) 7%);
+  --secondary-foreground:oklch(0.985 0.0015 84.59);
+  --muted:color-mix(in oklch,oklch(0.268 0.0015 84.59),var(--brand-wash) 7%);
+  --muted-foreground:oklch(0.709 0.0015 84.59);
+  --accent:color-mix(in oklch,oklch(0.268 0.0015 84.59),var(--brand-wash) 7%);
+  --accent-foreground:oklch(0.985 0.0015 84.59);
+  --destructive:oklch(0.704 0.14 30);
+  --destructive-soft:oklch(0.3 0.08 30 / 40%);
+  --success:oklch(0.72 0.14 150);
+  --border:oklch(1 0 0 / 10%);
+  --input:oklch(1 0 0 / 15%);
+  --ring:oklch(1 0 0 / 18%);
+  --sidebar:color-mix(in oklch,oklch(0.14 0.0015 84.59),var(--brand-wash) 6%);
+  --sidebar-foreground:oklch(0.985 0.0015 84.59);
+  --sidebar-accent:color-mix(in oklch,oklch(0.22 0.0015 84.59),var(--brand-wash) 7%);
+  --sidebar-border:oklch(1 0 0 / 8%);
+  /* Dark --border is already an 8-10% white alpha, so the light-mode 55% mix
+   * would dilute it below the visibility floor. */
+  --border-subtle:color-mix(in oklch,var(--border) 80%,transparent);
+  --detail-bar-border:color-mix(in oklch,var(--border-subtle) 66%,transparent);
+  --body-copy:color-mix(in oklch,var(--foreground) 88%,var(--muted-foreground));
+  --spinner-neutral:color-mix(in oklch,var(--muted-foreground) 72%,var(--foreground));
+  --popover-border:color-mix(in oklch,white 12%,transparent);
+  /* Dark inverts the warm roles: deep tinted surface, lifted foreground. */
+  --warm-soft:color-mix(in oklch,var(--brand) 30%,var(--card));
+  --warm-strong:color-mix(in oklch,var(--brand) 55%,white);
+  --search-match:color-mix(in oklch,var(--brand) 42%,var(--card));
+  --search-match-active:color-mix(in oklch,var(--brand) 62%,var(--card));
+  --search-match-active-ring:color-mix(in oklch,var(--brand) 70%,white);
+  --hero-wash-rim:oklch(100% 0 none / 8%);
+  --focus-ring:oklch(0.78 0.025 84.59 / 22%);
+  --scrim:oklch(0% 0 none / 55%);
+  --selection:oklch(0.52 0.015 84.59 / 38%);
+  --selection-foreground:var(--foreground);
+}
+
+/* Brand presets. Applied by setting both variables together. */
+[data-brand="clay"]{--brand:#b5551f;--brand-wash:#976851}
+[data-brand="rose"]{--brand:#a5655c;--brand-wash:#9e6961}
+[data-brand="sage"]{--brand:#527f4d;--brand-wash:#5a7c56}
+[data-brand="ocean"]{--brand:#3d7b9a;--brand-wash:#467a95}
+[data-brand="plum"]{--brand:#965d84;--brand-wash:#8f6380}
+
+:root[data-brand-transition="true"],:root[data-brand-transition="true"] *{transition-property:background-color,border-color,color,fill,stroke,box-shadow;transition-duration:220ms;transition-timing-function:var(--ease-out)}
+@media (prefers-reduced-motion:reduce){:root{transition:none}:root[data-brand-transition="true"],:root[data-brand-transition="true"] *{transition:none}}
