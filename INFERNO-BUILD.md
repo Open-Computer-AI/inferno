@@ -865,9 +865,10 @@ rather than pretending otherwise:
   - per-window token/cost text in AccountUsageCell -- see the regression below.
   - the used/limit fraction and the em-dash placeholder in UserPlatformQuotaCell.
 
-## TWO COMPONENT REGRESSIONS found while rewriting the tests
+## TWO COMPONENT REGRESSIONS found while rewriting the tests -- BOTH NOW FIXED
 
-Neither was fixed -- the test agents were read-only on components by design.
+Found by the test rewrite; fixed in a follow-up pass. Kept here because the
+findings are the point: weakening the tests would have hidden both.
 
 ### 1. Reset times are invisible for single-window accounts  (user-facing)
 
@@ -904,3 +905,34 @@ Confirm with whoever owns the cell. We are paying for the data either way.
   sort spec asserts aria-sort and data-sorted, not the opacity CSS -- jsdom does
   not compute :hover or attribute-selector styles, so asserting those would be
   testing nothing.
+
+### Resolution
+
+**1. Reset times -- fixed.** `barTrailing()` now renders
+`{percent} · {resetsLabel}` into CapacityBar's `trailing` prop on all six
+primary bars. It costs ZERO extra height: CapacityBar's head row already exists
+whenever `trailing` is passed, so the 36px row is untouched. It also reuses
+`pctLabel` and `resetsLabel` verbatim rather than growing a second formatter.
+Pre-June `UsageProgressBar` put percent and reset on one inline row too, so this
+restores the old layout rather than inventing one.
+
+Covered by a new test: a Grok Free account (single window, no expansion exists)
+must still show its reset time. It fails against the pre-fix code.
+
+**2. window_stats -- it was case (b), genuinely lost.** The investigation ruled
+out a relocation: `AccountStatsModal` is the only other place showing numbers,
+and it reads `stats.summary` from a different API entirely, not
+`UsageProgress.window_stats`. The only thing that ever rendered this was the
+deleted window-stats row in `UsageProgressBar`, which had no replacement.
+
+Now surfaced in the EXPANSION rows only, never on the primary bar, so the 36px
+budget holds. Reuses the `req` / compact-tokens / `A $` / `U $` convention the
+today-stats chips in the same file already use.
+
+**Correction to this document:** the claim above that `antigravityWindows` also
+dropped window_stats was wrong. `AntigravityModelQuota` and `GrokBillingSummary`
+never carried a request/token/cost breakdown, so there was nothing to drop for
+Antigravity or the grok_7d/grok_30d billing bars. The real loss was in
+anthropic, openAI, gemini, and Grok Free's grok_24h window.
+
+Suite: 1532/1532.
