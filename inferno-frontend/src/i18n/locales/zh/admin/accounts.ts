@@ -47,7 +47,7 @@ export default {
       syncFromCrsTitle: '从 CRS 同步账号',
       syncFromCrsDesc:
         '将 claude-relay-service（CRS）中的账号同步到当前系统（不会在浏览器侧直接请求 CRS）。',
-      crsVersionRequirement: '⚠️ 注意：CRS 版本必须 ≥ v1.1.240 才支持此功能',
+      crsVersionRequirement: '注意：CRS 版本必须 ≥ v1.1.240 才支持此功能',
       crsBaseUrl: 'CRS 服务地址',
       crsBaseUrlPlaceholder: '例如：http://127.0.0.1:3000',
       crsUsername: '用户名',
@@ -262,7 +262,7 @@ export default {
       quotaWeeklyLimit: '周限额',
       quotaWeeklyLimitHint: '从首次使用起每 7 天自动重置。',
       quotaTotalLimit: '总限额',
-      quotaTotalLimitHint: '累计消费上限，不会自动重置 — 使用「重置配额」手动清零。',
+      quotaTotalLimitHint: '累计消费上限，不会自动重置，使用「重置配额」手动清零。',
       quotaResetMode: '重置方式',
       quotaResetModeRolling: '滚动窗口',
       quotaResetModeFixed: '固定时间',
@@ -488,6 +488,11 @@ export default {
         clear: '清除选择',
         edit: '批量编辑账号',
         delete: '批量删除',
+        allInFilterSelected: '已选中当前筛选下的全部 {count} 个账号',
+        selectAllResultsLink: '选择全部 {count} 条结果',
+        selectPageOnly: '仅选择本页',
+        confirmDeleteTitle: '删除账号',
+        confirmDeleteAllInFilter: '删除筛选结果中的全部 {count} 个账号？此操作不可撤销。',
         confirmDelete: '确认删除选中的 {count} 个账号吗？此操作不可恢复。',
         deleteSuccess: '已成功删除 {count} 个账号',
         enableScheduling: '批量启用调度',
@@ -513,7 +518,7 @@ export default {
         noFieldsSelected: '请至少选择一个要更新的字段',
         rateSyncWarning: '已开启上游倍率同步的账号不能批量手工修改倍率，请先在账号编辑页关闭同步。',
         rateSyncConflict: '无法修改账号倍率：{count} 个目标账号已开启上游倍率同步。',
-        mixedPlatformWarning: '所选账号跨越多个平台（{platforms}）。显示的模型映射预设为合并结果——请确保映射对每个平台都适用。'
+        mixedPlatformWarning: '所选账号跨越多个平台（{platforms}）。显示的模型映射预设为合并结果，，请确保映射对每个平台都适用。'
       },
       bulkDeleteTitle: '批量删除账号',
       bulkDeleteConfirm: '确定要删除选中的 {count} 个账号吗？此操作无法撤销。',
@@ -589,7 +594,7 @@ export default {
           '开启后，该 OpenAI 账号将自动透传请求与响应，仅替换认证并保留计费/并发/审计及必要安全过滤；如遇兼容性问题可随时关闭回滚。',
         flattenNamespaces: '摊平 Codex namespace 工具（兼容）',
         flattenNamespacesDesc:
-          '默认关闭：/responses 上的 namespace 工具声明原样转发，这正是 ChatGPT Codex 后端期望的形态。仅当该 OAuth 账号指向不认识 namespace 的兼容上游时才开启——摊平会把工具改名为 namespace__tool，使按 functions.<命名空间>.<工具> 寻址的模型（如 gpt-5.6 多智能体）无法调用。压缩（compact）请求不受该开关影响，始终摊平。',
+          '默认关闭：/responses 上的 namespace 工具声明原样转发，这正是 ChatGPT Codex 后端期望的形态。仅当该 OAuth 账号指向不认识 namespace 的兼容上游时才开启，，摊平会把工具改名为 namespace__tool，使按 functions.<命名空间>.<工具> 寻址的模型（如 gpt-5.6 多智能体）无法调用。压缩（compact）请求不受该开关影响，始终摊平。',
         longContextBilling: 'API 长上下文计费',
         longContextBillingDesc: '默认关闭。仅当该账号的上游会按模型阈值收取 OpenAI API 长上下文费率时开启。',
         responsesWebsocketsV2: 'Responses WebSocket v2',

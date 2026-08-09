@@ -1702,7 +1702,11 @@ const toggleSelectAllVisible = (event: Event) => {
 }
 const handleBulkDelete = async () => {
   const accountIds = [...selIds.value]
-  if (!confirm(t('admin.accounts.bulkActions.confirmDelete', { count: accountIds.length }))) return
+  // No confirm() here. AccountBulkActionsBar now opens the June ConfirmDialog
+  // itself and only emits `delete` once the operator has confirmed, so a native
+  // prompt at this point would be a second dialog for the same action. The
+  // component's dialog also restates the scope -- this page versus every result
+  // matching the filter -- which a native confirm() could not.
   try {
     const result = await adminAPI.accounts.batchDelete(accountIds)
     if (result.failed > 0) {
