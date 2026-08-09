@@ -199,3 +199,101 @@
   width: var(--s2a-h-lg);
   height: var(--s2a-h-lg);
 }
+
+/* --- inputs -------------------------------------------------------------- */
+
+/*
+ * Same reasoning as the buttons: `.input` is defined once in `style.css` and
+ * used across every view phase 5 has not reached, so re-skinning the class
+ * converts all of them at once. Values mirror `components/common/Input.vue`.
+ *
+ * The legacy base sets `transition-all duration-200`, which animates
+ * border-color and violates ground rule 6, and a teal `ring-2 ring-primary/30`
+ * focus state that is a cool ring at two alphas.
+ */
+.input {
+  height: var(--s2a-h-md);
+  border: 1px solid var(--input);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--fs-md);
+  /* Background only. Never border-color. */
+  transition: background var(--motion-hover);
+}
+
+/*
+ * Horizontal padding is set per side and ONLY when the view has not set its own.
+ *
+ * A `padding: 0 10px` shorthand here beats Tailwind's `pl-11` on source order
+ * (utilities are emitted inside `style.css`, this file loads after it), which
+ * silently broke twelve views that inset an icon into the field -- the icon
+ * ended up sitting on top of the placeholder. Those insets are legitimate on
+ * search fields, so the padding yields to them rather than the other way round.
+ *
+ * The `:not()` guards raise specificity but never fight the utility: they simply
+ * do not match when one is present, so `pl-11` / `pr-9` / `px-4` still win.
+ */
+.input:not([class*='pl-']):not([class*='px-']) {
+  padding-left: 10px;
+}
+
+.input:not([class*='pr-']):not([class*='px-']) {
+  padding-right: 10px;
+}
+
+.input::placeholder {
+  color: var(--muted-foreground);
+}
+
+/* The token composite: a 1px ring plus a 3px warm halo, never a cool blue. */
+.input:focus {
+  outline: none;
+  border-color: var(--ring-focus);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* Off, not different -- the fill stays --card. */
+.input:disabled {
+  background: var(--card);
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.input-error,
+.input-error:focus {
+  border-color: var(--destructive);
+}
+.input-error:focus {
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--destructive) 18%, transparent);
+}
+
+/* Label, 6px, field, 6px, hint. Equal gaps so the group reads as one object. */
+.input-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--foreground);
+  font-size: var(--fs-md);
+  font-weight: 400;
+}
+
+.input-hint {
+  margin-top: 6px;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+
+.input-error-text {
+  margin-top: 6px;
+  color: var(--destructive);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+
+/* A textarea is the one field whose height is content, not a control token. */
+textarea.input {
+  height: auto;
+  padding: 8px 10px;
+  line-height: 1.5;
+}
