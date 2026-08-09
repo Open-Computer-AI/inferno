@@ -180,7 +180,7 @@ function ourChangedFiles() {
     if (!base) return null
     const out = execFileSync(
       'git',
-      ['diff', '--name-only', `${base}..HEAD`, '--', relative(REPO_ROOT, ROOT)],
+      ['diff', '--name-only', base, '--', relative(REPO_ROOT, ROOT)],
       { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
     )
     return new Set(
@@ -226,7 +226,20 @@ if (!ALL && !ours) {
 const scoped = ALL
   ? files
   : ours
-    ? files.filter((f) => ours.has(relative(ROOT, f)))
+    // Both conditions, and both are needed:
+    //   ours.has(...)        git says one of our commits touched it
+    //   differsFromMirror()  it is not byte-identical to upstream right now
+    //
+    // Git alone is not enough. Porting an upstream file forward during a sync
+    // is `cp frontend/x inferno-frontend/x` followed by a commit, so git
+    // records it as ours even though every byte is upstream's. Ten such files
+    // put 580 violations on screen after the first sync -- upstream's own
+    // font-medium usage, attributed to us.
+    //
+    // The mirror check alone is not enough either: after a sync it flags files
+    // we never touched, purely because our copy is older. Only the conjunction
+    // means "we wrote this".
+    ? files.filter((f) => ours.has(relative(ROOT, f)) && differsFromMirror(f))
     : files.filter(differsFromMirror)
 
 const findings = []
