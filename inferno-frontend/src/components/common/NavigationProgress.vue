@@ -40,39 +40,33 @@ const isVisible = computed(() => isLoading.value)
   background: transparent;
 }
 
+/* This is global chrome -- it renders above every route, so it was the one
+ * remaining teal surface a customer saw on every single navigation, converted
+ * views included.
+ *
+ * Was a four-stop teal gradient sweeping a full-width bar, which ground rule 7
+ * bans. A solid short bar crossing the track reads as the same indeterminate
+ * progress without one. */
 .navigation-progress-bar {
   height: 100%;
-  width: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    theme('colors.primary.400') 20%,
-    theme('colors.primary.500') 50%,
-    theme('colors.primary.400') 80%,
-    transparent 100%
-  );
+  width: 32%;
+  background: var(--brand);
   animation: progress-slide 1.5s ease-in-out infinite;
 }
 
-/* 暗色模式下的进度条颜色 */
-:root.dark .navigation-progress-bar {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    theme('colors.primary.500') 20%,
-    theme('colors.primary.400') 50%,
-    theme('colors.primary.500') 80%,
-    transparent 100%
-  );
-}
+/* The dark-mode override this replaced hard-coded a second pair of teal stops.
+ * `--brand` is already redefined per theme, so one declaration now covers both
+ * and the two can no longer drift apart. */
 
-/* 进度条滑动动画 */
+/* Travels from fully off the left edge to fully off the right. The end value is
+ * expressed against the bar's OWN width (the percentage basis for translateX),
+ * so at 32% wide it needs 100/32 ~= 313% to clear a full track, not 100%. */
 @keyframes progress-slide {
   0% {
     transform: translateX(-100%);
   }
   100% {
-    transform: translateX(100%);
+    transform: translateX(313%);
   }
 }
 
