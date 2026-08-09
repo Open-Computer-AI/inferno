@@ -1,6 +1,8 @@
 export default {
     // Dashboard
     dashboard: {
+      cacheBreakdownTooltip: '{total} ({created} created, {read} read)',
+      trendTooltipFooter: '{actual} actual, {standard} standard',
       title: 'Admin Dashboard',
       description: 'System overview and real-time statistics',
       apiKeys: 'API Keys',
@@ -104,7 +106,7 @@ export default {
       },
       imageStorage: {
         title: 'Async image object storage',
-        description: 'Enables the asynchronous image endpoints and offloads generated images to object storage, keeping only short links in Redis. Shares the S3 client with backups and takes effect on save — no restart needed.',
+        description: 'Enables the asynchronous image endpoints and offloads generated images to object storage, keeping only short links in Redis. Shares the S3 client with backups and takes effect on save. no restart needed.',
         enabled: 'Enable async image tasks',
         reuseBackupS3: 'Reuse the backup S3 configuration above (different bucket/prefix only)',
         bucket: 'Bucket',
@@ -190,7 +192,7 @@ export default {
           line2: 'Click "Create API token", set permission to "Object Read & Write"',
           line3: 'Recommended: restrict to specific bucket for better security',
           line4: 'After creation, you will see the Access Key ID and Secret Access Key',
-          warning: 'The Secret Access Key is only shown once — copy and save it immediately!'
+          warning: 'The Secret Access Key is only shown once. copy and save it immediately!'
         },
         step3: {
           title: 'Get the S3 Endpoint',
@@ -204,7 +206,7 @@ export default {
           fromStep2: 'Value from Step 2',
           unchecked: 'Unchecked'
         },
-        freeTier: 'R2 Free Tier: 10GB storage + 1M Class A requests + 10M Class B requests per month — more than enough for database backups.'
+        freeTier: 'R2 Free Tier: 10GB storage + 1M Class A requests + 10M Class B requests per month. more than enough for database backups.'
       }
     },
 
@@ -746,7 +748,7 @@ export default {
         saving: 'Saving...',
         cancel: 'Cancel',
         clearAll: 'Clear All (remove all limits)',
-        clearAllConfirm: 'Clear daily / weekly / monthly limits for ALL platforms? All platforms will become "unlimited" with no local undo — you must manually re-enter values before saving.',
+        clearAllConfirm: 'Clear daily / weekly / monthly limits for ALL platforms? All platforms will become "unlimited" with no local undo. you must manually re-enter values before saving.',
         reset: {
           button: 'Reset window',
           confirm: 'Reset the {window} usage for {platform} for this user? This is effective immediately.',
@@ -827,9 +829,9 @@ export default {
       accountFilters: {
         title: 'Account Filter Controls',
         oauthOnly: 'Only allow OAuth accounts',
-        oauthOnlyEnabled: 'Enabled — API Key accounts will be excluded',
+        oauthOnlyEnabled: 'Enabled. API Key accounts will be excluded',
         privacySetOnly: 'Only allow accounts with privacy protection set',
-        privacySetOnlyEnabled: 'Enabled — accounts with unset Privacy will be excluded',
+        privacySetOnlyEnabled: 'Enabled. accounts with unset Privacy will be excluded',
         disabled: 'Disabled'
       },
       form: {
@@ -1143,7 +1145,7 @@ export default {
         tooltipEdit: 'Select one or more groups of the same platform. After saving, current group accounts will be replaced with accounts from these groups (deduplicated).',
         selectPlaceholder: 'Select groups to copy accounts from...',
         hint: 'Multiple groups can be selected, accounts will be deduplicated',
-        hintEdit: '⚠️ Warning: This will replace all existing account bindings'
+        hintEdit: 'Warning: This will replace all existing account bindings'
       },
       modelRouting: {
         title: 'Model Routing',
