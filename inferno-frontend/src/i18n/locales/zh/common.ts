@@ -166,6 +166,18 @@ export default {
     }
   },
 
+  charts: {
+    distribution: {
+      subtitleTokens: '{count} 个{entity}共 {value} tokens',
+      subtitleCost: '{count} 个{entity}共 {value}',
+      othersCount: '其他 {count} 项',
+      entityModels: '模型',
+      entityGroups: '分组',
+      entityEndpoints: '端点',
+      entityUsers: '用户'
+    }
+  },
+
   shell: {
     mainNavigation: '主导航',
     sectionsListLabel: '分区',
