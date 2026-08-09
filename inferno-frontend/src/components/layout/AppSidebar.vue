@@ -258,7 +258,7 @@
  * Overview -- see the comment on `activeSection`.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, onUnmounted, ref, watch, h, defineComponent, type PropType } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
 import { sanitizeSvg } from '@/utils/sanitize'
@@ -302,7 +302,7 @@ const NavRowLink = defineComponent({
   setup(props, { emit }) {
     return () =>
       h(
-        'router-link' as any,
+        RouterLink,
         {
           to: props.row.path,
           class: 'rail__row',
