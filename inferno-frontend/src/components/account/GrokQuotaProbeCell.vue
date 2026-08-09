@@ -151,4 +151,3 @@ watch(
   white-space: nowrap;
 }
 </style>
-</content>
