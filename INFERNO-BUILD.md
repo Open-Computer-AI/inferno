@@ -336,10 +336,58 @@ switched off, and then it catches nothing.
 
 ## Running it
 
+Backend first, frontend second. The order matters: `vite.config.ts:53` registers an
+`injectPublicSettings` plugin that fetches `${backendUrl}/api/v1/settings/public` while
+serving, so a dev server started against a dead backend serves a page missing its
+injected settings.
+
 ```sh
 open -a Docker
-docker compose -f deploy/docker-compose.local.yml up -d   # API on :8080
-cd inferno-frontend && pnpm install && pnpm dev            # :3000, proxies to :8080
+
+# deploy/.env is gitignored (deploy/.gitignore:11). POSTGRES_PASSWORD has no default
+# and compose refuses to start without it. BIND_HOST defaults to 0.0.0.0 -- pin it to
+# loopback so a local dev instance is not exposed on the LAN.
+cat > deploy/.env <<'EOF'
+BIND_HOST=127.0.0.1
+SERVER_PORT=8080
+POSTGRES_PASSWORD=inferno-local-dev
+EOF
+
+docker compose -f deploy/docker-compose.local.yml up -d   # sub2api + postgres 18 + redis 8
+docker compose -f deploy/docker-compose.local.yml ps      # wait for all three "healthy"
+
+cd inferno-frontend && pnpm install && pnpm dev           # :3000, proxies to :8080
+```
+
+Check the backend is actually up before blaming the frontend:
+
+```sh
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/api/v1/settings/public  # 200
+curl -s http://127.0.0.1:8080/setup/status   # {"needs_setup":false,"step":"completed"}
+```
+
+Overrides, both read in `vite.config.ts:83-84`: `VITE_DEV_PORT` (default `3000`) and
+`VITE_DEV_PROXY_TARGET` (default `http://localhost:8080`). The dev server proxies
+`/api`, `/v1` and `/setup`, so no frontend config change is needed for a local backend.
+
+**Admin credentials.** First boot seeds `admin@sub2api.local` and prints a one-time
+generated password to the container log. It is printed once and not recoverable later:
+
+```sh
+docker compose -f deploy/docker-compose.local.yml logs sub2api | grep -i -A2 password
+```
+
+Confirm you are looking at a genuinely fresh install rather than reusing old state by
+checking the data dir's age -- a completed `/setup/status` on a stale volume looks
+identical to a fresh one from the API alone.
+
+**Trap: stale Vite dep-optimizer cache.** A first `pnpm dev` can 500 every request to
+`/src/main.ts` with `Failed to resolve import "@/stores/app"` even though
+`src/stores/app.ts` exists and exports correctly. It is a stale
+`node_modules/.vite` cache, not a code defect. Fix, no source change needed:
+
+```sh
+rm -rf node_modules/.vite && pnpm dev
 ```
 
 Specimen board: `http://localhost:3000/dev/specimen`
@@ -936,3 +984,97 @@ Antigravity or the grok_7d/grok_30d billing bars. The real loss was in
 anthropic, openAI, gemini, and Grok Free's grok_24h window.
 
 Suite: 1532/1532.
+
+## Browser verification against a live backend — 1 critical bug found and fixed
+
+First time the app was ever loaded in a real browser since `AppHeader.vue` was deleted and
+`AppLayout.vue` rewritten. Run against the real Docker backend, logged in as the seeded
+admin, driven through Playwright at 1440x900. 19 screenshots in
+`~/inferno-verify-screenshots/`.
+
+### CRITICAL, FIXED: the entire sidebar navigation was dead
+
+`AppSidebar.vue`'s `NavRowLink` built rows with:
+
+```js
+h('router-link' as any, { to: props.row.path, ... }, () => [icon, label])
+```
+
+A **string** tag in `h()` is treated as a native HTML element — it does NOT resolve a
+globally-registered component. This emitted a literal `<router-link>` custom element with
+no `href` and no click behaviour; and because a function was passed as children to what Vue
+considered a native-tag vnode, the icon and label **did not render at all**.
+
+Every nav row in both shells — the whole customer nav, every admin section's rows, the
+"My account" groups — was an empty, non-clickable box. Visible in `07-admin-dashboard.png`
+as bare group labels with blank space beneath them.
+
+Fix: import `RouterLink` from `vue-router` and pass the component reference.
+
+```js
+import { useRoute, useRouter, RouterLink } from 'vue-router'
+h(RouterLink, { to: props.row.path, ... }, () => [icon, label])
+```
+
+**Why the whole gate missed it.** `vue-tsc` was silenced by the `as any` — which is exactly
+what it was suppressing. june-lint has no opinion on render functions. `vite build` doesn't
+resolve components. And the 1,536 unit tests stub the router, so `router-link` renders as
+`<router-link-stub>` and every assertion on `to="..."` passes. Four green gates, zero
+navigation.
+
+**Lesson: `as any` on a component tag is a defect smell, not a convenience.** Grep for
+others before shipping. And no gate we own can catch a dead-but-well-formed vnode — only
+loading the page can.
+
+Re-verified after the fix, independently, not from the agent's self-report:
+`vue-tsc` 0 errors · june-lint clean across 66 files · `vite build` OK ·
+`vitest` 1536/1536 across 220 files.
+
+### Confirmed working in a real browser
+
+Section switcher popover (6 sections, correct counts) · Select popover (teleported,
+searchable, checkmark on active) · avatar menu (exactly 3 items) · sidebar collapse ·
+BaseDialog via the compliance dialog · sticky columns (`position: sticky; right: 0` on
+Actions) · bulk-selection bar tinting with brand-tint clay, not blue.
+
+Design tokens resolve for real: body background `oklch(0.9396 …)` light →
+`oklch(0.1887 …)` dark, body font `ABC Diatype`, `.hgi-stroke` →
+`hugeicons-stroke-rounded`, `data-brand="clay"`.
+
+Chart tokens: no `<canvas>` ever mounts on an empty DB (components short-circuit to "No
+data available" before instantiating Chart.js), so painted pixels are still unverified.
+But `useChartTokens.ts`'s `resolveColorExpr` was exercised directly in the live page — all
+9 probed tokens resolved to distinct non-empty colours and **re-resolved on theme toggle**
+(`--foreground` `oklch(0.2724 …)` → `oklch(0.985 …)`). Mechanism sound; paint unproven.
+
+### 4 further findings, NOT fixed — reported, not decided
+
+1. **Legacy teal gradient on the primary CTA of the two busiest tables.**
+   `AccountTableActions.vue`'s "Create Account" (and the "Create User" analogue) still use
+   raw `class="btn btn-primary"`, rendering
+   `linear-gradient(rgb(20,184,166), rgb(13,148,136))`. Confirmed byte-identical to pristine
+   `frontend/`, so it is an unconverted surface, not a regression — but it is the loudest
+   remaining teal in the product and it sits on `/admin/accounts` and `/admin/users`.
+2. **The onboarding tour auto-navigates the browser through most admin routes unprompted.**
+   After one interaction with a tour-tagged element, `useOnboardingTour.ts`'s interactive-step
+   advance (`.click()` at lines 145 and 480) drove the app through
+   `/admin/settings → /admin/audit-logs → /admin/groups → /admin/usage → /keys →
+   /subscriptions → /admin/users → /admin/ops → /admin/dashboard → …`, fetching each page's
+   data, with no further input. `history.length` reached 50. Whether the tour is meant to be
+   an autonomous walkthrough or wait for a real click is a design call, so it was left alone.
+3. **Section switcher desyncs from the route on hard reload / deep link.** Documented as
+   intentional at `AppSidebar.vue:562-573` — cold start always defaults to "Accounts" and the
+   route watcher only fires on client-side navigation, not on mount. Reproduced: hard reload
+   into `/admin/dashboard` highlights "Accounts" until the next in-app navigation. Visible in
+   `07-admin-dashboard.png`.
+4. **36px row height is a floor, not a cap.** `.dt-tr { height: var(--dt-row-h) }` does not
+   constrain a table row; measured 46.5px on `/admin/users` with real content. Spec gap, not
+   render-breaking. Needs `line-height` + cell padding control, or `max-height` semantics.
+
+### Still unverified
+
+- **The `isAdmin === false` customer sidebar** — the 7-row nav with three group labels. The
+  only seeded account is admin, and both `homePath` and the nav template branch on `isAdmin`,
+  so admins never see the customer-only layout. Needs a non-admin test account.
+- **Chart canvas pixels** — needs seeded usage data.
+- **Row height under many rows** — only ever had 0-1 rows.
