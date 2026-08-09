@@ -1,35 +1,114 @@
-<template>
-  <div
-    v-if="state?.eligible"
-    class="min-w-0 max-w-full space-y-1"
-    data-testid="ollama-cloud-usage-cell"
-  >
-    <UsageProgressBar
-      v-if="snapshot?.data?.five_hour"
-      label="5h"
-      :utilization="snapshot.data.five_hour.used_percent"
-      :resets-at="snapshot.data.five_hour.reset_at"
-      color="indigo"
-      data-testid="ollama-cloud-five-hour"
-    />
-    <UsageProgressBar
-      v-if="snapshot?.data?.seven_day"
-      label="7d"
-      :utilization="snapshot.data.seven_day.used_percent"
-      :resets-at="snapshot.data.seven_day.reset_at"
-      color="emerald"
-      data-testid="ollama-cloud-seven-day"
-    />
-  </div>
-  <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
-</template>
-
 <script setup lang="ts">
+/**
+ * OllamaCloudUsageCell — table cells part 08, kind C ("Ratio").
+ *
+ * Migration note from the prototype (restCells, "OllamaCloudUsageCell"):
+ *   "Correct as built. Only the fill token changes."
+ *
+ * "As built" kept both windows (5h and 7d) stacked, which this keeps. What
+ * changes: the old UsageProgressBar coloured the two windows' label chips
+ * indigo vs emerald — colour by which window it is, a category, not a
+ * state (ground rule 5). It also hard-coded Tailwind red/amber/green for
+ * the fill rather than using this app's threshold tokens, and it is not a
+ * June component. CapacityBar already is: it is composed here directly
+ * (sm, 6px, continuous — the table-cell size), one instance per window,
+ * both sharing the one threshold rule every ratio cell in this part uses.
+ * The reset countdown drops UsageProgressBar's per-minute ticking clock (an
+ * interval per row, for a table column) in favour of a value computed at
+ * render time from the account's own resets_at — this is not a live-ticking
+ * value in a fixed-width slot, so it does not need tabular-nums or a timer.
+ *
+ * Prop is unchanged (`account: Account`).
+ */
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { Account } from '@/types'
-import UsageProgressBar from './UsageProgressBar.vue'
+import CapacityBar from '@/components/common/CapacityBar.vue'
+import { formatCountdown } from '@/utils/format'
 
 const props = defineProps<{ account: Account }>()
+const { t } = useI18n()
+
 const state = computed(() => props.account.ollama_cloud_usage)
 const snapshot = computed(() => state.value?.snapshot)
+
+const thresholdInk = (percent: number) => {
+  if (percent > 100) return 'var(--destructive)'
+  if (percent >= 80) return 'var(--s2a-attn)'
+  return 'var(--foreground)'
+}
+
+const resetLabel = (resetsAt: string | null | undefined) => {
+  const countdown = formatCountdown(resetsAt)
+  return countdown ? t('misc.resetIn', { time: countdown }) : ''
+}
 </script>
+
+<template>
+  <div v-if="state?.eligible" class="ocu" data-testid="ollama-cloud-usage-cell">
+    <div v-if="snapshot?.data?.five_hour" class="ocu__row" data-testid="ollama-cloud-five-hour">
+      <span class="ocu__label">{{ t('admin.accounts.ollamaCloud.fiveHourShort') }}</span>
+      <CapacityBar :percent="snapshot.data.five_hour.used_percent" size="sm" class="ocu__bar" />
+      <span class="ocu__percent" :style="{ color: thresholdInk(snapshot.data.five_hour.used_percent) }">
+        {{ Math.round(snapshot.data.five_hour.used_percent) }}%
+      </span>
+      <span v-if="resetLabel(snapshot.data.five_hour.reset_at)" class="ocu__reset">{{ resetLabel(snapshot.data.five_hour.reset_at) }}</span>
+    </div>
+    <div v-if="snapshot?.data?.seven_day" class="ocu__row" data-testid="ollama-cloud-seven-day">
+      <span class="ocu__label">{{ t('admin.accounts.ollamaCloud.sevenDayShort') }}</span>
+      <CapacityBar :percent="snapshot.data.seven_day.used_percent" size="sm" class="ocu__bar" />
+      <span class="ocu__percent" :style="{ color: thresholdInk(snapshot.data.seven_day.used_percent) }">
+        {{ Math.round(snapshot.data.seven_day.used_percent) }}%
+      </span>
+      <span v-if="resetLabel(snapshot.data.seven_day.reset_at)" class="ocu__reset">{{ resetLabel(snapshot.data.seven_day.reset_at) }}</span>
+    </div>
+  </div>
+  <span v-else class="ocu__empty">-</span>
+</template>
+
+<style scoped>
+.ocu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ocu__row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.ocu__label {
+  flex-shrink: 0;
+  width: 16px;
+  color: var(--muted-foreground);
+  font-size: var(--fs-2xs);
+}
+
+.ocu__bar {
+  width: 40px;
+  flex-shrink: 0;
+}
+
+.ocu__percent {
+  flex-shrink: 0;
+  width: 28px;
+  font-size: var(--fs-2xs);
+}
+
+.ocu__reset {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: var(--fs-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocu__empty {
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+</style>
