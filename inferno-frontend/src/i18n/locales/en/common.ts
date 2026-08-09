@@ -273,9 +273,9 @@ export default {
 
   // Auth
   auth: {
-    welcomeBack: 'Welcome Back',
+    welcomeBack: 'Welcome back',
     signInToAccount: 'Sign in to your account to continue',
-    signIn: 'Sign In',
+    signIn: 'Sign in',
     signingIn: 'Signing in...',
     passkeySignIn: 'Sign in with a passkey',
     passkeySigningIn: 'Waiting for passkey...',
