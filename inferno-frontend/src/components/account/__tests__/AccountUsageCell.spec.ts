@@ -262,6 +262,13 @@ describe('AccountUsageCell', () => {
     )
     expect(byLabel['admin.accounts.usageWindow.fiveHour']).toBe('15')
     expect(byLabel['admin.accounts.usageWindow.sevenDay']).toBe('77')
+    // Regression: window_stats (per-window requests/tokens/cost) arrives on
+    // the wire and used to be dropped before render entirely. It now
+    // resurfaces in the expansion, where there is room for it -- not on the
+    // primary bar, which stays at just percent + reset time.
+    expect(wrapper.text()).toContain('3 req')
+    expect(wrapper.text()).toContain('A $0.03')
+    expect(wrapper.text()).toContain('U $0.03')
   })
 
   it('OpenAI OAuth 有 codex 快照时仍然使用 /usage API 数据渲染', async () => {
@@ -954,6 +961,44 @@ describe('AccountUsageCell', () => {
     const bar = wrapper.get('[role="progressbar"]')
     expect(bar.attributes('aria-label')).toBe('admin.accounts.usageWindow.grok24h')
     expect(bar.attributes('aria-valuenow')).toBe('100')
+  })
+
+  it('regression: a single-window account still shows its reset time (no expansion exists to hide it behind)', async () => {
+    getUsage.mockResolvedValue({
+      grok_free_token_limit: 1_000_000,
+      grok_billing: { period_type: 'weekly', usage_percent: null, plan: '' },
+      grok_local_usage_24h: {
+        requests: 5,
+        tokens: 500_000,
+        cost: 0,
+        standard_cost: 0
+      }
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({ id: 4500, platform: 'grok', type: 'oauth', extra: {} })
+      },
+      global: {
+        stubs: {
+          AccountQuotaInfo: true,
+        }
+      }
+    })
+
+    await flushPromises()
+
+    // Grok Free has exactly one window (grok_24h) and no expansion --
+    // `.uc-expand` never renders for a single-window account, so the reset
+    // label has nowhere else to live. Before the fix it was rendered only
+    // inside `.uc-expandlist`, which meant it was never rendered at all here.
+    expect(wrapper.find('.uc-expand').exists()).toBe(false)
+    const bar = wrapper.get('[role="progressbar"]')
+    expect(bar.attributes('aria-label')).toBe('admin.accounts.usageWindow.grok24h')
+    // grok_24h's resetsAt is always null (rolling window) -- resetsLabel
+    // resolves that to usage.resetNow, and it must appear on the primary
+    // bar itself since it is the only bar this row ever renders.
+    expect(wrapper.text()).toContain('usage.resetNow')
   })
 
   it('Key 账号在 today stats loading 时显示骨架屏', async () => {
