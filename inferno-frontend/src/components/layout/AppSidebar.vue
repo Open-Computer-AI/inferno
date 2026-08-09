@@ -174,7 +174,7 @@
               @click="toggleTheme"
             >
               <i class="hgi-stroke" :class="isDark ? 'hgi-sun-03' : 'hgi-moon-02'" aria-hidden="true" />
-              <span class="rail__popover-row-label">{{ isDark ? t('nav.lightMode') : t('nav.darkMode') }}</span>
+              <span class="rail__popover-row-label">{{ isDark ? t('shell.lightMode') : t('shell.darkMode') }}</span>
             </button>
           </div>
         </Teleport>
