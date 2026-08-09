@@ -34,6 +34,25 @@ export interface Scene {
   style: 'drift' | 'grain' | 'streak' | 'swell'
 }
 
+/**
+ * Cell pitch in CSS pixels, and the one number that has to be held constant.
+ *
+ * The prototype hard-codes 42 columns, which is right for the 575x600 preview
+ * box it renders into: 575 / (42 + 2 * 0.75 margin) = 13.2px per cell.
+ *
+ * That constant does NOT survive being moved to a full-bleed panel. With the
+ * column count fixed, every extra pixel of panel width goes into making each
+ * circle bigger -- 13.2px at 575 wide, 20px at 1440, 29px at 2000 -- and the
+ * dense field of touching circles turns into a coarse grid of saucers with a
+ * blobby hole in it.
+ *
+ * So the invariant is the cell size, and the column count derives from it. The
+ * mark still scales with the panel (it is sized in cells), which is what keeps
+ * it proportionally identical to the prototype at any width.
+ */
+const CELL_PX = 575 / (42 + 1.5)
+
+/** The prototype's column count, kept only as the floor for a narrow panel. */
 export const D_COLS = 42
 const D_HOLD = 2600
 const D_MORPH = 900
@@ -337,10 +356,12 @@ export class DotCutField {
     this.cv.width = Math.round(w * this.dpr)
     this.cv.height = Math.round(h * this.dpr)
 
-    // Column count is FIXED and the pitch derives from it, so the lattice reads
-    // at the same density on any panel width. Deriving cols from width instead
-    // would make the mark change size with the viewport.
+    // Columns derive from width at a fixed cell size, so the lattice reads at
+    // the prototype's density on any panel. See CELL_PX -- doing this the other
+    // way round (fixed columns, derived pitch) is what made the circles 2.2x
+    // too big on a full-height panel.
     const margin = 0.75
+    this.cols = Math.max(12, Math.round(w / CELL_PX - 2 * margin))
     this.pitch = w / (this.cols + 2 * margin)
     this.rows = Math.max(3, Math.floor((h - 2 * margin * this.pitch) / this.pitch))
     this.ox = (w - this.cols * this.pitch) / 2
