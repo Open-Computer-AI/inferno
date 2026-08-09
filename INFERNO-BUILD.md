@@ -457,3 +457,40 @@ the next run; this entry advanced the mirror but did not complete the port.
    without touching any TS file, and a stale client does not fail loudly.
 7. Port only what converted components depend on. Record ports AND skips here,
    then advance the last reviewed SHA.
+
+## Modal archetype map (part 05 sections `archetypes` and `map`)
+
+Documentation, not components. 44 modals resolve to six shapes; once a modal is
+classified it inherits everything. Recorded here because the classification is
+the remaining work, and it is a decision per modal rather than a sweep.
+
+| Archetype | Count | Width | Status |
+|---|---|---|---|
+| A Confirm | 4 | narrow 420 | built: `ConfirmDialog.vue` |
+| B Short form | 7 | normal 520 | primitive is `BaseDialog`; not migrated |
+| C Sectioned form | 7 | wide 720 | built: `SectionedDialog.vue` |
+| D Picker / list editor | 9 | wide 720 | not built |
+| E Read-only detail | 8 | extra-wide 960 | not built |
+| F Process / step | 9 | narrow 420 | not built |
+
+Notes that change behaviour, not just looks:
+
+- **12 modals get narrower.** "Wide" had been absorbing four different real
+  widths by drift. This is the single biggest visual change in part 05, and it
+  lands all at once when the classification is applied.
+- **Archetype D is the largest behavioural change in the part**: 3 of its 9
+  modals currently open a second dialog to edit one row. Removing that nesting
+  is the "a modal may not open a modal" call, and it is also why
+  `BaseDialog.zIndex` still exists (6 consumers stack dialogs).
+- **Archetype E is the only one where `closeOnClickOutside` should default true**
+  — nothing to submit.
+- **B is often a one-word fix**: 4 of its 7 are currently `wide` for 4-5 fields,
+  which is why they read as empty.
+- A few modals get WIDER: `UserCreateModal` and `UserEditModal` move normal ->
+  wide because they are actually archetype C, not B.
+- `AccountTestModal` transitions F -> E once its streamed run finishes. That is a
+  state change within one dialog, not a second dialog.
+- **`CreateAccountModal` (6,338 lines) and `EditAccountModal` (4,799) are
+  excluded** from the C migration. Part 05's own `#calls` calls them "a project
+  rather than a pass" — they need a credential component per platform behind one
+  interface before the archetype pays off.
