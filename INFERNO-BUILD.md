@@ -1192,3 +1192,109 @@ Gate after all of the above: vue-tsc **0 errors** · june-lint clean across **68
 `vite build` ok · vitest **1536/1536** across 220 files. Thin-fork invariant re-checked and
 still empty (the build writes into `backend/internal/web/dist`, which is gitignored at
 `.gitignore:102`).
+
+## Phase 4 begins: part 17 Login
+
+The first screen every customer sees, and the loudest unconverted surface left.
+
+### The panel
+
+`components/auth/dotCutField.ts` + `components/auth/AuthFieldPanel.vue`. The field
+algorithm is **ported from part 17's live prototype, not reimplemented** — the look depends
+on exact constants (lattice pitch, bore ratio, per-transition delay curves) and an
+approximate reinvention reads as "dots on a background" instead of one surface.
+
+Four rules the spec is emphatic about, all load-bearing:
+
+- **The mark is a hole.** Nothing is drawn on top; every cell the glyph covers is removed
+  and the flat panel shows through. Inferno has no mark yet, so the field punches one out
+  rather than importing a logo the brand does not own.
+- **The circles touch.** Pitch equals diameter exactly, so the concave diamonds between
+  every four carry the texture.
+- **A cell has no on and off.** Every radius between solid and ring is valid.
+- **Still, then quick.** Nothing moves during the hold; the change is over in under a second.
+
+"Full colour ships" — six vivid two-tone pairs, one per scene, cross-blended on the morph.
+This is the one place in Inferno that breaks the single-accent rule and it earns it by
+being the only screen with nothing else on it. That is also why they are literal hex rather
+than June tokens: reference art, not theme. The panel does not respond to dark mode by
+design.
+
+Lifecycle is the part that makes an always-running canvas shippable: `prefers-reduced-motion`
+gets one static frame, offscreen or hidden tab stops the loop rather than throttling it, and
+fonts are awaited before the first raster because the mark is cut from the serif and
+rasterising against a fallback punches the wrong silhouette. Below 900px the panel is
+`display: none`, and since the run gate tests `width > 0` the loop stops entirely — no
+animation cost on mobile.
+
+Verified live: the cut-out genuinely punches cells. Replicating `rasterize`'s text branch in
+the page produced 14 punched cells forming a centred vertical bar, with
+`document.fonts.check('16px "Martina Plantijn"')` true. As part 17 predicts, at this cell
+count the letter reads as a plain bar — which is exactly why it flags the letter as a
+placeholder and constrains any commissioned mark to a solid silhouette ~40 cells wide.
+
+### The layout, rewritten once for nine views
+
+`AuthLayout.vue` was 88 lines of everything June bans — gradient orbs, blur, glass, a teal
+grid. It is now the split screen: a fixed 560px form column and the panel taking the rest,
+so the reading measure never stretches on a wide monitor. Nine views render through this
+slot (login, register, forgot, reset, verify, four OAuth callbacks), so they all inherit it.
+
+The form column is deliberately plainer than anything else in the library — no card, no
+shadow, the form sits directly on the page — because a front door has exactly one job. The
+wordmark **is** the logo: the site name set in Martina Plantijn, no tile and no monogram. An
+operator-uploaded logo still wins, because that is their brand and not ours to override.
+
+### REGRESSION I introduced and fixed: `.input` padding vs icon insets
+
+Adding `.input { padding: 0 10px }` to the bridge beat Tailwind's `pl-11` on source order
+(utilities are emitted inside `style.css`; the bridge loads after it), so **twelve views**
+that inset an icon into the field had the icon land on top of the placeholder. Caught by
+loading `/forgot-password`, not by any gate.
+
+Fixed by setting horizontal padding per side and only when the view has not set its own:
+
+```css
+.input:not([class*='pl-']):not([class*='px-']) { padding-left: 10px; }
+.input:not([class*='pr-']):not([class*='px-']) { padding-right: 10px; }
+```
+
+The `:not()` guards never fight the utility — they simply do not match when one is present.
+Those insets are legitimate on admin search fields, so the padding yields to them rather
+than the other way round.
+
+Measured after the fix: `/forgot-password` icon ends at 34px with text starting at 44px;
+login's email field 10/10, its password field 10 left and 36 right so `pr-9` still clears
+the reveal button.
+
+### NOT done, and why: the two-step form
+
+Part 17 specifies email first, password second, so "a GitHub user never sees a password
+field". That benefit requires an identity-lookup endpoint the backend does not have — and
+an endpoint that reveals whether an address is registered is an account-enumeration hole,
+the very thing the spec's own reset copy is written to avoid. Without the lookup, two steps
+is pure added friction for every password user and delivers none of the stated gain, so the
+screen stays single-step. Revisit if a lookup ever ships.
+
+Also deferred: the five interrupt states (captcha, 2FA, agreement, wrong password, rate
+limit) still render as they do today — captcha and agreement inline, 2FA as a modal. Part
+17 wants all five in the same column so the screen never changes shape. Rate limiting does
+not exist in the product at all ("needs building").
+
+### Also fixed here
+
+Sentence case on the two visible Title Case strings (`Welcome Back` → `Welcome back`,
+`Sign In` → `Sign in`, ground rule 1); the decorative icon on the CTA; the CTA spinner,
+which hard-coded `text-white` and so assumed `--primary-foreground` was light when it is a
+token; and `.fade-enter-active`'s `transition: all`, which animates border-color (ground
+rule 6) and is now the two properties it actually changes.
+
+Gate: vue-tsc **0 errors** · june-lint clean across **71** files · `vite build` ok ·
+vitest **1536/1536**. Verified in a real browser at 1440x900 light and dark, and at 820px
+where the panel drops and the page has no horizontal overflow.
+
+### Still owed on the auth flows
+
+The other eight views through this layout are unconverted inside their slot — centred
+headings, Title Case, teal links, icon-in-button. `/forgot-password` is the clearest
+example. They inherit the new shell but their own contents are still phase-4 work.
