@@ -294,7 +294,7 @@ describe('DataTable', () => {
       }
     })
 
-    await wrapper.get('[data-test="select-all"]').setValue(true)
+    await wrapper.get('[data-test="select-all"]').trigger('click')
 
     const selectedAll = wrapper.emitted('update:selectedKeys')?.at(-1)?.[0]
     expect(selectedAll).toEqual([99, 1, 2])
@@ -353,7 +353,7 @@ describe('DataTable', () => {
       }
     })
 
-    await wrapper.get('[data-test="select-all-mobile"]').setValue(true)
+    await wrapper.get('[data-test="select-all-mobile"]').trigger('click')
 
     expect(wrapper.emitted('update:selectedKeys')?.at(-1)?.[0]).toEqual([99, 1, 2])
   })
