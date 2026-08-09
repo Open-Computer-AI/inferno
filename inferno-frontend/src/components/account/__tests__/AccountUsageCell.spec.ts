@@ -142,10 +142,6 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
-          UsageProgressBar: {
-            props: ['label', 'utilization', 'resetsAt', 'color'],
-            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ resetsAt }}</div>'
-          },
           AccountQuotaInfo: true
         }
       }
@@ -153,7 +149,16 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('admin.accounts.usageWindow.gemini3Image|70|2026-03-01T09:00:00Z')
+    // The three image model variants (old + new) collapse into ONE bar: the
+    // guarantee is max-utilization aggregation (70, from gemini-3-pro-image),
+    // not a separate bar per model. CapacityBar (not the removed
+    // UsageProgressBar) is what now renders it.
+    const bars = wrapper.findAll('[role="progressbar"]')
+    expect(bars).toHaveLength(1)
+    expect(bars[0].attributes('aria-label')).toBe('admin.accounts.usageWindow.gemini3Image')
+    expect(bars[0].attributes('aria-valuenow')).toBe('70')
+    // A single window has nothing to collapse behind "+N more".
+    expect(wrapper.find('.uc-expand').exists()).toBe(false)
   })
 
   it('Antigravity 会显示 AI Credits 余额信息', async () => {
@@ -236,10 +241,6 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
-          UsageProgressBar: {
-            props: ['label', 'utilization', 'resetsAt', 'windowStats', 'color'],
-            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.tokens }}</div>'
-          },
           AccountQuotaInfo: true
         }
       }
@@ -248,8 +249,19 @@ describe('AccountUsageCell', () => {
     await flushPromises()
 
     expect(getUsage).toHaveBeenCalledWith(2000)
-    expect(wrapper.text()).toContain('5h|15|300')
-    expect(wrapper.text()).toContain('7d|77|300')
+    // Closest-to-limit window (7d, 77%) renders directly; 5h (15%) is one
+    // click away behind the expansion, not stacked below it. Per-window
+    // token/cost stats (window_stats) are no longer rendered by this cell at
+    // all -- see the report for that dropped guarantee.
+    const primary = wrapper.get('[role="progressbar"]')
+    expect(primary.attributes('aria-label')).toBe('admin.accounts.usageWindow.sevenDay')
+    expect(primary.attributes('aria-valuenow')).toBe('77')
+    await wrapper.get('.uc-expand').trigger('click')
+    const byLabel = Object.fromEntries(
+      wrapper.findAll('[role="progressbar"]').map((b) => [b.attributes('aria-label'), b.attributes('aria-valuenow')])
+    )
+    expect(byLabel['admin.accounts.usageWindow.fiveHour']).toBe('15')
+    expect(byLabel['admin.accounts.usageWindow.sevenDay']).toBe('77')
   })
 
   it('OpenAI OAuth 有 codex 快照时仍然使用 /usage API 数据渲染', async () => {
@@ -297,10 +309,6 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
-          UsageProgressBar: {
-            props: ['label', 'utilization', 'resetsAt', 'windowStats', 'color'],
-            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.tokens }}</div>'
-          },
           AccountQuotaInfo: true
         }
       }
@@ -309,9 +317,16 @@ describe('AccountUsageCell', () => {
     await flushPromises()
 
     expect(getUsage).toHaveBeenCalledWith(2001)
-    // 单一数据源：始终使用 /usage API 返回值，忽略 codex 快照
-    expect(wrapper.text()).toContain('5h|18|900')
-    expect(wrapper.text()).toContain('7d|36|900')
+    // 单一数据源：始终使用 /usage API 返回值 (18/36), 而不是 codex 快照 (12/34)。
+    const primary = wrapper.get('[role="progressbar"]')
+    expect(primary.attributes('aria-label')).toBe('admin.accounts.usageWindow.sevenDay')
+    expect(primary.attributes('aria-valuenow')).toBe('36')
+    await wrapper.get('.uc-expand').trigger('click')
+    const byLabel = Object.fromEntries(
+      wrapper.findAll('[role="progressbar"]').map((b) => [b.attributes('aria-label'), b.attributes('aria-valuenow')])
+    )
+    expect(byLabel['admin.accounts.usageWindow.fiveHour']).toBe('18')
+    expect(byLabel['admin.accounts.usageWindow.sevenDay']).toBe('36')
   })
 
   it('OpenAI OAuth 有现成快照时，手动刷新信号会触发 usage 重拉', async () => {
@@ -361,10 +376,6 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
-          UsageProgressBar: {
-            props: ['label', 'utilization', 'resetsAt', 'windowStats', 'color'],
-            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.tokens }}</div>'
-          },
           AccountQuotaInfo: true
         }
       }
@@ -380,8 +391,10 @@ describe('AccountUsageCell', () => {
     // 手动刷新再拉一次
     expect(getUsage).toHaveBeenCalledTimes(2)
     expect(getUsage).toHaveBeenCalledWith(2010)
-    // 单一数据源：始终使用 /usage API 值
-    expect(wrapper.text()).toContain('5h|18|900')
+    // 单一数据源：始终使用 /usage API 值 (7d 36%, the closest-to-limit window)
+    const primary = wrapper.get('[role="progressbar"]')
+    expect(primary.attributes('aria-label')).toBe('admin.accounts.usageWindow.sevenDay')
+    expect(primary.attributes('aria-valuenow')).toBe('36')
   })
 
   it('OpenAI OAuth 在无 codex 快照时会回退显示 usage 接口窗口', async () => {
@@ -423,10 +436,6 @@ describe('AccountUsageCell', () => {
 		  },
 	  global: {
 	    stubs: {
-	      UsageProgressBar: {
-	        props: ['label', 'utilization', 'resetsAt', 'windowStats', 'color'],
-	        template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.tokens }}</div>'
-	      },
 	      AccountQuotaInfo: true
 	    }
 	  }
@@ -435,15 +444,24 @@ describe('AccountUsageCell', () => {
 	await flushPromises()
 
 	expect(getUsage).toHaveBeenCalledWith(2002)
-	expect(wrapper.text()).toContain('5h|0|27700')
-	expect(wrapper.text()).toContain('7d|0|27700')
+	// Both windows are 0%; the tie goes to the first computed window (5h)
+	// as the primary bar, 7d is reachable behind the expansion.
+	const primary = wrapper.get('[role="progressbar"]')
+	expect(primary.attributes('aria-label')).toBe('admin.accounts.usageWindow.fiveHour')
+	expect(primary.attributes('aria-valuenow')).toBe('0')
+	await wrapper.get('.uc-expand').trigger('click')
+	const byLabel = Object.fromEntries(
+	  wrapper.findAll('[role="progressbar"]').map((b) => [b.attributes('aria-label'), b.attributes('aria-valuenow')])
+	)
+	expect(byLabel['admin.accounts.usageWindow.fiveHour']).toBe('0')
+	expect(byLabel['admin.accounts.usageWindow.sevenDay']).toBe('0')
   })
 
   it('OpenAI OAuth 在行数据刷新但仍无 codex 快照时会重新拉取 usage', async () => {
 	getUsage
 	  .mockResolvedValueOnce({
 	    five_hour: {
-	      utilization: 0,
+	      utilization: 8,
 	      resets_at: null,
 	      remaining_seconds: 0,
 	      window_stats: {
@@ -458,7 +476,7 @@ describe('AccountUsageCell', () => {
 	  })
 	  .mockResolvedValueOnce({
 	    five_hour: {
-	      utilization: 0,
+	      utilization: 21,
 	      resets_at: null,
 	      remaining_seconds: 0,
 	      window_stats: {
@@ -484,17 +502,16 @@ describe('AccountUsageCell', () => {
 		  },
 	  global: {
 	    stubs: {
-	      UsageProgressBar: {
-	        props: ['label', 'utilization', 'resetsAt', 'windowStats', 'color'],
-	        template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.tokens }}</div>'
-	      },
 	      AccountQuotaInfo: true
 	    }
 	  }
 	})
 
 	await flushPromises()
-	expect(wrapper.text()).toContain('5h|0|100')
+	// Per-window token/cost stats are no longer rendered by this cell, so the
+	// refetch is observed through the utilization it actually displays (the
+	// mocked responses use distinct 8%/21% to make the swap observable).
+	expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('8')
 	expect(getUsage).toHaveBeenCalledTimes(1)
 
 	await wrapper.setProps({
@@ -509,7 +526,7 @@ describe('AccountUsageCell', () => {
 
 	await flushPromises()
 	expect(getUsage).toHaveBeenCalledTimes(2)
-	expect(wrapper.text()).toContain('5h|0|200')
+	expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('21')
   })
 
   it('OpenAI 重置响应更新账号行时不会额外拉取 usage', async () => {
@@ -599,10 +616,6 @@ describe('AccountUsageCell', () => {
 		  },
 	  global: {
 	    stubs: {
-	      UsageProgressBar: {
-	        props: ['label', 'utilization', 'resetsAt', 'windowStats', 'color'],
-	        template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.tokens }}</div>'
-	      },
 	      AccountQuotaInfo: true
 	    }
 	  }
@@ -611,8 +624,17 @@ describe('AccountUsageCell', () => {
 	await flushPromises()
 
   expect(getUsage).toHaveBeenCalledWith(2004)
-  expect(wrapper.text()).toContain('5h|100|106540000')
-  expect(wrapper.text()).toContain('7d|100|106540000')
+  // Both windows are at the 100% limit; the tie goes to 5h as the primary
+  // bar, 7d is reachable behind the expansion.
+  const primary = wrapper.get('[role="progressbar"]')
+  expect(primary.attributes('aria-label')).toBe('admin.accounts.usageWindow.fiveHour')
+  expect(primary.attributes('aria-valuenow')).toBe('100')
+  await wrapper.get('.uc-expand').trigger('click')
+  const byLabel = Object.fromEntries(
+    wrapper.findAll('[role="progressbar"]').map((b) => [b.attributes('aria-label'), b.attributes('aria-valuenow')])
+  )
+  expect(byLabel['admin.accounts.usageWindow.fiveHour']).toBe('100')
+  expect(byLabel['admin.accounts.usageWindow.sevenDay']).toBe('100')
   })
 
   it('Key 账号会展示 today stats 徽章并带 A/U 提示', async () => {
@@ -709,18 +731,14 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
-          UsageProgressBar: {
-            props: ['label', 'utilization'],
-            template: '<div class="usage-bar">{{ label }}|{{ utilization }}</div>'
-          },
           AccountQuotaInfo: true
         }
       }
     })
 
     await flushPromises()
-    expect(wrapper.text()).toContain('30d|')
-    expect(wrapper.text()).not.toContain('24h|')
+    expect(wrapper.text()).toContain('admin.accounts.usageWindow.thirtyDay')
+    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grok24h')
   })
 
   it('Grok OAuth uses the official weekly billing percentage when available', async () => {
@@ -748,10 +766,6 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
-          UsageProgressBar: {
-            props: ['label', 'utilization', 'resetsAt', 'remainingCapacity'],
-            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ resetsAt }}|{{ remainingCapacity }}</div>'
-          },
           AccountQuotaInfo: true,
         }
       }
@@ -759,10 +773,15 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('7d|37|2026-07-16T03:25:00Z')
-    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokRequests|')
-    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokTokens|')
-    expect(wrapper.text()).not.toContain('2M|')
+    // Single window (weekly billing, 37%) -- request/token count chips and
+    // formatted-capacity text never existed for this cell and still don't.
+    const bars = wrapper.findAll('[role="progressbar"]')
+    expect(bars).toHaveLength(1)
+    expect(bars[0].attributes('aria-label')).toBe('admin.accounts.usageWindow.sevenDay')
+    expect(bars[0].attributes('aria-valuenow')).toBe('37')
+    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokRequests')
+    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokTokens')
+    expect(wrapper.text()).not.toContain('2M')
   })
 
   it.each([
@@ -795,10 +814,6 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
-          UsageProgressBar: {
-            props: ['label', 'utilization'],
-            template: '<div class="usage-bar">{{ label }}|{{ utilization }}</div>'
-          },
           AccountQuotaInfo: true,
         }
       }
@@ -806,11 +821,13 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain(`24h|${expected}`)
-    expect(wrapper.findAll('.usage-bar')).toHaveLength(1)
-    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokRequests|')
-    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokTokens|')
-    expect(wrapper.text()).not.toContain('7d|')
+    const bars = wrapper.findAll('[role="progressbar"]')
+    expect(bars).toHaveLength(1)
+    expect(bars[0].attributes('aria-label')).toBe('admin.accounts.usageWindow.grok24h')
+    expect(bars[0].attributes('aria-valuenow')).toBe(String(expected))
+    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokRequests')
+    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokTokens')
+    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.sevenDay')
   })
 
   it('Grok Free uses rolling 24h usage instead of today-only usage', async () => {
@@ -843,10 +860,6 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
-          UsageProgressBar: {
-            props: ['label', 'utilization', 'title'],
-            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ title }}</div>'
-          },
           AccountQuotaInfo: true,
         }
       }
@@ -854,8 +867,18 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('24h|75|admin.accounts.usageWindow.grokFreeQuota24hHint')
-    expect(wrapper.text()).not.toContain('7d|')
+    // The bar uses the rolling-24h tokens (750K/1M = 75%), not today-only
+    // usage (200K, which would be 20%) or the account's raw local usage
+    // (250K, 25%). Note: the old UI carried an explanatory hint
+    // ("grokFreeQuota24hHint") on the bar explaining it uses a rolling
+    // window; CapacityBar has no title/hint slot, so that explanatory text
+    // is dropped from the UI in this pass -- the number itself is still
+    // correct and is what this assertion covers.
+    const bars = wrapper.findAll('[role="progressbar"]')
+    expect(bars).toHaveLength(1)
+    expect(bars[0].attributes('aria-label')).toBe('admin.accounts.usageWindow.grok24h')
+    expect(bars[0].attributes('aria-valuenow')).toBe('75')
+    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.sevenDay')
     expect(wrapper.text()).not.toContain('200.0K')
     expect(wrapper.text()).not.toContain('250.0K')
   })
@@ -921,10 +944,6 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
-          UsageProgressBar: {
-            props: ['label', 'utilization'],
-            template: '<div class="usage-bar">{{ label }}|{{ utilization }}</div>'
-          },
           AccountQuotaInfo: true,
         }
       }
@@ -932,7 +951,9 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('24h|100')
+    const bar = wrapper.get('[role="progressbar"]')
+    expect(bar.attributes('aria-label')).toBe('admin.accounts.usageWindow.grok24h')
+    expect(bar.attributes('aria-valuenow')).toBe('100')
   })
 
   it('Key 账号在 today stats loading 时显示骨架屏', async () => {
@@ -956,7 +977,12 @@ describe('AccountUsageCell', () => {
 
 		await flushPromises()
 
-		expect(wrapper.findAll('.animate-pulse').length).toBeGreaterThan(0)
+		// June ground rule 7: loading is a flat static skeleton, not a Tailwind
+		// `.animate-pulse` glyph. `.uc-chips-skel` is the component's own
+		// scoped hook for that state (no data-testid exists on it).
+		const skeleton = wrapper.find('.uc-chips-skel')
+		expect(skeleton.exists()).toBe(true)
+		expect(wrapper.text()).not.toContain('req')
   })
 
   it('Key 账号在无 today stats 且无配额时显示兜底短横线', async () => {
@@ -1061,10 +1087,6 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
-          UsageProgressBar: {
-            props: ['label', 'utilization', 'resetsAt', 'color'],
-            template: '<div class="usage-bar">{{ label }}|{{ utilization }}</div>'
-          },
           AccountQuotaInfo: true,
         }
       }
@@ -1072,10 +1094,19 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('5h|41')
-    expect(wrapper.text()).toContain('7d|56')
-    expect(wrapper.text()).toContain('7d S|30')
-    expect(wrapper.text()).toContain('7d F|100')
+    // Closest-to-limit window (7d Fable, 100%) renders directly; the other
+    // three windows -- including 7d Sonnet -- are reachable behind the
+    // expansion, not stacked below it.
+    const primary = wrapper.get('[role="progressbar"]')
+    expect(primary.attributes('aria-label')).toBe('admin.accounts.usageWindow.sevenDayFable')
+    expect(primary.attributes('aria-valuenow')).toBe('100')
+    await wrapper.get('.uc-expand').trigger('click')
+    const byLabel = Object.fromEntries(
+      wrapper.findAll('[role="progressbar"]').map((b) => [b.attributes('aria-label'), b.attributes('aria-valuenow')])
+    )
+    expect(byLabel['admin.accounts.usageWindow.fiveHour']).toBe('41')
+    expect(byLabel['admin.accounts.usageWindow.sevenDay']).toBe('56')
+    expect(byLabel['admin.accounts.usageWindow.sevenDaySonnet']).toBe('30')
   })
 
   it('Anthropic OAuth 无 Fable 数据时不渲染 7d F 进度条', async () => {
@@ -1104,10 +1135,6 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
-          UsageProgressBar: {
-            props: ['label', 'utilization', 'resetsAt', 'color'],
-            template: '<div class="usage-bar">{{ label }}|{{ utilization }}</div>'
-          },
           AccountQuotaInfo: true,
         }
       }
@@ -1115,9 +1142,13 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('5h|41')
-    expect(wrapper.text()).toContain('7d|56')
-    expect(wrapper.text()).not.toContain('7d S')
-    expect(wrapper.text()).not.toContain('7d F')
+    const primary = wrapper.get('[role="progressbar"]')
+    expect(primary.attributes('aria-label')).toBe('admin.accounts.usageWindow.sevenDay')
+    expect(primary.attributes('aria-valuenow')).toBe('56')
+    await wrapper.get('.uc-expand').trigger('click')
+    const labels = wrapper.findAll('[role="progressbar"]').map((b) => b.attributes('aria-label'))
+    expect(labels).toContain('admin.accounts.usageWindow.fiveHour')
+    expect(labels).not.toContain('admin.accounts.usageWindow.sevenDaySonnet')
+    expect(labels).not.toContain('admin.accounts.usageWindow.sevenDayFable')
   })
 })
