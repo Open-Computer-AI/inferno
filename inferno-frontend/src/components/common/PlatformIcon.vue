@@ -11,11 +11,20 @@
       d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.872zm16.597 3.855l-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667zm2.01-3.023l-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zm-12.64 4.135l-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08L8.704 5.46a.795.795 0 0 0-.393.681zm1.097-2.365l2.602-1.5 2.607 1.5v2.999l-2.597 1.5-2.607-1.5z"
     />
   </svg>
-  <!-- Gemini logo (simple star) -->
+  <!-- Gemini logo, the real four-point sparkle mark, ported from ModelIcon.vue's
+       inline path (part 03 spec note: "PlatformIcon.vue has a plain four point
+       star here, which is not the mark"). Only the `d` travels across; the
+       colour stays fill="currentColor" like every other mark in this file, so
+       it renders in one ink and never in Gemini's brand blue. -->
   <svg v-else-if="platform === 'gemini'" :class="sizeClass" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M12 2l1.89 7.2L21 12l-7.11 2.8L12 22l-1.89-7.2L3 12l7.11-2.8L12 2z" />
+    <path
+      d="M20.616 10.835a14.147 14.147 0 01-4.45-3.001 14.111 14.111 0 01-3.678-6.452.503.503 0 00-.975 0 14.134 14.134 0 01-3.679 6.452 14.155 14.155 0 01-4.45 3.001c-.65.28-1.318.505-2.002.678a.502.502 0 000 .975c.684.172 1.35.397 2.002.677a14.147 14.147 0 014.45 3.001 14.112 14.112 0 013.679 6.453.502.502 0 00.975 0c.172-.685.397-1.351.677-2.003a14.145 14.145 0 013.001-4.45 14.113 14.113 0 016.453-3.678.503.503 0 000-.975 13.245 13.245 0 01-2.003-.678z"
+    />
   </svg>
-  <!-- Antigravity logo (cloud) -->
+  <!-- Antigravity logo (cloud). TODO(open-call-6): this is a generic cloud
+       placeholder, not Antigravity's real mark. Nothing in the repo (including
+       ModelIcon.vue's lobehub set) has the real one to lift, so this is an
+       open call for design, not something to invent a mark for here. -->
   <svg v-else-if="platform === 'antigravity'" :class="sizeClass" viewBox="0 0 24 24" fill="currentColor">
     <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z" />
   </svg>
@@ -41,6 +50,25 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * PlatformIcon — part 03, section 04.
+ *
+ * Migration note from the prototype:
+ *   "They render in one ink, not in brand colour. Five brand colours in a
+ *    table column would encode category in colour, and colour in this system
+ *    means state... Nothing here is redrawn. PlatformIcon.vue and
+ *    ModelIcon.vue already hold the inline paths and the size scale, and both
+ *    are already right. Only the colour treatment changes, from a step of the
+ *    ramp to one neutral ink."
+ *
+ * Every mark below already uses fill="currentColor" with no per-platform hex
+ * baked in, so the colour comes entirely from whatever ink the caller sets on
+ * its wrapping element — this file needed no colour rewrite. The only two
+ * fixes here are the Gemini mark (was a placeholder star, not Gemini's mark)
+ * and the Antigravity TODO below. Props, sizes and every other path are
+ * unchanged, per the prototype's own props table ("PlatformIcon.size /
+ * .platform ... unchanged").
+ */
 import { computed } from 'vue'
 import type { GroupPlatform } from '@/types'
 

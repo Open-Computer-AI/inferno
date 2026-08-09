@@ -1,38 +1,42 @@
-<template>
-  <span
-    :class="[
-      'inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium transition-colors',
-      badgeClass
-    ]"
-  >
-    <!-- Platform logo -->
-    <PlatformIcon v-if="platform" :platform="platform" size="sm" />
-    <!-- Group name -->
-    <span class="truncate">{{ name }}</span>
-    <!-- Right side label -->
-    <span v-if="showLabel" :class="labelClass">
-      <template v-if="hasCustomRate">
-        <!-- 原倍率删除线 + 专属倍率高亮 -->
-        <span class="line-through opacity-50 mr-0.5">{{ rateMultiplier }}x</span>
-        <span class="font-bold">{{ userRateMultiplier }}x</span>
-      </template>
-      <template v-else>
-        {{ labelText }}
-      </template>
-    </span>
-    <span v-if="hasPeakRate" :class="peakRateClass" :title="peakRateTitle">
-      {{ peakRateText }}
-    </span>
-  </span>
-</template>
-
 <script setup lang="ts">
+/**
+ * GroupBadge — part 03, section 02.
+ *
+ * Migration note from the prototype:
+ *   "Eleven props on a badge, because it carries platform, subscription type,
+ *    base rate, a per-user override, a peak window and days remaining. All of
+ *    it stays. It stops being six colours and becomes one chip: a platform
+ *    dot, the name, and the rate as a muted suffix."
+ *   "The six platform colour classes become six dots. Subscription groups
+ *    keep their label slot but lose the separate theme colour. The only
+ *    tinted variant left is a per-user rate override, because that is the
+ *    only one the reader has to act on."
+ *   "22px pill: 6px platform dot, name, rate as a muted suffix, then at most
+ *    one glyph. The glyph is a person for a personal rate, a clock for a peak
+ *    window, a calendar for a subscription. Never two glyphs."
+ *
+ * The prototype's own dot ramp is a generic --sr-* series (brand-derived,
+ * assigned by row position, not by platform), which does not exist as a
+ * token anywhere in this repo and would be a second colour mapping alongside
+ * the one already approved for this migration: platformAccentColor() from
+ * utils/platformColors.ts (product owner approved it for ModelTagInput). The
+ * "Legacy pool" row's own note ("not a colour of its own") only makes sense
+ * if the dot otherwise IS the platform's colour, so platformAccentColor() is
+ * used here instead of inventing --sr-*. See the report for this call.
+ *
+ * The old PlatformIcon mark inside the chip is dropped: the anatomy line
+ * above lists a dot, not an icon, and PlatformIcon.vue is no longer imported.
+ *
+ * Prop, type and default surface is unchanged from the previous version;
+ * every prop in the spec's table is marked "unchanged" except platform,
+ * which now selects a dot colour instead of a Tailwind theme class.
+ */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { SubscriptionType, GroupPlatform } from '@/types'
 import { useAppStore } from '@/stores/app'
 import { formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
-import PlatformIcon from './PlatformIcon.vue'
+import { platformAccentColor } from '@/utils/platformColors'
 
 interface Props {
   name: string
@@ -83,6 +87,12 @@ const hasPeakRate = computed(() => {
   return Boolean(props.showRate && props.peakRateEnabled && props.peakStart && props.peakEnd)
 })
 
+// Window description for the clock glyph's tooltip. The prototype's note
+// says "the rate shown is the one in force right now" during a peak window,
+// which would need a live comparison against the server clock; peak-rate.ts
+// only formats display strings and exposes no "is it peak right now" check,
+// so the suffix keeps showing the base rate and the full window (including
+// the peak multiplier) moves into this tooltip instead of guessing the time.
 const peakRateText = computed(() => {
   return formatPeakRateWindow(
     {
@@ -125,89 +135,108 @@ const labelText = computed(() => {
   return rateLabel
 })
 
-// Label style based on type and days remaining
-const labelClass = computed(() => {
-  const base = 'px-1.5 py-0.5 rounded text-[10px] font-semibold'
+// Dot and name ink both come from the platform's identity colour, the one
+// approved exception to "colour never encodes category". No platform (the
+// archived / legacy case) drops to neutral: it is deliberately not a colour
+// of its own.
+const dotColor = computed(() => (props.platform ? platformAccentColor(props.platform) : 'var(--muted-foreground)'))
 
-  if (!isSubscription.value) {
-    // Standard: subtle background (不再为专属倍率使用不同的背景色)
-    return `${base} bg-black/10 dark:bg-white/10`
-  }
-
-  // 订阅类型：根据剩余天数显示不同颜色
-  if (props.daysRemaining !== null && props.daysRemaining !== undefined) {
-    if (props.daysRemaining <= 0 || props.daysRemaining <= 3) {
-      // 已过期或紧急（<=3天）：红色
-      return `${base} bg-red-200/80 text-red-800 dark:bg-red-800/50 dark:text-red-300`
-    }
-    if (props.daysRemaining <= 7) {
-      // 警告（<=7天）：橙色
-      return `${base} bg-amber-200/80 text-amber-800 dark:bg-amber-800/50 dark:text-amber-300`
-    }
-  }
-
-  // 正常状态或无天数：根据平台显示主题色
-  if (props.platform === 'anthropic') {
-    return `${base} bg-orange-200/60 text-orange-800 dark:bg-orange-800/40 dark:text-orange-300`
-  }
-  if (props.platform === 'openai') {
-    return `${base} bg-emerald-200/60 text-emerald-800 dark:bg-emerald-800/40 dark:text-emerald-300`
-  }
-  if (props.platform === 'gemini') {
-    return `${base} bg-blue-200/60 text-blue-800 dark:bg-blue-800/40 dark:text-blue-300`
-  }
-  if (props.platform === 'antigravity') {
-    return `${base} bg-purple-200/60 text-purple-800 dark:bg-purple-800/40 dark:text-purple-300`
-  }
-  if (props.platform === 'grok') {
-    return `${base} bg-zinc-300/70 text-zinc-800 dark:bg-zinc-700/60 dark:text-zinc-200`
-  }
-  if (props.platform === 'composite') {
-    return `${base} bg-cyan-200/70 text-cyan-900 dark:bg-cyan-900/50 dark:text-cyan-300`
-  }
-  return `${base} bg-violet-200/60 text-violet-800 dark:bg-violet-800/40 dark:text-violet-300`
+const nameColor = computed(() => {
+  if (hasCustomRate.value) return 'var(--warm-strong)'
+  return props.platform ? 'var(--foreground)' : 'var(--muted-foreground)'
 })
 
-const peakRateClass = computed(() => {
-  return 'px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
-})
+// Only the personal-rate override takes the tinted chip fill; everything
+// else, including peak and subscription, stays on the neutral card fill.
+const variant = computed(() => (hasCustomRate.value ? 'personal' : 'default'))
 
-// Badge color based on platform and subscription type
-const badgeClass = computed(() => {
-  if (props.platform === 'anthropic') {
-    // Claude: orange theme
-    return isSubscription.value
-      ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
-      : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400'
-  } else if (props.platform === 'openai') {
-    // OpenAI: green theme
-    return isSubscription.value
-      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-      : 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
+// At most one glyph, in priority order: personal rate, then peak window,
+// then subscription. Each tooltip reuses copy already computed above rather
+// than inventing new sentences, except the personal-rate one, which had none.
+interface Glyph {
+  icon: string
+  ink: string
+  tip: string
+}
+
+const glyph = computed<Glyph | null>(() => {
+  if (hasCustomRate.value) {
+    return { icon: 'hgi-user-circle', ink: 'var(--warm-strong)', tip: t('common.personalRateTooltip') }
   }
-  if (props.platform === 'gemini') {
-    return isSubscription.value
-      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-      : 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-400'
+  if (hasPeakRate.value) {
+    return { icon: 'hgi-clock-01', ink: 'var(--s2a-attn)', tip: peakRateTitle.value }
   }
-  if (props.platform === 'antigravity') {
-    return isSubscription.value
-      ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-      : 'bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-900/20 dark:text-fuchsia-400'
+  if (showLabel.value && isSubscription.value) {
+    return { icon: 'hgi-calendar-01', ink: 'var(--muted-foreground)', tip: labelText.value }
   }
-  if (props.platform === 'grok') {
-    return isSubscription.value
-      ? 'bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100'
-      : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200'
-  }
-  if (props.platform === 'composite') {
-    return isSubscription.value
-      ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300'
-      : 'bg-cyan-50 text-cyan-800 dark:bg-cyan-900/20 dark:text-cyan-300'
-  }
-  // Fallback: original colors
-  return isSubscription.value
-    ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400'
-    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+  return null
 })
 </script>
+
+<template>
+  <span class="gbadge" :data-variant="variant">
+    <span class="gbadge__dot" :style="{ background: dotColor }" aria-hidden="true" />
+    <span class="gbadge__name" :style="{ color: nameColor }">{{ name }}</span>
+    <span v-if="showLabel" class="gbadge__rate">{{ labelText }}</span>
+    <i
+      v-if="glyph"
+      :class="['hgi-stroke', glyph.icon]"
+      class="gbadge__icon"
+      :style="{ color: glyph.ink }"
+      :title="glyph.tip"
+      aria-hidden="true"
+    />
+  </span>
+</template>
+
+<style scoped>
+/* 22px pill, r-pill per the prototype's literal token (not the --r-xs badge
+   tier: this is a fully rounded chip, not a rectangular badge/keycap). */
+.gbadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-sm);
+  /* Background only, never border-color. */
+  transition: background var(--motion-hover);
+}
+
+.gbadge[data-variant='default'] {
+  border: 1px solid var(--border-subtle);
+  background: var(--card);
+}
+
+.gbadge[data-variant='personal'] {
+  border: 1px solid var(--brand-line-strong);
+  background: var(--brand-tint);
+}
+
+.gbadge__dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.gbadge__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gbadge__rate {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+
+.gbadge__icon {
+  flex-shrink: 0;
+  font-size: 12px; /* june-lint-disable ground-rule-4: icon glyph */
+}
+</style>
