@@ -850,3 +850,57 @@ outstanding work in the project.
 
 Green at push time: build succeeds, vue-tsc 0 errors, lint clean across 65
 files, 1490/1528 passing.
+
+## All 38 tests fixed. Suite green at 1531/1531.
+
+Nothing weakened, nothing skipped. Two files gained coverage: the chart specs
+went 10 -> 12 (covering the split into two Line instances, which the originals
+structurally could not test), and the cell specs 25 -> 40.
+
+Three guarantees were genuinely dropped by the redesign and the tests say so
+rather than pretending otherwise:
+
+  - "every usage window is visible at once" -> now "every window is REACHABLE"
+    via the expansion. Deliberate; it is the whole point of departure 1.
+  - per-window token/cost text in AccountUsageCell -- see the regression below.
+  - the used/limit fraction and the em-dash placeholder in UserPlatformQuotaCell.
+
+## TWO COMPONENT REGRESSIONS found while rewriting the tests
+
+Neither was fixed -- the test agents were read-only on components by design.
+
+### 1. Reset times are invisible for single-window accounts  (user-facing)
+
+`AccountUsageCell` renders `resetsLabel` ONLY for windows inside the
+`.uc-expandlist` expansion. The primary, always-shown window never displays its
+`resetsAt`.
+
+For any account with a single active window -- Grok, single-image Antigravity,
+both common -- the reset time is now completely absent from the UI, where it was
+always shown before. An operator cannot see when a rate limit lifts, and there
+may be no expansion to open.
+
+This is a real loss of information, not a layout change. Fix: render the primary
+window's reset label too.
+
+### 2. WindowStats is fetched, typed, and silently dropped  (waste, maybe a bug)
+
+Per-window requests/tokens/cost (`window_stats`) arrives on the wire and is
+dropped before render in every `*Windows` computed -- anthropicWindows,
+openAIWindows, antigravityWindows, grokWindows, geminiWindows. Nothing in the
+template can observe it.
+
+Either it moved to a detail modal deliberately, or it was lost in the rewrite.
+Confirm with whoever owns the cell. We are paying for the data either way.
+
+## Two test-mechanics notes worth keeping
+
+- **jsdom cannot resolve color-mix() or oklch()**, so useChartTokens returns
+  empty strings under test. Mock the composable with sentinel strings and assert
+  which series reads which ramp index. Never assert a resolved colour.
+- **Prefer semantic hooks over class names when re-expressing an assertion.**
+  Swapping `text-emerald-400` for a June token name is the same brittleness in
+  new clothing. The upstream-billing spec now asserts the rendered WORD; the
+  sort spec asserts aria-sort and data-sorted, not the opacity CSS -- jsdom does
+  not compute :hover or attribute-selector styles, so asserting those would be
+  testing nothing.
