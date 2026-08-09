@@ -1,6 +1,8 @@
 export default {
     // Dashboard
     dashboard: {
+      cacheBreakdownTooltip: '{total}（创建 {created}，读取 {read}）',
+      trendTooltipFooter: '实际 {actual}，标准 {standard}',
       title: '管理控制台',
       description: '系统概览与统计数据',
       apiKeys: 'API 密钥',
@@ -900,9 +902,9 @@ export default {
       accountFilters: {
         title: '账号过滤控制',
         oauthOnly: '仅允许 OAuth 账号',
-        oauthOnlyEnabled: '已启用 — 排除 API Key 类型账号',
+        oauthOnlyEnabled: '已启用，排除 API Key 类型账号',
         privacySetOnly: '仅允许隐私保护已设置的账号',
-        privacySetOnlyEnabled: '已启用 — Privacy 未设置的账号将被排除',
+        privacySetOnlyEnabled: '已启用，Privacy 未设置的账号将被排除',
         disabled: '未启用'
       },
       enterGroupName: '请输入分组名称',
@@ -1141,7 +1143,7 @@ export default {
         tooltipEdit: '选择一个或多个相同平台的分组，保存后当前分组的账号会被替换为这些分组的账号（去重）。',
         selectPlaceholder: '选择分组以复制其账号...',
         hint: '可选多个分组，账号会自动去重',
-        hintEdit: '⚠️ 注意：这会替换当前分组的所有账号绑定'
+        hintEdit: '注意：这会替换当前分组的所有账号绑定'
       },
       modelRouting: {
         title: '模型路由配置',
