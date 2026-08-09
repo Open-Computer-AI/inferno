@@ -1,0 +1,165 @@
+# Upstream sync.
+#
+# Inferno is a thin fork: it never edits an upstream file, so upstream's commits
+# replay onto our work cleanly and this can run unattended. Upstream ships
+# roughly 40 commits a day, so this runs every two hours -- small, reviewable
+# increments rather than a 1,800-commit archaeology project six weeks from now,
+# which is exactly how the previous fork died.
+#
+# What it does NOT do: merge upstream's frontend/ into inferno-frontend/. Those
+# two trees deliberately share no history. frontend/ stays a pristine mirror so
+# it always shows what upstream currently looks like; porting a change into our
+# redesigned components is a human decision, and the drift report below is the
+# input to it.
+#
+# Security note: this workflow is triggered by schedule and manual dispatch
+# only. It never interpolates event payload data into a run: step, so there is
+# no injection surface from issue/PR titles or bodies.
+
+name: Upstream sync
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+env:
+  UPSTREAM: https://github.com/Wei-Shaw/sub2api.git
+  TARGET_BRANCH: june-redesign
+  SYNC_BRANCH: sync/upstream
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream "$UPSTREAM" 2>/dev/null || git remote set-url upstream "$UPSTREAM"
+          git fetch upstream --quiet
+          git config user.name  "inferno-sync[bot]"
+          git config user.email "inferno-sync@users.noreply.github.com"
+
+      - name: Measure drift
+        id: drift
+        run: |
+          BEHIND=$(git rev-list --count HEAD..upstream/main)
+          echo "behind=$BEHIND" >> "$GITHUB_OUTPUT"
+          echo "Behind upstream by $BEHIND commit(s)."
+          [ "$BEHIND" -eq 0 ] && echo "nothing to do"
+
+      - name: Rebase onto upstream
+        if: steps.drift.outputs.behind != '0'
+        id: rebase
+        run: |
+          git checkout -B "$SYNC_BRANCH"
+          if git rebase upstream/main; then
+            echo "clean=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "clean=false" >> "$GITHUB_OUTPUT"
+            # Record the conflicting paths, then abandon the attempt. A half
+            # rebased branch is worse than none.
+            git diff --name-only --diff-filter=U > /tmp/conflicts.txt || true
+            git rebase --abort || true
+          fi
+
+      # The gate. A worker's or a bot's word is not acceptance; these have to
+      # actually pass on the rebased tree.
+      - uses: actions/setup-node@v4
+        if: steps.rebase.outputs.clean == 'true'
+        with:
+          node-version: '22'
+
+      - name: Gate -- install, lint, typecheck, test
+        if: steps.rebase.outputs.clean == 'true'
+        id: gate
+        working-directory: inferno-frontend
+        run: |
+          corepack enable && corepack prepare pnpm@9.15.9 --activate
+          pnpm install --frozen-lockfile
+          node scripts/june-lint.mjs
+          npx vue-tsc --noEmit -p tsconfig.json
+          npx vitest run
+
+      # The whole point of keeping frontend/ pristine: this diff is always
+      # available and always meaningful. src/api first because it encodes an API
+      # contract with no OpenAPI spec behind it, and a stale client does not
+      # fail loudly -- it parses an old response shape and renders wrong numbers.
+      - name: Drift report
+        if: steps.rebase.outputs.clean == 'true'
+        run: |
+          {
+            echo "## Upstream sync"
+            echo
+            echo "Rebased **${{ steps.drift.outputs.behind }}** upstream commit(s). Gate green."
+            echo
+            echo "### What upstream changed in frontend/ -- decide what to port"
+            echo
+            echo '```'
+            git diff --stat "HEAD~${{ steps.drift.outputs.behind }}..HEAD" -- frontend/src/api || true
+            echo '```'
+            echo
+            echo "Full picture:"
+            echo
+            echo '```'
+            git diff --stat "HEAD~${{ steps.drift.outputs.behind }}..HEAD" -- frontend/src | tail -25 || true
+            echo '```'
+            echo
+            echo "Port decisions go into INFERNO-BUILD.md. src/components and"
+            echo "src/views are being replaced by the June parts, so upstream"
+            echo "changes there are usually noise; src/api, src/stores,"
+            echo "src/composables and src/utils are not."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish the synced branch
+        if: steps.rebase.outputs.clean == 'true'
+        run: git push --force-with-lease origin "$SYNC_BRANCH"
+
+      - name: Raise a tracking issue on conflict or red gate
+        if: failure() || steps.rebase.outputs.clean == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let conflicts = '';
+            try { conflicts = fs.readFileSync('/tmp/conflicts.txt', 'utf8').trim(); } catch {}
+            const title = 'Upstream sync is blocked';
+            const body = [
+              'The automated upstream sync could not complete.',
+              '',
+              conflicts
+                ? '**Rebase conflicts** in:\n\n```\n' + conflicts + '\n```\n\nInferno edits almost no upstream file, so a conflict here is unusual and worth reading carefully rather than resolving by reflex. The likeliest candidate is the root `.gitignore`, where we appended one negation.'
+                : '**The gate failed on the rebased tree** (lint, typecheck or tests). See the run log.',
+              '',
+              'Sync is paused until this is resolved, so the gap grows at roughly 40 commits a day.',
+              '',
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            ].join('\n');
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'upstream-sync'
+            });
+            if (existing.data.length) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.data[0].number, body
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ['upstream-sync']
+              });
+            }
