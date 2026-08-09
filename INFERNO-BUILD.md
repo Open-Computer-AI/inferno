@@ -545,3 +545,55 @@ Intended: /profile, /monitor, /redeem, /orders.
 prototype's 7-row userNav array and were not among the five named deletions, so
 building the nav exactly as drawn dropped them too. Routes still work; they just
 have no sidebar entry. Needs a decision.
+
+## OPEN: 3 failing tests after part 04, and one width decision
+
+### The tests — 1525/1528, three red, all diagnosed
+
+`src/components/common/__tests__/DataTable.spec.ts` (2) and one more in a second
+file. Do NOT weaken the assertions to make these green; each needs a specific fix.
+
+1. **"renders paired sort arrows and highlights the active direction"** —
+   asserts two `<svg>` per header with Tailwind `text-primary-600` /
+   `text-gray-300`. Part 04 explicitly REMOVES the permanent double chevron in
+   favour of one caret on the sorted column only. The test encodes the old
+   behaviour and needs rewriting to the new one, not patching.
+
+2. **"emits controlled current-page selection while preserving off-page keys"** —
+   was `.setValue(true)`; changed to `.trigger('click')` and it still does not
+   emit. The mobile equivalent WAS fixed by the same change and now passes, so
+   the mechanism is right and something else differs on the desktop path.
+   Not diagnosed. Needs someone to check whether the `<thead>` select-all is
+   reachable in that test's render mode.
+
+**Systemic cause worth knowing:** June's `Checkbox.vue` listens on `click`, not
+`change` — deliberately, because jsdom flips `.checked` during a programmatic
+click's activation step but does not synthesise a following `change`. So
+`wrapper.setValue()` never reaches it. EVERY existing test that drives a
+checkbox with `.setValue()` will break as `Checkbox.vue` is adopted. That is a
+migration cost of the component, not a bug in it, and it will recur.
+
+### The width decision — affects all 15 admin table pages
+
+`TablePageLayout` now caps content at `--content-max` (760px, stepping to 880 at
+1440 and 1000 at 1920) and centres it, because `spec.pagelayout.tokens` says
+"--content-max column".
+
+But: 01-TOKENS describes `--content-max` under **"Reading columns"** — prose and
+forms, where a narrow measure aids reading. And the prototype's own table demo
+uses `max-width: 1080px`, not the token.
+
+A ten-column admin table letterboxed at 760px is a real usability regression,
+and it lands on 15 pages at once. Options: keep the token (trust the spec text),
+use 1080px (trust the prototype's own demo), or exempt tables from the reading
+column entirely. **Not decided — flagging rather than shipping it silently.**
+
+### Also outstanding from part 04
+
+- No page shows a title yet. `TablePageLayout` gained optional `title` and
+  `description` props, but no consumer passes them. 15 view files need a pass.
+- `stickyActionsColumn` default stays `true`, not the spec's `false`: the row
+  actions menu that would replace it is not wired into any consumer yet.
+- `Column.align` not added — `Column` lives in `types.ts`, which no agent owned.
+- `EmptyState` has no `kind` prop, so part 04's four empty variants
+  (new / filtered / search / error) are not available yet.
