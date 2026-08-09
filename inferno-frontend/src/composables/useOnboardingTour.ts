@@ -5,6 +5,7 @@ import { useAuthStore as useUserStore } from '@/stores/auth'
 import { useOnboardingStore } from '@/stores/onboarding'
 import { useI18n } from 'vue-i18n'
 import { getAdminSteps, getUserSteps } from '@/components/Guide/steps'
+import { onboardingTourStorageKey } from './onboardingTourStorage'
 
 export interface OnboardingOptions {
   storageKey?: string
@@ -15,7 +16,6 @@ export function useOnboardingTour(options: OnboardingOptions) {
   const { t } = useI18n()
   const userStore = useUserStore()
   const onboardingStore = useOnboardingStore()
-  const storageVersion = 'v4_interactive' // Bump version for new tour type
 
   // Timing constants for better maintainability
   const TIMING = {
@@ -57,12 +57,8 @@ export function useOnboardingTour(options: OnboardingOptions) {
   let autoStartTimer: ReturnType<typeof setTimeout> | null = null
   let globalKeyboardHandler: ((e: KeyboardEvent) => void) | null = null
 
-  const getStorageKey = () => {
-    const baseKey = options.storageKey ?? 'onboarding_tour'
-    const userId = userStore.user?.id ?? 'guest'
-    const role = userStore.user?.role ?? 'user'
-    return `${baseKey}_${userId}_${role}_${storageVersion}`
-  }
+  const getStorageKey = () =>
+    onboardingTourStorageKey(options.storageKey ?? 'onboarding_tour', userStore.user?.id, userStore.user?.role)
 
   const hasSeen = () => {
     return localStorage.getItem(getStorageKey()) === 'true'
@@ -410,6 +406,36 @@ export function useOnboardingTour(options: OnboardingOptions) {
 
     onboardingStore.setDriverInstance(driverInstance)
 
+    /**
+     * The tour's shortcuts are registered on `document` with `capture: true`, so
+     * they see every keystroke in the app BEFORE the focused element does. Enter
+     * and the arrow keys therefore have to yield whenever the user has actually
+     * focused something that owns those keys.
+     *
+     * Without this, pressing Enter on a nav link, a dialog's confirm button or a
+     * menu item was swallowed (`preventDefault` + `stopPropagation`) and
+     * redirected into clicking the tour's current target instead. That is what
+     * made the tour appear to navigate on its own: each Enter activated whichever
+     * nav row the tour was pointing at, AppSidebar advanced the tour to the next
+     * row, and the following Enter did it again -- walking the app through most
+     * of the admin routes without the user ever choosing a destination.
+     *
+     * Focus on the body (nothing focused) still falls through to the tour, which
+     * is what keeps the popover's own "press Enter or click to continue" hint
+     * working. driver.js's own popover buttons are real `<button>`s, so they
+     * yield here and their native click runs `onNextClick` as designed --
+     * the intended interactive-step advance is unchanged.
+     */
+    const ownsKeyboard = (el: HTMLElement | null): boolean => {
+      if (!el) return false
+      if (el.isContentEditable) return true
+      if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(el.tagName)) return true
+      if (el.tagName === 'A' && el.hasAttribute('href')) return true
+      return !!el.closest(
+        '[role="button"],[role="menuitem"],[role="option"],[role="tab"],[role="switch"],[role="checkbox"],[role="radio"]'
+      )
+    }
+
     // 添加全局键盘监听器
     globalKeyboardHandler = (e: KeyboardEvent) => {
       if (!driverInstance?.isActive()) return
@@ -424,11 +450,8 @@ export function useOnboardingTour(options: OnboardingOptions) {
       }
 
       if (e.key === 'ArrowRight') {
-        const target = e.target as HTMLElement
-        // 允许在输入框中使用方向键
-        if (['INPUT', 'TEXTAREA'].includes(target?.tagName)) {
-           return
-        }
+        // Yield to whatever the user actually focused -- see `ownsKeyboard`.
+        if (ownsKeyboard(e.target as HTMLElement)) return
 
         e.preventDefault()
         e.stopPropagation()
@@ -456,11 +479,9 @@ export function useOnboardingTour(options: OnboardingOptions) {
         driverInstance!.moveNext()
       }
       else if (e.key === 'Enter') {
-        const target = e.target as HTMLElement
-        // 允许在输入框中使用回车
-        if (['INPUT', 'TEXTAREA'].includes(target?.tagName)) {
-           return
-        }
+        // Yield to whatever the user actually focused. This is the one that
+        // caused the runaway navigation -- see `ownsKeyboard`.
+        if (ownsKeyboard(e.target as HTMLElement)) return
 
         e.preventDefault()
         e.stopPropagation()
@@ -485,11 +506,8 @@ export function useOnboardingTour(options: OnboardingOptions) {
         driverInstance!.moveNext()
       }
       else if (e.key === 'ArrowLeft') {
-        const target = e.target as HTMLElement
-        // 允许在输入框中使用方向键
-        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName) || target?.isContentEditable) {
-           return
-        }
+        // Yield to whatever the user actually focused -- see `ownsKeyboard`.
+        if (ownsKeyboard(e.target as HTMLElement)) return
 
         e.preventDefault()
         e.stopPropagation()
