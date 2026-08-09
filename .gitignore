@@ -146,3 +146,7 @@ output/
 
 # Vitest / Vite cache at repo root
 .vite/
+
+# The June ground-rule lint is source, not a build script.
+!inferno-frontend/scripts/
+!inferno-frontend/scripts/**
