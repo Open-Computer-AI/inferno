@@ -1,0 +1,69 @@
+/* Inferno-local tokens.
+ *
+ * June's nine token sheets are the spec and are never edited. Anything Inferno
+ * needs that June does not ship lives here, so the boundary between "design
+ * system" and "this product" stays legible and the sheets above can be
+ * re-synced without a merge.
+ *
+ * The --s2a- prefix is the prototypes' own naming (Sub2API, the product's
+ * former name). Kept rather than renamed to --inferno-: every one of the 18
+ * prototype documents uses it, so renaming has to be a single coordinated pass
+ * across all of them, not a drift that starts here.
+ */
+
+:root {
+  /* Control heights, from part 02.
+   *
+   * June's --control-* scale is 22/26/28/32/36, tuned for its own chrome.
+   * Buttons in this product run one step larger and add a 40px sign-in size
+   * that June has no token for, so part 02 defines its own scale. Where they
+   * coincide the June token is the source of truth, so a June control and an
+   * Inferno button on the same row still line up.
+   *
+   *   xs  28  row action     = --control-md
+   *   sm  32  toolbar        = --control-lg   (the default)
+   *   md  36  dialog         = --control-xl
+   *   lg  40  sign in        Inferno only
+   */
+  --s2a-h-xs: var(--control-md);
+  --s2a-h-sm: var(--control-lg);
+  --s2a-h-md: var(--control-xl);
+  --s2a-h-lg: 40px;
+
+  /* The attention colour. Distinct from --destructive: destructive means an
+   * action is dangerous, attention means a threshold has been crossed and
+   * somebody has to look. Only ever applied where that is literally true,
+   * never as a category colour. */
+  --s2a-attn: oklch(62% 0.13 70);
+  --s2a-attn-bg: oklch(68% 0.13 70);
+  --s2a-attn-soft: color-mix(in oklch, oklch(68% 0.13 70) 13%, var(--card));
+
+  /* Cell series banding, part 18. */
+  --s2a-ghost: color-mix(in oklch, var(--muted-foreground) 13%, var(--card));
+  --s2a-prev: color-mix(in oklch, var(--muted-foreground) 34%, var(--card));
+}
+
+[data-theme='dark'] {
+  --s2a-attn: oklch(74% 0.13 70);
+  --s2a-attn-bg: oklch(70% 0.13 70);
+  --s2a-attn-soft: color-mix(in oklch, oklch(70% 0.13 70) 16%, var(--card));
+  --s2a-ghost: color-mix(in oklch, var(--muted-foreground) 17%, var(--card));
+  --s2a-prev: color-mix(in oklch, var(--muted-foreground) 38%, var(--card));
+}
+
+/* The one shared keyframe: the button and icon-button loading spinner.
+ * Declared here rather than per component so there is a single definition to
+ * guard against prefers-reduced-motion. */
+@keyframes s2a-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Ground rule 10. The spinner still communicates "working" as a static ring;
+   * it just stops rotating. */
+  [class*='s2a-spinner'] {
+    animation: none !important;
+  }
+}
