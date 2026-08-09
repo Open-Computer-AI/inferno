@@ -702,3 +702,46 @@ trigger and a menu" the spec describes. `stickyActionsColumn` must stay true.
 Note the menu also has no destructive group: account deletion is a separate
 inline button in AccountsView, not one of this component's eleven emits. When
 delete moves into the menu it becomes the fourth, --destructive, last group.
+
+## Part 08 cells: 7 more failing tests, and why they are the right kind of failure
+
+`UpstreamBillingRateCell.spec.ts` (2), `OllamaCloudUsageCell.spec.ts` (2),
+`UserPlatformQuotaCell.spec.ts` (3). Total repo red is now 10.
+
+Every one asserts something the migration removes ON PURPOSE:
+
+  - literal Tailwind classes (`text-emerald-400`) -- CONVENTIONS rule 5 forbids
+    Tailwind utilities in converted components, so these cannot pass and also be
+    correct
+  - the removed `UsageProgressBar` subcomponent
+  - the old exhaustive per-window listing that the closest-limit rule replaces
+  - a literal ellipsis loading glyph, now a flat skeleton
+
+Satisfying them would mean keeping Tailwind classes or the pre-June layout.
+They need rewriting to the new behaviour, not patching. Do not weaken them.
+
+### Colour-by-category found and fixed -- the rule these cells broke most
+
+- `OllamaCloudUsageCell` passed `color="indigo"` / `"emerald"` to
+  UsageProgressBar, colouring the chip by WHICH WINDOW it was. That is category
+  colour, exactly what ground rule 5 forbids. Now on CapacityBar's shared risk
+  threshold.
+- `UserConcurrencyCell` had its own red/yellow/grey cutoffs. Moved onto the same
+  shared rule.
+- `UpstreamBillingRateCell` reuses GroupBadge's existing `--warm-strong`
+  precedent for a rate mismatch (state) rather than inventing a second override.
+
+### Open items from this pass
+
+1. **`AccountsView.vue:307` still passes `:max-display="4"`**, overriding the new
+   default of 2 that the spec asked for. The row no longer grows vertically, but
+   four chips can still push width. One-line fix in a file this agent did not own.
+2. **`UserPlatformQuotaCell` deviates from the literal spec.** "One bar per
+   platform stacked" would stretch a 36px row for accounts with 3-5 platforms,
+   so it shows the window closest to its limit plus a `+N` chip, mirroring
+   AccountUsageCell's own resolution. Full detail stays in the existing modal.
+3. **tabular-nums deliberately not used**, overriding the prototype's own demo
+   styling, per 01-TOKENS: only for a live-ticking value in a fixed-width
+   container. Matches CapacityBar and DataTable, which use it nowhere.
+4. **A per-row interval was removed** — OllamaCloudUsageCell ran a ticking
+   countdown clock per table row. Now computed once per render.
