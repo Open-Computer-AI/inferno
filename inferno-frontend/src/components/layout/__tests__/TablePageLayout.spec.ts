@@ -48,3 +48,36 @@ describe('TablePageLayout responsive table scrolling', () => {
     expect(mobileCardBlock?.[2]).not.toContain('overflow: hidden')
   })
 })
+
+describe('TablePageLayout width opt-out', () => {
+  // Ruling: --content-max (controls.css) is defined under "Reading columns" -- prose
+  // and forms, where a narrow measure aids reading. A dense admin table is not prose,
+  // and the prototype's own table demo uses max-width:1080px, not the token, so
+  // letterboxing every table view at the reading measure is a regression, not fidelity
+  // to the spec. `width` lets a page opt out; default stays 'reading' so none of the
+  // fifteen existing call sites (which pass neither prop today) change shape.
+
+  it('defaults `width` to \'reading\', so every existing call site keeps the capped, centred column', () => {
+    expect(componentSource).toMatch(/withDefaults\(defineProps<Props>\(\),\s*\{[^}]*width:\s*'reading'/)
+  })
+
+  it("renders the root element's width as a data attribute, June's variant-as-attribute convention", () => {
+    expect(componentSource).toMatch(/:data-width="width"/)
+  })
+
+  it("'reading' constrains the page to --content-max", () => {
+    const tplBlocks = Array.from(componentSource.matchAll(/(^|\})\s*(\.tpl)\s*\{([^{}]*)\}/gm))
+    const baseTplBlock = tplBlocks.find(([, , selector]) => selector === '.tpl')
+
+    expect(baseTplBlock?.[3]).toContain('max-width: var(--content-max)')
+  })
+
+  it("'wide' drops the cap so the table fills the shell's inset card", () => {
+    const wideBlocks = Array.from(
+      componentSource.matchAll(/\.tpl\[data-width=['"]wide['"]\]\s*\{([^{}]*)\}/g)
+    )
+
+    expect(wideBlocks.length).toBeGreaterThan(0)
+    expect(wideBlocks[0][1]).toContain('max-width: none')
+  })
+})
