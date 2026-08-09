@@ -323,4 +323,3 @@ watch(() => props.account.id, () => { expanded.value = false })
   padding: 6px 0 2px;
 }
 </style>
-</content>
