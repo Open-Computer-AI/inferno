@@ -1049,6 +1049,20 @@ defineExpose({
   z-index: 0;
 }
 
+/* `height` on a table row is a MINIMUM, not a maximum -- CSS table layout grows
+ * a row to fit its tallest cell and there is no honoured `max-height` for
+ * `display: table-row`. So `--dt-row-h` sets the density floor; it cannot
+ * enforce a ceiling, and it is not meant to.
+ *
+ * Measured 46.5px on /admin/users rather than 36. That is not a defect here:
+ * UsersView is still unconverted and renders its groups cell as a vertically
+ * stacked chip list (`flex flex-col`, UsersView.vue:335), which is genuinely
+ * taller than one line. Clamping the cell would silently clip those chips.
+ *
+ * If a table legitimately needs taller rows, declare it -- `data-density` is the
+ * knob, and `twoLine` already exists for it. Do not add an overflow clamp here
+ * to make a number match; that trades a visible height for invisible data loss.
+ */
 .dt-tr {
   height: var(--dt-row-h);
   background: var(--card);

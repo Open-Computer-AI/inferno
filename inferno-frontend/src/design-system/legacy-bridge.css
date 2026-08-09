@@ -1,0 +1,201 @@
+/*
+ * Legacy bridge — re-skins the pre-redesign `.btn*` classes in June tokens.
+ *
+ * Why this file exists instead of editing `style.css`:
+ *
+ * `src/style.css` is 773 lines of the original Tailwind component layer and is
+ * still byte-identical to pristine `frontend/`. Editing it would (a) pull the
+ * whole file into june-lint's scope, where its 7 unrelated gradients and 34
+ * shadow utilities would fail the gate for things this change is not fixing,
+ * and (b) turn every future upstream sync of that file into a merge. Keeping it
+ * untouched keeps those syncs conflict-free, which is the whole point of the
+ * two-tree layout.
+ *
+ * Why re-skin the classes rather than convert the call sites:
+ *
+ * `btn btn-primary` appears 185 times across views that phase 5 has not reached
+ * yet. Converting them one by one is that phase's job. But the teal gradient
+ * lives in ONE class definition, so re-skinning it retires the teal everywhere
+ * at once — including the primary CTA on `/admin/accounts` and `/admin/users`,
+ * the two densest pages in the product.
+ *
+ * This file is temporary by design. It shrinks as views convert to `Button.vue`
+ * and should be deleted when the last `btn btn-primary` is gone.
+ *
+ * Values mirror `components/common/Button.vue` exactly. If that component
+ * changes, change this with it — a drift here shows up as two visually
+ * different primary buttons on the same screen.
+ *
+ * Imported from `june.css`, which `main.ts` imports AFTER `style.css`, so these
+ * rules win on source order at equal specificity. That ordering is load-bearing.
+ */
+
+/* --- base ---------------------------------------------------------------- */
+
+.btn {
+  height: var(--s2a-h-md);
+  padding: 0 14px;
+  gap: 6px;
+  border: 0;
+  border-radius: var(--r-md);
+  font-size: var(--fs-md);
+  font-weight: 400;
+
+  /* The legacy base sets `transition-all`, which animates border-color and
+     violates ground rule 6. Background only. */
+  transition: background var(--motion-hover);
+
+  /* `bg-gradient-to-r` sets background-image, so a background-color alone would
+     paint underneath the gradient and change nothing. This is what actually
+     removes the teal. */
+  background-image: none;
+
+  /* Legacy variants carry `shadow-md shadow-primary-500/25` — the glow that
+     ground rule 7 bans. Cleared here and re-added only for focus. */
+  box-shadow: none;
+
+  /* `active:scale-[0.98]`. June buttons do not move. */
+  transform: none;
+}
+
+/* Legacy uses `focus:` with a teal ring and a 2px offset. June uses a 1px ring
+   inside a 3px warm halo, on focus-visible only, so a mouse click does not ring.
+   `:focus` is cleared first and `:focus-visible` re-added after, so that for an
+   element matching both the later rule wins. */
+.btn:focus {
+  box-shadow: none;
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* --- semantic variants --------------------------------------------------- */
+
+/* Solid is the only variant that takes the medium weight. Everything else at
+   600 would make a toolbar read as six primary actions. */
+.btn-primary {
+  background-color: var(--primary);
+  background-image: none;
+  color: var(--primary-foreground);
+  font-weight: var(--fw-medium);
+}
+.btn-primary:hover:not(:disabled) {
+  background-color: color-mix(in oklch, var(--primary) 92%, var(--foreground));
+}
+.btn-primary:active:not(:disabled) {
+  background-color: color-mix(in oklch, var(--primary) 84%, var(--foreground));
+}
+
+.btn-secondary {
+  border: 1px solid var(--border);
+  background-color: var(--card);
+  background-image: none;
+  color: var(--foreground);
+}
+.btn-secondary:hover:not(:disabled) {
+  background-color: var(--sidebar-accent);
+}
+
+.btn-ghost {
+  background-color: transparent;
+  background-image: none;
+  color: var(--body-copy);
+}
+.btn-ghost:hover:not(:disabled) {
+  background-color: var(--sidebar-accent);
+}
+
+/* Destructive, success and warning are outlined rather than filled. A filled
+   red in a toolbar reads as the primary action, which it never is. The
+   hairlines are opaque mixes rather than alpha fades of the accent, which
+   composite into a muddy grey veil on light surfaces. */
+.btn-danger {
+  border: 1px solid color-mix(in oklch, var(--destructive) 30%, transparent);
+  background-color: transparent;
+  background-image: none;
+  color: var(--destructive);
+}
+.btn-danger:hover:not(:disabled) {
+  background-color: var(--destructive-soft);
+}
+
+.btn-success {
+  border: 1px solid color-mix(in oklch, var(--success) 26%, transparent);
+  background-color: color-mix(in oklch, var(--success) 12%, var(--card));
+  background-image: none;
+  color: var(--success);
+}
+.btn-success:hover:not(:disabled) {
+  background-color: color-mix(in oklch, var(--success) 18%, var(--card));
+}
+
+.btn-warning {
+  border: 1px solid color-mix(in oklch, var(--s2a-attn-bg) 26%, transparent);
+  background-color: color-mix(in oklch, var(--s2a-attn-bg) 12%, var(--card));
+  background-image: none;
+  color: var(--s2a-attn);
+}
+.btn-warning:hover:not(:disabled) {
+  background-color: color-mix(in oklch, var(--s2a-attn-bg) 18%, var(--card));
+}
+
+/* --- payment providers --------------------------------------------------- */
+
+/*
+ * These keep their brand hue deliberately. Ground rule 5 bans colour that
+ * encodes a category, but a payment provider's colour is its identity, not a
+ * classification we invented — a user picking between Stripe and Alipay is
+ * recognising a logo, not reading a status. They inherit June geometry from
+ * `.btn` above, so only the glow needs clearing to satisfy ground rule 7.
+ */
+.btn-stripe,
+.btn-airwallex,
+.btn-alipay,
+.btn-wxpay {
+  box-shadow: none;
+}
+
+/* --- sizes --------------------------------------------------------------- */
+
+/* Height and inline padding travel together: the padding is tuned per height,
+   so a size is one decision rather than two that can disagree. */
+.btn-sm {
+  height: var(--s2a-h-sm);
+  padding: 0 12px;
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
+}
+
+.btn-md {
+  height: var(--s2a-h-md);
+  padding: 0 14px;
+  border-radius: var(--r-md);
+  font-size: var(--fs-md);
+}
+
+.btn-lg {
+  height: var(--s2a-h-lg);
+  padding: 0 18px;
+  border-radius: var(--r-md);
+  font-size: var(--fs-lg);
+}
+
+/* Square, so width is pinned rather than left to the padding. */
+.btn-icon {
+  width: var(--s2a-h-md);
+  height: var(--s2a-h-md);
+  padding: 0;
+  border-radius: var(--r-md);
+}
+
+.btn-sm.btn-icon {
+  width: var(--s2a-h-sm);
+  height: var(--s2a-h-sm);
+}
+
+.btn-lg.btn-icon {
+  width: var(--s2a-h-lg);
+  height: var(--s2a-h-lg);
+}
