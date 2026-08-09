@@ -344,3 +344,44 @@ cd inferno-frontend && pnpm install && pnpm dev            # :3000, proxies to :
 
 Specimen board: `http://localhost:3000/dev/specimen`
 Prototypes: `python3 -m http.server 4599 --directory <handoff>/prototypes`
+
+## Automation — designed, blocked on two one-time auth steps
+
+Both are ready and both fail on the same class of thing: this machine's GitHub
+authorisation.
+
+**1. `.github/workflows/upstream-sync.yml`** — committed locally (a2218952), NOT
+pushed. `git push` is rejected: the gh OAuth token lacks the `workflow` scope.
+Fix, once:
+
+    gh auth refresh -h github.com -s workflow
+    git push origin june-redesign
+
+Every 2h: fetch, rebase onto upstream/main, run the gate (june-lint, vue-tsc,
+vitest) on the rebased tree, publish `sync/upstream` only if green, open one
+tracking issue if not. Mechanical only — it answers "did it break".
+
+**2. Daily reconciliation routine** — a scheduled Anthropic cloud agent, config
+written, creation refused with:
+"Connect your GitHub account before saving a routine that uses a GitHub
+repository." Fix, once, at https://claude.ai/code/onboarding?magic=github-app-setup
+
+Intended shape: cron `30 3 * * *` (09:00 Asia/Calcutta), model claude-sonnet-5,
+source `github.com/Open-Computer-AI/inferno`. It answers "does it matter":
+diff `frontend/src/{api,stores,composables,utils,types}` since the last reviewed
+SHA, decide what affects converted components, port only that, run the gate,
+open a PR against `june-redesign` — never push to it. It records what it skipped
+and why, and advances the reviewed SHA, so "what have I not looked at" stays
+answerable.
+
+Deliberately excluded from its diff: `frontend/src/{components,views,features}`.
+Those are being replaced by the June parts, so upstream churn there (~340
+commits/month of the ~460 total) is noise.
+
+**The split, and why:** CI does the deterministic rebase because it is free,
+always on, and needs no judgement. The agent does reconciliation because
+deciding whether an upstream API change affects `dashboardModel.ts` is a reading
+task CI cannot do. The agent proposes and never merges: the gate proves code
+compiles, not that a ported change is semantically right, and an agent that
+auto-merges its own judgement recreates exactly the unreviewed drift that put
+oc-router 1,825 commits behind.
