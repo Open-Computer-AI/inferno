@@ -22,7 +22,7 @@
             size="sm"
             :percent="primaryWindow.percent"
             :label="primaryWindow.label"
-            :trailing="pctLabel(primaryWindow.percent)"
+            :trailing="barTrailing(primaryWindow)"
           />
           <button
             v-if="otherWindows.length"
@@ -48,7 +48,7 @@
               :label="w.label"
               :trailing="pctLabel(w.percent)"
             >
-              {{ resetsLabel(w.resetsAt, w.percent) }}
+              {{ expandedFoot(w) }}
             </CapacityBar>
           </div>
         </template>
@@ -86,7 +86,7 @@
           size="sm"
           :percent="primaryWindow.percent"
           :label="primaryWindow.label"
-          :trailing="pctLabel(primaryWindow.percent)"
+          :trailing="barTrailing(primaryWindow)"
         />
         <button
           v-if="otherWindows.length"
@@ -112,7 +112,7 @@
             :label="w.label"
             :trailing="pctLabel(w.percent)"
           >
-            {{ resetsLabel(w.resetsAt, w.percent) }}
+            {{ expandedFoot(w) }}
           </CapacityBar>
         </div>
 
@@ -221,7 +221,7 @@
             size="sm"
             :percent="primaryWindow.percent"
             :label="primaryWindow.label"
-            :trailing="pctLabel(primaryWindow.percent)"
+            :trailing="barTrailing(primaryWindow)"
           />
           <button
             v-if="otherWindows.length"
@@ -247,7 +247,7 @@
               :label="w.label"
               :trailing="pctLabel(w.percent)"
             >
-              {{ resetsLabel(w.resetsAt, w.percent) }}
+              {{ expandedFoot(w) }}
             </CapacityBar>
           </div>
         </template>
@@ -281,7 +281,7 @@
             size="sm"
             :percent="primaryWindow.percent"
             :label="primaryWindow.label"
-            :trailing="pctLabel(primaryWindow.percent)"
+            :trailing="barTrailing(primaryWindow)"
           />
           <button
             v-if="otherWindows.length"
@@ -307,7 +307,7 @@
               :label="w.label"
               :trailing="pctLabel(w.percent)"
             >
-              {{ resetsLabel(w.resetsAt, w.percent) }}
+              {{ expandedFoot(w) }}
             </CapacityBar>
           </div>
         </template>
@@ -378,7 +378,7 @@
             size="sm"
             :percent="primaryWindow.percent"
             :label="primaryWindow.label"
-            :trailing="pctLabel(primaryWindow.percent)"
+            :trailing="barTrailing(primaryWindow)"
           />
           <button
             v-if="otherWindows.length"
@@ -404,7 +404,7 @@
               :label="w.label"
               :trailing="pctLabel(w.percent)"
             >
-              {{ resetsLabel(w.resetsAt, w.percent) }}
+              {{ expandedFoot(w) }}
             </CapacityBar>
           </div>
           <p class="uc-footnote">* {{ t('admin.accounts.gemini.quotaPolicy.simulatedNote') || 'Simulated quota' }}</p>
@@ -450,7 +450,7 @@
           size="sm"
           :percent="primaryWindow.percent"
           :label="primaryWindow.label"
-          :trailing="pctLabel(primaryWindow.percent)"
+          :trailing="barTrailing(primaryWindow)"
         />
         <button
           v-if="otherWindows.length"
@@ -476,7 +476,7 @@
             :label="w.label"
             :trailing="pctLabel(w.percent)"
           >
-            {{ resetsLabel(w.resetsAt, w.percent) }}
+            {{ expandedFoot(w) }}
           </CapacityBar>
         </div>
       </template>
@@ -1175,6 +1175,16 @@ interface UsageWindowBar {
   label: string
   percent: number
   resetsAt: string | null
+  /**
+   * Regression fix (see build report, "WindowStats is fetched, typed, and
+   * silently dropped"): per-window requests/tokens/cost as it arrives on
+   * the wire (`UsageProgress.window_stats`). Optional because not every
+   * source has it -- Antigravity's per-model quota and Grok's billing
+   * summary are utilization/reset only, no request or token breakdown.
+   * Rendered in the expansion only (see `uc-expandlist`), never on the
+   * primary bar, which has no room for it inside 36px.
+   */
+  windowStats?: WindowStats | null
 }
 
 const anthropicWindows = computed<UsageWindowBar[]>(() => {
@@ -1182,16 +1192,16 @@ const anthropicWindows = computed<UsageWindowBar[]>(() => {
   const info = usageInfo.value
   const windows: UsageWindowBar[] = []
   if (info.five_hour) {
-    windows.push({ key: 'five_hour', label: t('admin.accounts.usageWindow.fiveHour'), percent: info.five_hour.utilization, resetsAt: info.five_hour.resets_at })
+    windows.push({ key: 'five_hour', label: t('admin.accounts.usageWindow.fiveHour'), percent: info.five_hour.utilization, resetsAt: info.five_hour.resets_at, windowStats: info.five_hour.window_stats })
   }
   if (info.seven_day) {
-    windows.push({ key: 'seven_day', label: t('admin.accounts.usageWindow.sevenDay'), percent: info.seven_day.utilization, resetsAt: info.seven_day.resets_at })
+    windows.push({ key: 'seven_day', label: t('admin.accounts.usageWindow.sevenDay'), percent: info.seven_day.utilization, resetsAt: info.seven_day.resets_at, windowStats: info.seven_day.window_stats })
   }
   if (info.seven_day_sonnet) {
-    windows.push({ key: 'seven_day_sonnet', label: t('admin.accounts.usageWindow.sevenDaySonnet'), percent: info.seven_day_sonnet.utilization, resetsAt: info.seven_day_sonnet.resets_at })
+    windows.push({ key: 'seven_day_sonnet', label: t('admin.accounts.usageWindow.sevenDaySonnet'), percent: info.seven_day_sonnet.utilization, resetsAt: info.seven_day_sonnet.resets_at, windowStats: info.seven_day_sonnet.window_stats })
   }
   if (info.seven_day_fable) {
-    windows.push({ key: 'seven_day_fable', label: t('admin.accounts.usageWindow.sevenDayFable'), percent: info.seven_day_fable.utilization, resetsAt: info.seven_day_fable.resets_at })
+    windows.push({ key: 'seven_day_fable', label: t('admin.accounts.usageWindow.sevenDayFable'), percent: info.seven_day_fable.utilization, resetsAt: info.seven_day_fable.resets_at, windowStats: info.seven_day_fable.window_stats })
   }
   return windows
 })
@@ -1200,14 +1210,17 @@ const openAIWindows = computed<UsageWindowBar[]>(() => {
   if (!hasOpenAIUsageFallback.value) return []
   const windows: UsageWindowBar[] = []
   if (usageInfo.value?.five_hour) {
-    windows.push({ key: 'five_hour', label: t('admin.accounts.usageWindow.fiveHour'), percent: usageInfo.value.five_hour.utilization, resetsAt: usageInfo.value.five_hour.resets_at })
+    windows.push({ key: 'five_hour', label: t('admin.accounts.usageWindow.fiveHour'), percent: usageInfo.value.five_hour.utilization, resetsAt: usageInfo.value.five_hour.resets_at, windowStats: usageInfo.value.five_hour.window_stats })
   }
   if (usageInfo.value?.seven_day) {
-    windows.push({ key: 'seven_day', label: t('admin.accounts.usageWindow.sevenDay'), percent: usageInfo.value.seven_day.utilization, resetsAt: usageInfo.value.seven_day.resets_at })
+    windows.push({ key: 'seven_day', label: t('admin.accounts.usageWindow.sevenDay'), percent: usageInfo.value.seven_day.utilization, resetsAt: usageInfo.value.seven_day.resets_at, windowStats: usageInfo.value.seven_day.window_stats })
   }
   return windows
 })
 
+// No `windowStats` on any pushed window here: `AntigravityModelQuota` (the
+// wire shape for `antigravity_quota`) is utilization + reset_time only --
+// there never was a per-window request/token/cost breakdown to drop.
 const antigravityWindows = computed<UsageWindowBar[]>(() => {
   if (!hasAntigravityQuotaFromAPI.value) return []
   const windows: UsageWindowBar[] = []
@@ -1230,10 +1243,16 @@ const grokWindows = computed<UsageWindowBar[]>(() => {
   const windows: UsageWindowBar[] = []
   if (grokIsFree.value) {
     if (grokFreeTokenBar.value) {
-      windows.push({ key: 'grok_24h', label: t('admin.accounts.usageWindow.grok24h'), percent: grokFreeTokenBar.value.utilization, resetsAt: null })
+      // grok_local_usage_24h IS a WindowStats (it is the local usage log
+      // this bar's own percent is derived from), unlike the two billing
+      // bars below -- pass it through instead of dropping it a second time.
+      windows.push({ key: 'grok_24h', label: t('admin.accounts.usageWindow.grok24h'), percent: grokFreeTokenBar.value.utilization, resetsAt: null, windowStats: grokFreeQuotaUsage.value })
     }
     return windows
   }
+  // grokWeeklyBillingBar / grokMonthlyBillingBar come from GrokBillingSummary
+  // (xAI's billing probe): money and a percent, no request/token count --
+  // there is no windowStats to attach here either.
   if (grokWeeklyBillingBar.value) {
     windows.push({ key: 'grok_7d', label: t('admin.accounts.usageWindow.sevenDay'), percent: grokWeeklyBillingBar.value.utilization, resetsAt: grokWeeklyBillingBar.value.resetsAt })
   }
@@ -1244,7 +1263,7 @@ const grokWindows = computed<UsageWindowBar[]>(() => {
 })
 
 const geminiWindows = computed<UsageWindowBar[]>(() =>
-  geminiUsageBars.value.map((bar) => ({ key: bar.key, label: bar.label, percent: bar.utilization, resetsAt: bar.resetsAt }))
+  geminiUsageBars.value.map((bar) => ({ key: bar.key, label: bar.label, percent: bar.utilization, resetsAt: bar.resetsAt, windowStats: bar.windowStats }))
 )
 
 const keyAccountWindows = computed<UsageWindowBar[]>(() => {
@@ -1339,6 +1358,39 @@ const resetsLabel = (resetsAt: string | null, percent: number) => {
   }
   if (diffHours > 0) return `${diffHours}h ${diffMins}m`
   return `${diffMins}m`
+}
+
+// Regression fix (see build report): the primary bar is the ONLY window
+// shown for a single-window account (Grok, single-image Antigravity), so
+// its reset time cannot be deferred to the expansion the way otherWindows
+// defer theirs -- there may be no expansion at all. A 36px table row has no
+// room for the reset as its own line (that costs ~21px via CapacityBar's
+// slot, the treatment otherWindows use), so it rides inline with the
+// percent on the bar's existing head row instead. Reuses `pctLabel` and
+// `resetsLabel` as-is -- no second formatter.
+const barTrailing = (w: UsageWindowBar) => `${pctLabel(w.percent)} · ${resetsLabel(w.resetsAt, w.percent)}`
+
+// Regression fix (see build report, "WindowStats is fetched, typed, and
+// silently dropped"): same req/tokens/A$/U$ formatting the today-stats chips
+// already use elsewhere in this file (formatKeyRequests etc.), reused here
+// rather than inventing a second convention for the same four numbers.
+const formatWindowStats = (stats: WindowStats) => {
+  const parts = [
+    `${formatCompactNumber(stats.requests, { allowBillions: false })} req`,
+    formatCompactNumber(stats.tokens),
+    `A $${stats.cost.toFixed(2)}`
+  ]
+  if (stats.user_cost != null) parts.push(`U $${stats.user_cost.toFixed(2)}`)
+  return parts.join(' · ')
+}
+
+// Expansion rows have room the primary bar does not (part 08's own
+// reasoning for why the primary bar shows one window and everything else is
+// "one click away"), so this is where the dropped window_stats resurfaces --
+// appended after the reset time on the same footer line, not a new bar.
+const expandedFoot = (w: UsageWindowBar) => {
+  const reset = resetsLabel(w.resetsAt, w.percent)
+  return w.windowStats ? `${reset} · ${formatWindowStats(w.windowStats)}` : reset
 }
 
 const requestParentBatchUsage = (options?: { force?: boolean }) => {
