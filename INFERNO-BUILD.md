@@ -385,3 +385,75 @@ task CI cannot do. The agent proposes and never merges: the gate proves code
 compiles, not that a ported change is semantically right, and an agent that
 auto-merges its own judgement recreates exactly the unreviewed drift that put
 oc-router 1,825 commits behind.
+
+## Upstream reconciliation log
+
+### 2026-08-09 — first sync, run manually to derive the runbook
+
+13 commits behind (38 backend files, 12 frontend, 1 .github, no migrations).
+
+**Rebase: clean.** All 7 of our commits replayed with zero conflicts, which is
+the thin-fork invariant paying off. Verified after: 0 files modified under
+backend/, frontend/, deploy/ or docs/. The mirror now matches upstream/main
+exactly, so `frontend/` is current again.
+
+**Gate: `vue-tsc` 0 errors, 1518/1518 tests.** But `june-lint` jumped from clean
+to **578 violations across 33 files**, and the cause is a flaw in the lint, not a
+regression in our code.
+
+#### Finding 1 — the lint's scope heuristic breaks after every sync
+
+`june-lint.mjs` defines "converted" as "differs from ../frontend". That is true
+before a sync and false after one: upstream changed 12 files in frontend/, so
+our untouched copies of those files now differ from the mirror simply by being
+older. The lint reads that as "converted" and holds them to June's rules,
+surfacing upstream's own pre-existing violations (284 of the 578 are
+`font-medium`/`font-bold` in stock upstream Vue).
+
+**Fix:** ask git whether *we* changed a file, not whether it differs from the
+mirror:
+
+    git log --oneline <fork-point>..HEAD -- inferno-frontend/<path>
+
+Non-empty means we touched it. That stays correct across any number of syncs.
+Until this is fixed, `june-lint` is unreliable immediately after a sync.
+
+#### Finding 2 — the same signal IS the reconciliation work list
+
+The files the lint dragged into scope are exactly the files whose
+inferno-frontend/ copies are now stale. Upstream changed these 12:
+
+    src/api/admin/settings.ts        <- API contract, matters most
+    src/types/index.ts               <- API contract
+    src/i18n/locales/{en,zh}/admin/settings.ts
+    src/i18n/locales/{en,zh}/common.ts
+    src/views/admin/SettingsView.vue
+    src/views/auth/{EmailVerify,Register}View.vue
+    plus 3 spec files
+
+Under the port policy, `src/api/admin/settings.ts` and `src/types/index.ts` need
+a decision; the views do not (they are being replaced by the June parts). The
+two `common.ts` locale files overlap with keys we added, so they need a manual
+merge rather than a copy.
+
+**Not yet ported.** Recorded rather than rushed.
+
+**Last reviewed upstream SHA:** see `git rev-parse upstream/main` at the time of
+the next run; this entry advanced the mirror but did not complete the port.
+
+#### Runbook derived from this run
+
+1. `git fetch upstream` and record `git rev-list --count HEAD..upstream/main`.
+2. `git tag -f pre-sync-backup HEAD` — a recovery point costs nothing.
+3. `git rebase upstream/main`. On conflict, read it: we edit almost no upstream
+   file, so a conflict is unusual and the likely culprit is the root .gitignore.
+4. Assert the invariant: 0 changed files under backend/, frontend/, deploy/,
+   docs/. If this ever fails, stop — the whole model depends on it.
+5. Run the gate: june-lint, vue-tsc, vitest. Expect lint noise until finding 1
+   is fixed; typecheck and tests are the trustworthy signals today.
+6. Diff the API contract since the last reviewed SHA -- both the TS clients
+   (frontend/src/api, src/types) AND the Go response structs
+   (backend/internal/handler), because upstream can change a JSON shape in Go
+   without touching any TS file, and a stale client does not fail loudly.
+7. Port only what converted components depend on. Record ports AND skips here,
+   then advance the last reviewed SHA.
