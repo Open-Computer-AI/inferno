@@ -745,3 +745,71 @@ They need rewriting to the new behaviour, not patching. Do not weaken them.
    container. Matches CapacityBar and DataTable, which use it nowhere.
 4. **A per-row interval was removed** — OllamaCloudUsageCell ran a ticking
    countdown clock per table row. Now computed once per render.
+
+## Part 08 departures: what was actually wrong, and what is still owed
+
+### The billable-call bug was not where the spec said
+
+The spec frames departure 3 as "a cell never fetches -- the table batches by
+visible row id". `GrokQuotaProbeCell` was never auto-fetching; `handleProbe`
+only ever ran from a click. The real problem: `AccountUsageCell` embedded that
+probe button inline on EVERY visible Grok row, which normalises a real billable
+xAI call as a routine per-row action. Removed the embedding.
+
+And no batch path exists for it. The spec concedes this: the probe is inherently
+a live upstream call. So the fix is not batching, it is making the column
+opt-in and off by default, with the cost stated at the point of switching it on.
+
+### Owed: the opt-in Grok column (DataTable / AccountsView, unowned)
+
+An off-by-default column, gated by a chooser that says "sends one billable
+request per visible row", rendering GrokQuotaProbeCell per row only once enabled.
+
+### Owed: the column-header window picker (AccountsView, unowned)
+
+AccountUsageCell now accepts an additive optional `pinnedWindowKey`. A Select in
+the column header sets it through the existing `#cell-usage` slot
+(AccountsView ~line 316). Window keys: five_hour, seven_day, seven_day_sonnet,
+seven_day_fable, gemini3_pro/flash/image, claude, grok_24h/7d/30d,
+pro_daily/flash_daily/shared_daily, quota_daily/weekly/total.
+For the column to SORT by the pinned window, AccountsView also needs a derived
+sortable field computed the same way.
+
+### Owed: the 55 -> 9 quota collapse (unowned files)
+
+```ts
+interface QuotaDimension {
+  key: 'daily' | 'weekly' | 'total'
+  limit: number | null
+  used: number
+  resetHour: number | null
+  resetDay: number | null
+  resetTimezone: string | null
+  notifyEnabled: boolean | null
+  notifyThreshold: number | null
+  notifyThresholdType: 'percent' | 'absolute' | null
+}
+```
+QuotaLimitCard 27 props -> 3. QuotaDimensionRow 26 -> 4. Files: those two plus
+their callers CreateAccountModal.vue and EditAccountModal.vue -- which are the
+6,338 and 4,799 line files part 05 calls "a project rather than a pass".
+
+### Owed: 19 i18n keys (orchestrator owns src/i18n/)
+
+admin.accounts.usageWindow.{fiveHour '5 hour', sevenDay '7 day',
+sevenDaySonnet '7 day Sonnet', sevenDayFable '7 day Fable', thirtyDay '30 day',
+oneDay '1 day', total 'Total', grok24h '24 hour', moreWindows '{count} more',
+hideWindows 'Hide extra windows'}
+admin.accounts.capacity.dimension.{concurrency 'Concurrency',
+windowCost '5 hour cost', sessions 'Sessions', rpm 'RPM',
+quotaDaily 'Daily quota', quotaWeekly 'Weekly quota', quotaTotal 'Total quota'}
+admin.accounts.capacity.{moreLimits '{count} more', hideLimits 'Hide extra limits'}
+
+Until these land, AccountUsageCell and AccountCapacityCell render raw key paths.
+
+### One deviation worth knowing
+
+CapacityBar's label typography is --fs-md/--foreground at every size; the usage
+cell's anatomy wants --fs-sm/muted in a table-cell context. The agent composed
+the shared component as-is rather than forking its styling. If a cell label
+looks too heavy, that is why, and the fix belongs in CapacityBar.
