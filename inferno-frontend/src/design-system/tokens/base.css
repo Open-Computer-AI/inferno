@@ -1,0 +1,33 @@
+/* Base layer: the document defaults every June surface starts from.
+ * 13px body sans at regular weight, warm-grey selection, no all-caps anywhere. */
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body{margin:0;background:var(--background);color:var(--foreground);font-family:var(--font-sans);font-synthesis:none;font-size:var(--fs-md);font-weight:400;line-height:1.5;letter-spacing:0}
+::selection{background:var(--selection);color:var(--selection-foreground)}
+h1,h2,h3,h4,h5,h6{font-weight:400;letter-spacing:0;margin:0}
+button,input,select,textarea{font:inherit;letter-spacing:0}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--ring-focus);outline-offset:2px}
+/* Links: quiet, underlined on the foreground rather than a colored anchor. */
+a{color:var(--foreground);text-decoration:underline;text-decoration-color:color-mix(in oklch,var(--foreground) 28%,transparent);text-underline-offset:3px;transition:text-decoration-color var(--t-fast) var(--ease-out)}
+a:hover{color:var(--foreground);text-decoration-color:var(--foreground)}
+code,kbd,pre,samp{font-family:var(--font-mono)}
+/* Serif is for display moments only. */
+.june-serif{font-family:var(--font-serif);font-weight:400}
+.june-display{font-family:var(--font-serif);font-size:var(--fs-display);font-weight:400;line-height:1.15}
+.june-mono{font-family:var(--font-mono);font-weight:400}
+
+/* Shimmer — the canonical sweep for "this text is working" states. It clips to
+ * glyphs, so it never applies to block placeholders (use a flat surface-subtle
+ * skeleton bar for those). Pair it with a semantic class that owns the color:
+ * the base is currentColor, so the element must carry a real color. */
+.shimmer{--shimmer-duration:2s; /* @kind other */--shimmer-spread:2; /* @kind other */--shimmer-angle:20deg; /* @kind other */}
+@supports (color:oklch(from red l c h)){
+  .shimmer{background:linear-gradient(var(--shimmer-angle),transparent calc(50% - 8ch),oklch(from currentColor calc(l + 0.28) c h) 50%,transparent calc(50% + 8ch)) currentColor;background-size:250% 100%;background-repeat:no-repeat;-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;animation:june-shimmer var(--shimmer-duration) linear infinite}
+  [data-theme="dark"] .shimmer{background-image:linear-gradient(var(--shimmer-angle),transparent calc(50% - 8ch),oklch(from currentColor calc(l + 0.4) c h) 50%,transparent calc(50% + 8ch))}
+}
+@keyframes june-shimmer{from{background-position:150% 0}to{background-position:-50% 0}}
+@media (prefers-reduced-motion:reduce){.shimmer{animation:none;background:none;color:inherit;-webkit-text-fill-color:currentColor}}
+
+/* Quiet, static first-load skeleton bars. No sweep, no pulse. */
+.june-skeleton{border-radius:var(--r-sm);background:var(--surface-subtle)}
