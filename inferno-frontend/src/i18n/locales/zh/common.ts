@@ -282,6 +282,7 @@ export default {
     processing: '处理中...',
     continue: '继续',
     goBack: '返回',
+    or: '或',
     legalPrefix: '继续即表示您同意我们的',
     legalTerms: '服务条款',
     legalAnd: '和',
