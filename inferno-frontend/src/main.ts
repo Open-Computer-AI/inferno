@@ -10,6 +10,7 @@ import './style.css'
 // June after style.css so its token layer and base rules win the cascade over
 // the Tailwind preflight that style.css pulls in.
 import './design-system/june.css'
+import { PRODUCT_NAME, PRODUCT_TAGLINE } from '@/config/brand'
 
 function initIOSViewportZoomFix() {
   // iOS Safari 在输入框字号小于 16px 时聚焦会自动放大页面，且失焦后不会恢复。
@@ -80,8 +81,10 @@ async function bootstrap() {
   appStore.initFromInjectedConfig()
 
   // Set document title immediately after config is loaded
-  if (appStore.siteName && appStore.siteName !== 'Sub2API') {
-    document.title = `${appStore.siteName} - AI API Gateway`
+  // Only override when the operator actually set a name; otherwise index.html's
+  // own title already carries the product name and rewriting it just flickers.
+  if (appStore.siteName && appStore.siteName !== PRODUCT_NAME) {
+    document.title = `${appStore.siteName} - ${PRODUCT_TAGLINE}`
   }
   updateFavicon(appStore.siteLogo)
 
