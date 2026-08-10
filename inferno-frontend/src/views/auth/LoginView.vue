@@ -1,170 +1,169 @@
 <template>
   <AuthLayout>
-    <div class="lg-form">
-      <!-- Left aligned, sentence case, and no second line. The wordmark above is
-           the layout's; this is the one sentence saying what the screen is. -->
-      <h2 class="lg-form__title">
-        {{ t('auth.welcomeBack') }}
-      </h2>
-      <!-- Login Form -->
-      <form @submit.prevent="handleLogin" class="space-y-5">
-        <!-- Email Input -->
-        <div>
-          <label for="email" class="input-label">
-            {{ t('auth.emailLabel') }}
-          </label>
-          <div class="relative">
-            <input
-              id="email"
-              v-model="formData.email"
-              type="email"
-              required
-              autofocus
-              autocomplete="email"
-              :disabled="authActionDisabled"
-              class="input"
-              :class="{ 'input-error': errors.email }"
-              :placeholder="t('auth.emailPlaceholder')"
-            />
-          </div>
+    <template #subtitle>{{ t('auth.signInToAccount') }}</template>
+
+    <form class="lg" @submit.prevent="onSubmit">
+      <!-- Step one: the providers, then a rule, then the address. Part 17 orders
+           it "Google, GitHub, then email" -- three methods fit above the fold
+           with room, so nothing is hidden and nothing has to be remembered. -->
+      <template v-if="step === 1">
+        <EmailOAuthButtons
+          :disabled="authActionDisabled"
+          :github-enabled="githubOAuthEnabled"
+          :google-enabled="googleOAuthEnabled"
+          :show-divider="false"
+          @start="handleOAuthStart"
+        />
+
+        <button
+          v-if="showPasskeyLogin"
+          type="button"
+          class="lg__provider"
+          :disabled="authActionDisabled"
+          @click="handlePasskeyLogin"
+        >
+          <Icon name="key" size="md" />
+          <span>{{ passkeyLoading ? t('auth.passkeySigningIn') : t('auth.passkeySignIn') }}</span>
+        </button>
+
+        <LinuxDoOAuthSection v-if="linuxdoOAuthEnabled" :disabled="authActionDisabled" :show-divider="false" @start="handleOAuthStart" />
+        <DingTalkOAuthSection v-if="dingtalkOAuthEnabled" :disabled="authActionDisabled" :show-divider="false" @start="handleOAuthStart" />
+        <WechatOAuthSection v-if="wechatOAuthEnabled" :disabled="authActionDisabled" :show-divider="false" @start="handleOAuthStart" />
+        <OidcOAuthSection v-if="oidcOAuthEnabled" :disabled="authActionDisabled" :provider-name="oidcOAuthProviderName" :show-divider="false" @start="handleOAuthStart" />
+
+        <div v-if="showPasskeyLogin || showOAuthLogin" class="lg__rule">
+          <span class="lg__rule-label">{{ t('auth.oauthOrContinue') }}</span>
         </div>
 
-        <!-- Password Input -->
-        <div>
-          <label for="password" class="input-label">
-            {{ t('auth.passwordLabel') }}
-          </label>
-          <div class="relative">
-            <input
-              id="password"
-              v-model="formData.password"
-              :type="showPassword ? 'text' : 'password'"
-              required
-              autocomplete="current-password"
-              :disabled="authActionDisabled"
-              class="input pr-9"
-              :class="{ 'input-error': errors.password }"
-              :placeholder="t('auth.passwordPlaceholder')"
-            />
-            <button
-              type="button"
-              @click="showPassword = !showPassword"
-              :disabled="authActionDisabled"
-              class="lg-form__reveal"
-            >
-              <Icon v-if="showPassword" name="eyeOff" size="md" />
-              <Icon v-else name="eye" size="md" />
-            </button>
-          </div>
-          <div v-if="passwordResetEnabled && !backendModeEnabled" class="lg-form__aside">
-            <router-link to="/forgot-password" class="lg-form__link">
-              {{ t('auth.forgotPassword') }}
-            </router-link>
-          </div>
+        <input
+          id="email"
+          v-model="formData.email"
+          type="email"
+          required
+          autofocus
+          autocomplete="email"
+          class="lg__field"
+          :class="{ 'lg__field--invalid': errors.email }"
+          :disabled="authActionDisabled"
+          :placeholder="t('auth.emailPlaceholder')"
+        />
+
+        <button type="submit" class="lg__cta" :disabled="authActionDisabled || !emailLooksValid">
+          {{ t('auth.continue') }}
+        </button>
+      </template>
+
+      <!-- Step two. The address stays visible and ticked: you can see what you
+           are signing in as without going back, which is the whole failure of a
+           two step form done badly. -->
+      <template v-else>
+        <div class="lg__identity">
+          <i class="hgi-stroke hgi-tick-02" aria-hidden="true" />
+          <span class="lg__identity-email">{{ formData.email }}</span>
         </div>
 
-        <!-- Turnstile Widget -->
-        <div v-if="captchaEnabled">
-          <TurnstileWidget
-            ref="turnstileRef"
-            :turnstile-enabled="turnstileEnabled"
-            :turnstile-site-key="turnstileSiteKey"
-            :tencent-enabled="tencentCaptchaEnabled"
-            :tencent-app-id="tencentCaptchaAppId"
-            :tencent-region="tencentCaptchaRegion"
-            :aliyun-enabled="aliyunCaptchaEnabled"
-            :aliyun-scene-id="aliyunCaptchaSceneId"
-            :aliyun-prefix="aliyunCaptchaPrefix"
-            :aliyun-region="aliyunCaptchaRegion"
-            @verify="onTurnstileVerify"
-            @expire="onTurnstileExpire"
-            @error="onTurnstileError"
+        <div class="lg__pw">
+          <input
+            id="password"
+            ref="passwordFieldRef"
+            v-model="formData.password"
+            :type="showPassword ? 'text' : 'password'"
+            required
+            autocomplete="current-password"
+            class="lg__field"
+            :class="{ 'lg__field--invalid': errors.password }"
+            :disabled="authActionDisabled"
+            :placeholder="t('auth.passwordPlaceholder')"
           />
+          <button
+            type="button"
+            class="lg__reveal"
+            :disabled="authActionDisabled"
+            :aria-label="showPassword ? t('auth.hidePassword') : t('auth.showPassword')"
+            @click="showPassword = !showPassword"
+          >
+            <Icon v-if="showPassword" name="eyeOff" size="md" />
+            <Icon v-else name="eye" size="md" />
+          </button>
         </div>
 
-        <!-- Submit Button -->
+
+
         <button
           type="submit"
+          class="lg__cta"
           :disabled="authActionDisabled || (turnstileEnabled && !turnstileToken)"
-          class="btn btn-primary w-full"
         >
-          <!-- Inherits currentColor, so it is correct on any button variant.
-               The old one hard-coded text-white, which assumed the primary fill
-               was dark. --primary-foreground is a token and need not be. -->
-          <span v-if="isLoading" class="lg-form__spinner" aria-hidden="true" />
+          <span v-if="isLoading" class="lg__spinner" aria-hidden="true" />
           {{ isLoading ? t('auth.signingIn') : t('auth.signIn') }}
         </button>
 
-        <LoginAgreementPrompt
-          v-if="loginAgreementEnabled"
-          :accepted="agreementAccepted"
-          :documents="loginAgreementDocuments"
-          :mode="loginAgreementMode"
-          :updated-at="loginAgreementUpdatedAt"
-          :visible="showAgreementModal"
-          @accept="acceptLoginAgreement"
-          @reject="rejectLoginAgreement"
-          @open="showAgreementModal = true"
+        <!-- Under the button, always. Two step forms trap people when the only
+             way back is the browser button, and a trapped person retypes an
+             email they already typed. -->
+        <button type="button" class="lg__back" @click="goBackToEmail">
+          {{ t('auth.goBack') }}
+        </button>
+
+        <router-link
+          v-if="passwordResetEnabled && !backendModeEnabled"
+          to="/forgot-password"
+          class="lg__back lg__back--link"
+        >
+          {{ t('auth.forgotPassword') }}
+        </router-link>
+      </template>
+
+      <!-- Mounted for BOTH steps, deliberately. `handleOAuthStart` and the
+           passkey handler both call `turnstileRef.verifyAction()`, and those
+           buttons live on step one -- when this was inside the step-two branch
+           the ref was null there, the optional chain returned undefined, and
+           OAuth sign-in silently did nothing whenever the action gate was on. -->
+      <div v-if="captchaEnabled" class="lg__captcha">
+        <TurnstileWidget
+          ref="turnstileRef"
+          :turnstile-enabled="turnstileEnabled"
+          :turnstile-site-key="turnstileSiteKey"
+          :tencent-enabled="tencentCaptchaEnabled"
+          :tencent-app-id="tencentCaptchaAppId"
+          :tencent-region="tencentCaptchaRegion"
+          :aliyun-enabled="aliyunCaptchaEnabled"
+          :aliyun-scene-id="aliyunCaptchaSceneId"
+          :aliyun-prefix="aliyunCaptchaPrefix"
+          :aliyun-region="aliyunCaptchaRegion"
+          @verify="onTurnstileVerify"
+          @expire="onTurnstileExpire"
+          @error="onTurnstileError"
         />
+      </div>
 
-        <div v-if="showPasskeyLogin || showOAuthLogin" class="space-y-3 pt-1">
-          <div class="lg-form__rule">
-            <span class="lg-form__rule-label">{{ t('auth.oauthOrContinue') }}</span>
-          </div>
+      <LoginAgreementPrompt
+        v-if="loginAgreementEnabled"
+        :accepted="agreementAccepted"
+        :documents="loginAgreementDocuments"
+        :mode="loginAgreementMode"
+        :updated-at="loginAgreementUpdatedAt"
+        :visible="showAgreementModal"
+        @accept="acceptLoginAgreement"
+        @reject="rejectLoginAgreement"
+        @open="showAgreementModal = true"
+      />
+    </form>
 
-          <button
-            v-if="showPasskeyLogin"
-            type="button"
-            class="btn btn-secondary w-full"
-            :disabled="authActionDisabled"
-            @click="handlePasskeyLogin"
-          >
-            <Icon name="key" size="md" class="mr-2" />
-            {{ passkeyLoading ? t('auth.passkeySigningIn') : t('auth.passkeySignIn') }}
-          </button>
+    <template #footer>
+      <!-- Only rendered when the operator has actually configured the documents.
+           A hard-coded /terms link would be a dead link in most deployments. -->
+      <p v-if="legalDocuments.length" class="lg__legal">
+        {{ t('auth.legalPrefix') }}
+        <template v-for="(doc, i) in legalDocuments" :key="doc.url">
+          <a :href="doc.url" target="_blank" rel="noopener noreferrer" class="lg__legal-link">{{ doc.title }}</a>
+          <template v-if="i < legalDocuments.length - 1"> {{ t('auth.legalAnd') }} </template>
+        </template>
+      </p>
 
-          <EmailOAuthButtons
-            :disabled="authActionDisabled"
-            :github-enabled="githubOAuthEnabled"
-            :google-enabled="googleOAuthEnabled"
-            :show-divider="false"
-            @start="handleOAuthStart"
-          />
-
-          <LinuxDoOAuthSection
-            v-if="linuxdoOAuthEnabled"
-            :disabled="authActionDisabled"
-            :show-divider="false"
-            @start="handleOAuthStart"
-          />
-          <DingTalkOAuthSection
-            v-if="dingtalkOAuthEnabled"
-            :disabled="authActionDisabled"
-            :show-divider="false"
-            @start="handleOAuthStart"
-          />
-          <WechatOAuthSection
-            v-if="wechatOAuthEnabled"
-            :disabled="authActionDisabled"
-            :show-divider="false"
-            @start="handleOAuthStart"
-          />
-          <OidcOAuthSection
-            v-if="oidcOAuthEnabled"
-            :disabled="authActionDisabled"
-            :provider-name="oidcOAuthProviderName"
-            :show-divider="false"
-            @start="handleOAuthStart"
-          />
-        </div>
-      </form>
-    </div>
-
-    <!-- Footer -->
-    <template v-if="!backendModeEnabled" #footer>
-      <p class="lg-form__signup">
+      <p v-if="!backendModeEnabled" class="lg__signup">
         {{ t('auth.dontHaveAccount') }}
-        <router-link to="/register" class="lg-form__link">{{ t('auth.signUp') }}</router-link>
+        <router-link to="/register" class="lg__signup-link">{{ t('auth.signUp') }}</router-link>
       </p>
     </template>
   </AuthLayout>
@@ -181,7 +180,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, reactive, onMounted, watch } from 'vue'
+import { computed, ref, reactive, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { AuthLayout } from '@/components/layout'
@@ -226,6 +225,53 @@ const isLoading = ref<boolean>(false)
 const passkeyLoading = ref<boolean>(false)
 const errorMessage = ref<string>('')
 const showPassword = ref<boolean>(false)
+
+/**
+ * Two steps, not one: email first, password second.
+ *
+ * Part 17 specifies this so the screen "learns who you are before deciding what
+ * to ask". The full benefit -- a GitHub user never seeing a password field --
+ * needs an identity lookup the backend does not expose, and an endpoint that
+ * reveals whether an address is registered is an account-enumeration hole. So
+ * step one never asks the server anything: it collects the address and advances
+ * unconditionally, which leaks nothing and still gives the shape the design
+ * wants (the address stays visible, and going back is a real control).
+ */
+const step = ref<1 | 2>(1)
+const passwordFieldRef = ref<HTMLInputElement | null>(null)
+
+const emailLooksValid = computed(() => /.+@.+\..+/.test(formData.email.trim()))
+
+async function onSubmit(): Promise<void> {
+  if (step.value === 1) {
+    if (!emailLooksValid.value) return
+    step.value = 2
+    // Focus follows the step, or a keyboard user lands nowhere.
+    await nextTick()
+    passwordFieldRef.value?.focus()
+    return
+  }
+  await handleLogin()
+}
+
+function goBackToEmail(): void {
+  step.value = 1
+  formData.password = ''
+  errors.password = ''
+  errorMessage.value = ''
+}
+
+/**
+ * The legal line's links. These are the operator's configured agreement
+ * documents -- the only real terms/privacy URLs the product has. When none are
+ * configured the line is not rendered at all, rather than pointing at routes
+ * that do not exist.
+ */
+const legalDocuments = computed(() =>
+  (loginAgreementDocuments.value ?? [])
+    .filter((d: { url?: string; title?: string }) => !!d?.url)
+    .map((d: { url?: string; title?: string }) => ({ url: d.url as string, title: d.title || d.url as string }))
+)
 const publicSettingsLoaded = ref<boolean>(false)
 
 // Public settings
@@ -691,92 +737,187 @@ function handle2FACancel(): void {
 </script>
 
 <style scoped>
-.lg-form__title {
-  margin: 0 0 24px;
-  color: var(--foreground);
-  font-size: var(--fs-xl);
-  font-weight: var(--fw-medium);
-  line-height: 1.25;
-}
-
-/* Right aligned under the field it belongs to. A left-aligned link here reads
-   as a second label for the password. */
-.lg-form__aside {
+/* Every number here is measured from part 17's own mock, not interpreted:
+   38px controls, fully rounded, 8px between them, the body size throughout. */
+.lg {
   display: flex;
-  justify-content: flex-end;
-  margin-top: 6px;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.lg-form__link {
-  color: var(--foreground);
-  font-size: var(--fs-sm);
-  /* Underlined rather than coloured: ground rule 5 reserves colour for state,
-     and "this is a link" is not a state. */
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  text-decoration-color: var(--border);
-  transition: text-decoration-color var(--motion-hover);
+.lg__provider,
+.lg__field,
+.lg__cta {
+  height: 38px;
+  width: 100%;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: var(--fs-md);
 }
 
-.lg-form__link:hover {
-  text-decoration-color: var(--foreground);
-}
-
-/* The reveal toggle. Sized to the field, not to the icon, so its hit area
-   matches the control it sits in. */
-.lg-form__reveal {
-  position: absolute;
-  top: 0;
-  right: 0;
+.lg__provider {
   display: flex;
-  height: var(--s2a-h-md);
-  width: 32px;
   align-items: center;
   justify-content: center;
-  border: 0;
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--muted-foreground);
-  cursor: pointer;
-  transition: color var(--motion-hover);
-}
-
-.lg-form__reveal:hover:not(:disabled) {
+  gap: 9px;
+  border: 1px solid var(--border);
+  background: var(--card);
   color: var(--foreground);
+  font-weight: 400;
+  cursor: pointer;
+  transition: background var(--motion-hover);
+}
+.lg__provider:hover:not(:disabled) {
+  background: var(--sidebar-accent);
 }
 
-.lg-form__reveal:disabled {
+.lg__field {
+  padding: 0 15px;
+  border: 1px solid var(--input);
+  background: var(--card);
+  color: var(--foreground);
+  transition: background var(--motion-hover);
+}
+.lg__field::placeholder {
+  color: var(--muted-foreground);
+}
+.lg__field:focus {
+  outline: none;
+  border-color: var(--ring-focus);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+.lg__field--invalid {
+  border-color: var(--destructive);
+}
+
+/* The only filled control on the screen, and the only one at the medium weight. */
+.lg__cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  transition: background var(--motion-hover);
+}
+.lg__cta:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--primary) 92%, var(--foreground));
+}
+.lg__cta:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
 
-/* One hairline with the label sitting on it, rather than two flex spacers.
-   `background` on the pseudo-element, so nothing here transitions a border. */
-.lg-form__rule {
+.lg__provider:focus-visible,
+.lg__cta:focus-visible,
+.lg__back:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.lg__provider:disabled,
+.lg__field:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* 6px above and 2px below, so the rule sits closer to the field it introduces
+   than to the providers it separates from. */
+.lg__rule {
   position: relative;
   display: flex;
   justify-content: center;
+  margin: 6px 0 2px;
 }
-
-.lg-form__rule::before {
+.lg__rule::before {
   position: absolute;
   top: 50%;
   right: 0;
   left: 0;
   height: 1px;
-  background: var(--border-subtle);
+  background: color-mix(in oklch, var(--border) 55%, transparent);
   content: '';
 }
-
-.lg-form__rule-label {
+.lg__rule-label {
   position: relative;
   padding: 0 10px;
   background: var(--background);
   color: var(--muted-foreground);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-2xs);
 }
 
-.lg-form__spinner {
+/* Greyed and ticked: what you are signing in as, without going back for it. */
+.lg__identity {
+  display: flex;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+  font-size: var(--fs-md);
+}
+.lg__identity-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lg__pw {
+  position: relative;
+}
+
+.lg__reveal {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  height: 38px;
+  width: 40px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: color var(--motion-hover);
+}
+.lg__reveal:hover:not(:disabled) {
+  color: var(--foreground);
+}
+.lg__pw .lg__field {
+  padding-right: 42px;
+}
+
+.lg__captcha {
+  display: flex;
+  justify-content: center;
+}
+
+.lg__back {
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  text-align: center;
+  transition: color var(--motion-hover);
+}
+.lg__back:hover {
+  color: var(--foreground);
+}
+.lg__back--link {
+  display: block;
+  text-decoration: none;
+}
+
+.lg__spinner {
   display: inline-block;
   height: 13px;
   width: 13px;
@@ -784,28 +925,38 @@ function handle2FACancel(): void {
   border-top-color: transparent;
   border-radius: 50%;
   opacity: 0.7;
-  /* Shared keyframe from inferno.css; it carries its own reduced-motion guard. */
   animation: s2a-spin 0.7s linear infinite;
 }
 
-.lg-form__signup {
+.lg__legal,
+.lg__signup {
   margin: 0;
   color: var(--muted-foreground);
-  font-size: var(--fs-md);
+  font-size: var(--fs-2xs);
+  line-height: 1.5;
+}
+.lg__signup {
+  margin-top: 8px;
+  font-size: var(--fs-sm);
 }
 
-/* Was `all`, which animates border-color too (ground rule 6). These are the two
-   properties the transition actually changes. */
-.fade-enter-active,
-.fade-leave-active {
-  transition:
-    opacity 0.3s ease,
-    transform 0.3s ease;
+/* Warm, not the body ink: these are the only links on the screen. */
+.lg__legal-link {
+  color: var(--warm-strong);
+  text-decoration: none;
+}
+.lg__legal-link:hover {
+  text-decoration: underline;
 }
 
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-  transform: translateY(-8px);
+.lg__signup-link {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--border);
+  transition: text-decoration-color var(--motion-hover);
+}
+.lg__signup-link:hover {
+  text-decoration-color: var(--foreground);
 }
 </style>

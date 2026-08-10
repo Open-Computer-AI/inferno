@@ -1,52 +1,45 @@
 <template>
   <div class="auth">
-    <!-- Left: the field. Order matters for keyboard and screen readers -- the
-         panel is decoration, so the form column comes first in the DOM and is
-         placed right by the grid, not by source order. -->
-    <div class="auth__col auth__col--form">
+    <!-- Panel LEFT, column right. Part 17: "A split screen. The panel on the
+         left ... The column on the right is deliberately plainer than anything
+         else in the library, because a front door has exactly one job." -->
+    <div class="auth__panel">
+      <AuthFieldPanel />
+    </div>
+
+    <div class="auth__col">
       <div class="auth__inner">
         <header class="auth__head">
           <!-- The wordmark IS the logo: the site name set in the serif, no tile
-               and no monogram. A letter in a coloured square is worse than the
-               name itself set properly. An operator-uploaded logo still wins,
-               because that is their brand and not ours to override. -->
+               and no monogram. An operator-uploaded logo still wins, because
+               that is their brand and not ours to override. -->
           <img v-if="settingsLoaded && siteLogo" :src="siteLogo" alt="" class="auth__logo" />
           <h1 v-else class="auth__wordmark">{{ siteName }}</h1>
+          <p v-if="$slots.subtitle" class="auth__subtitle"><slot name="subtitle" /></p>
         </header>
 
         <div class="auth__body">
           <slot />
         </div>
 
-        <div class="auth__foot">
+        <div v-if="$slots.footer" class="auth__foot">
           <slot name="footer" />
         </div>
-
-        <p class="auth__legal">
-          <span>&copy; {{ currentYear }} {{ siteName }}</span>
-        </p>
       </div>
-    </div>
-
-    <!-- Right: one surface, and things taken out of it. Hidden below the
-         breakpoint rather than stacked -- a decorative panel above a sign-in
-         form on a phone is just something to scroll past. -->
-    <div class="auth__col auth__col--panel">
-      <AuthFieldPanel />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 /**
- * The split screen behind every auth route: panel on one side, a single column
- * on the other. Nine views render through this slot (login, register, forgot,
- * reset, verify, and the four OAuth callbacks), so the shape is defined once
- * here and none of them position anything themselves.
+ * The split screen behind every auth route. Nine views render through this slot
+ * (login, register, forgot, reset, verify, and the four OAuth callbacks), so the
+ * shape is defined once here and none of them position anything themselves.
  *
- * The column is deliberately plainer than anything else in the library, because
- * a front door has exactly one job. No card, no glass, no shadow -- the form
- * sits directly on the page.
+ * Measurements are taken from part 17's own mock, not interpreted from its prose:
+ * two equal columns, a 296px content column centred in the right half with
+ * 40px/30px padding, the wordmark at 20px in the serif and the subtitle at 14px
+ * in the same face 14px below it.
  */
 import { computed, onMounted } from 'vue'
 import { useAppStore } from '@/stores'
@@ -61,95 +54,91 @@ const siteLogo = computed(() =>
 )
 const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
 
-const currentYear = computed(() => new Date().getFullYear())
-
 onMounted(() => {
   appStore.fetchPublicSettings()
 })
 </script>
 
 <style scoped>
+/* Two equal halves, as the mock renders them (575 | 575). */
 .auth {
   display: grid;
-  /* The form column is fixed and the panel takes the rest, so the reading
-     measure never stretches on a wide monitor -- the panel absorbs the width
-     instead. */
-  grid-template-columns: minmax(0, 560px) 1fr;
+  grid-template-columns: 1fr 1fr;
   min-height: 100vh;
   min-height: 100dvh;
   background: var(--background);
 }
 
-.auth__col {
-  min-width: 0;
-}
-
-.auth__col--form {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 48px 40px;
-}
-
-.auth__col--panel {
+.auth__panel {
   position: relative;
+  min-width: 0;
   overflow: hidden;
 }
 
+.auth__col {
+  display: grid;
+  align-items: center;
+  min-width: 0;
+  padding: 40px 30px;
+}
+
+/* Fixed measure, centred. The column does not stretch with the viewport -- the
+   panel absorbs the extra width instead. */
 .auth__inner {
-  display: flex;
   width: 100%;
-  max-width: 380px;
-  flex-direction: column;
+  max-width: 296px;
+  margin: 0 auto;
 }
 
 .auth__head {
-  margin-bottom: 32px;
+  text-align: center;
 }
 
 .auth__wordmark {
   margin: 0;
   color: var(--foreground);
   font-family: var(--font-serif);
-  font-size: 30px;
+  font-size: var(--fs-2xl);
   font-weight: 400;
-  /* Slightly tight, because the serif is drawn generous and the wordmark is the
-     only place it appears at this size. */
-  letter-spacing: -0.01em;
-  line-height: 1.1;
+  line-height: 1.5;
 }
 
 .auth__logo {
   display: block;
-  height: 34px;
+  height: 26px;
   width: auto;
   max-width: 200px;
+  margin: 0 auto;
   object-fit: contain;
 }
 
-.auth__foot:not(:empty) {
+/* Set in the serif, like the wordmark above it -- the two read as one lockup. */
+.auth__subtitle {
+  margin: 14px 0 0;
+  color: var(--body-copy);
+  font-family: var(--font-serif);
+  font-size: var(--fs-lg);
+  line-height: 1.5;
+}
+
+.auth__body {
   margin-top: 24px;
 }
 
-.auth__legal {
-  margin: 40px 0 0;
-  color: var(--muted-foreground);
-  font-size: var(--fs-sm);
+.auth__foot:not(:empty) {
+  margin-top: 34px;
+  text-align: center;
 }
 
-/* Below this the panel is dropped rather than stacked. The form keeps the exact
-   same column it had, so nothing about it reflows -- it just centres. */
+/* Below this the panel is dropped rather than stacked. A decorative panel above
+   a sign-in form on a phone is just something to scroll past. */
 @media (max-width: 900px) {
   .auth {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .auth__col--panel {
+  .auth__panel {
     display: none;
-  }
-
-  .auth__col--form {
-    padding: 40px 24px;
   }
 }
 </style>
