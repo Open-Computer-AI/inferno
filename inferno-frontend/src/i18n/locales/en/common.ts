@@ -77,6 +77,16 @@ export default {
     groupSelectorMixedSchedulingHint:
       'Gemini and Anthropic groups are hidden because mixed scheduling is off. Turn it on to see them.',
     groupSelectorPlatformHint: 'Groups for other platforms are hidden.',
+    /* Dimension abbreviations for GroupCapacityBadge. These are keyed as a
+       NESTED path (common.groupCapacity.*) by the component, while the three
+       flat groupCapacity* strings below are separate keys -- the nested ones
+       were simply never added, so the badge rendered its own key paths into
+       the Capacity column. */
+    groupCapacity: {
+      concurrencyAbbr: 'Conc',
+      sessionsAbbr: 'Sess',
+      rpmAbbr: 'RPM'
+    },
     groupCapacityEmpty: 'No accounts yet',
     groupCapacityRateLimited: '{limited} of {total} rate limited',
     groupCapacityTotal: '{total} accounts',

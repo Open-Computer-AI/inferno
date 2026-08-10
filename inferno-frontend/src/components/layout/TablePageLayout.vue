@@ -96,7 +96,19 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  width: 'reading'
+  /**
+   * Wide by default.
+   *
+   * --content-max is 760px (880 above 1440), which 01-TOKENS defines under
+   * "Reading columns" -- prose and forms, where a narrow measure aids reading.
+   * Part 14 says the same thing from the other side: a dense admin table is not
+   * a reading column. Every consumer of THIS layout is a table, so capping them
+   * all at a prose measure squeezed a 7-column grid into 880px and left a third
+   * of the screen empty beside it.
+   *
+   * 'reading' is still available for the rare table that is genuinely prose.
+   */
+  width: 'wide'
 })
 
 /**
@@ -243,6 +255,20 @@ onUnmounted(() => {
    * box ends exactly at the card's top border with nothing extra between them. */
   padding-bottom: 12px;
 }
+
+/*
+ * The toolbar deliberately does NOT size its children.
+ *
+ * Views already lay their own filter bars out (GroupsView: an outer
+ * `lg:flex-row` with a `flex-wrap` group of search + selects inside). An
+ * earlier attempt here capped each direct child at 240px, which hit that outer
+ * wrapper and forced everything inside it onto separate lines -- it made the
+ * exact problem it was trying to fix worse.
+ *
+ * The filters were only stacking because --content-max squeezed the page to
+ * 880px, leaving the left group too little room to keep search and three
+ * selects on one line. Widening the column fixed it; nothing here needed to.
+ */
 
 .tpl__card {
   display: flex;
