@@ -1298,3 +1298,52 @@ where the panel drops and the page has no horizontal overflow.
 The other eight views through this layout are unconverted inside their slot — centred
 headings, Title Case, teal links, icon-in-button. `/forgot-password` is the clearest
 example. They inherit the new shell but their own contents are still phase-4 work.
+
+## Login: matched to the reference, and the fork is named Inferno
+
+The screen now matches part 17's mock. Three rounds of getting it wrong, each
+because I built from prose instead of measuring the mock:
+
+1. Form on the left. The prose says "the panel on the left" -- I shipped it mirrored.
+2. `D_COLS = 42` ported as a design constant. It is tuned to the mock's 575px
+   preview box (13.2px cells). Fixed columns on a full-bleed panel make each
+   circle 2.2x too big. The invariant is CELL SIZE; columns derive from it.
+3. The form's own content -- providers first, then a rule, then the address.
+
+**Branding.** Upstream defaults to "Sub2API" in eight customer-visible places
+(login wordmark, tab title, plaza nav, home, key usage, register, verify, legal).
+All now read `PRODUCT_NAME` from `src/config/brand.ts`. An operator's configured
+`site_name` still wins -- their brand is theirs. `title.spec.ts` asserts against
+the constant rather than a literal, because a hard-coded name is exactly how this
+drifts back to upstream's.
+
+**The legal line is NOT the agreement documents.** Wiring it to them put
+"服务条款and使用政策and支持的国家和地区" under an English sign-in form: those are
+the compliance dialog's, backend-seeded, Chinese, and there are four. It is two
+fixed links to `/legal/terms` and `/legal/privacy`, which is a real public route.
+
+### Two panel bugs, both fixed
+
+- **Height ratchet.** `height: 100%` does not resolve against a content-sized
+  grid row, so the canvas used its ATTRIBUTE height as intrinsic height ->
+  grew the row -> ResizeObserver measured it -> wrote back larger. Left the page
+  1710px tall in a 1138px viewport. The field is now `position: absolute; inset: 0`,
+  so it cannot contribute to the height that measures it. Verified 0 overflow
+  across resizes.
+- **Blank band during drag-resize.** Assigning `canvas.width` clears the bitmap.
+  Deferring resize to rAF let the browser composite the enlarged box with a
+  cleared bitmap first. ResizeObserver fires before paint, so `resize()` now runs
+  synchronously in it and size + pixels land in the same frame.
+
+### june-lint promises added
+
+Swapping one brand literal pulls a whole unconverted view into lint scope. Six
+views are listed in `TOUCHED_NOT_CONVERTED` for exactly that reason, each with
+the phase that will convert it. Two genuine ground-rule-6 breaks (`transition: all`
+in RegisterView and EmailVerifyView) were fixed rather than promised.
+
+### Local dev instance
+
+Google and GitHub OAuth are enabled with placeholder credentials and `site_name`
+is "Inferno", so the login screen renders as designed. Provider buttons are
+data-driven -- they only appear when the operator enables them.
