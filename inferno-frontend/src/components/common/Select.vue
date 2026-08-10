@@ -516,6 +516,17 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   width: 100%;
+  /*
+   * A <button> has an automatic minimum size: `min-width: auto` resolves to its
+   * min-content width, so it refuses to shrink below label + chevrons + padding.
+   * That clamped `width: 100%` UP -- a trigger in a 160px `w-40` container
+   * measured 220px, overflowed it, and overlapped the next control in the
+   * filter bar.
+   *
+   * The grid's `minmax(0, 1fr)` already handles truncating the label; it only
+   * governs the inner track and cannot help if the button itself will not fit.
+   */
+  min-width: 0;
   height: var(--s2a-h-md);
   padding: 0 9px 0 11px;
   border: 1px solid var(--input);
