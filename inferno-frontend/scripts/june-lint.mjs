@@ -54,7 +54,25 @@ const TOUCHED_NOT_CONVERTED = [
   // AccountsView: one native confirm() removed so the June ConfirmDialog is not
   // shown twice. The view itself is a large unconverted Tailwind screen and
   // lands with part 14; remove this line then.
-  /src\/views\/admin\/AccountsView\.vue$/
+  /src\/views\/admin\/AccountsView\.vue$/,
+  // HomeView and KeyUsageView: touched only to swap a hard-coded 'Sub2API'
+  // fallback for PRODUCT_NAME, so the fork does not ship upstream's name on a
+  // customer-facing screen. Both are large unconverted Tailwind views carrying
+  // their own transition-all, hand-coded font sizes and unguarded @keyframes.
+  // They land with part 14; remove these two lines then.
+  /src\/views\/HomeView\.vue$/,
+  /src\/views\/KeyUsageView\.vue$/,
+  // PlazaNavBar: same, touched only for PRODUCT_NAME. Its two `transition-all`
+  // utilities are part 13's job; changing them here would be a visual change to
+  // an unconverted screen made blind.
+  /src\/components\/modelPlaza\/PlazaNavBar\.vue$/,
+  // RegisterView, EmailVerifyView and LegalDocumentView: touched only for
+  // PRODUCT_NAME (and, in the first two, to narrow a `transition: all` that was
+  // a genuine ground-rule-6 break). Their remaining weights and sizes are
+  // phase-4 work on those screens; remove these when each is converted.
+  /src\/views\/auth\/RegisterView\.vue$/,
+  /src\/views\/auth\/EmailVerifyView\.vue$/,
+  /src\/views\/public\/LegalDocumentView\.vue$/
 ]
 
 const RULES = [
