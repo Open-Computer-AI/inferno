@@ -506,6 +506,98 @@ the next run; this entry advanced the mirror but did not complete the port.
 7. Port only what converted components depend on. Record ports AND skips here,
    then advance the last reviewed SHA.
 
+### 2026-08-10 — second sync, automated daily run
+
+20 commits behind (`pre-sync-backup` at the old tip, upstream range
+`pre-sync-backup..10a4c6e3`).
+
+**Rebase: clean.** All 37 of our commits replayed with zero conflicts.
+Invariant re-checked after: 0 files changed under `backend/`, `frontend/`,
+`deploy/` or `docs/`, both immediately after the rebase and again after
+every port below.
+
+**First finding on arrival: the 2026-08-09 entry's own open items were
+already resolved.** That entry left `src/api/admin/settings.ts`,
+`src/types/index.ts`, and the `common.ts`/`settings.ts` locale merges
+explicitly unported. Direct diff against the now-current mirror shows all of
+them byte-identical to `frontend/` already — someone completed that port in
+a session this log was never updated for. Recorded here so the gap in the
+log itself doesn't repeat: the log entry from a run is only trustworthy for
+what that run did, not for what remained true afterward.
+
+**Stale-file scan** (`diff -rq frontend inferno-frontend` minus
+`git diff --name-only $BASE..HEAD -- inferno-frontend`, using the vendor
+commit's post-rebase hash as `$BASE`) found exactly 4 files, all from one
+upstream commit, `bbc8b6e9` ("完善大文件备份分卷上传与恢复" — multi-part
+backup upload/restore):
+
+  - `src/api/admin/backup.ts` — API contract: `getDownloadURL()` return type
+    changed from `{ url: string }` to `{ url?: string; parts?:
+    BackupDownloadPart[] }`, plus a new `BackupPart[]` field on
+    `BackupRecord`. **Ported wholesale** (never modified by us).
+  - `src/views/admin/BackupView.vue` — technically under the ignored
+    `frontend/src/views` bucket, but its only consumer relationship with
+    `backup.ts` above made this not a case of "ignore the noise": the old
+    view assumed `getDownloadURL()`'s `url` was always defined, which the
+    new optional-`url` contract would have violated the moment `backup.ts`
+    was ported alone. Neither file is converted (no June redesign has
+    touched Backup yet), so **ported both wholesale** as a matched pair
+    rather than leaving a knowingly-inconsistent old view against a new
+    client. This is a one-time exception to the views/components/features
+    ignore rule, made because the two files are coupled by a type contract,
+    not because the view itself needed attention.
+  - `src/views/admin/__tests__/BackupView.spec.ts` — new upstream test file
+    for the above (154 lines), did not exist in `inferno-frontend/`. Copied
+    wholesale alongside the view it tests. Test count: 220 → 221 files,
+    1536 → 1540 tests.
+  - `src/views/admin/groupsImagePricing.ts` (+ its spec) — one-line fix,
+    `fix(admin): enable image generation permission for Composite groups`
+    (`9b54b46b`). Lives under `views/admin/` by path but is inert exported
+    config (a `Set` of platform strings), not a Vue view; a real permissions
+    bug fix, not cosmetic churn the June redesign would throw away. **Ported
+    wholesale.** Its sole consumer, `GroupsView.vue`, is unconverted.
+
+**i18n merge, not copy** (both files appear in our `$BASE..HEAD` touched
+list, so per the port policy this was a hand merge, not a wholesale
+overwrite): `bbc8b6e9` added 5 keys under `admin.backup.*` in both
+`src/i18n/locales/{en,zh}/admin/overview.ts` — `columns.parts`,
+`actions.downloadParts`, `actions.downloadPartsHint`, `actions.partLabel`,
+`actions.downloadFailed`. Added all 5 to both locales, keeping our existing
+ground-rule 1/2/8 edits (dash removal, sentence case, emoji removal)
+untouched elsewhere in the file. One title-case correction on arrival:
+upstream's English value was `'Download Parts'`; landed as `'Download
+parts'` per ground rule 1, matching the sentence-case convention already
+applied to every neighboring key in this file.
+
+**API contract check, full width.** Diffed `backend/internal/handler`
+against `pre-sync-backup..upstream/main` (7 files touched) as well as
+`frontend/src/api` and `frontend/src/types`. Beyond the backup change
+above: `api_key_handler.go` (+47 lines, request validation on quota/rate
+limit fields — same request/response shape, just now rejects invalid
+values with 400; no TS change needed), `openai_gateway_handler.go` and
+`security_audit_helper.go` (WebSocket turn dedupe and keepalive-response
+bookkeeping — internal only, no JSON shape crosses to the client). None of
+these needed a port.
+
+**Skipped, on purpose:** nothing else. The 3 `Only in frontend` entries
+(files upstream has that we don't) were all already-known deliberate
+deletions or additions handled above:
+`components/common/ProxyAdBanner.vue` (deleted in `b6254908`, a documented
+June call — upstream's own monetisation banner, not ours to keep) and
+`components/layout/AppHeader.vue` (deleted as part of the shell rewrite,
+see "AppHeader deletion" above). `BackupView.spec.ts` is the new test file
+ported above, not a skip.
+
+**Gate (this session's own run, not carried forward):** `june-lint` clean
+across 77 converted files · `vue-tsc` 0 errors · `vitest` 221/221 files,
+1540/1540 tests · `vite build` succeeded (pre-existing >500kB chunk warnings
+only, unrelated to this sync). Thin-fork invariant empty before AND after
+the four ports.
+
+**Last reviewed upstream SHA: `10a4c6e3ad319587e817109c071259269855ec30`**
+(`upstream/main` at fetch time this run). The API-contract diff above was
+taken against this same range, so the next run can diff from here cleanly.
+
 ## Modal archetype map (part 05 sections `archetypes` and `map`)
 
 Documentation, not components. 44 modals resolve to six shapes; once a modal is
