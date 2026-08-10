@@ -1,27 +1,21 @@
 <template>
-  <div v-if="hasProviders" class="space-y-4">
-    <div v-if="showDivider" class="flex items-center gap-3">
-      <div class="h-px flex-1 bg-gray-200 dark:bg-dark-700"></div>
-      <span class="text-xs text-gray-500 dark:text-dark-400">
-        {{ t('auth.oauthOrContinue') }}
-      </span>
-      <div class="h-px flex-1 bg-gray-200 dark:bg-dark-700"></div>
+  <div v-if="hasProviders" class="oauth">
+    <div v-if="showDivider" class="oauth__rule">
+      <span class="oauth__rule-label">{{ t('auth.oauthOrContinue') }}</span>
     </div>
 
-    <div :class="providerGridClass">
-      <button
-        v-for="provider in visibleProviders"
-        :key="provider"
-        type="button"
-        :disabled="disabled"
-        class="btn btn-secondary h-12 w-full justify-center gap-2"
-        @click="startLogin(provider)"
-      >
-        <GitHubMark v-if="provider === 'github'" class="h-5 w-5 text-gray-800 dark:text-gray-100" />
-        <GoogleMark v-else class="h-5 w-5" />
-        <span class="font-medium">{{ providerLabel(provider) }}</span>
-      </button>
-    </div>
+    <button
+      v-for="provider in visibleProviders"
+      :key="provider"
+      type="button"
+      class="oauth__btn"
+      :disabled="disabled"
+      @click="startLogin(provider)"
+    >
+      <GoogleMark v-if="provider === 'google'" class="oauth__mark" />
+      <GitHubMark v-else class="oauth__mark" />
+      <span>{{ providerLabel(provider) }}</span>
+    </button>
   </div>
 </template>
 
@@ -54,24 +48,25 @@ const route = useRoute()
 const { t } = useI18n()
 
 const visibleProviders = computed<EmailOAuthProvider[]>(() => {
+  // Part 17 orders these "Google, GitHub, then email".
   const providers: EmailOAuthProvider[] = []
-  if (props.githubEnabled) providers.push('github')
   if (props.googleEnabled) providers.push('google')
+  if (props.githubEnabled) providers.push('github')
   return providers
 })
 
 const hasProviders = computed(() => visibleProviders.value.length > 0)
-const hasMultipleProviders = computed(() => visibleProviders.value.length > 1)
-const providerGridClass = computed(() => [
-  'grid',
-  'grid-cols-1',
-  'gap-3',
-  hasMultipleProviders.value ? 'sm:grid-cols-2' : ''
-])
-
+/**
+ * Always the full "Continue with X", never a bare provider name.
+ *
+ * This used to shorten to "GitHub" / "Google" whenever both were enabled, which
+ * made sense when they sat side by side in a two-column grid. They are stacked
+ * rows now, and part 17 labels them "Continue with Google" / "Continue with
+ * GitHub" in exactly that case.
+ */
 function providerLabel(provider: EmailOAuthProvider): string {
   const name = provider === 'github' ? 'GitHub' : 'Google'
-  return hasMultipleProviders.value ? name : t('auth.emailOAuth.signIn', { providerName: name })
+  return t('auth.emailOAuth.signIn', { providerName: name })
 }
 
 function startLogin(provider: EmailOAuthProvider): void {
@@ -86,3 +81,78 @@ function startLogin(provider: EmailOAuthProvider): void {
   emit('start', { provider, params })
 }
 </script>
+
+<style scoped>
+/* Measured from part 17's mock: 38px pill, hairline on --card, 9px between the
+   mark and its label, label at the body size in regular weight. */
+.oauth {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.oauth__btn {
+  display: flex;
+  height: 38px;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: var(--fs-md);
+  font-weight: 400;
+  cursor: pointer;
+  /* Background only, never border-color (ground rule 6). */
+  transition: background var(--motion-hover);
+}
+
+.oauth__btn:hover:not(:disabled) {
+  background: var(--sidebar-accent);
+}
+
+.oauth__btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.oauth__btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* A provider mark is fixed chrome and must not scale with --font-scale. */
+.oauth__mark {
+  height: 15px;
+  width: 15px;
+  flex: none;
+}
+
+.oauth__rule {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  margin: 6px 0 2px;
+}
+
+.oauth__rule::before {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: color-mix(in oklch, var(--border) 55%, transparent);
+  content: '';
+}
+
+.oauth__rule-label {
+  position: relative;
+  padding: 0 10px;
+  background: var(--background);
+  color: var(--muted-foreground);
+  font-size: var(--fs-2xs);
+}
+</style>
