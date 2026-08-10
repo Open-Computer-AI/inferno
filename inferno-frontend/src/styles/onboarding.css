@@ -12,6 +12,31 @@
  * pair can no longer drift apart.
  */
 
+/* --- typeface -------------------------------------------------------------
+ *
+ * driver.css ships `.driver-popover * { font-family: Helvetica Neue, ... }`.
+ *
+ * That is a DESCENDANT UNIVERSAL selector, which is why `font-family: inherit`
+ * does not work here: inherit takes the immediate parent's computed value, and
+ * `*` had already set Helvetica on every ancestor between a button and the
+ * popover -- so inherit faithfully inherited the wrong font.
+ *
+ * Worse, the app sets `font-synthesis: none` (June ships two real weights, so
+ * faking the others is banned). Helvetica Neue has no 600, got no synthetic
+ * bold, and the Next button rendered with its glyphs overlapping each other.
+ *
+ * Matched breadth, not just specificity: the same `*` reach, our token.
+ */
+.driver-popover.theme-tour-popover,
+.driver-popover.theme-tour-popover * {
+  font-family: var(--font-sans) !important;
+}
+
+/* Except the shortcut keys, which are meant to look like keys. */
+.theme-tour-popover .shortcut-item kbd {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace) !important;
+}
+
 /* --- overlay and highlight ------------------------------------------------ */
 
 .driver-overlay {
@@ -61,7 +86,6 @@
      popovers use. Ground rule 9's "cards have no shadow" is about cards. */
   box-shadow: var(--shadow-md) !important;
   color: var(--foreground) !important;
-  font-family: inherit !important;
   overflow: hidden !important;
 }
 
@@ -206,6 +230,19 @@
 
 /* --- buttons -------------------------------------------------------------- */
 
+/*
+ * driver.css puts `text-shadow: 1px 1px 0 #fff` on its buttons.
+ *
+ * Invisible on a light button -- dark text, near-white shadow, near-white fill.
+ * On the solid Next button it is white text with a WHITE shadow offset 1px
+ * down-right, which paints a second copy of every glyph over the first. It read
+ * as the letters overlapping each other, and no amount of font or spacing
+ * debugging would have found it, because the layout was always correct.
+ */
+.theme-tour-popover button {
+  text-shadow: none !important;
+}
+
 /* Mirrors Button.vue: 32px, --r-md, background-only transition. */
 .theme-tour-popover button {
   display: inline-flex !important;
@@ -215,7 +252,6 @@
   padding: 0 12px !important;
   border: 1px solid transparent !important;
   border-radius: var(--r-md) !important;
-  font-family: inherit !important;
   font-size: var(--fs-md) !important;
   font-weight: 400 !important;
   line-height: 1.2 !important;
