@@ -76,6 +76,11 @@ export default {
     searchGroupsPlaceholder: '搜索分组',
     groupSelectorMixedSchedulingHint: '混合调度未开启，已隐藏 Gemini 和 Anthropic 分组。开启后即可查看。',
     groupSelectorPlatformHint: '已隐藏其他平台的分组。',
+    groupCapacity: {
+      concurrencyAbbr: '并发',
+      sessionsAbbr: '会话',
+      rpmAbbr: 'RPM'
+    },
     groupCapacityEmpty: '暂无账号',
     groupCapacityRateLimited: '{total} 个账号中 {limited} 个已限流',
     groupCapacityTotal: '{total} 个账号',
