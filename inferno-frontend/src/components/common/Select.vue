@@ -488,6 +488,20 @@ onUnmounted(() => {
    getBoundingClientRect, not absolutely positioned off this wrapper. */
 .select {
   position: relative;
+}
+
+/*
+ * Full width is a DEFAULT, not a rule.
+ *
+ * `:where()` contributes zero specificity, so any width a call site sets --
+ * `w-44`, `sm:w-64`, a flex-basis -- wins without having to fight the scoped
+ * attribute that a plain `.select { width: 100% }` gets for free.
+ *
+ * That fight was real: on /admin/groups three selects marked `w-44` (176px) all
+ * computed to 710px and each wrapped onto its own line, turning the filter bar
+ * into four stacked rows.
+ */
+:where(.select) {
   width: 100%;
 }
 

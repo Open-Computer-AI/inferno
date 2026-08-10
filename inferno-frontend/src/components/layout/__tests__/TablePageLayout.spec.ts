@@ -57,8 +57,14 @@ describe('TablePageLayout width opt-out', () => {
   // to the spec. `width` lets a page opt out; default stays 'reading' so none of the
   // fifteen existing call sites (which pass neither prop today) change shape.
 
-  it('defaults `width` to \'reading\', so every existing call site keeps the capped, centred column', () => {
-    expect(componentSource).toMatch(/withDefaults\(defineProps<Props>\(\),\s*\{[^}]*width:\s*'reading'/)
+  it("defaults `width` to 'wide', because every consumer of this layout is a table", () => {
+    // Flipped from 'reading'. --content-max is 760px (880 above 1440) and
+    // 01-TOKENS defines it under "Reading columns" -- prose and forms. Part 14
+    // says the same from the other side: a dense admin table is not a reading
+    // column. Defaulting to 'reading' squeezed a 7-column grid into 880px and
+    // left a third of the screen empty beside it on every one of the 21 table
+    // routes. 'reading' remains available for a table that is genuinely prose.
+    expect(componentSource).toMatch(/withDefaults\(defineProps<Props>\(\),\s*\{[\s\S]*?width:\s*'wide'/)
   })
 
   it("renders the root element's width as a data attribute, June's variant-as-attribute convention", () => {
