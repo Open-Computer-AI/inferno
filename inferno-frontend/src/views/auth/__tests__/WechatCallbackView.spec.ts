@@ -902,7 +902,7 @@ describe('WechatCallbackView', () => {
 
     await flushPromises()
 
-    await wrapper.get('button.btn-secondary').trigger('click')
+    await wrapper.get('button.auth-provider').trigger('click')
     await flushPromises()
 
     const createAccountEmail = wrapper.get('[data-testid="wechat-create-account-email"]')
