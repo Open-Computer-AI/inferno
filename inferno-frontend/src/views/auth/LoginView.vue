@@ -744,17 +744,17 @@ function handle2FACancel(): void {
 .lg {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .lg__provider,
 .lg__field,
 .lg__cta {
-  height: 38px;
+  height: var(--s2a-h-auth);
   width: 100%;
   border-radius: 999px;
   font-family: inherit;
-  font-size: var(--fs-md);
+  font-size: var(--fs-lg);
 }
 
 .lg__provider {
@@ -774,7 +774,7 @@ function handle2FACancel(): void {
 }
 
 .lg__field {
-  padding: 0 15px;
+  padding: 0 17px;
   border: 1px solid var(--input);
   background: var(--card);
   color: var(--foreground);
@@ -854,7 +854,7 @@ function handle2FACancel(): void {
 /* Greyed and ticked: what you are signing in as, without going back for it. */
 .lg__identity {
   display: flex;
-  height: 38px;
+  height: var(--s2a-h-auth);
   align-items: center;
   justify-content: center;
   gap: 8px;
@@ -878,8 +878,8 @@ function handle2FACancel(): void {
   top: 0;
   right: 0;
   display: flex;
-  height: 38px;
-  width: 40px;
+  height: var(--s2a-h-auth);
+  width: 44px;
   align-items: center;
   justify-content: center;
   border: 0;
@@ -893,7 +893,7 @@ function handle2FACancel(): void {
   color: var(--foreground);
 }
 .lg__pw .lg__field {
-  padding-right: 42px;
+  padding-right: 46px;
 }
 
 .lg__captcha {
@@ -934,12 +934,12 @@ function handle2FACancel(): void {
 .lg__signup {
   margin: 0;
   color: var(--muted-foreground);
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-xs);
   line-height: 1.5;
 }
 .lg__signup {
-  margin-top: 8px;
-  font-size: var(--fs-sm);
+  margin-top: 10px;
+  font-size: var(--fs-md);
 }
 
 /* Warm, not the body ink: these are the only links on the screen. */
