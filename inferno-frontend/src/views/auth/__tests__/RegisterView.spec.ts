@@ -181,7 +181,9 @@ describe('RegisterView invitation layout', () => {
     expect(registerMock).not.toHaveBeenCalled()
     // 校验失败通过 validationToastMessage watcher 弹 toast
     expect(showErrorMock).toHaveBeenCalledWith('auth.emailSuffixNotAllowedWithAllowed')
-    expect(wrapper.get('#email').classes()).toContain('input-error')
+    // Converted to the shared auth control vocabulary; `input-error` was the
+    // legacy Tailwind class.
+    expect(wrapper.get('#email').classes()).toContain('auth-field--invalid')
   })
 
   it('still submits whitelisted email domains when the domain quota switch is disabled', async () => {
