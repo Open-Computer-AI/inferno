@@ -88,12 +88,12 @@ function startLogin(provider: EmailOAuthProvider): void {
 .oauth {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .oauth__btn {
   display: flex;
-  height: 38px;
+  height: var(--s2a-h-auth);
   width: 100%;
   align-items: center;
   justify-content: center;
@@ -103,7 +103,7 @@ function startLogin(provider: EmailOAuthProvider): void {
   background: var(--card);
   color: var(--foreground);
   font-family: inherit;
-  font-size: var(--fs-md);
+  font-size: var(--fs-lg);
   font-weight: 400;
   cursor: pointer;
   /* Background only, never border-color (ground rule 6). */
@@ -126,8 +126,8 @@ function startLogin(provider: EmailOAuthProvider): void {
 
 /* A provider mark is fixed chrome and must not scale with --font-scale. */
 .oauth__mark {
-  height: 15px;
-  width: 15px;
+  height: 17px;
+  width: 17px;
   flex: none;
 }
 
@@ -153,6 +153,6 @@ function startLogin(provider: EmailOAuthProvider): void {
   padding: 0 10px;
   background: var(--background);
   color: var(--muted-foreground);
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-xs);
 }
 </style>
