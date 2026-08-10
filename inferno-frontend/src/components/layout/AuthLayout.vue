@@ -87,7 +87,7 @@ onMounted(() => {
    panel absorbs the extra width instead. */
 .auth__inner {
   width: 100%;
-  max-width: 296px;
+  max-width: 340px;
   margin: 0 auto;
 }
 
@@ -99,14 +99,14 @@ onMounted(() => {
   margin: 0;
   color: var(--foreground);
   font-family: var(--font-serif);
-  font-size: var(--fs-2xl);
+  font-size: var(--fs-auth-mark);
   font-weight: 400;
   line-height: 1.5;
 }
 
 .auth__logo {
   display: block;
-  height: 26px;
+  height: 30px;
   width: auto;
   max-width: 200px;
   margin: 0 auto;
@@ -115,15 +115,15 @@ onMounted(() => {
 
 /* Set in the serif, like the wordmark above it -- the two read as one lockup. */
 .auth__subtitle {
-  margin: 14px 0 0;
+  margin: 16px 0 0;
   color: var(--body-copy);
   font-family: var(--font-serif);
-  font-size: var(--fs-lg);
+  font-size: var(--fs-xl);
   line-height: 1.5;
 }
 
 .auth__body {
-  margin-top: 24px;
+  margin-top: 28px;
 }
 
 .auth__foot:not(:empty) {
