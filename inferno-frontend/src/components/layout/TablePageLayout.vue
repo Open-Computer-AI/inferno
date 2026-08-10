@@ -8,10 +8,10 @@
          Sits flush against AppLayout's own shell__card padding, no padding of its own:
          that card already supplies the page's outer inset (see AppLayout.vue), so
          adding another top/side offset here would double it. -->
-    <div v-if="title || $slots.actions" class="tpl__header">
-      <div v-if="title" class="tpl__heading">
-        <h1 class="tpl__title">{{ title }}</h1>
-        <p v-if="description" class="tpl__desc">{{ description }}</p>
+    <div v-if="resolvedTitle || $slots.actions" class="tpl__header">
+      <div v-if="resolvedTitle" class="tpl__heading">
+        <h1 class="tpl__title">{{ resolvedTitle }}</h1>
+        <p v-if="resolvedDescription" class="tpl__desc">{{ resolvedDescription }}</p>
       </div>
       <!-- margin-left: auto rather than the header's own justify-content, so actions
            still land at the right edge when there is no title (KeysView today: an
@@ -67,7 +67,9 @@
  * four named slots, with the same no-payload signature, all fifteen call sites already
  * use -- verified against every current consumer, not just assumed.
  */
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 
 interface Props {
   /** The page's own heading, since no header bar renders one anymore. --font-serif
@@ -93,8 +95,38 @@ interface Props {
   width?: 'reading' | 'wide'
 }
 
-withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<Props>(), {
   width: 'reading'
+})
+
+/**
+ * Title and summary fall back to the route's own meta.
+ *
+ * Every route already carries `title` + `titleKey`, and 30 of them carry a
+ * `descriptionKey` -- the one-line summary part 14 asks for already exists as
+ * data. Reading it here gives all 21 table pages a heading in one edit instead
+ * of 21 near-identical prop lines, and it cannot drift from the tab title,
+ * which is resolved from exactly the same meta (router/title.ts).
+ *
+ * A view that wants something different still passes the prop; this is only the
+ * floor. `te()` is checked before `t()` so a missing key renders nothing rather
+ * than its own path.
+ */
+const route = useRoute()
+const { t, te } = useI18n()
+
+const resolvedTitle = computed(() => {
+  if (props.title) return props.title
+  const key = route.meta?.titleKey
+  if (typeof key === 'string' && te(key)) return t(key)
+  const fallback = route.meta?.title
+  return typeof fallback === 'string' ? fallback : ''
+})
+
+const resolvedDescription = computed(() => {
+  if (props.description) return props.description
+  const key = route.meta?.descriptionKey
+  return typeof key === 'string' && te(key) ? t(key) : ''
 })
 
 const isMobile = ref(false)
