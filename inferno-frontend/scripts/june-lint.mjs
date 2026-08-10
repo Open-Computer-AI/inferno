@@ -66,11 +66,11 @@ const TOUCHED_NOT_CONVERTED = [
   // utilities are part 13's job; changing them here would be a visual change to
   // an unconverted screen made blind.
   /src\/components\/modelPlaza\/PlazaNavBar\.vue$/,
-  // RegisterView, EmailVerifyView and LegalDocumentView: touched only for
-  // PRODUCT_NAME (and, in the first two, to narrow a `transition: all` that was
-  // a genuine ground-rule-6 break). Their remaining weights and sizes are
-  // phase-4 work on those screens; remove these when each is converted.
-  /src\/views\/auth\/RegisterView\.vue$/,
+  // EmailVerifyView and LegalDocumentView: touched only for PRODUCT_NAME (and,
+  // in the first, to narrow a `transition: all` that was a genuine
+  // ground-rule-6 break). Their remaining weights and sizes are phase-4 work on
+  // those screens; remove these when each is converted.
+  // RegisterView came off this list when it was converted.
   /src\/views\/auth\/EmailVerifyView\.vue$/,
   /src\/views\/public\/LegalDocumentView\.vue$/
 ]
