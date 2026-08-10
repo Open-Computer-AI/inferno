@@ -1,199 +1,91 @@
 <template>
   <AuthLayout>
-    <div class="space-y-6">
-      <!-- Title -->
-      <div class="text-center">
-        <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
-          {{ t('auth.resetPasswordTitle') }}
-        </h2>
-        <p class="mt-2 text-sm text-gray-500 dark:text-dark-400">
-          {{ t('auth.resetPasswordHint') }}
-        </p>
-      </div>
+    <template #subtitle>{{ t('auth.resetPasswordTitle') }}</template>
 
-      <!-- Invalid Link State -->
-      <div v-if="isInvalidLink" class="space-y-6">
-        <div class="rounded-xl border border-amber-200 bg-amber-50 p-6 dark:border-amber-800/50 dark:bg-amber-900/20">
-          <div class="flex flex-col items-center gap-4 text-center">
-            <div class="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-800/50">
-              <Icon name="exclamationCircle" size="lg" class="text-amber-600 dark:text-amber-400" />
-            </div>
-            <div>
-              <h3 class="text-lg font-semibold text-amber-800 dark:text-amber-200">
-                {{ t('auth.invalidResetLink') }}
-              </h3>
-              <p class="mt-2 text-sm text-amber-700 dark:text-amber-300">
-                {{ t('auth.invalidResetLinkHint') }}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div class="text-center">
-          <router-link
-            to="/forgot-password"
-            class="inline-flex items-center gap-2 font-medium text-primary-600 transition-colors hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
-          >
-            {{ t('auth.requestNewResetLink') }}
-          </router-link>
-        </div>
-      </div>
-
-      <!-- Success State -->
-      <div v-else-if="isSuccess" class="space-y-6">
-        <div class="rounded-xl border border-green-200 bg-green-50 p-6 dark:border-green-800/50 dark:bg-green-900/20">
-          <div class="flex flex-col items-center gap-4 text-center">
-            <div class="flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-800/50">
-              <Icon name="checkCircle" size="lg" class="text-green-600 dark:text-green-400" />
-            </div>
-            <div>
-              <h3 class="text-lg font-semibold text-green-800 dark:text-green-200">
-                {{ t('auth.passwordResetSuccess') }}
-              </h3>
-              <p class="mt-2 text-sm text-green-700 dark:text-green-300">
-                {{ t('auth.passwordResetSuccessHint') }}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div class="text-center">
-          <router-link
-            to="/login"
-            class="btn btn-primary inline-flex items-center gap-2"
-          >
-            <Icon name="login" size="md" />
-            {{ t('auth.signIn') }}
-          </router-link>
-        </div>
-      </div>
-
-      <!-- Form State -->
-      <form v-else @submit.prevent="handleSubmit" class="space-y-5">
-        <!-- Email (readonly) -->
-        <div>
-          <label for="email" class="input-label">
-            {{ t('auth.emailLabel') }}
-          </label>
-          <div class="relative">
-            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
-              <Icon name="mail" size="md" class="text-gray-400 dark:text-dark-500" />
-            </div>
-            <input
-              id="email"
-              :value="email"
-              type="email"
-              readonly
-              disabled
-              class="input pl-11 bg-gray-50 dark:bg-dark-700"
-            />
-          </div>
-        </div>
-
-        <!-- New Password Input -->
-        <div>
-          <label for="password" class="input-label">
-            {{ t('auth.newPassword') }}
-          </label>
-          <div class="relative">
-            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
-              <Icon name="lock" size="md" class="text-gray-400 dark:text-dark-500" />
-            </div>
-            <input
-              id="password"
-              v-model="formData.password"
-              :type="showPassword ? 'text' : 'password'"
-              required
-              autocomplete="new-password"
-              :disabled="isLoading"
-              class="input pl-11 pr-11"
-              :class="{ 'input-error': errors.password }"
-              :placeholder="t('auth.newPasswordPlaceholder')"
-            />
-            <button
-              type="button"
-              @click="showPassword = !showPassword"
-              class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-dark-300"
-            >
-              <Icon v-if="showPassword" name="eyeOff" size="md" />
-              <Icon v-else name="eye" size="md" />
-            </button>
-          </div>
-        </div>
-
-        <!-- Confirm Password Input -->
-        <div>
-          <label for="confirmPassword" class="input-label">
-            {{ t('auth.confirmPassword') }}
-          </label>
-          <div class="relative">
-            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
-              <Icon name="lock" size="md" class="text-gray-400 dark:text-dark-500" />
-            </div>
-            <input
-              id="confirmPassword"
-              v-model="formData.confirmPassword"
-              :type="showConfirmPassword ? 'text' : 'password'"
-              required
-              autocomplete="new-password"
-              :disabled="isLoading"
-              class="input pl-11 pr-11"
-              :class="{ 'input-error': errors.confirmPassword }"
-              :placeholder="t('auth.confirmPasswordPlaceholder')"
-            />
-            <button
-              type="button"
-              @click="showConfirmPassword = !showConfirmPassword"
-              class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-dark-300"
-            >
-              <Icon v-if="showConfirmPassword" name="eyeOff" size="md" />
-              <Icon v-else name="eye" size="md" />
-            </button>
-          </div>
-        </div>
-
-        <!-- Submit Button -->
-        <button
-          type="submit"
-          :disabled="isLoading"
-          class="btn btn-primary w-full"
-        >
-          <svg
-            v-if="isLoading"
-            class="-ml-1 mr-2 h-4 w-4 animate-spin text-white"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <circle
-              class="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              stroke-width="4"
-            ></circle>
-            <path
-              class="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            ></path>
-          </svg>
-          <Icon v-else name="checkCircle" size="md" class="mr-2" />
-          {{ isLoading ? t('auth.resettingPassword') : t('auth.resetPassword') }}
-        </button>
-      </form>
+    <!-- Dead link. Stated plainly rather than in a coloured alert panel: the
+         recovery is one action, so the action is what the screen shows. -->
+    <div v-if="isInvalidLink" class="auth-form">
+      <p class="auth-note rp__lead">{{ t('auth.invalidResetLinkHint') }}</p>
+      <router-link to="/forgot-password" class="auth-cta rp__cta-link">
+        {{ t('auth.requestNewResetLink') }}
+      </router-link>
     </div>
 
-    <!-- Footer -->
-    <template #footer>
-      <p class="text-gray-500 dark:text-dark-400">
-        {{ t('auth.rememberedPassword') }}
-        <router-link
-          to="/login"
-          class="font-medium text-primary-600 transition-colors hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
+    <div v-else-if="isSuccess" class="auth-form">
+      <p class="auth-note rp__lead">{{ t('auth.passwordResetSuccessHint') }}</p>
+      <router-link to="/login" class="auth-cta rp__cta-link">{{ t('auth.signIn') }}</router-link>
+    </div>
+
+    <form v-else class="auth-form" @submit.prevent="handleSubmit">
+      <!-- Read-only and greyed: you can see which account you are resetting
+           without being able to change it here. -->
+      <input
+        id="email"
+        :value="email"
+        type="email"
+        readonly
+        class="auth-field rp__readonly"
+        :aria-label="t('auth.emailLabel')"
+      />
+
+      <div class="rp__pw">
+        <input
+          id="password"
+          v-model="formData.password"
+          :type="showPassword ? 'text' : 'password'"
+          required
+          autocomplete="new-password"
+          class="auth-field"
+          :class="{ 'auth-field--invalid': errors.password }"
+          :disabled="isLoading"
+          :placeholder="t('auth.passwordPlaceholder')"
+        />
+        <button
+          type="button"
+          class="rp__reveal"
+          :disabled="isLoading"
+          :aria-label="showPassword ? t('auth.hidePassword') : t('auth.showPassword')"
+          @click="showPassword = !showPassword"
         >
-          {{ t('auth.signIn') }}
-        </router-link>
+          <Icon v-if="showPassword" name="eyeOff" size="md" />
+          <Icon v-else name="eye" size="md" />
+        </button>
+      </div>
+
+      <div class="rp__pw">
+        <input
+          id="confirmPassword"
+          v-model="formData.confirmPassword"
+          :type="showConfirmPassword ? 'text' : 'password'"
+          required
+          autocomplete="new-password"
+          class="auth-field"
+          :class="{ 'auth-field--invalid': errors.confirmPassword }"
+          :disabled="isLoading"
+          :placeholder="t('auth.confirmPasswordPlaceholder')"
+        />
+        <button
+          type="button"
+          class="rp__reveal"
+          :disabled="isLoading"
+          :aria-label="showConfirmPassword ? t('auth.hidePassword') : t('auth.showPassword')"
+          @click="showConfirmPassword = !showConfirmPassword"
+        >
+          <Icon v-if="showConfirmPassword" name="eyeOff" size="md" />
+          <Icon v-else name="eye" size="md" />
+        </button>
+      </div>
+
+      <button type="submit" class="auth-cta" :disabled="isLoading">
+        <span v-if="isLoading" class="auth-spinner" aria-hidden="true" />
+        {{ isLoading ? t('auth.resettingPassword') : t('auth.resetPassword') }}
+      </button>
+    </form>
+
+    <template #footer>
+      <p class="auth-note">
+        {{ t('auth.rememberedPassword') }}
+        <router-link to="/login" class="auth-link">{{ t('auth.signIn') }}</router-link>
       </p>
     </template>
   </AuthLayout>
@@ -333,14 +225,55 @@ async function handleSubmit(): Promise<void> {
 </script>
 
 <style scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: all 0.3s ease;
+.rp__lead {
+  margin-bottom: 6px;
+  text-align: center;
 }
 
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-  transform: translateY(-8px);
+/* A link wearing the CTA: needs the line-height reset a button gets for free. */
+.rp__cta-link {
+  text-decoration: none;
+}
+
+/* Real data you cannot edit. Distinct from disabled on purpose -- disabled
+   means "not now", read-only means "not here". */
+.rp__readonly {
+  background: var(--surface-subtle);
+  border-color: var(--border-subtle);
+  color: var(--muted-foreground);
+}
+
+.rp__pw {
+  position: relative;
+}
+
+.rp__pw .auth-field {
+  padding-right: 44px;
+}
+
+.rp__reveal {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  height: var(--s2a-h-auth);
+  width: 42px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: color var(--motion-hover);
+}
+
+.rp__reveal:hover:not(:disabled) {
+  color: var(--foreground);
+}
+
+.rp__reveal:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 </style>
