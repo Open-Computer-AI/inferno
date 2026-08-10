@@ -1347,3 +1347,48 @@ in RegisterView and EmailVerifyView) were fixed rather than promised.
 Google and GitHub OAuth are enabled with placeholder credentials and `site_name`
 is "Inferno", so the login screen renders as designed. Provider buttons are
 data-driven -- they only appear when the operator enables them.
+
+## Phase 5 begins: the seven archetypes
+
+Part 14 assigns every one of the 62 route-level views to one of seven archetypes,
+and gives each a rule. That map is the phase-5 work plan; it is in the prototype's
+`routeMap`, extracted below in summary:
+
+| | archetype | routes | rule |
+|---|---|---|---|
+| A | Table page | 21 | TablePageLayout. Title, one-line summary, filter bar, table, pager. **Nothing else above the table.** |
+| B | Dashboard | 4 | A verdict sentence, four numbers, one trend, then everything else. Never more than two charts above the fold. |
+| C | Settings page | 7 | Groups of rows, one border per group, **no card per setting**. |
+| D | Detail page | 6 | One subject: identity and state, then its numbers, then its history as a table. |
+| E | Flow step | 8 | One question per screen, a step count, a way back. A flow step that scrolls is two steps. |
+| F | Interstitial | 9 | A wait, a statement of what is waited for, and a real recovery path. Nine routes to **one component**. |
+| G | Message page | 7 | A single readable column at `--content-max` with **no chrome of its own**. |
+
+### Primitives built first, deliberately
+
+66 views converted without shared page primitives is 66 different headers. These
+land before any view does:
+
+- `PageHeader` — title, one-line summary, actions beside the title (A/B/C/D)
+- `StatStrip` — part 03's number strip: one border, dividers, no icon tiles, no
+  shadows. `StatCard` was already the cell; this is the frame that makes four
+  numbers read as one instrument instead of four floating cards.
+- `SettingsGroup` + `SettingsRow` — one border per GROUP, hairlines between rows.
+  The "no card per setting" half is load-bearing: a card around every toggle is a
+  wall of boxes where nothing is grouped.
+- `MessagePage` — one column at `--content-max`, no card, no border. A message
+  page that draws a card around its own text is pretending to be a dashboard.
+- `InterstitialState` — the three states part 14 specifies (waiting / attention /
+  failed), collapsing nine routes to one component.
+
+`TablePageLayout` already existed from part 04, so A needed nothing.
+
+### june-lint had a hole: untracked files were never checked
+
+`ourChangedFiles()` scoped the lint with `git diff`, which cannot see untracked
+files. A brand-new component -- which is most of what a conversion adds -- escaped
+the lint entirely until it happened to be staged. All six primitives above were
+written and reported "clean across 87 files" while not being checked at all;
+staging them moved the count to 93 and only then were they linted.
+
+Fixed by unioning `git ls-files --others --exclude-standard` into the scope.
