@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { resolveDocumentTitle, resolveRouteDocumentTitle } from '@/router/title'
+import { PRODUCT_NAME } from '@/config/brand'
 
 describe('resolveDocumentTitle', () => {
   it('路由存在标题时，使用“路由标题 - 站点名”格式', () => {
@@ -11,8 +12,10 @@ describe('resolveDocumentTitle', () => {
   })
 
   it('站点名为空时，回退默认站点名', () => {
-    expect(resolveDocumentTitle('Dashboard', '')).toBe('Dashboard - Sub2API')
-    expect(resolveDocumentTitle(undefined, '   ')).toBe('Sub2API')
+    // Asserted against the constant, not a literal: this is the fork's product
+    // name and hard-coding it here is how it silently drifts back to upstream's.
+    expect(resolveDocumentTitle('Dashboard', '')).toBe(`Dashboard - ${PRODUCT_NAME}`)
+    expect(resolveDocumentTitle(undefined, '   ')).toBe(PRODUCT_NAME)
   })
 
   it('站点名变更时仅影响后续路由标题计算', () => {

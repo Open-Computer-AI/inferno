@@ -45,10 +45,11 @@ import { computed, onMounted } from 'vue'
 import { useAppStore } from '@/stores'
 import { sanitizeUrl } from '@/utils/url'
 import AuthFieldPanel from '@/components/auth/AuthFieldPanel.vue'
+import { PRODUCT_NAME } from '@/config/brand'
 
 const appStore = useAppStore()
 
-const siteName = computed(() => appStore.siteName || 'Sub2API')
+const siteName = computed(() => appStore.siteName || PRODUCT_NAME)
 const siteLogo = computed(() =>
   sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true })
 )
