@@ -95,6 +95,25 @@ function mountLogin() {
   })
 }
 
+/**
+ * The login form is two steps now (part 17): the address is collected first and
+ * the password field only exists on step two. These tests are about the captcha
+ * gate, not the step machinery, so they walk both steps through one helper
+ * rather than each reaching for `#password` that is not mounted yet.
+ */
+async function submitCredentials(
+  wrapper: ReturnType<typeof mount>,
+  email = 'user@example.com',
+  password = 'secret-123'
+): Promise<void> {
+  await wrapper.get('#email').setValue(email)
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+  await wrapper.get('#password').setValue(password)
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+}
+
 describe('Tencent captcha action gate', () => {
   beforeEach(() => {
     loginMock.mockReset()
@@ -132,11 +151,7 @@ describe('Tencent captcha action gate', () => {
   it('clicking login opens Tencent captcha before calling login', async () => {
     const wrapper = mountLogin()
     await flushPromises()
-    await wrapper.get('#email').setValue('user@example.com')
-    await wrapper.get('#password').setValue('secret-123')
-
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
+    await submitCredentials(wrapper)
 
     expect(verifyActionMock).toHaveBeenCalledOnce()
     expect(loginMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -149,11 +164,7 @@ describe('Tencent captcha action gate', () => {
     verifyActionMock.mockResolvedValue(null)
     const wrapper = mountLogin()
     await flushPromises()
-    await wrapper.get('#email').setValue('user@example.com')
-    await wrapper.get('#password').setValue('secret-123')
-
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
+    await submitCredentials(wrapper)
 
     expect(verifyActionMock).toHaveBeenCalledOnce()
     expect(loginMock).not.toHaveBeenCalled()
@@ -205,7 +216,7 @@ describe('Tencent captcha action gate', () => {
     const wrapper = mountLogin()
     await flushPromises()
 
-    await wrapper.get('button.btn-secondary.w-full').trigger('click')
+    await wrapper.get('.lg__provider').trigger('click')
     await flushPromises()
 
     expect(verifyActionMock).toHaveBeenCalledOnce()
@@ -221,7 +232,7 @@ describe('Tencent captcha action gate', () => {
     const wrapper = mountLogin()
     await flushPromises()
 
-    await wrapper.get('button.btn-secondary.w-full').trigger('click')
+    await wrapper.get('.lg__provider').trigger('click')
     await flushPromises()
 
     expect(loginWithPasskeyMock).not.toHaveBeenCalled()

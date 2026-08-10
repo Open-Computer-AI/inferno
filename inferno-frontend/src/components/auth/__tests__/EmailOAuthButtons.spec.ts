@@ -78,7 +78,7 @@ describe('EmailOAuthButtons', () => {
     expect(window.location.href).toBe(originalHref)
   })
 
-  it('uses a full-width descriptive button when only GitHub is enabled', () => {
+  it('renders one stacked full-width row per provider', () => {
     const wrapper = mount(EmailOAuthButtons, {
       props: {
         githubEnabled: true,
@@ -92,11 +92,14 @@ describe('EmailOAuthButtons', () => {
       },
     })
 
-    expect(wrapper.find('.grid').classes()).not.toContain('sm:grid-cols-2')
+    // Part 17 stacks the providers as full-width rows. The old two-column grid
+    // is gone, which is also why the compact labels below are gone with it.
+    expect(wrapper.find('.grid').exists()).toBe(false)
+    expect(wrapper.findAll('.oauth__btn')).toHaveLength(1)
     expect(wrapper.get('button').text()).toContain('使用 GitHub 登录')
   })
 
-  it('uses compact labels and two columns when GitHub and Google are both enabled', () => {
+  it('keeps the descriptive label and puts Google first when both are enabled', () => {
     const wrapper = mount(EmailOAuthButtons, {
       props: {
         githubEnabled: true,
@@ -110,12 +113,11 @@ describe('EmailOAuthButtons', () => {
       },
     })
 
-    expect(wrapper.find('.grid').classes()).toContain('sm:grid-cols-2')
     const buttons = wrapper.findAll('button')
     expect(buttons).toHaveLength(2)
-    expect(buttons[0].text()).toContain('GitHub')
-    expect(buttons[0].text()).not.toContain('使用 GitHub 登录')
-    expect(buttons[1].text()).toContain('Google')
-    expect(buttons[1].text()).not.toContain('使用 Google 登录')
+
+    // "Google, GitHub, then email" -- the order is specified, not incidental.
+    expect(buttons[0].text()).toContain('使用 Google 登录')
+    expect(buttons[1].text()).toContain('使用 GitHub 登录')
   })
 })
