@@ -67,3 +67,19 @@
     animation: none !important;
   }
 }
+
+/*
+ * Paint the ROOT canvas, not just <body>.
+ *
+ * `html` ships transparent, so the canvas is painted by body's background
+ * propagating up. That works for the document box, but any surface the browser
+ * exposes beyond it -- an over-scroll area, or a window whose frame is briefly
+ * larger than the layout viewport mid-resize -- falls back to the browser's own
+ * base colour, which is near-black when the OS is in dark mode. On a screen that
+ * is 50% flat colour, that reads as the page being cut off.
+ *
+ * Setting it explicitly here costs nothing and removes the failure mode.
+ */
+html {
+  background: var(--background);
+}
