@@ -287,6 +287,7 @@ export default {
     processing: 'Processing...',
     continue: 'Continue',
     goBack: 'Go back',
+    or: 'or',
     legalPrefix: 'By continuing you agree to our',
     legalTerms: 'terms of service',
     legalAnd: 'and',
