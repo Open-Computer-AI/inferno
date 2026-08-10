@@ -233,6 +233,79 @@ html {
   text-decoration-color: var(--foreground);
 }
 
+/* Used by the screens that ask for more than one thing. Login gets away with
+   placeholders because it asks for one; a five-field form does not. */
+.auth-label {
+  display: block;
+  margin: 6px 0 -2px;
+  color: var(--foreground);
+  font-size: var(--fs-md);
+}
+
+/* Text roles for the auth screens, replacing the Tailwind grey/dark pairs the
+   callbacks were built from. Named by role rather than by size so a callback
+   does not have to know which --fs-* token a heading uses. */
+.auth-title {
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
+  line-height: 1.35;
+}
+
+.auth-body {
+  margin: 0;
+  color: var(--body-copy);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+}
+
+.auth-meta {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.auth-error {
+  margin: 0;
+  color: var(--destructive);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+}
+
+/* The read-back panels the callbacks use to show what they received. */
+.auth-panel {
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+  color: var(--body-copy);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+/* The provider avatar the OAuth callbacks read back to you. */
+.cb-avatar {
+  height: 40px;
+  width: 40px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.auth-meta--break {
+  word-break: break-all;
+}
+
+.auth-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
 .auth-note {
   margin: 0;
   color: var(--muted-foreground);
