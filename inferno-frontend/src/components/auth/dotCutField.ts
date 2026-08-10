@@ -316,7 +316,19 @@ export class DotCutField {
   private styleT = 1
 
   private pointer: { x: number; y: number } | null = null
-  private brush = 2.1
+  /**
+   * Cursor retraction radius, in CELLS.
+   *
+   * The prototype's 2.1 was tuned against its own 13.2px cells in a 575px box,
+   * where it read as a ~28px pocket under the pointer. On a full-bleed panel
+   * that is a small dimple on a very large surface, so it is widened here --
+   * the effect should read from across the screen, not only where the cursor is.
+   *
+   * In cells rather than pixels on purpose: the falloff has to stay the same
+   * shape relative to the lattice, or the retraction stops looking like the
+   * circles are moving and starts looking like a blur.
+   */
+  private brush = 5.5
   private fill = 1.0
   private dpr: number
 
