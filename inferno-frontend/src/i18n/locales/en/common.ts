@@ -274,7 +274,7 @@ export default {
   // Auth
   auth: {
     welcomeBack: 'Welcome back',
-    signInToAccount: 'Sign in to your account to continue',
+    signInToAccount: 'Log into your account',
     signIn: 'Sign in',
     signingIn: 'Signing in...',
     passkeySignIn: 'Sign in with a passkey',
@@ -286,12 +286,17 @@ export default {
     signUp: 'Sign up',
     processing: 'Processing...',
     continue: 'Continue',
+    goBack: 'Go back',
+    legalPrefix: 'By continuing you agree to our',
+    legalTerms: 'terms of service',
+    legalAnd: 'and',
+    legalPrivacy: 'privacy policy',
     rememberMe: 'Remember me',
     dontHaveAccount: "Don't have an account?",
     alreadyHaveAccount: 'Already have an account?',
     registrationDisabled: 'Registration is currently disabled. Please contact the administrator.',
     emailLabel: 'Email',
-    emailPlaceholder: 'Enter your email',
+    emailPlaceholder: "you{'@'}company.com", // literal @ -- bare @ is vue-i18n linked-message syntax
     passwordLabel: 'Password',
     passwordPlaceholder: 'Enter your password',
     createPasswordPlaceholder: 'Create a strong password',
