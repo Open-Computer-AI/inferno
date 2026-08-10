@@ -32,7 +32,7 @@
         <OidcOAuthSection v-if="oidcOAuthEnabled" :disabled="authActionDisabled" :provider-name="oidcOAuthProviderName" :show-divider="false" @start="handleOAuthStart" />
 
         <div v-if="showPasskeyLogin || showOAuthLogin" class="lg__rule">
-          <span class="lg__rule-label">{{ t('auth.oauthOrContinue') }}</span>
+          <span class="lg__rule-label">{{ t('auth.or') }}</span>
         </div>
 
         <input
@@ -153,11 +153,11 @@
     <template #footer>
       <!-- Only rendered when the operator has actually configured the documents.
            A hard-coded /terms link would be a dead link in most deployments. -->
-      <p v-if="legalDocuments.length" class="lg__legal">
-        {{ t('auth.legalPrefix') }}
-        <template v-for="(doc, i) in legalDocuments" :key="doc.url">
-          <a :href="doc.url" target="_blank" rel="noopener noreferrer" class="lg__legal-link">{{ doc.title }}</a>
-          <template v-if="i < legalDocuments.length - 1"> {{ t('auth.legalAnd') }} </template>
+      <p class="lg__legal">
+        {{ t('auth.legalPrefix') }}&nbsp;
+        <template v-for="(doc, i) in legalDocuments" :key="doc.to">
+          <router-link :to="doc.to" class="lg__legal-link">{{ doc.title }}</router-link>
+          <span v-if="i < legalDocuments.length - 1">&nbsp;{{ t('auth.legalAnd') }}&nbsp;</span>
         </template>
       </p>
 
@@ -262,16 +262,18 @@ function goBackToEmail(): void {
 }
 
 /**
- * The legal line's links. These are the operator's configured agreement
- * documents -- the only real terms/privacy URLs the product has. When none are
- * configured the line is not rendered at all, rather than pointing at routes
- * that do not exist.
+ * The legal line's two links, always these two.
+ *
+ * NOT the operator's agreement documents: those belong to the compliance
+ * acceptance dialog, are seeded by the backend with Chinese titles, and there
+ * can be four of them -- wiring this line to them put "服务条款and使用政策and…"
+ * under an English sign-in form. Part 17 shows exactly two links here.
  */
-const legalDocuments = computed(() =>
-  (loginAgreementDocuments.value ?? [])
-    .filter((d: { url?: string; title?: string }) => !!d?.url)
-    .map((d: { url?: string; title?: string }) => ({ url: d.url as string, title: d.title || d.url as string }))
-)
+const legalDocuments = computed<{ to: string; title: string }[]>(() => [
+  { to: '/legal/terms', title: t('auth.legalTerms') },
+  { to: '/legal/privacy', title: t('auth.legalPrivacy') }
+])
+
 const publicSettingsLoaded = ref<boolean>(false)
 
 // Public settings
