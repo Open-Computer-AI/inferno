@@ -31,8 +31,16 @@
   --s2a-h-lg: 40px;
   /* Auth screens only. Part 17 measures its controls at 38px, which is not a
      step on the app's control scale -- the front door is its own room and does
-     not have to share the density of a settings form. */
-  --s2a-h-auth: 38px;
+     not have to share the density of a settings form.
+     Scaled up from the spec's 38: the mock renders into a 575px preview box,
+     but the real column sits beside a full-height panel, and at 38 the form
+     read small against it. The whole column steps up together (height, type,
+     measure) so the proportions stay the mock's. */
+  --s2a-h-auth: 44px;
+
+  /* The wordmark. Between --fs-2xl (20) and --fs-display (30); the front door
+     is the only screen that wants a size in between. */
+  --fs-auth-mark: 26px;
 
   /* The attention colour. Distinct from --destructive: destructive means an
    * action is dangerous, attention means a threshold has been crossed and
@@ -104,7 +112,7 @@ html {
 .auth-form {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .auth-field,
@@ -114,11 +122,11 @@ html {
   width: 100%;
   border-radius: 999px;
   font-family: inherit;
-  font-size: var(--fs-md);
+  font-size: var(--fs-lg);
 }
 
 .auth-field {
-  padding: 0 15px;
+  padding: 0 17px;
   border: 1px solid var(--input);
   background: var(--card);
   color: var(--foreground);
@@ -216,7 +224,7 @@ html {
   padding: 0 10px;
   background: var(--background);
   color: var(--muted-foreground);
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-xs);
 }
 
 /* Underlined rather than coloured: ground rule 5 reserves colour for state, and
