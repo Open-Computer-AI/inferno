@@ -50,16 +50,16 @@ onMounted(() => {
 
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)')
 
-  // Resize is coalesced to one per frame: ResizeObserver can fire several times
-  // during a drag, and each resize reallocates eight typed arrays.
-  let roQueued = 0
-  const ro = new ResizeObserver(() => {
-    if (roQueued) return
-    roQueued = requestAnimationFrame(() => {
-      roQueued = 0
-      dot.resize()
-    })
-  })
+  // Resized SYNCHRONOUSLY, not deferred to rAF.
+  //
+  // Assigning canvas.width clears the bitmap to transparent. Deferring the
+  // resize to the next frame let the browser composite the already-enlarged CSS
+  // box with a stale-or-cleared bitmap first, which showed as a band of page
+  // background down the side of the panel during a drag-resize. ResizeObserver
+  // fires before paint, so redrawing here means the new size and its pixels
+  // land in the same frame. The observer already coalesces to one call per
+  // frame, and resize() early-returns when the dimensions have not changed.
+  const ro = new ResizeObserver(() => dot.resize())
   ro.observe(cv)
 
   const move = (e: PointerEvent): void => {
@@ -96,7 +96,6 @@ onMounted(() => {
     ro.disconnect()
     io.disconnect()
     if (queued) cancelAnimationFrame(queued)
-    if (roQueued) cancelAnimationFrame(roQueued)
     document.removeEventListener('visibilitychange', sync)
     reduce.removeEventListener('change', sync)
     cv.removeEventListener('pointermove', move)
@@ -113,10 +112,19 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/*
+ * Absolutely positioned, not `height: 100%`.
+ *
+ * A percentage height does not resolve against a content-sized grid row, so the
+ * canvas fell back to its ATTRIBUTE height as its intrinsic height. resize()
+ * writes that attribute from the measured box, which grew the row, which the
+ * ResizeObserver then measured and wrote back larger -- a ratchet that left the
+ * page 1710px tall inside a 1138px viewport. Out of flow, the canvas cannot
+ * contribute to the height that is measuring it.
+ */
 .field {
-  position: relative;
-  height: 100%;
-  width: 100%;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
   /* Shows through wherever a circle is punched out. Matches the first palette's
      ground so the very first paint has nothing to flash against. */
