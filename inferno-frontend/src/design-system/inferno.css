@@ -29,6 +29,10 @@
   --s2a-h-sm: var(--control-lg);
   --s2a-h-md: var(--control-xl);
   --s2a-h-lg: 40px;
+  /* Auth screens only. Part 17 measures its controls at 38px, which is not a
+     step on the app's control scale -- the front door is its own room and does
+     not have to share the density of a settings form. */
+  --s2a-h-auth: 38px;
 
   /* The attention colour. Distinct from --destructive: destructive means an
    * action is dangerous, attention means a threshold has been crossed and
@@ -82,4 +86,184 @@
  */
 html {
   background: var(--background);
+}
+
+/* ============================================================================
+ * Auth form controls — part 17's vocabulary, shared by every auth screen.
+ *
+ * Login, register, forgot, reset and verify all draw from the same small set of
+ * controls, and part 17 measures them once: 38px tall, fully rounded, 8px
+ * apart, hairline on --card, the body size throughout. Defining them per-view
+ * in scoped styles meant five copies that drift the moment one is touched.
+ *
+ * Global rather than scoped because these are shared by definition. Prefixed
+ * `auth-` so they cannot collide with the legacy `.input` / `.btn` families the
+ * bridge re-skins.
+ * ========================================================================== */
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auth-field,
+.auth-cta,
+.auth-provider {
+  height: var(--s2a-h-auth);
+  width: 100%;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: var(--fs-md);
+}
+
+.auth-field {
+  padding: 0 15px;
+  border: 1px solid var(--input);
+  background: var(--card);
+  color: var(--foreground);
+  /* Background only. Never border-color. */
+  transition: background var(--motion-hover);
+}
+
+.auth-field::placeholder {
+  color: var(--muted-foreground);
+}
+
+/* A 1px ring inside a 3px warm halo, never a cool blue. */
+.auth-field:focus {
+  outline: none;
+  border-color: var(--ring-focus);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.auth-field--invalid,
+.auth-field--invalid:focus {
+  border-color: var(--destructive);
+}
+
+/* The only filled control on the screen, and the only one at the medium weight.
+   Everything else at 600 would make the column read as four primary actions. */
+.auth-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  transition: background var(--motion-hover);
+}
+
+.auth-cta:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--primary) 92%, var(--foreground));
+}
+
+.auth-provider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  font-weight: 400;
+  cursor: pointer;
+  transition: background var(--motion-hover);
+}
+
+.auth-provider:hover:not(:disabled) {
+  background: var(--sidebar-accent);
+}
+
+.auth-cta:focus-visible,
+.auth-provider:focus-visible,
+.auth-back:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.auth-field:disabled,
+.auth-cta:disabled,
+.auth-provider:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* 6px above and 2px below: the rule belongs to the field it introduces, not to
+   the providers it separates from. */
+.auth-rule {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  margin: 6px 0 2px;
+}
+
+.auth-rule::before {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: color-mix(in oklch, var(--border) 55%, transparent);
+  content: '';
+}
+
+.auth-rule__label {
+  position: relative;
+  padding: 0 10px;
+  background: var(--background);
+  color: var(--muted-foreground);
+  font-size: var(--fs-2xs);
+}
+
+/* Underlined rather than coloured: ground rule 5 reserves colour for state, and
+   "this is a link" is not a state. */
+.auth-link {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--border);
+  transition: text-decoration-color var(--motion-hover);
+}
+
+.auth-link:hover {
+  text-decoration-color: var(--foreground);
+}
+
+.auth-note {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.auth-back {
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color var(--motion-hover);
+}
+
+.auth-back:hover {
+  color: var(--foreground);
+}
+
+.auth-spinner {
+  display: inline-block;
+  height: 13px;
+  width: 13px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  opacity: 0.7;
+  /* Shared keyframe above; it carries its own reduced-motion guard. */
+  animation: s2a-spin 0.7s linear infinite;
 }
