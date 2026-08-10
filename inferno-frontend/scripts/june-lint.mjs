@@ -224,8 +224,22 @@ function ourChangedFiles() {
       ['diff', '--name-only', base, '--', relative(REPO_ROOT, ROOT)],
       { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
     )
+
+    // Untracked files too. `git diff` cannot see them, so a brand-new component
+    // -- exactly what a conversion adds most of -- was escaping the lint
+    // entirely until it happened to be staged. Six page primitives were written
+    // and reported clean while not being checked at all.
+    const untracked = execFileSync(
+      'git',
+      ['ls-files', '--others', '--exclude-standard', '--', relative(REPO_ROOT, ROOT)],
+      { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
+    )
+
     return new Set(
-      out.split('\n').filter(Boolean).map((p) => relative(ROOT, join(REPO_ROOT, p)))
+      (out + '\n' + untracked)
+        .split('\n')
+        .filter(Boolean)
+        .map((p) => relative(ROOT, join(REPO_ROOT, p)))
     )
   } catch {
     return null
