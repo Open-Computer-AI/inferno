@@ -57,6 +57,32 @@ describe('StatTile surface colours', () => {
     expect(tileSource).not.toContain('background: var(--sidebar)')
   })
 
+  /*
+   * Wrong is loud, fine is quiet. 'attention' colours the whole line so a
+   * broken account is the only thing on the fold that catches the eye unread;
+   * 'good' tints ONLY the glyph and leaves its text muted, so a healthy
+   * dashboard is not eight lines of green competing with the icon tiles above.
+   * Making them symmetric would defeat the point of marking anything.
+   */
+  it('keeps the good/attention treatment asymmetric', () => {
+    const foot = tileSource.slice(tileSource.indexOf(".tile__foot[data-tone='muted']"))
+    // attention paints the line itself...
+    expect(foot).toMatch(/\.tile__foot\[data-tone='attention'\]\s*\{\s*color:\s*var\(--s2a-attn\)/)
+    // ...good paints only the glyph, and its text stays muted.
+    expect(foot).toMatch(
+      /\.tile__foot\[data-tone='good'\]\s*\{\s*color:\s*var\(--muted-foreground\)/
+    )
+    expect(foot).toMatch(
+      /\.tile__foot\[data-tone='good'\]\s+\.tile__foot-icon\s*\{\s*color:\s*var\(--success\)/
+    )
+  })
+
+  it('defaults the context line to muted, because most lines are facts', () => {
+    // "1,204 per minute", "8 active", "across 4.24M requests" have no bad
+    // version to contrast against. A mark on every line marks nothing.
+    expect(tileSource).toContain("contextTone: 'muted'")
+  })
+
   it('never paints an icon tile with a state colour', () => {
     // An --s2a-attn tile sits amber on a healthy dashboard: a false alarm that
     // never clears, and it devalues the amber the verdict line uses for real.
