@@ -27,55 +27,8 @@
       </button>
     </div>
 
-    <!-- Admin only: the six-section switcher. Standard mode only -- simple mode's
-         filtered item count is short enough that a flat list reads faster than a
-         switcher, the same principle part 07 v2 applies to the customer shell. -->
-    <div v-if="isAdmin && !isSimpleMode" class="rail__switcher">
-      <button
-        ref="switcherTriggerRef"
-        type="button"
-        class="rail__switcher-trigger"
-        aria-haspopup="listbox"
-        :aria-expanded="openPopover === 'switcher'"
-        :aria-label="t('shell.switchSection')"
-        @click="togglePopover('switcher')"
-        @keydown="onTriggerKeydown('switcher', $event)"
-      >
-        <i :class="['hgi-stroke', activeSectionDef?.icon]" aria-hidden="true" />
-        <span class="rail__switcher-label">{{ activeSectionDef?.label }}</span>
-        <i class="hgi-stroke hgi-arrow-up-down" aria-hidden="true" />
-      </button>
-
-      <Teleport to="body">
-        <div
-          v-if="openPopover === 'switcher'"
-          ref="switcherPanelRef"
-          class="rail__popover"
-          :style="popoverStyle"
-          role="listbox"
-          :aria-label="t('shell.sectionsListLabel')"
-          @keydown="onPanelKeydown('switcher', $event)"
-        >
-          <button
-            v-for="section in adminSections"
-            :key="section.key"
-            type="button"
-            role="option"
-            class="rail__popover-row"
-            :aria-selected="section.key === activeSection"
-            :data-active="section.key === activeSection || undefined"
-            @click="selectSection(section.key)"
-          >
-            <i :class="['hgi-stroke', section.icon]" aria-hidden="true" />
-            <span class="rail__popover-row-label">{{ section.label }}</span>
-            <span class="rail__popover-row-count">{{ section.rows.length }}</span>
-          </button>
-        </div>
-      </Teleport>
-    </div>
-
-    <!-- Navigation. Admin: the active section's rows. Customer and simple-mode
-         admin: a flat list. Real landmark + aria-current on the active row. -->
+    <!-- Navigation. One list for everyone: groups with headings, nothing behind
+         a mode. Real landmark + aria-current on the active row. -->
     <nav ref="sidebarNavRef" class="rail__nav" :aria-label="t('shell.mainNavigation')">
       <template v-if="isAdmin && isSimpleMode">
         <div class="rail__group">
@@ -90,9 +43,10 @@
       </template>
 
       <template v-else-if="isAdmin">
-        <div class="rail__group">
+        <div v-for="group in adminGroups" :key="group.key" class="rail__group">
+          <div v-if="group.heading" class="rail__group-heading">{{ group.heading }}</div>
           <NavRowLink
-            v-for="row in activeSectionDef?.rows ?? []"
+            v-for="row in group.rows"
             :key="row.path"
             :row="row"
             :active="isActive(row.path)"
@@ -100,8 +54,7 @@
           />
         </div>
 
-        <!-- The admin's own account: same reduced shape as the customer nav,
-             always visible regardless of which of the six sections is active. -->
+        <!-- The admin's own account: same reduced shape as the customer nav. -->
         <div v-if="personalGroups.length" class="rail__personal">
           <div class="rail__personal-heading">{{ t('shell.myAccount') }}</div>
           <div v-for="group in personalGroups" :key="group.key" class="rail__group">
@@ -135,49 +88,15 @@
          language/theme gear sit beside the identity row, which opens the
          avatar menu. See report for what each header item's new home is. -->
     <div class="rail__footer">
-      <div class="rail__foot-utilities">
+      <!-- Notifications are a customer affordance: an operator AUTHORS
+           announcements rather than receiving them, so the bell does not render
+           in the admin shell. Preferences moved into the avatar menu, which is
+           where account-scoped things belong -- and which removes the second
+           gear that read as "Settings" beside the real one in the nav. -->
+      <div v-if="!isAdmin" class="rail__foot-utilities">
         <div class="rail__util-slot">
           <AnnouncementBell v-if="authStore.user" />
         </div>
-
-        <button
-          ref="prefsTriggerRef"
-          type="button"
-          class="rail__icon-btn"
-          :aria-label="t('shell.preferences')"
-          aria-haspopup="menu"
-          :aria-expanded="openPopover === 'prefs'"
-          @click="togglePopover('prefs')"
-          @keydown="onTriggerKeydown('prefs', $event)"
-        >
-          <i class="hgi-stroke hgi-settings-01" aria-hidden="true" />
-        </button>
-
-        <Teleport to="body">
-          <div
-            v-if="openPopover === 'prefs'"
-            ref="prefsPanelRef"
-            class="rail__popover rail__popover--prefs"
-            :style="popoverStyle"
-            role="menu"
-            :aria-label="t('shell.preferences')"
-            @keydown="onPanelKeydown('prefs', $event)"
-          >
-            <div class="rail__pref-row" role="none">
-              <span class="rail__pref-row-label">{{ t('shell.language') }}</span>
-              <LocaleSwitcher />
-            </div>
-            <button
-              type="button"
-              role="menuitem"
-              class="rail__popover-row"
-              @click="toggleTheme"
-            >
-              <i class="hgi-stroke" :class="isDark ? 'hgi-sun-03' : 'hgi-moon-02'" aria-hidden="true" />
-              <span class="rail__popover-row-label">{{ isDark ? t('shell.lightMode') : t('shell.darkMode') }}</span>
-            </button>
-          </div>
-        </Teleport>
       </div>
 
       <button
@@ -215,16 +134,19 @@
             <i class="hgi-stroke hgi-user" aria-hidden="true" />
             <span class="rail__popover-row-label">{{ t('nav.profile') }}</span>
           </router-link>
-          <router-link
-            v-if="isAdmin"
-            to="/admin/settings"
-            role="menuitem"
-            class="rail__popover-row"
-            @click="closePopovers"
-          >
-            <i class="hgi-stroke hgi-settings-01" aria-hidden="true" />
-            <span class="rail__popover-row-label">{{ t('nav.settings') }}</span>
-          </router-link>
+          <!-- Settings is NOT here. It was, pointing at /admin/settings -- the
+               gateway's own configuration, reachable from the operator's face
+               menu, next to a footer gear that opened something else called
+               preferences. Gateway scope belongs in the nav; this menu is
+               person scope. -->
+          <div class="rail__pref-row" role="none">
+            <span class="rail__pref-row-label">{{ t('shell.language') }}</span>
+            <LocaleSwitcher />
+          </div>
+          <button type="button" role="menuitem" class="rail__popover-row" @click="toggleTheme">
+            <i class="hgi-stroke" :class="isDark ? 'hgi-sun-03' : 'hgi-moon-02'" aria-hidden="true" />
+            <span class="rail__popover-row-label">{{ isDark ? t('shell.lightMode') : t('shell.darkMode') }}</span>
+          </button>
           <button type="button" role="menuitem" class="rail__popover-row rail__popover-row--rule" @click="handleLogout">
             <i class="hgi-stroke hgi-logout-01" aria-hidden="true" />
             <span class="rail__popover-row-label">{{ t('nav.logout') }}</span>
@@ -246,22 +168,28 @@
 /**
  * AppSidebar -- part 07 v2, sections 03 and 04.
  *
- * One component, two configurations (part 07 v2 "shellCompare"): admin gets a
- * six-section switcher over ~23 destinations; the customer shell omits the
- * switcher and renders a flat 7-row, 3-label nav. `isAdmin` picks the branch.
+ * One component, two configurations: both are a flat list of groups with
+ * headings. Admin gets ~23 destinations under six headings; the customer shell
+ * gets 7 rows under three. `isAdmin` picks the branch.
+ *
+ * The admin side WAS a six-section switcher. It was removed because it hid 11
+ * of 16 rows behind a mode to save vertical space that measurement showed was
+ * not scarce, and because a noun-based grouping left eight routes -- orders,
+ * plans, payments, the three affiliate views, risk control -- with no
+ * navigation at all. Headings now name the operator's business (supply,
+ * customers, revenue, trust) rather than the software's nouns, so every feature
+ * has an obvious shelf and reading down the list teaches what the product does.
  *
  * The onboarding tour drives three sidebar selectors directly:
  * `#sidebar-group-manage`, `#sidebar-channel-manage` (composables/useOnboardingTour.ts
  * via components/Guide/steps.ts) and `[data-tour="sidebar-my-keys"]`. All three
- * are preserved verbatim below. The first two live inside the Accounts section,
- * which is why a fresh install defaults the switcher to Accounts rather than
- * Overview -- see the comment on `activeSection`.
+ * are preserved below, and with a flat list they are always rendered -- the
+ * switcher had to cold-start on Accounts purely to keep the first two visible.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, onUnmounted, ref, watch, h, defineComponent, type PropType } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
-import { hasSeenOnboardingTour } from '@/composables/onboardingTourStorage'
 import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
@@ -281,14 +209,6 @@ interface NavGroup {
   heading?: string
   rows: NavRow[]
 }
-interface SectionDef {
-  key: SectionKey
-  label: string
-  icon: string
-  rows: NavRow[]
-}
-type SectionKey = 'overview' | 'accounts' | 'traffic' | 'billing' | 'people' | 'system'
-const SECTION_KEYS: SectionKey[] = ['overview', 'accounts', 'traffic', 'billing', 'people', 'system']
 
 /** One row, shared by every nav list. A tiny local component rather than a
  *  template #slot repeated five times, so the tour attributes and
@@ -416,79 +336,96 @@ const customerGroups = computed((): NavGroup[] => {
 })
 
 // Admin's own account, same shape as the customer nav, always visible below
-// the active section regardless of the switcher -- standard mode only, same
+// the nav -- standard mode only, same
 // gate the previous shell used for its "My account" block.
 const personalGroups = computed((): NavGroup[] => (isSimpleMode.value ? [] : buildSelfGroups()))
 
-// ---- admin: six sections ----------------------------------------------------
-// Grouping is a judgment call, not a product decision (03-OPEN-CALLS.md #1):
-// only "Channels under Accounts" and "Risk control under System" were given.
-// The rest is documented in the report for the product owner to re-sort.
-function buildAdminSections(): SectionDef[] {
+// ---- admin: one list, six headings -----------------------------------------
+//
+// Was six switchable sections. That hid 11 of 16 rows behind a mode to save
+// vertical space that measurement showed was not scarce -- and it left EIGHT
+// routes (orders, plans, payments, the three affiliate views, risk control)
+// with no navigation at all, because a noun-based grouping had no shelf for
+// them. A switcher is a mode, and modes are only worth their cost when the
+// modes do not talk to each other; admin work is the opposite, since checking
+// an account then its traffic then its billing crosses three of them.
+//
+// The headings are the operator's business, not the software's nouns: supply,
+// customers, revenue, trust. Reading down the list tells a new operator what a
+// gateway business consists of, which the switcher actively prevented.
+//
+// Dashboard / Ops / Usage sit above any heading on purpose: they are where you
+// land and where you return between tasks, not a category you browse.
+function buildAdminGroups(): NavGroup[] {
   const overview: NavRow[] = [{ path: '/admin/dashboard', label: t('nav.dashboard'), icon: 'hgi-dashboard-square-01' }]
   if (flagOpsMonitoring()) overview.push({ path: '/admin/ops', label: t('nav.ops'), icon: 'hgi-pulse-01' })
+  overview.push({ path: '/admin/usage', label: t('nav.usage'), icon: 'hgi-dashboard-speed-01' })
 
-  const accounts: NavRow[] = [
+  const supply: NavRow[] = [
     { path: '/admin/accounts', label: t('nav.accounts'), icon: 'hgi-globe-02', id: 'sidebar-channel-manage' },
     { path: '/admin/groups', label: t('nav.groups'), icon: 'hgi-folder-01', id: 'sidebar-group-manage' },
     { path: '/admin/channels/pricing', label: t('nav.channels'), icon: 'hgi-plug-socket' }
   ]
   if (isFeatureFlagEnabled(FeatureFlags.channelMonitor)) {
-    accounts.push({ path: '/admin/channels/monitor', label: t('shell.monitor'), icon: 'hgi-activity-01' })
+    supply.push({ path: '/admin/channels/monitor', label: t('shell.monitor'), icon: 'hgi-activity-01' })
   }
-  accounts.push({ path: '/admin/proxies', label: t('nav.proxies'), icon: 'hgi-internet' })
+  supply.push({ path: '/admin/proxies', label: t('nav.proxies'), icon: 'hgi-internet' })
 
-  const traffic: NavRow[] = [
-    { path: '/admin/usage', label: t('nav.usage'), icon: 'hgi-dashboard-speed-01' },
-    { path: '/admin/audit-logs', label: t('shell.auditLogs'), icon: 'hgi-audit-01' },
-    { path: '/admin/prompt-audit', label: t('shell.promptAudit'), icon: 'hgi-message-programming' }
-  ]
-
-  const billing: NavRow[] = [
-    { path: '/admin/subscriptions', label: t('nav.subscriptions'), icon: 'hgi-credit-card' },
-    { path: '/admin/redeem', label: t('shell.redeemCodes'), icon: 'hgi-gift', id: 'sidebar-wallet' },
-    { path: '/admin/promo-codes', label: t('shell.promoCodes'), icon: 'hgi-tag-01' }
+  const customers: NavRow[] = [
+    { path: '/admin/users', label: t('nav.users'), icon: 'hgi-user-multiple-02' },
+    { path: '/admin/subscriptions', label: t('nav.subscriptions'), icon: 'hgi-credit-card' }
   ]
   if (flagAdminPayment()) {
-    billing.push(
-      { path: '/admin/orders/dashboard', label: t('shell.paymentDashboard'), icon: 'hgi-chart-increase' },
+    customers.push(
       { path: '/admin/orders', label: t('nav.orderManagement'), icon: 'hgi-receipt-text' },
       { path: '/admin/orders/plans', label: t('nav.paymentPlans'), icon: 'hgi-package-01' }
     )
   }
 
-  const people: NavRow[] = [
-    { path: '/admin/users', label: t('nav.users'), icon: 'hgi-user-multiple-02' },
-    { path: '/admin/announcements', label: t('nav.announcements'), icon: 'hgi-notification-01' }
-  ]
+  const revenue: NavRow[] = []
+  if (flagAdminPayment()) {
+    revenue.push({ path: '/admin/orders/dashboard', label: t('shell.paymentDashboard'), icon: 'hgi-chart-increase' })
+  }
+  revenue.push(
+    { path: '/admin/promo-codes', label: t('shell.promoCodes'), icon: 'hgi-tag-01' },
+    { path: '/admin/redeem', label: t('shell.redeemCodes'), icon: 'hgi-gift', id: 'sidebar-wallet' }
+  )
   if (isFeatureFlagEnabled(FeatureFlags.affiliate)) {
-    people.push(
+    revenue.push(
       { path: '/admin/affiliates/invites', label: t('shell.affiliateInvites'), icon: 'hgi-user-add-01' },
       { path: '/admin/affiliates/rebates', label: t('shell.affiliateRebates'), icon: 'hgi-money-receive-01' },
       { path: '/admin/affiliates/transfers', label: t('shell.affiliateTransfers'), icon: 'hgi-exchange-01' }
     )
   }
 
-  const system: NavRow[] = []
+  const trust: NavRow[] = []
   if (isFeatureFlagEnabled(FeatureFlags.riskControl)) {
-    system.push({ path: '/admin/risk-control', label: t('shell.riskControl'), icon: 'hgi-shield-01' })
+    trust.push({ path: '/admin/risk-control', label: t('shell.riskControl'), icon: 'hgi-shield-01' })
   }
-  system.push({ path: '/admin/settings', label: t('nav.settings'), icon: 'hgi-settings-01' })
+  trust.push(
+    { path: '/admin/audit-logs', label: t('shell.auditLogs'), icon: 'hgi-audit-01' },
+    { path: '/admin/prompt-audit', label: t('shell.promptAudit'), icon: 'hgi-message-programming' }
+  )
+
+  const system: NavRow[] = [
+    { path: '/admin/announcements', label: t('nav.announcements'), icon: 'hgi-notification-01' },
+    { path: '/admin/settings', label: t('nav.settings'), icon: 'hgi-settings-01' }
+  ]
   for (const cm of customMenuItemsForAdmin.value) {
     system.push({ path: `/custom/${cm.id}`, label: cm.label, icon: '', iconSvg: cm.icon_svg })
   }
 
   return [
-    { key: 'overview', label: t('shell.overview'), icon: 'hgi-dashboard-square-01', rows: overview },
-    { key: 'accounts', label: t('nav.accounts'), icon: 'hgi-globe-02', rows: accounts },
-    { key: 'traffic', label: t('shell.traffic'), icon: 'hgi-activity-01', rows: traffic },
-    { key: 'billing', label: t('shell.billing'), icon: 'hgi-invoice-01', rows: billing },
-    { key: 'people', label: t('shell.people'), icon: 'hgi-user-multiple-02', rows: people },
-    { key: 'system', label: t('shell.system'), icon: 'hgi-preference-horizontal', rows: system }
-  ]
+    { key: 'overview', rows: overview },
+    { key: 'supply', heading: t('shell.supply'), rows: supply },
+    { key: 'customers', heading: t('shell.customers'), rows: customers },
+    { key: 'revenue', heading: t('shell.revenue'), rows: revenue },
+    { key: 'trust', heading: t('shell.trust'), rows: trust },
+    { key: 'system', heading: t('shell.system'), rows: system }
+  ].filter((g) => g.rows.length > 0)
 }
 
-const adminSections = computed((): SectionDef[] => (isAdmin.value && !isSimpleMode.value ? buildAdminSections() : []))
+const adminGroups = computed((): NavGroup[] => (isAdmin.value && !isSimpleMode.value ? buildAdminGroups() : []))
 
 // Simple-mode admin: the same flat, reduced list the previous shell built
 // (dashboard, ops, accounts, announcements, proxies, usage, then keys and
@@ -513,101 +450,21 @@ const adminFlatSimple = computed((): NavRow[] => {
 })
 
 // ---- active section --------------------------------------------------------
-const ACTIVE_SECTION_STORAGE_KEY = 'inferno_admin_active_section'
-const ADMIN_SECTION_BY_PATH: Array<[string, SectionKey]> = [
-  ['/admin/dashboard', 'overview'],
-  ['/admin/ops', 'overview'],
-  ['/admin/accounts', 'accounts'],
-  ['/admin/groups', 'accounts'],
-  ['/admin/channels', 'accounts'],
-  ['/admin/proxies', 'accounts'],
-  ['/admin/usage', 'traffic'],
-  ['/admin/audit-logs', 'traffic'],
-  ['/admin/prompt-audit', 'traffic'],
-  ['/admin/subscriptions', 'billing'],
-  ['/admin/redeem', 'billing'],
-  ['/admin/promo-codes', 'billing'],
-  ['/admin/orders', 'billing'],
-  ['/admin/users', 'people'],
-  ['/admin/announcements', 'people'],
-  ['/admin/affiliates', 'people'],
-  ['/admin/risk-control', 'system'],
-  ['/admin/settings', 'system']
-]
 
-function sectionForRoute(path: string): SectionKey | null {
-  const hit = ADMIN_SECTION_BY_PATH.filter(([prefix]) => path === prefix || path.startsWith(prefix + '/')).sort(
-    (a, b) => b[0].length - a[0].length
-  )[0]
-  return hit ? hit[1] : null
-}
-
-function loadPersistedSection(): SectionKey | null {
-  try {
-    const v = localStorage.getItem(ACTIVE_SECTION_STORAGE_KEY)
-    return v && (SECTION_KEYS as string[]).includes(v) ? (v as SectionKey) : null
-  } catch {
-    return null
-  }
-}
-
-function persistSection(key: SectionKey) {
-  try {
-    localStorage.setItem(ACTIVE_SECTION_STORAGE_KEY, key)
-  } catch {
-    // localStorage unavailable (private browsing, quota) -- the switcher still
-    // works for the session, it just does not survive a reload.
-  }
-}
-
-// The switcher must name the section containing the current route. The watcher
-// below enforces that after every navigation; this computes the same thing for
-// the first paint, which a `watch` without `immediate` cannot do.
-//
-// The one case where the route does NOT win is a fresh admin who is about to be
-// walked through the onboarding tour. Its first two interactive steps target
-// `#sidebar-group-manage` and `#sidebar-channel-manage`, both inside Accounts,
-// and they fire before any navigation -- so a fresh admin landing on Overview
-// would have both targets hidden and the tour would silently break.
-//
-// Asked via `hasSeenOnboardingTour` rather than a local localStorage read so the
-// key stays derived in exactly one place; `useOnboardingTour` itself cannot be
-// called here because instantiating it would start a second tour.
-//
-// Previously this always cold-started at Accounts, which meant a hard reload or
-// a bookmark straight into any other section showed the wrong section until the
-// next in-app navigation.
-function initialSection(): SectionKey {
-  if (isAdmin.value && !hasSeenOnboardingTour('admin_guide', authStore.user?.id, authStore.user?.role)) {
-    return 'accounts'
-  }
-  return sectionForRoute(route.path) ?? loadPersistedSection() ?? 'accounts'
-}
-
-const activeSection = ref<SectionKey>(initialSection())
-const activeSectionDef = computed(() => adminSections.value.find((s) => s.key === activeSection.value) ?? adminSections.value[0])
-
-function selectSection(key: SectionKey) {
-  activeSection.value = key
-  persistSection(key)
-  closePopovers()
-}
-
-// After the first paint, follow navigation: if the admin lands on a route
-// belonging to a different section (a bookmark, the tour's own clicks, a
-// deep link), the switcher snaps to match. `watch` without `immediate` never
-// fires on mount, so the tour-safe default above is never fought on load.
-watch(
-  () => route.path,
-  (path) => {
-    if (!isAdmin.value) return
-    const match = sectionForRoute(path)
-    if (match && match !== activeSection.value) {
-      activeSection.value = match
-      persistSection(match)
-    }
-  }
-)
+/*
+ * The switcher's entire state machine lived here and is gone: SECTION_KEYS,
+ * ADMIN_SECTION_BY_PATH, sectionForRoute(), the localStorage key with its
+ * load/persist pair, activeSection, activeSectionDef, selectSection(), the
+ * route watcher that re-synced the switcher after every navigation, and
+ * initialSection()'s special case for a fresh admin.
+ *
+ * That last one is worth remembering: cold start had to default to Accounts
+ * because the onboarding tour's first two interactive steps target
+ * #sidebar-group-manage and #sidebar-channel-manage, which only exist while
+ * that section is showing. A flat list renders every row on every page, so the
+ * coupling simply does not arise -- deleting the mode deleted the workaround
+ * the mode required.
+ */
 
 // ---- popovers: switcher, preferences (language + theme), avatar menu ------
 type PopoverName = 'switcher' | 'prefs' | 'avatar' | null
@@ -885,58 +742,6 @@ onUnmounted(() => {
 }
 
 /* --- switcher ------------------------------------------------------------ */
-.rail__switcher {
-  flex-shrink: 0;
-}
-.rail__switcher-trigger {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-  height: 30px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--card);
-  color: var(--foreground);
-  font-size: var(--fs-md);
-  cursor: pointer;
-  transition: background var(--motion-hover);
-}
-.rail__switcher-trigger:hover {
-  background: var(--sidebar-accent);
-}
-.rail__switcher-trigger:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--focus-ring);
-}
-.rail__switcher-trigger i:first-child {
-  flex-shrink: 0;
-  font-size: 13px; /* june-lint-disable ground-rule-4: icon glyph */
-  color: var(--muted-foreground);
-}
-.rail__switcher-trigger i:last-child {
-  flex-shrink: 0;
-  margin-left: auto;
-  font-size: 11px; /* june-lint-disable ground-rule-4: icon glyph */
-  color: var(--muted-foreground);
-}
-.rail__switcher-label {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-}
-.rail--collapsed .rail__switcher-trigger {
-  padding: 0;
-  justify-content: center;
-}
-.rail--collapsed .rail__switcher-label,
-.rail--collapsed .rail__switcher-trigger i:last-child {
-  display: none;
-}
 
 /* --- nav rows -------------------------------------------------------- */
 .rail__nav {
