@@ -290,6 +290,8 @@ export default {
 
   // Auth
   auth: {
+    showPassword: 'Show password',
+    hidePassword: 'Hide password',
     welcomeBack: 'Welcome back',
     signInToAccount: 'Log into your account',
     signIn: 'Sign in',
