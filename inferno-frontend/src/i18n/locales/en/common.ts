@@ -209,6 +209,13 @@ export default {
     roleAdministrator: 'Administrator',
     roleMember: 'Member',
     overview: 'Overview',
+    /* Sidebar group headings. Named for the operator's business -- supply,
+       customers, revenue, trust -- rather than for the software's nouns, so
+       reading down the nav teaches what a gateway business consists of. */
+    supply: 'Supply',
+    customers: 'Customers',
+    revenue: 'Revenue',
+    trust: 'Trust',
     traffic: 'Traffic',
     people: 'People',
     system: 'System',
