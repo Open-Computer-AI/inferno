@@ -5,6 +5,12 @@ export default {
       trendTooltipFooter: '{actual} actual, {standard} standard',
       title: 'Admin Dashboard',
       description: 'System overview and real-time statistics',
+      /* The verdict sentence. It states what it is basing the reading on:
+         "everything is fine" with no number behind it is a claim rather than a
+         reading. */
+      verdictHealthy: 'Everything is healthy. {serving} accounts serving, no errors.',
+      verdictAttention: '{count} accounts need attention. {serving} of {total} still serving.',
+      verdictEmpty: 'No accounts connected yet. Add one to start serving traffic.',
       apiKeys: 'API Keys',
       totalApiKeys: 'Total API Keys',
       activeApiKeys: 'Active Keys',
