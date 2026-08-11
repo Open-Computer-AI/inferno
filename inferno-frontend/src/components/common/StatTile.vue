@@ -78,6 +78,18 @@ withDefaults(
     tone?: Tone
     /** Exact figure for the title attribute when `value` is abbreviated. */
     exact?: string
+    /**
+     * Like-for-like change against the same window yesterday, as a whole
+     * percent plus its direction.
+     *
+     * DELIBERATELY TONELESS. The arrow says which way; nothing says whether
+     * that is good. Requests up 21% is growth, cost up 21% might be growth or
+     * might be a leak -- it depends entirely on whether requests moved with
+     * it, which this component cannot know. Painting it green would be a claim
+     * the number does not support, and on the cost tile it would be actively
+     * misleading.
+     */
+    delta?: { pct: number; direction: 'up' | 'down' } | null
   }>(),
   { tone: 'brand', contextTone: 'muted' }
 )
@@ -92,7 +104,16 @@ withDefaults(
         </span>
         <span class="tile__label">{{ label }}</span>
       </div>
-      <p class="tile__value" :title="exact || value">{{ value }}</p>
+      <div class="tile__measure">
+        <p class="tile__value" :title="exact || value">{{ value }}</p>
+        <span v-if="delta" class="tile__delta">
+          <i
+            class="hgi-stroke tile__delta-icon"
+            :class="delta.direction === 'up' ? 'hgi-arrow-up-right-01' : 'hgi-arrow-down-right-01'"
+            aria-hidden="true"
+          />{{ delta.pct }}%
+        </span>
+      </div>
     </div>
     <p class="tile__foot" :data-tone="contextTone">
       <i
@@ -188,12 +209,20 @@ withDefaults(
   white-space: nowrap;
 }
 
-/* The hairline is a border on the value, not a separate element: it inherits
-   the card's padding, so it insets exactly like the reference's divider. */
-.tile__value {
-  margin: 12px 0 0;
+/* The hairline lives on the measure row, not on the value, so it still spans
+   the full card width once a delta chip sits beside the number. */
+.tile__measure {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--border-subtle);
+  min-width: 0;
+}
+
+.tile__value {
+  margin: 0;
   color: var(--foreground);
   font-family: var(--font-serif);
   font-size: var(--fs-display);
@@ -202,6 +231,31 @@ withDefaults(
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * The chip never shrinks and never truncates: it is four characters, and a
+ * clipped "21" reading as "2" would be worse than showing no delta at all.
+ * The number truncates first because it carries a title attribute.
+ */
+.tile__delta {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 7px;
+  border-radius: var(--r-pill);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.tile__delta-icon {
+  font-size: 12px; /* june-lint-disable ground-rule-4: icon glyph, not text */
+  line-height: 1;
 }
 
 /* min-height, not a fixed height: tiles without a context line still reserve
