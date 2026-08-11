@@ -1392,3 +1392,47 @@ written and reported "clean across 87 files" while not being checked at all;
 staging them moved the count to 93 and only then were they linted.
 
 Fixed by unioning `git ls-files --others --exclude-standard` into the scope.
+
+## PENDING — the live checklist (update this, do not let it go stale)
+
+### Phase 5, by archetype (part 14's map)
+
+- [ ] **B Dashboard** (4) — `user/DashboardView`, `admin/DashboardView`, `admin/UsageView`,
+      `admin/orders/AdminPaymentDashboardView`. `StatStrip` built, unused. Today: 8 loose
+      cards with coloured icon tiles. NEEDS A PRODUCT CALL: the verdict sentence's
+      definition of "needs attention" (part 14 flags this itself).
+- [ ] **G Message** (7) — `MessagePage` built, unused. Quickest win.
+- [ ] **C Settings** (7) — `SettingsGroup`/`SettingsRow` built, unused. Includes splitting
+      `SettingsView` (12,621 lines) into 9 routes; part 14 wants a redirect from the old
+      URL and a release note, since admin bookmarks break.
+- [ ] **D Detail** (6) — needs a detail-header primitive (identity + state, then numbers,
+      then history).
+- [ ] **F Interstitial** (9) — `InterstitialState` built. Fold the 5 auth callbacks into it;
+      they were converted individually with shared classes instead.
+- [ ] **A Table pages** (21) — headings done via route meta. Interiors still
+      legacy-but-bridged.
+
+### Owed cross-file work (shapes recorded earlier in this file)
+
+- [ ] `AccountsView` action-button collapse -> unblocks `stickyActionsColumn`
+- [ ] 55 -> 9 quota collapse (`QuotaDimension`)
+- [ ] Opt-in Grok probe column (must state "one billable request per visible row")
+- [ ] Column-header window picker (`pinnedWindowKey` already accepted)
+- [ ] ~40 raw checkboxes -> `Checkbox.vue` / `Radio.vue` (every `.setValue()` test breaks)
+
+### Known gaps, not blocking
+
+- [ ] `/legal/terms` and `/legal/privacy` 404 — the login legal line links there
+- [ ] Backend Chinese: ~2,500 strings. Frontend is clean; backend errors still reach
+      customers. Fix is a translation map at `pkg/response/response.go:60`, gateway/auth
+      errors only, never editing source strings (`ops_error_logger.go` matches on them).
+- [ ] Icon subsetting (860KB woff2, 5,503 glyphs, we use a fraction)
+- [ ] `gh auth refresh -h github.com -s workflow` to land the sync Action (needs Saksham)
+- [ ] Chart canvas pixels still unverified — no `<canvas>` mounts on an empty DB
+
+### On the promises list (june-lint TOUCHED_NOT_CONVERTED)
+
+`CreateAccountModal`, `EditAccountModal`, `ProxiesView`, `AccountsView`, `HomeView`,
+`KeyUsageView`, `PlazaNavBar`, `EmailVerifyView`, `LegalDocumentView`, `SettingsView`,
+`AnnouncementBell`, `UserDashboardQuickActions`. Each is a deferred check, not a waiver:
+remove the line when the file is converted and the lint starts holding it to the rules.
