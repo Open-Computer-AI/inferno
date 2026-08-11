@@ -49,8 +49,12 @@ describe('AppSidebar popover positioning', () => {
   // Select.vue uses. A popover living outside the rail's DOM subtree cannot
   // be clipped by an ancestor's overflow, whatever that ancestor's CSS says.
   it('teleports every popover to <body> instead of nesting it under an overflow ancestor', () => {
+    // One popover now, not three. The section switcher is gone (it hid 11 of 16
+    // nav rows behind a mode), and the preferences menu was folded into the
+    // avatar menu -- language and theme are account-scoped, and a second gear in
+    // the footer read as "Settings" beside the real one in the nav.
     const teleportCount = (componentSource.match(/<Teleport to="body">/g) ?? []).length
-    expect(teleportCount).toBe(3)
+    expect(teleportCount).toBe(1)
   })
 
   it('positions each popover from its own trigger rect, not a static offset', () => {
