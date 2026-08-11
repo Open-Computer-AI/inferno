@@ -7,9 +7,10 @@
       </div>
 
       <template v-else-if="stats">
-        <PageHeader />
-
-        <!-- The page's one opinion. Everything below is the evidence for it. -->
+        <!-- No PageHeader. The sidebar row is highlighted, the tab title says
+             it, and the verdict sentence below is the real headline -- a title
+             repeating "Dashboard" costs a line and tells you nothing.
+             The page's one opinion. Everything below is the evidence for it. -->
         <DashboardVerdict
           :total-accounts="stats.total_accounts"
           :normal-accounts="stats.normal_accounts"
@@ -17,18 +18,45 @@
         />
 
         <!-- The four numbers that answer "is anything wrong", and only those.
-             Part 14: one border, dividers, no icon tiles, no shadows. Keys,
-             users and token totals are inventory and volume, not health, so
-             they moved below the fold. -->
-        <StatStrip>
-          <StatCard
-            :title="t('admin.dashboard.accounts')"
+             Keys, users and token totals are inventory and volume, not health,
+             so they moved below the fold.
+
+             Each tile carries ONE context line on the tray floor, because
+             every number here is unreadable alone: 48,201 requests is neither
+             good nor bad until you know the current rate, and $18.40 means
+             nothing without the list price beside it. -->
+        <div class="tiles">
+          <StatTile
+            icon="database-01"
+            tone="brand"
+            :label="t('admin.dashboard.accounts')"
             :value="`${stats.normal_accounts} / ${stats.total_accounts}`"
+            :context="accountsContext.text"
+            :context-tone="accountsContext.tone"
           />
-          <StatCard :title="t('admin.dashboard.todayRequests')" :value="formatNumber(stats.today_requests)" />
-          <StatCard :title="t('admin.dashboard.avgResponse')" :value="formatDuration(stats.average_duration_ms)" />
-          <StatCard :title="t('admin.dashboard.todayCost')" :value="`$${formatCost(stats.today_cost)}`" />
-        </StatStrip>
+          <StatTile
+            icon="exchange-01"
+            tone="info"
+            :label="t('admin.dashboard.todayRequests')"
+            :value="formatNumber(stats.today_requests)"
+            :exact="String(stats.today_requests)"
+            :context="t('admin.dashboard.tileRequestsRate', { rate: formatNumber(Math.round(stats.rpm)) })"
+          />
+          <StatTile
+            icon="dollar-circle"
+            tone="success"
+            :label="t('admin.dashboard.todayCost')"
+            :value="`$${formatCost(stats.today_actual_cost)}`"
+            :context="costContext"
+          />
+          <StatTile
+            icon="timer-02"
+            tone="accent"
+            :label="t('admin.dashboard.avgResponse')"
+            :value="formatDuration(stats.average_duration_ms)"
+            :context="t('admin.dashboard.tileResponseThroughput', { rate: formatNumber(Math.round(stats.tpm)) })"
+          />
+        </div>
 
         <!-- Charts Section -->
         <div class="space-y-6">
@@ -183,8 +211,9 @@ import type {
   UserSpendingRankingItem
 } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import { PageHeader, StatStrip } from '@/components/layout'
+import { StatStrip } from '@/components/layout'
 import StatCard from '@/components/common/StatCard.vue'
+import StatTile from '@/components/common/StatTile.vue'
 import DashboardVerdict from '@/components/admin/DashboardVerdict.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -424,6 +453,12 @@ const formatNumber = (value: number | null | undefined): string => {
 
 const formatCost = (value: number | null | undefined): string => {
   const safeValue = toFiniteNumber(value)
+  /* Exact zero is not a small number, it is no spend, and the 4-decimal branch
+     rendered it as "$0.0000" -- four digits of false precision on the most
+     common state a fresh instance is in. */
+  if (safeValue === 0) {
+    return '0.00'
+  }
   if (safeValue >= 1000) {
     return (safeValue / 1000).toFixed(2) + 'K'
   } else if (safeValue >= 1) {
@@ -440,6 +475,43 @@ const formatDuration = (ms: number): string => {
   }
   return `${Math.round(ms)}ms`
 }
+
+/*
+ * The two tray-floor lines that are conditional. The other two are direct
+ * reads (rpm, tpm) and stay inline in the template.
+ *
+ * Accounts is the only tile whose context can change tone: it restates the
+ * verdict's evidence, so it takes ink for the same reason the verdict does.
+ */
+const accountsContext = computed<{ text: string; tone: 'muted' | 'attention' }>(() => {
+  const s = stats.value
+  if (!s) return { text: '', tone: 'muted' }
+  if (s.error_accounts > 0) {
+    return {
+      text: t('admin.dashboard.tileAccountsAttention', { count: s.error_accounts }),
+      tone: 'attention'
+    }
+  }
+  if (s.total_accounts === 0) return { text: t('admin.dashboard.tileAccountsEmpty'), tone: 'muted' }
+  return { text: t('admin.dashboard.tileAccountsHealthy'), tone: 'muted' }
+})
+
+/*
+ * `today_cost` is the standard list price, `today_actual_cost` is what was
+ * actually deducted; the headline shows the latter because that is the number
+ * that leaves the account. The difference is the group discount, and it is
+ * only worth a line when it is non-zero -- "saved $0.00" is noise.
+ */
+const costContext = computed(() => {
+  const s = stats.value
+  if (!s) return ''
+  const saved = s.today_cost - s.today_actual_cost
+  if (saved <= 0.005) return t('admin.dashboard.tileCostStandard')
+  return t('admin.dashboard.tileCostSaved', {
+    standard: `$${formatCost(s.today_cost)}`,
+    saved: `$${formatCost(saved)}`
+  })
+})
 
 const goToUserUsage = (item: UserSpendingRankingItem) => {
   void router.push({
@@ -585,6 +657,15 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* The fold. auto-fit rather than a fixed 4 so the tiles reflow to 2x2 and
+   then 1-up without a media query: below about 240px a tile truncates its
+   own number, which is the one thing it exists to show. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
 /* Quick actions. One treatment for every action -- the old per-action hues
    (sky for batch image, emerald for group pricing) were colour encoding a
    category, which ground rule 5 reserves for state. */

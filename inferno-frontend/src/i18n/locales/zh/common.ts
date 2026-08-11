@@ -277,6 +277,8 @@ export default {
 
   // Auth
   auth: {
+    showPassword: '显示密码',
+    hidePassword: '隐藏密码',
     welcomeBack: '欢迎回来',
     signInToAccount: '登录您的账户以继续',
     signIn: '登录',
