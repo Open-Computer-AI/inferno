@@ -55,7 +55,8 @@
             tone="success"
             :label="t('admin.dashboard.todayCost')"
             :value="`$${formatCost(stats.today_actual_cost)}`"
-            :context="costContext"
+            :context="costContext.text"
+            :context-tone="costContext.tone"
           />
         </div>
 
@@ -560,7 +561,9 @@ const usersContext = computed(() => {
   return t('admin.dashboard.tileUsersActiveOnly', { active })
 })
 
-const accountsContext = computed<{ text: string; tone: 'muted' | 'attention' }>(() => {
+type ContextTone = 'muted' | 'good' | 'attention'
+
+const accountsContext = computed<{ text: string; tone: ContextTone }>(() => {
   const s = stats.value
   if (!s) return { text: '', tone: 'muted' }
   if (s.error_accounts > 0) {
@@ -569,8 +572,11 @@ const accountsContext = computed<{ text: string; tone: 'muted' | 'attention' }>(
       tone: 'attention'
     }
   }
+  /* Not 'good'. Zero accounts is not a healthy system, it is an unconfigured
+     one, and a green check on "none connected yet" would congratulate the
+     operator for having nothing to serve traffic with. */
   if (s.total_accounts === 0) return { text: t('admin.dashboard.tileAccountsEmpty'), tone: 'muted' }
-  return { text: t('admin.dashboard.tileAccountsHealthy'), tone: 'muted' }
+  return { text: t('admin.dashboard.tileAccountsHealthy'), tone: 'good' }
 })
 
 /*
@@ -579,15 +585,20 @@ const accountsContext = computed<{ text: string; tone: 'muted' | 'attention' }>(
  * that leaves the account. The difference is the group discount, and it is
  * only worth a line when it is non-zero -- "saved $0.00" is noise.
  */
-const costContext = computed(() => {
+const costContext = computed<{ text: string; tone: ContextTone }>(() => {
   const s = stats.value
-  if (!s) return ''
+  if (!s) return { text: '', tone: 'muted' }
   const saved = s.today_cost - s.today_actual_cost
-  if (saved <= 0.005) return t('admin.dashboard.tileCostStandard')
-  return t('admin.dashboard.tileCostSaved', {
-    standard: `$${formatCost(s.today_cost)}`,
-    saved: `$${formatCost(saved)}`
-  })
+  /* Paying list price is not a fault, so it gets no mark -- only the discount
+     earns one, because it is the case that could have gone the other way. */
+  if (saved <= 0.005) return { text: t('admin.dashboard.tileCostStandard'), tone: 'muted' }
+  return {
+    text: t('admin.dashboard.tileCostSaved', {
+      standard: `$${formatCost(s.today_cost)}`,
+      saved: `$${formatCost(saved)}`
+    }),
+    tone: 'good'
+  }
 })
 
 const goToUserUsage = (item: UserSpendingRankingItem) => {
