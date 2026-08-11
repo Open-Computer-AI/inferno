@@ -1413,6 +1413,18 @@ Fixed by unioning `git ls-files --others --exclude-standard` into the scope.
         `tone="brand"` on all four.
       - Verdict "needs attention" rule settled: `error_accounts` only (excludes
         cooldown and rate-limited, which self-heal).
+      - **The two rows split by TIME, not by kind.** Top = today (accounts,
+        requests, tokens, cost); bottom = standing/lifetime (keys, users, total
+        tokens, avg response). An earlier "health vs inventory" split was a grid
+        constraint dressed up as a principle, and it separated the three
+        same-day activity numbers across a chart.
+      - `average_duration_ms` has **no window** (rpm/tpm are 5-minute), so it is
+        a lifetime mean and belongs in the lifetime row. Its context is
+        `total_requests` — a mean is unreadable without its sample size.
+      - Token tiles show **cache read share**, not the input/output split:
+        `total_tokens` includes cache, so input+output accounted for under a
+        tenth of the headline and looked like it should sum. Reads only —
+        counting cache creation would flatter it.
       - Still open: add "Errors, last hour" via
         `/admin/ops/request-errors?pageSize=1` -> `total` (agreed "option 2 now,
         option 3 later"); a proper aggregate endpoint with a per-reason
