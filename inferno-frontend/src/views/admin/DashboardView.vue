@@ -96,13 +96,49 @@
 
         <!-- Below the fold: the other four numbers, then distribution and
              history. Part 14 puts distribution here because "which model is
-             popular" is never the answer to "is anything wrong". -->
-        <StatStrip>
-          <StatCard :title="t('admin.dashboard.apiKeys')" :value="formatNumber(stats.total_api_keys)" />
-          <StatCard :title="t('admin.dashboard.users')" :value="formatNumber(stats.total_users)" />
-          <StatCard :title="t('admin.dashboard.todayTokens')" :value="formatNumber(stats.today_tokens)" />
-          <StatCard :title="t('admin.dashboard.totalTokens')" :value="formatNumber(stats.total_tokens)" />
-        </StatStrip>
+             popular" is never the answer to "is anything wrong".
+
+             Same tiles, no icon tiles. That absence IS the hierarchy: the
+             coloured tiles above answer "is anything wrong", these are
+             reference figures, and eight equally loud cards was the original
+             dashboard's defect. Each still earns its context line -- a token
+             total without its input/output split is a number you cannot act
+             on, and "new users today" belongs here as context rather than
+             occupying a tile of its own. -->
+        <div class="tiles">
+          <StatTile
+            :label="t('admin.dashboard.apiKeys')"
+            :value="formatNumber(stats.total_api_keys)"
+            :context="t('admin.dashboard.tileKeysActive', { count: formatNumber(stats.active_api_keys) })"
+          />
+          <StatTile
+            :label="t('admin.dashboard.users')"
+            :value="formatNumber(stats.total_users)"
+            :context="usersContext"
+          />
+          <StatTile
+            :label="t('admin.dashboard.todayTokens')"
+            :value="formatTokens(stats.today_tokens)"
+            :exact="String(stats.today_tokens)"
+            :context="
+              t('admin.dashboard.tileTokenSplit', {
+                input: formatTokens(stats.today_input_tokens),
+                output: formatTokens(stats.today_output_tokens)
+              })
+            "
+          />
+          <StatTile
+            :label="t('admin.dashboard.totalTokens')"
+            :value="formatTokens(stats.total_tokens)"
+            :exact="String(stats.total_tokens)"
+            :context="
+              t('admin.dashboard.tileTokenSplit', {
+                input: formatTokens(stats.total_input_tokens),
+                output: formatTokens(stats.total_output_tokens)
+              })
+            "
+          />
+        </div>
 
         <div class="space-y-6">
           <!-- Charts Grid -->
@@ -155,7 +191,7 @@
               class="qa-row"
               @click="router.push('/batch-image')"
             >
-              <span class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400">
+              <span class="qa-icon">
                 <Icon name="sparkles" size="md" :stroke-width="2" />
               </span>
               <span class="min-w-0 flex-1">
@@ -166,14 +202,14 @@
                   {{ t('admin.dashboard.batchImageDesc') }}
                 </span>
               </span>
-              <Icon name="chevronRight" size="sm" class="text-gray-400 group-hover:text-sky-500" />
+              <Icon name="chevronRight" size="sm" class="text-gray-400" />
             </button>
             <button
               type="button"
               class="qa-row"
               @click="router.push('/admin/groups')"
             >
-              <span class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
+              <span class="qa-icon">
                 <Icon name="grid" size="md" :stroke-width="2" />
               </span>
               <span class="min-w-0 flex-1">
@@ -211,8 +247,6 @@ import type {
   UserSpendingRankingItem
 } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import { StatStrip } from '@/components/layout'
-import StatCard from '@/components/common/StatCard.vue'
 import StatTile from '@/components/common/StatTile.vue'
 import DashboardVerdict from '@/components/admin/DashboardVerdict.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
@@ -483,6 +517,23 @@ const formatDuration = (ms: number): string => {
  * Accounts is the only tile whose context can change tone: it restates the
  * verdict's evidence, so it takes ink for the same reason the verdict does.
  */
+/*
+ * Restores "new users today", which was a whole tile on the original
+ * dashboard. As a headline it was noise -- a single day's signups is not a
+ * system reading -- but as context under the user count it is exactly the
+ * right size, and it costs no tile. Dropped entirely on a day with no signups
+ * rather than printing "0 new today", which reads as a problem.
+ */
+const usersContext = computed(() => {
+  const s = stats.value
+  if (!s) return ''
+  const active = formatNumber(s.active_users)
+  if (s.today_new_users > 0) {
+    return t('admin.dashboard.tileUsersActive', { active, new: formatNumber(s.today_new_users) })
+  }
+  return t('admin.dashboard.tileUsersActiveOnly', { active })
+})
+
 const accountsContext = computed<{ text: string; tone: 'muted' | 'attention' }>(() => {
   const s = stats.value
   if (!s) return { text: '', tone: 'muted' }
@@ -668,7 +719,12 @@ onMounted(() => {
 
 /* Quick actions. One treatment for every action -- the old per-action hues
    (sky for batch image, emerald for group pricing) were colour encoding a
-   category, which ground rule 5 reserves for state. */
+   category, which ground rule 5 reserves for state.
+
+   That was only half done: the row background lost its hue but the icon tile
+   inside kept bg-sky-100 / bg-emerald-100, so a green square still sat on the
+   dashboard meaning nothing. .qa-icon below is the one treatment the comment
+   above always claimed. */
 .qa-row {
   display: flex;
   align-items: center;
@@ -684,5 +740,16 @@ onMounted(() => {
 
 .qa-row:hover {
   background: var(--sidebar-accent);
+}
+
+.qa-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-md);
+  background: var(--muted);
+  color: var(--muted-foreground);
 }
 </style>
