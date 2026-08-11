@@ -72,7 +72,18 @@ const TOUCHED_NOT_CONVERTED = [
   // those screens; remove these when each is converted.
   // RegisterView came off this list when it was converted.
   /src\/views\/auth\/EmailVerifyView\.vue$/,
-  /src\/views\/public\/LegalDocumentView\.vue$/
+  /src\/views\/public\/LegalDocumentView\.vue$/,
+  // SettingsView: 12,621 lines, part 14's largest view. Touched only to remove
+  // a backdrop-blur glass bar (ground rule 7) from its sticky tab strip. Part
+  // 14 splits it into nine routes as archetype C; remove this line then.
+  /src\/views\/admin\/SettingsView\.vue$/,
+  // AnnouncementBell (474 lines, in the shell so on every route) and the user
+  // dashboard's quick actions: touched only to remove `transition-all`
+  // (ground rule 6), `hover:scale` movement, and a backdrop-blur (rule 7).
+  // Their remaining greys are a real conversion, not a patch; they land with
+  // their parts. Remove these lines then.
+  /src\/components\/common\/AnnouncementBell\.vue$/,
+  /src\/components\/user\/dashboard\/UserDashboardQuickActions\.vue$/
 ]
 
 const RULES = [

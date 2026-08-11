@@ -307,3 +307,122 @@ textarea.input {
   padding: 8px 10px;
   line-height: 1.5;
 }
+
+/* --- surfaces ------------------------------------------------------------- */
+
+/*
+ * `.card` is used 224 times and broke three ground rules at once: a shadow
+ * (rule 9 -- cards have no shadow, the shell's inset card is the documented
+ * exception), `transition-all duration-300` (rule 6 -- that sweeps border-color
+ * in without anyone choosing it), and a 2xl radius off the token scale.
+ *
+ * A card in June is a 1px hairline on --card. That is the whole treatment.
+ */
+.card {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background-color: var(--card);
+  box-shadow: none;
+  /* Background only. Never border-color, never `all`. */
+  transition: background var(--motion-hover);
+}
+
+/*
+ * Nothing in June lifts on hover. `hover:-translate-y-0.5` plus a bigger shadow
+ * is the pattern the redesign exists to remove -- movement implies the surface
+ * is a control, and a card is not one.
+ */
+.card-hover:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: var(--border-subtle);
+  background-color: var(--sidebar-accent);
+}
+
+/*
+ * Ground rule 7 bans glass outright. `backdrop-blur-xl` over a translucent fill
+ * is exactly what it names. These become ordinary surfaces.
+ */
+.glass,
+.card-glass {
+  border: 1px solid var(--border-subtle);
+  background-color: var(--card);
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+/* Floating UI earns an elevation; a card does not. Same token the app's own
+   popovers use, so a legacy dropdown and a June one sit at the same height. */
+.dropdown {
+  border: 1px solid var(--popover-border);
+  border-radius: var(--r-md);
+  background-color: var(--popover);
+  box-shadow: var(--shadow-md);
+}
+
+.dropdown-item {
+  color: var(--body-copy);
+  /* Was `transition-colors`, which includes border-color (rule 6). */
+  transition: background var(--motion-hover);
+}
+
+.dropdown-item:hover {
+  background-color: var(--sidebar-accent);
+  color: var(--foreground);
+}
+
+.toast {
+  border-radius: var(--r-md);
+  background-color: var(--popover);
+  box-shadow: var(--shadow-md);
+}
+
+/* --- tabs ----------------------------------------------------------------- */
+
+/* 95 usages, and the same `transition-all` problem as the card. */
+.tab {
+  border-radius: var(--r-md);
+  color: var(--muted-foreground);
+  font-weight: 400;
+  transition: background var(--motion-hover);
+}
+
+.tab:hover {
+  background-color: var(--sidebar-accent);
+  color: var(--foreground);
+}
+
+/* Selected is a fill and the medium weight, not a shadow. */
+.tab-active {
+  background-color: var(--secondary);
+  box-shadow: none;
+  color: var(--foreground);
+  font-weight: var(--fw-medium);
+}
+
+/* --- indicators ----------------------------------------------------------- */
+
+.skeleton {
+  border-radius: var(--r-sm);
+  background-color: var(--muted);
+}
+
+.progress {
+  background-color: var(--muted);
+}
+
+.progress-bar {
+  background-color: var(--brand);
+  background-image: none;
+}
+
+/* The knob's track. `Toggle.vue` is the converted control; this is only for the
+   call sites that still use the raw class. */
+.switch {
+  background-color: var(--muted);
+  transition: background var(--motion-hover);
+}
+
+.switch-active {
+  background-color: var(--primary);
+}
