@@ -436,6 +436,117 @@ oc-router 1,825 commits behind.
 
 ## Upstream reconciliation log
 
+### 2026-08-11 — second sync, following the derived runbook
+
+35 commits behind (31 touching backend/frontend/deploy/docs). Range:
+`48eb3766d` (2026-08-09 08:26 UTC, "chore: sync VERSION to 0.1.173", the prior
+sync's approximate endpoint, derived as `git merge-base pre-sync-backup
+upstream/main` since the 2026-08-09 entry never recorded a concrete SHA) ..
+`0f73203e3` (2026-08-11 09:28 +0800).
+
+**Rebase: clean.** All 51 of our commits replayed with zero conflicts.
+Verified after: 0 files changed under `backend/`, `frontend/`, `deploy/` or
+`docs/`. Thin-fork invariant holds.
+
+**Gate, before any port: green.** `june-lint` clean across 96 converted
+files, `vue-tsc` 0 errors, `vite build` OK, `vitest` 220/220 files /
+1536/1536 tests.
+
+**Carried-over item resolved.** The 2026-08-09 entry left `src/api/admin/
+settings.ts` and `src/types/index.ts` flagged as needing a port and never
+completed it. Both are now confirmed byte-identical to the mirror — some
+session between then and now finished that port. No action needed.
+
+#### Stale-file scan
+
+`diff -rq frontend inferno-frontend` minus the files our commits actually
+touched since the vendor commit (`git diff --name-only <vendor-sha>..HEAD`,
+correctly, not the mirror-diff heuristic) left 11 real candidates, most of
+them noise (directories that only exist on our side: `scripts`, `src/config`,
+`src/design-system`, `src/views/dev`). The API-contract diff (`frontend/src/
+{api,types}` and `backend/internal/handler` since `48eb3766d`) confirmed the
+same set independently and ruled out anything else: only `backup_handler.go`
+and `channel_handler.go` changed response/request shapes in that window;
+`api_key_handler.go`, `openai_gateway_handler.go` and
+`security_audit_helper.go` changed only server-internal behaviour with no
+client-visible JSON change.
+
+#### Ported
+
+1. **`src/constants/channel.ts`** — wholesale copy. Upstream added
+   `BILLING_MODEL_SOURCE_RESPONSE = 'response_model'` to the
+   `BillingModelSource` union (backend: `channel_handler.go`'s binding
+   validator gained `response_model` as a fifth allowed value, part of the
+   new "safe upstream response model billing" feature). We never modified
+   this file, so there was nothing to weigh. Its only functional consumer
+   (a billing-model-source picker) lives in the still-unconverted
+   `ChannelsView.vue`, so this is inert today but keeps the type contract
+   correct.
+2. **`src/i18n/locales/{en,zh}/admin/channels.ts`** — hand-merged, NOT a
+   wholesale copy. Added exactly one key each,
+   `billingModelSourceResponse` ("Bill by upstream response model" /
+   "按上游响应模型计费"), matching the constant above. A first attempt at
+   this file wholesale-copied the mirror and was caught before commit: it
+   silently reverted prior June i18n cleanup in the same file (removed the
+   `admin.channels.form.modelTagCount` key that a converted component,
+   `ModelTagInput.vue`, actually renders, and reintroduced an em dash and a
+   warning emoji that a prior pass had deliberately stripped for ground
+   rules 2 and 8). Reverted and redone as a targeted insert instead.
+3. **`src/i18n/locales/{en,zh}/admin/overview.ts`** — hand-merged, same
+   reason and same near-miss. Added five keys under the backup section
+   (`columns.parts`, `actions.downloadParts`, `actions.downloadPartsHint`,
+   `actions.partLabel`, `actions.downloadFailed`) matching upstream's
+   multi-part backup download feature, without touching the file's other
+   62 lines of prior June-cleanup diffs (dash removal, emoji removal) that
+   a wholesale copy would have clobbered.
+
+**Lesson for the next run:** for any locale file that appears in BOTH the
+mirror-diff list AND `git diff <vendor-sha>..HEAD` (i.e. a file we have
+edited before), never `cp` it wholesale even for "just one new key" —
+diff it first and hand-insert. The lint's own scope check
+(`ours.has(f) && differsFromMirror(f)`) will silently stop flagging a
+wholesale-copied file as converted, because copying makes it byte-identical
+to the mirror again — that is what surfaced this mistake (converted-file
+count dropped from 96 to 92 after the wrong copy, before it was caught and
+reverted).
+
+#### Skipped, and why
+
+1. **`src/api/admin/backup.ts`** — upstream changed `GetDownloadURL`'s
+   response from `{url: string}` to `{url?: string, parts?: BackupPart[]}`
+   (backend: `backup_handler.go` now returns the full download struct, not
+   just a URL — the large-file multi-part backup feature,
+   `bbc8b6e90`/`fddc806db`). We never touched this file, so the default
+   rule says copy it wholesale — but its only consumer,
+   `BackupView.vue`, is unconverted and does
+   `link.href = result.url` assuming `url` is always present. Porting the
+   API type alone would make `result.url` optional under `vue-tsc` and
+   would functionally break downloads for any backup large enough to need
+   parts, since the pristine view has no code path for `result.parts`.
+   Left both files at their pre-sync shape; the two must be ported
+   together, either when `BackupView.vue` converts or as a small coupled
+   fix beforehand. Not done here to avoid guessing at the fix under a
+   ground-rule constraint that does not apply to an unconverted view.
+2. **`src/views/admin/groupsImagePricing.ts`** (+ its spec) — upstream
+   added `"composite"` to `imagePricingPlatforms`, enabling image-pricing
+   for Composite groups (`9b54b46b0`, "enable image generation permission
+   for Composite groups"). Its only consumer, `GroupsView.vue`, is
+   unconverted; no converted component reads `imagePricingPlatforms`.
+   Deferred to `GroupsView.vue`'s own conversion.
+3. **`src/views/admin/BackupView.vue`, `src/views/admin/ChannelsView.vue`,
+   `src/views/admin/__tests__/BackupView.spec.ts`,
+   `src/views/admin/__tests__/groupsImagePricing.spec.ts`** — all under the
+   explicit views/ ignore rule; upstream's changes here are exactly the
+   June-redesign-will-replace-this churn the runbook says to ignore.
+
+#### Gate after port: green
+
+`june-lint` clean across 96 files (unchanged — none of the 5 ported files
+are June components) · `vue-tsc` 0 errors · `vite build` OK · `vitest`
+220/220 files, 1536/1536 tests. Only the 5 intended files differ from HEAD.
+
+**New last reviewed upstream SHA: `0f73203e35d3e530f4245a32ec3e0f00472cfc38`.**
+
 ### 2026-08-09 — first sync, run manually to derive the runbook
 
 13 commits behind (38 backend files, 12 frontend, 1 .github, no migrations).
