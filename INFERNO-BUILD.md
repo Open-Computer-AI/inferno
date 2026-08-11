@@ -1397,10 +1397,26 @@ Fixed by unioning `git ls-files --others --exclude-standard` into the scope.
 
 ### Phase 5, by archetype (part 14's map)
 
-- [ ] **B Dashboard** (4) — `user/DashboardView`, `admin/DashboardView`, `admin/UsageView`,
-      `admin/orders/AdminPaymentDashboardView`. `StatStrip` built, unused. Today: 8 loose
-      cards with coloured icon tiles. NEEDS A PRODUCT CALL: the verdict sentence's
-      definition of "needs attention" (part 14 flags this itself).
+- [ ] **B Dashboard** (4) — **`admin/DashboardView` DONE** (`8cd38acb` archetype,
+      `1dd02115` tiles). Remaining: `user/DashboardView`, `admin/UsageView`,
+      `admin/orders/AdminPaymentDashboardView`.
+      - Fold is now: verdict sentence -> four `StatTile`s -> range -> trend ->
+        (fold) -> `StatStrip` of four -> distribution, user trend, quick actions.
+      - `StatTile` is the nested-card primitive: tray + inner card + a context
+        line on the tray floor. **Its two radii are coupled** — outer = inner +
+        inset (10 + 8 = 18). A test asserts it; changing one means changing all.
+      - Tray fill is `color-mix(in oklch, var(--card) 95%, var(--foreground))`,
+        NOT `--sidebar`. `--sidebar`'s dark value (L 0.14) is below `--card`'s
+        (0.195), so it inverted wrongly in dark mode.
+      - Icon-tile colour is an owner-approved ground-rule-5 exception scoped to
+        this fold, bounded by: **no tone may reuse a state colour**. Reverting is
+        `tone="brand"` on all four.
+      - Verdict "needs attention" rule settled: `error_accounts` only (excludes
+        cooldown and rate-limited, which self-heal).
+      - Still open: add "Errors, last hour" via
+        `/admin/ops/request-errors?pageSize=1` -> `total` (agreed "option 2 now,
+        option 3 later"); a proper aggregate endpoint with a per-reason
+        breakdown later. New users today: restore below the fold, or drop.
 - [ ] **G Message** (7) — `MessagePage` built, unused. Quickest win.
 - [ ] **C Settings** (7) — `SettingsGroup`/`SettingsRow` built, unused. Includes splitting
       `SettingsView` (12,621 lines) into 9 routes; part 14 wants a redirect from the old
