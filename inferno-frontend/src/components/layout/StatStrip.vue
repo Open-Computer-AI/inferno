@@ -38,7 +38,10 @@ withDefaults(
 
 /* Dividers are borders on the cells, not gaps in a grid: a gap would show the
    page through the strip and break the "one instrument" read. */
-.strip > :deep(*) + :deep(*) {
+/* `:deep()` takes one selector, so `> :deep(*) + :deep(*)` does not compile to
+   an adjacent-sibling rule -- it produced no divider at all. `:not(:first-child)`
+   inside a single :deep() does. */
+.strip > :deep(*:not(:first-child)) {
   border-left: 1px solid var(--border-subtle);
 }
 
@@ -50,15 +53,15 @@ withDefaults(
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .strip > :deep(*) + :deep(*) {
+  .strip > :deep(*:not(:first-child)) {
     border-left: 0;
   }
 
-  .strip > :deep(*):nth-child(odd) + :deep(*) {
+  .strip > :deep(*:nth-child(even)) {
     border-left: 1px solid var(--border-subtle);
   }
 
-  .strip > :deep(*):nth-child(n + 3) {
+  .strip > :deep(*:nth-child(n + 3)) {
     border-top: 1px solid var(--border-subtle);
   }
 }
