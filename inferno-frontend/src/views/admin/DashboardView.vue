@@ -43,18 +43,19 @@
             :context="t('admin.dashboard.tileRequestsRate', { rate: formatNumber(Math.round(stats.rpm)) })"
           />
           <StatTile
+            icon="database-02"
+            tone="accent"
+            :label="t('admin.dashboard.todayTokens')"
+            :value="formatTokens(stats.today_tokens)"
+            :exact="String(stats.today_tokens)"
+            :context="todayCacheContext"
+          />
+          <StatTile
             icon="dollar-circle"
             tone="success"
             :label="t('admin.dashboard.todayCost')"
             :value="`$${formatCost(stats.today_actual_cost)}`"
             :context="costContext"
-          />
-          <StatTile
-            icon="timer-02"
-            tone="accent"
-            :label="t('admin.dashboard.avgResponse')"
-            :value="formatDuration(stats.average_duration_ms)"
-            :context="t('admin.dashboard.tileResponseThroughput', { rate: formatNumber(Math.round(stats.tpm)) })"
           />
         </div>
 
@@ -117,26 +118,15 @@
             :context="usersContext"
           />
           <StatTile
-            :label="t('admin.dashboard.todayTokens')"
-            :value="formatTokens(stats.today_tokens)"
-            :exact="String(stats.today_tokens)"
-            :context="
-              t('admin.dashboard.tileTokenSplit', {
-                input: formatTokens(stats.today_input_tokens),
-                output: formatTokens(stats.today_output_tokens)
-              })
-            "
-          />
-          <StatTile
             :label="t('admin.dashboard.totalTokens')"
             :value="formatTokens(stats.total_tokens)"
             :exact="String(stats.total_tokens)"
-            :context="
-              t('admin.dashboard.tileTokenSplit', {
-                input: formatTokens(stats.total_input_tokens),
-                output: formatTokens(stats.total_output_tokens)
-              })
-            "
+            :context="totalCacheContext"
+          />
+          <StatTile
+            :label="t('admin.dashboard.avgResponse')"
+            :value="formatDuration(stats.average_duration_ms)"
+            :context="t('admin.dashboard.tileAcrossRequests', { count: formatTokens(stats.total_requests) })"
           />
         </div>
 
@@ -517,6 +507,42 @@ const formatDuration = (ms: number): string => {
  * Accounts is the only tile whose context can change tone: it restates the
  * verdict's evidence, so it takes ink for the same reason the verdict does.
  */
+/*
+ * Cache share, not the input/output split.
+ *
+ * The split looked right and was quietly useless: total_tokens includes cache
+ * creation and cache read, so "Input 853.9M / Output 40.6M" under a 12.36B
+ * headline accounts for under a tenth of it. Nothing is mislabelled, but
+ * anyone who adds the two numbers is left wondering where the rest went, and
+ * the answer -- cache -- was the interesting part all along.
+ *
+ * Cache reads are the cheap tokens, so this ratio is what actually explains
+ * the cost tile beside it. Reads only: cache CREATION is written at a premium
+ * and counting it as "served from cache" would flatter the number.
+ *
+ * Shown on both today and lifetime deliberately, so the two are comparable --
+ * today 93% against a lifetime 88% says cache is improving, which neither
+ * figure says alone.
+ */
+function cacheShare(cacheRead: number, total: number): string {
+  const safeTotal = toFiniteNumber(total)
+  if (safeTotal <= 0) return t('admin.dashboard.tileNoTraffic')
+  const pct = (toFiniteNumber(cacheRead) / safeTotal) * 100
+  // One decimal below 10%: the difference between 0.4% and 4% is worth seeing,
+  // and above 10% the decimal is noise.
+  return t('admin.dashboard.tileCacheShare', {
+    pct: pct < 10 ? pct.toFixed(1) : String(Math.round(pct))
+  })
+}
+
+const todayCacheContext = computed(() =>
+  stats.value ? cacheShare(stats.value.today_cache_read_tokens, stats.value.today_tokens) : ''
+)
+
+const totalCacheContext = computed(() =>
+  stats.value ? cacheShare(stats.value.total_cache_read_tokens, stats.value.total_tokens) : ''
+)
+
 /*
  * Restores "new users today", which was a whole tile on the original
  * dashboard. As a headline it was noise -- a single day's signups is not a
