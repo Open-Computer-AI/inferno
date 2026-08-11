@@ -77,13 +77,13 @@ const arrowIcon = computed(() => (props.changeType === 'up' ? 'hgi-arrow-up-01' 
 </script>
 
 <template>
-  <div class="stat-card">
-    <p class="stat-card__title">{{ title }}</p>
-    <p class="stat-card__value" :title="exactValue">{{ formattedValue }}</p>
-    <p v-if="change !== undefined" class="stat-card__change" :data-tone="changeType">
+  <div class="statcell">
+    <p class="statcell__title">{{ title }}</p>
+    <p class="statcell__value" :title="exactValue">{{ formattedValue }}</p>
+    <p v-if="change !== undefined" class="statcell__change" :data-tone="changeType">
       <i
         v-if="changeType !== 'neutral'"
-        class="hgi-stroke stat-card__icon"
+        class="hgi-stroke statcell__icon"
         :class="arrowIcon"
         aria-hidden="true"
       />
@@ -93,13 +93,24 @@ const arrowIcon = computed(() => (props.changeType === 'up' ? 'hgi-arrow-up-01' 
 </template>
 
 <style scoped>
-.stat-card {
+/*
+ * Class is `statcell`, NOT `stat-card`.
+ *
+ * `style.css` defines a legacy global `.stat-card { @apply card p-5; flex
+ * items-start gap-4 }`. This component used the same name, so every converted
+ * stat card silently inherited that card's border and radius AND its flex row
+ * -- which is why the title and value sat side by side instead of stacked, and
+ * why four of them in a StatStrip rendered as four separate cards rather than
+ * one strip with dividers. A scoped attribute wins on the properties it
+ * declares; it cannot un-declare the ones it does not.
+ */
+.statcell {
   padding: 13px 15px;
   background: var(--card);
   min-width: 0;
 }
 
-.stat-card__title {
+.statcell__title {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--muted-foreground);
@@ -108,7 +119,7 @@ const arrowIcon = computed(() => (props.changeType === 'up' ? 'hgi-arrow-up-01' 
   white-space: nowrap;
 }
 
-.stat-card__value {
+.statcell__value {
   margin: 3px 0 0;
   font-family: var(--font-serif);
   font-size: var(--fs-2xl);
@@ -119,7 +130,7 @@ const arrowIcon = computed(() => (props.changeType === 'up' ? 'hgi-arrow-up-01' 
   white-space: nowrap;
 }
 
-.stat-card__change {
+.statcell__change {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -127,7 +138,7 @@ const arrowIcon = computed(() => (props.changeType === 'up' ? 'hgi-arrow-up-01' 
   font-size: var(--fs-sm);
   min-width: 0;
 }
-.stat-card__change span {
+.statcell__change span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -135,17 +146,17 @@ const arrowIcon = computed(() => (props.changeType === 'up' ? 'hgi-arrow-up-01' 
 
 /* Three colours, not six: changeType is the only thing that ever paints
    this line, iconVariant no longer touches colour at all. */
-.stat-card__change[data-tone='up'] {
+.statcell__change[data-tone='up'] {
   color: var(--success);
 }
-.stat-card__change[data-tone='down'] {
+.statcell__change[data-tone='down'] {
   color: var(--destructive);
 }
-.stat-card__change[data-tone='neutral'] {
+.statcell__change[data-tone='neutral'] {
   color: var(--muted-foreground);
 }
 
-.stat-card__icon {
+.statcell__icon {
   font-size: 12px; /* june-lint-disable ground-rule-4: icon glyph */
   flex-shrink: 0;
 }
