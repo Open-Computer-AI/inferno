@@ -52,8 +52,17 @@ withDefaults(
     context?: string
     /** Paints the context line. Only 'attention' takes ink (ground rule 5). */
     contextTone?: 'muted' | 'attention'
-    /** Hugeicons glyph name, without the `hgi-` prefix. */
-    icon: string
+    /**
+     * Hugeicons glyph name, without the `hgi-` prefix.
+     *
+     * Optional, and omitting it is the hierarchy. A coloured icon tile is the
+     * loudest thing on the card, so the fold's health numbers carry one and
+     * the reference figures below the fold do not. Same structure, same
+     * context slot, lower volume -- which is how two rows of four avoid
+     * becoming eight equally loud things, the exact failure of the original
+     * eight-card dashboard.
+     */
+    icon?: string
     tone?: Tone
     /** Exact figure for the title attribute when `value` is abbreviated. */
     exact?: string
@@ -66,7 +75,7 @@ withDefaults(
   <div class="tile">
     <div class="tile__card">
       <div class="tile__head">
-        <span class="tile__icon" :data-tone="tone">
+        <span v-if="icon" class="tile__icon" :data-tone="tone">
           <i class="hgi-stroke" :class="`hgi-${icon}`" aria-hidden="true" />
         </span>
         <span class="tile__label">{{ label }}</span>
@@ -113,10 +122,13 @@ withDefaults(
   min-width: 0;
 }
 
+/* min-height matches the icon tile so a tile without one keeps the same
+   vertical rhythm: the two rows differ in loudness, not in metrics. */
 .tile__head {
   display: flex;
   align-items: center;
   gap: 9px;
+  min-height: 28px;
   min-width: 0;
 }
 
