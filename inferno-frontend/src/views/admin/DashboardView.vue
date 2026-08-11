@@ -40,6 +40,7 @@
             :label="t('admin.dashboard.todayRequests')"
             :value="formatNumber(stats.today_requests)"
             :exact="String(stats.today_requests)"
+            :delta="requestsDelta"
             :context="t('admin.dashboard.tileRequestsRate', { rate: formatNumber(Math.round(stats.rpm)) })"
           />
           <StatTile
@@ -48,6 +49,7 @@
             :label="t('admin.dashboard.todayTokens')"
             :value="formatTokens(stats.today_tokens)"
             :exact="String(stats.today_tokens)"
+            :delta="tokensDelta"
             :context="todayCacheContext"
           />
           <StatTile
@@ -55,6 +57,7 @@
             tone="success"
             :label="t('admin.dashboard.todayCost')"
             :value="`$${formatCost(stats.today_actual_cost)}`"
+            :delta="costDelta"
             :context="costContext.text"
             :context-tone="costContext.tone"
           />
@@ -247,6 +250,7 @@ import Select from '@/components/common/Select.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
+import { sumWindow, toDelta } from '@/utils/dayOverDay'
 
 import {
   Chart as ChartJS,
@@ -563,6 +567,39 @@ const usersContext = computed(() => {
 
 type ContextTone = 'muted' | 'good' | 'attention'
 
+/*
+ * LIKE-FOR-LIKE, which is the whole difficulty. Comparing today's running
+ * total against yesterday's finished total is the standard dashboard bug: at
+ * 14:00 today is 58% of a day and yesterday is 100% of one, so every metric
+ * reads "down 40%" all day. sumWindow bounds both sides at the same hour;
+ * see src/utils/dayOverDay.ts for why the buckets are sliced, not parsed.
+ */
+const deltaTrend = ref<TrendDataPoint[]>([])
+
+const dayOverDay = computed(() => {
+  if (deltaTrend.value.length === 0) return null
+  const now = new Date()
+  const hour = now.getHours()
+  return {
+    today: sumWindow(deltaTrend.value, formatLocalDate(now), hour),
+    yesterday: sumWindow(
+      deltaTrend.value,
+      formatLocalDate(new Date(now.getTime() - 24 * 60 * 60 * 1000)),
+      hour
+    )
+  }
+})
+
+const requestsDelta = computed(() =>
+  dayOverDay.value ? toDelta(dayOverDay.value.today.requests, dayOverDay.value.yesterday.requests) : null
+)
+const tokensDelta = computed(() =>
+  dayOverDay.value ? toDelta(dayOverDay.value.today.tokens, dayOverDay.value.yesterday.tokens) : null
+)
+const costDelta = computed(() =>
+  dayOverDay.value ? toDelta(dayOverDay.value.today.cost, dayOverDay.value.yesterday.cost) : null
+)
+
 const accountsContext = computed<{ text: string; tone: ContextTone }>(() => {
   const s = stats.value
   if (!s) return { text: '', tone: 'muted' }
@@ -726,8 +763,37 @@ const loadDashboardStats = async () => {
   await Promise.all([
     loadDashboardSnapshot(true),
     loadUsersTrend(),
-    loadUserSpendingRanking()
+    loadUserSpendingRanking(),
+    loadDayOverDay()
   ])
+}
+
+/*
+ * Fixed to yesterday-through-now, and deliberately NOT tied to the range
+ * picker. The tiles it feeds all say "Today", and they read `stats`, which is
+ * itself range-independent -- so a delta that moved with the picker would
+ * silently start comparing today against a week ago while the label still
+ * said today. One extra call, no backend change.
+ */
+const loadDayOverDay = async () => {
+  const now = new Date()
+  try {
+    const response = await adminAPI.dashboard.getSnapshotV2({
+      start_date: formatLocalDate(new Date(now.getTime() - 24 * 60 * 60 * 1000)),
+      end_date: formatLocalDate(now),
+      granularity: 'hour',
+      include_stats: false,
+      include_trend: true,
+      include_model_stats: false,
+      include_group_stats: false,
+      include_users_trend: false
+    })
+    deltaTrend.value = response.trend || []
+  } catch {
+    /* A missing comparison is not a page error. The tiles simply render
+       without a chip, which is the same as a day with no prior traffic. */
+    deltaTrend.value = []
+  }
 }
 
 const loadChartData = async () => {
