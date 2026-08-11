@@ -50,8 +50,20 @@ withDefaults(
     value: string
     /** Tray-floor line: the second value that gives the headline a baseline. */
     context?: string
-    /** Paints the context line. Only 'attention' takes ink (ground rule 5). */
-    contextTone?: 'muted' | 'attention'
+    /**
+     * Paints the context line and gives it a state glyph.
+     *
+     * 'muted' is the default and the common case, because most context lines
+     * are FACTS, not states -- "1,204 per minute", "8 active", "across 4.24M
+     * requests" have no bad version to contrast against. Only pass 'good' or
+     * 'attention' where the line could genuinely have said the opposite.
+     *
+     * Marking every line would make the marks meaningless: a check that is
+     * always present stops reading as "this is fine" and starts reading as
+     * "this is a line". It would also re-break ground rule 5, since colour
+     * would then be sitting on things that encode no state at all.
+     */
+    contextTone?: 'muted' | 'good' | 'attention'
     /**
      * Hugeicons glyph name, without the `hgi-` prefix.
      *
@@ -82,7 +94,15 @@ withDefaults(
       </div>
       <p class="tile__value" :title="exact || value">{{ value }}</p>
     </div>
-    <p class="tile__foot" :data-tone="contextTone">{{ context }}</p>
+    <p class="tile__foot" :data-tone="contextTone">
+      <i
+        v-if="contextTone !== 'muted'"
+        class="hgi-stroke tile__foot-icon"
+        :class="contextTone === 'attention' ? 'hgi-alert-circle' : 'hgi-checkmark-circle-02'"
+        aria-hidden="true"
+      />
+      <span class="tile__foot-text">{{ context }}</span>
+    </p>
   </div>
 </template>
 
@@ -189,20 +209,50 @@ withDefaults(
 .tile__foot {
   display: flex;
   align-items: center;
+  gap: 5px;
   margin: 0;
   padding: 7px 6px;
   min-height: 30px;
   font-size: var(--fs-sm);
   line-height: 1.35;
+  min-width: 0;
+}
+
+/* The text truncates, never the glyph: a clipped state icon is worse than no
+   icon, because a half-drawn mark still reads as a mark. */
+.tile__foot-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.tile__foot-icon {
+  flex: none;
+  font-size: 13px; /* june-lint-disable ground-rule-4: icon glyph, not text */
+  line-height: 1;
+}
+
 .tile__foot[data-tone='muted'] {
   color: var(--muted-foreground);
 }
+
+/*
+ * Asymmetric by design: wrong is loud, fine is quiet.
+ *
+ * 'attention' takes the full state colour on both glyph and text, so a broken
+ * account is the only thing on the fold that catches the eye unread. 'good'
+ * tints ONLY the glyph and leaves its text muted -- a healthy dashboard should
+ * not be eight lines of green competing with the four icon tiles above it. The
+ * check confirms when you look; it does not summon you.
+ */
 .tile__foot[data-tone='attention'] {
   color: var(--s2a-attn);
+}
+
+.tile__foot[data-tone='good'] {
+  color: var(--muted-foreground);
+}
+.tile__foot[data-tone='good'] .tile__foot-icon {
+  color: var(--success);
 }
 </style>
