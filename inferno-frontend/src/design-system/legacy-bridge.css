@@ -58,10 +58,20 @@
   transform: none;
 }
 
-/* Legacy uses `focus:` with a teal ring and a 2px offset. June uses a 1px ring
-   inside a 3px warm halo, on focus-visible only, so a mouse click does not ring.
-   `:focus` is cleared first and `:focus-visible` re-added after, so that for an
-   element matching both the later rule wins. */
+/*
+ * The glow lives on STATE rules, not just the base.
+ *
+ * Clearing box-shadow on `.btn` was not enough: the legacy variants carry
+ * `hover:shadow-lg hover:shadow-primary-500/30`, which is a `:hover` rule at the
+ * same specificity as our own `.btn-primary:hover` -- and ours only set
+ * background-color, so the teal survived and bloomed under the cursor on every
+ * primary button in the app. Measured: rgba(20, 184, 166, 0.3) at 10px/15px.
+ *
+ * Every interactive state is cleared here; the focus ring is re-added below so
+ * it still wins for an element matching both.
+ */
+.btn:hover,
+.btn:active,
 .btn:focus {
   box-shadow: none;
 }
