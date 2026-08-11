@@ -136,11 +136,35 @@ describe('admin DashboardView', () => {
     const now = new Date()
     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
 
-    expect(getSnapshotV2).toHaveBeenCalledTimes(1)
+    /*
+     * Two calls now, not one. The second is the day-over-day comparison that
+     * feeds the delta chips, and it is deliberately a separate request rather
+     * than a reuse of the chart's: the chart's range follows the picker, while
+     * the chips must always mean "today vs yesterday" because the tiles they
+     * sit on are labelled Today. Sharing one call would let the picker
+     * silently retarget the comparison at a week ago under an unchanged label.
+     *
+     * Both happen to want the same window on first mount, which is why this
+     * asserts the shape rather than the order.
+     */
+    expect(getSnapshotV2).toHaveBeenCalledTimes(2)
+
+    // The chart snapshot: carries the stats payload and the model breakdown.
     expect(getSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({
       start_date: formatLocalDate(yesterday),
       end_date: formatLocalDate(now),
-      granularity: 'hour'
+      granularity: 'hour',
+      include_stats: true
+    }))
+
+    // The comparison snapshot: trend only, and never the stats payload.
+    expect(getSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({
+      start_date: formatLocalDate(yesterday),
+      end_date: formatLocalDate(now),
+      granularity: 'hour',
+      include_stats: false,
+      include_trend: true,
+      include_model_stats: false
     }))
   })
 })
