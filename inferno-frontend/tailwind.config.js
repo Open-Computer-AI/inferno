@@ -24,18 +24,40 @@ export default {
     extend: {
       colors: {
         // 主色调 - Teal/Cyan 青色系
+        /*
+         * Retired the teal ramp.
+         *
+         * `primary-*` is used 1,599 times across views phase 5 has not reached,
+         * 232 of those with an opacity modifier. Converting the call sites is
+         * that phase's job -- but every one of them was pulling #14b8a6, so a
+         * sweep of 24 routes found teal still rendering on 11 of them even after
+         * the button and input classes were re-skinned.
+         *
+         * Remapping the ramp itself retires the teal on all 1,599 at once.
+         *
+         * Derived from --brand (#b5551f) in OKLCH: hue and chroma held from the
+         * token, lightness stepped, chroma tapered at both ends, and every step
+         * gamut-mapped by bisection so none is silently clipped into a different
+         * hue. 500 IS the brand; 600 lands on --warm-strong's lightness so
+         * primary-600 text and June's link colour agree.
+         *
+         * Static hex, not var(--brand): Tailwind's `/30` opacity modifiers need
+         * a real colour to compose against, and 232 call sites use them. The
+         * cost is that these do not follow the data-brand presets; only the
+         * clay default is represented here.
+         */
         primary: {
-          50: '#f0fdfa',
-          100: '#ccfbf1',
-          200: '#99f6e4',
-          300: '#5eead4',
-          400: '#2dd4bf',
-          500: '#14b8a6',
-          600: '#0d9488',
-          700: '#0f766e',
-          800: '#115e59',
-          900: '#134e4a',
-          950: '#042f2e'
+          50: '#fff4ef',
+          100: '#ffe7dc',
+          200: '#ffd0ba',
+          300: '#f7b697',
+          400: '#da865d',
+          500: '#b5551f',
+          600: '#9a4512',
+          700: '#80380d',
+          800: '#682d0a',
+          900: '#522309',
+          950: '#331303'
         },
         // 辅助色 - 深蓝灰
         accent: {
