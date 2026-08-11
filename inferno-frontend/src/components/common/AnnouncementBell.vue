@@ -3,7 +3,7 @@
     <!-- 铃铛按钮 -->
     <button
       @click="openModal"
-      class="relative flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 transition-all hover:bg-gray-100 hover:scale-105 dark:text-gray-400 dark:hover:bg-dark-800"
+      class="relative flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 transition-[background-color] hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-dark-800"
       :class="{ 'text-blue-600 dark:text-blue-400': unreadCount > 0 }"
       :aria-label="t('announcements.title')"
     >
@@ -23,7 +23,7 @@
       <Transition name="modal-fade">
         <div
           v-if="isModalOpen"
-          class="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-gradient-to-br from-black/70 via-black/60 to-black/70 p-4 pt-[8vh] backdrop-blur-md"
+          class="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-gradient-to-br from-black/70 via-black/60 to-black/70 p-4 pt-[8vh]"
           @click="closeModal"
         >
           <div
@@ -52,13 +52,13 @@
                     v-if="unreadCount > 0"
                     @click="markAllAsRead"
                     :disabled="loading"
-                    class="rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white shadow-lg shadow-blue-500/30 transition-all hover:bg-blue-700 hover:shadow-xl disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
+                    class="rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white shadow-lg shadow-blue-500/30 transition-[background-color] hover:bg-blue-700 hover:shadow-xl disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
                   >
                     {{ t('announcements.markAllRead') }}
                   </button>
                   <button
                     @click="closeModal"
-                    class="flex h-9 w-9 items-center justify-center rounded-lg bg-white/50 text-gray-500 backdrop-blur-sm transition-all hover:bg-white hover:text-gray-700 dark:bg-dark-700/50 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-gray-300"
+                    class="flex h-9 w-9 items-center justify-center rounded-lg bg-white/50 text-gray-500 transition-[background-color] hover:bg-white hover:text-gray-700 dark:bg-dark-700/50 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-gray-300"
                     :aria-label="t('common.close')"
                   >
                     <Icon name="x" size="sm" />
@@ -84,7 +84,7 @@
                 <div
                   v-for="item in announcements"
                   :key="item.id"
-                  class="group relative flex items-center gap-4 border-b border-gray-100 px-6 py-4 transition-all hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-700/30"
+                  class="group relative flex items-center gap-4 border-b border-gray-100 px-6 py-4 transition-[background-color] hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-700/30"
                   :class="{ 'bg-blue-50/30 dark:bg-blue-900/5': !item.read_at }"
                   style="min-height: 72px"
                   @click="openDetail(item)"
@@ -183,7 +183,7 @@
       <Transition name="modal-fade">
         <div
           v-if="detailModalOpen && selectedAnnouncement"
-          class="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-gradient-to-br from-black/70 via-black/60 to-black/70 p-4 pt-[6vh] backdrop-blur-md"
+          class="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-gradient-to-br from-black/70 via-black/60 to-black/70 p-4 pt-[6vh]"
           @click="closeDetail"
         >
           <div
@@ -249,7 +249,7 @@
                 <!-- Close button -->
                 <button
                   @click="closeDetail"
-                  class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-white/50 text-gray-500 backdrop-blur-sm transition-all hover:bg-white hover:text-gray-700 hover:shadow-lg dark:bg-dark-700/50 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-gray-300"
+                  class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-white/50 text-gray-500 transition-[background-color] hover:bg-white hover:text-gray-700 hover:shadow-lg dark:bg-dark-700/50 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-gray-300"
                   :aria-label="t('common.close')"
                 >
                   <Icon name="x" size="md" />
@@ -285,14 +285,14 @@
                 <div class="flex items-center gap-3">
                   <button
                     @click="closeDetail"
-                    class="rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 shadow-sm transition-all hover:bg-gray-50 hover:shadow dark:border-dark-600 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600"
+                    class="rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 shadow-sm transition-[background-color] hover:bg-gray-50 hover:shadow dark:border-dark-600 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600"
                   >
                     {{ t('common.close') }}
                   </button>
                   <button
                     v-if="!selectedAnnouncement.read_at"
                     @click="markAsReadAndClose(selectedAnnouncement.id)"
-                    class="rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2.5 text-sm font-medium text-white shadow-lg shadow-blue-500/30 transition-all hover:shadow-xl hover:scale-105"
+                    class="rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2.5 text-sm font-medium text-white shadow-lg shadow-blue-500/30 transition-[background-color] hover:shadow-xl"
                   >
                     <span class="flex items-center gap-2">
                       <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
