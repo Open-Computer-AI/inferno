@@ -171,23 +171,22 @@ onUnmounted(() => {
   min-height: 0;
   margin: 0 auto;
   /* Bounded height so the data card scrolls internally while the title, the toolbar
-   * and the pager stay in place. AppLayout's shell__card is a plain block (padding +
-   * overflow:auto, not a flex/grid chain), so this element cannot inherit a height
-   * through it; the sum below is shell__card's own vertical chrome (7px margin top
-   * and bottom, plus its responsive padding -- see AppLayout.vue), now without the
-   * 64px AppHeader that part 07 v2 deletes. Coupled to those numbers by necessity,
-   * not by choice: there is no shared token for either side to read instead. */
-  height: calc(100vh - 46px);
-}
-@media (min-width: 768px) {
-  .tpl {
-    height: calc(100vh - 62px);
-  }
-}
-@media (min-width: 1024px) {
-  .tpl {
-    height: calc(100vh - 78px);
-  }
+   * and the pager stay in place.
+   *
+   * This used to be `calc(100vh - 46px / 62px / 78px)` at three breakpoints, with a
+   * comment explaining that shell__card was "a plain block (padding + overflow:auto,
+   * not a flex/grid chain), so this element cannot inherit a height through it" and
+   * that the sums duplicated shell__card's own margin and padding out of necessity.
+   *
+   * That stopped being true when the shell became the scroll container: .shell is
+   * pinned to 100dvh and the card is `flex: 1; min-height: 0`, which is a definite
+   * height, so a percentage here resolves against it. The three magic numbers are
+   * gone and the coupling with them -- change the card's padding now and this
+   * follows, instead of drifting by exactly that many pixels.
+   *
+   * Measured identical across five table routes before and after: 1022px, against a
+   * card content box of 1086 - 64 padding. */
+  height: 100%;
 }
 
 /* Wide opt-out (see the `width` prop doc for the ruling): a data table is not prose,
