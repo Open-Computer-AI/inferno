@@ -123,6 +123,16 @@ export default {
       failedToLoadErrorDetail: 'Failed to load error detail',
       retryFailed: 'Retry failed',
       tpsK: 'TPS (K)',
+      resources: {
+        title: 'Resource usage',
+        peakLabel: 'Tightest resource right now',
+        cpu: 'CPU',
+        memory: 'Memory',
+        database: 'Database pool',
+        redis: 'Redis pool',
+        goroutines: 'Goroutines',
+        normal: 'Normal'
+      },
       top: 'Top:',
       throughputTrend: 'Throughput Trend',
       switchRateTrend: 'Avg Account Switches',
@@ -780,7 +790,7 @@ export default {
         errorTrend: 'Error counts over time (SLA scope excludes business limits; upstream excludes 429/529).',
         errorDistribution: 'Error distribution by status code (SLA scope, excluding business limits).',
         goroutines:
-          'Number of Go runtime goroutines (lightweight threads). There is no absolute "safe" number—use your historical baseline. Heuristic: <2k is common; 2k–8k watch; >8k plus rising queue/latency often suggests blocking/leaks.',
+          'Number of Go runtime goroutines (lightweight threads). There is no absolute "safe" number, so use your historical baseline. Heuristic: <2k is common; 2k to 8k watch; >8k plus rising queue/latency often suggests blocking/leaks.',
         cpu: 'CPU usage percentage, showing system processor load.',
         memory: 'Memory usage, including used and total available memory.',
         db: 'Database connection pool status, including active, idle, and waiting connections.',
