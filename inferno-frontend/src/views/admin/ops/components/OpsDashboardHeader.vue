@@ -1356,6 +1356,14 @@ const upstreamTone = computed<CardTone>(() =>
   min-width: 0;
 }
 
+/*
+ * A container, because the thing that decides this card's layout is the CARD's
+ * width, not the viewport's.
+ *
+ * Safe to rely on: this palette is built on `color-mix(in oklch, ...)`, which
+ * needs Chrome 111 / Safari 16.2. `@container` shipped before both, so any
+ * browser that can render the design system at all supports it.
+ */
 .opshead__now {
   display: flex;
   flex: 1;
@@ -1365,20 +1373,38 @@ const upstreamTone = computed<CardTone>(() =>
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-lg);
   background: var(--card);
+  container-type: inline-size;
+  container-name: opsnow;
 }
 
-/* Stretch, not centre. The tiles column sets the row height, and this card
-   holds less, so centring left a band of empty card above and below the
-   content. Spreading it fills the same box and reads as deliberate. */
+/*
+ * `auto minmax(0, 1fr)` was the bug behind the overflowing window selector.
+ *
+ * An `auto` track takes its max-content width and keeps it; `minmax(0, 1fr)`
+ * lets the other track collapse all the way to zero. So as the card narrowed,
+ * the health column held its full 139px while the realtime column was squeezed
+ * to 73px -- and the segmented control inside it, which cannot render below
+ * 199px, painted straight out through the card border. The `minmax(0, 1fr)`
+ * was written to PREVENT overflow and is what guaranteed it.
+ *
+ * The floor is the measured intrinsic width of that control. Below the
+ * breakpoint the two stack, and the realtime block gets the full card width.
+ *
+ * 420px is derived, not guessed. An inline-size container query measures the
+ * CONTENT box, so the padding is already excluded: 139 health + 19 for the
+ * divider and its padding + 18 gap + 199 control = 375 needed, and 420 leaves
+ * headroom for a longer label. Measured across card widths 240px to 820px,
+ * the control never overflows and the switch lands between 430 and 460.
+ */
 .opshead__now-inner {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(200px, 1fr);
   align-items: stretch;
   gap: 18px;
   flex: 1;
 }
 
-@media (max-width: 560px) {
+@container opsnow (max-width: 420px) {
   .opshead__now-inner {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1394,7 +1420,9 @@ const upstreamTone = computed<CardTone>(() =>
   border-right: 1px solid var(--border-subtle);
 }
 
-@media (max-width: 560px) {
+/* The rule turns from a vertical divider into a horizontal one when the two
+   stack, so it always separates them along the axis they are split on. */
+@container opsnow (max-width: 420px) {
   .opshead__health {
     padding-right: 0;
     padding-bottom: 14px;
