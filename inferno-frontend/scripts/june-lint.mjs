@@ -154,6 +154,36 @@ const RULES = [
     test: /[–—]/g,
     files: /i18n\/.*\.ts$|\.vue$/,
     message: 'No en or em dashes in user-facing copy (ground rule 2). Use a hyphen or the word "to".'
+  },
+  {
+    id: 'block-name-shadows-tailwind-utility',
+    /*
+     * Not a ground rule -- a trap this codebase is currently sitting in.
+     *
+     * Tailwind is still in the build while the rewrite runs, so a scoped BEM
+     * block named after a bare utility is ALSO matched by that utility.
+     * Scoped CSS does not help: the scope attribute narrows our rule, it does
+     * not stop a global rule of the same name from matching the element.
+     *
+     * Found the hard way. OpsHealthRing's block was `ring`, so every instance
+     * picked up Tailwind's `.ring` -- `box-shadow: var(--tw-ring-shadow)` with
+     * the default blue-500/50 -- and painted a 3px blue box around the health
+     * score, in a system with no blue in it. It shipped and survived three
+     * commits because it looks deliberate.
+     *
+     * Matches the DECLARATION only -- a rule whose selector starts a line as a
+     * bare utility name, e.g. `.ring {` or `.ring[data-tone='ok'] {`. Writing
+     * `class="relative"` in a template is ordinary Tailwind use and is not a
+     * collision; defining `.relative { }` in scoped CSS is. Checking the
+     * declaration is what tells the two apart, and it is the half we control.
+     *
+     * Only bare, unprefixed utilities are listed: anything hyphenated (`flex-1`,
+     * `border-t`) cannot be a BEM block anyway.
+     */
+    test: /^\.(?:ring|border|shadow|grid|flex|block|hidden|table|container|truncate|visible|invisible|static|fixed|absolute|relative|sticky|underline|italic|uppercase|lowercase|antialiased|isolate|contents|outline|transform|filter|blur|grayscale|invert)(?:__[a-z0-9-]+)?\s*[{,[:]/gm,
+    files: /\.vue$/,
+    message:
+      'Block name shadows a bare Tailwind utility, which still matches it globally. Prefix it (ring -> hring).'
   }
 ]
 
