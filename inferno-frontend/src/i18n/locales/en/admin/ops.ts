@@ -820,6 +820,7 @@ export default {
         health: 'System health score (0-100), considering SLA, error rate, and resource usage.'
       },
       charts: {
+          peak: 'peak',
         emptyRequest: 'No requests in this window.',
         emptyError: 'No errors in this window.',
         resetZoom: 'Reset',
