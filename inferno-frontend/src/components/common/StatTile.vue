@@ -39,10 +39,17 @@
  * clears, and it devalues the amber that the verdict line uses to mean
  * something. Hence `accent` (a hue with no assigned meaning) rather than
  * `attention`.
+ *
+ * The tone resolves to ONE custom property, --tile-accent, which both the icon
+ * tile and the sparkline read. Two things tinted from one declaration cannot
+ * drift apart.
  */
+import { computed } from 'vue'
+import { RouterLink } from 'vue-router'
+
 type Tone = 'brand' | 'info' | 'success' | 'accent'
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     /** The metric's name. Sentence case, ground rule 1. */
     label: string
@@ -90,16 +97,59 @@ withDefaults(
      * misleading.
      */
     delta?: { pct: number; direction: 'up' | 'down' } | null
+    /**
+     * Today's shape, one entry per hour so far.
+     *
+     * Says the thing the delta cannot: WHEN it happened. "Up 21%" is the same
+     * chip whether traffic rose steadily all morning or arrived in one spike
+     * at 11am, and those are different situations.
+     *
+     * Pass raw values; the component normalises. Omit for anything that is not
+     * a time series -- a sparkline on a standing count would be drawing a
+     * trend that does not exist.
+     */
+    series?: number[]
+    /**
+     * Route this tile drills into. Omit when there is no page that explains
+     * the number: a link that lands somewhere unrelated is worse than none,
+     * because the reader now has to work out why they are there.
+     */
+    to?: string
   }>(),
   { tone: 'brand', contextTone: 'muted' }
 )
+
+const SPARK_W = 56
+const SPARK_H = 18
+/* One pixel of headroom top and bottom, or a peak sitting exactly on the
+   viewBox edge gets its stroke clipped in half. */
+const SPARK_PAD = 1.5
+
+const sparkPoints = computed(() => {
+  const s = props.series
+  if (!s || s.length < 2) return ''
+  const max = Math.max(...s)
+  const min = Math.min(...s)
+  /* An all-zero day would otherwise draw a flat line across the middle, which
+     reads as steady traffic rather than as no traffic. */
+  if (max <= 0) return ''
+  const range = max - min || 1
+  const usable = SPARK_H - SPARK_PAD * 2
+  return s
+    .map((v, i) => {
+      const x = (i / (s.length - 1)) * SPARK_W
+      const y = SPARK_H - SPARK_PAD - ((v - min) / range) * usable
+      return `${x.toFixed(2)},${y.toFixed(2)}`
+    })
+    .join(' ')
+})
 </script>
 
 <template>
-  <div class="tile">
+  <component :is="to ? RouterLink : 'div'" :to="to" class="tile" :data-tone="tone">
     <div class="tile__card">
       <div class="tile__head">
-        <span v-if="icon" class="tile__icon" :data-tone="tone">
+        <span v-if="icon" class="tile__icon">
           <i class="hgi-stroke" :class="`hgi-${icon}`" aria-hidden="true" />
         </span>
         <span class="tile__label">{{ label }}</span>
@@ -123,8 +173,28 @@ withDefaults(
         aria-hidden="true"
       />
       <span class="tile__foot-text">{{ context }}</span>
+      <!-- Decorative: the number and the delta already state the finding, so
+           a screen reader gains nothing from the shape and loses time. -->
+      <svg
+        v-if="sparkPoints"
+        class="tile__spark"
+        :viewBox="`0 0 ${SPARK_W} ${SPARK_H}`"
+        :width="SPARK_W"
+        :height="SPARK_H"
+        fill="none"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <polyline
+          :points="sparkPoints"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
     </p>
-  </div>
+  </component>
 </template>
 
 <style scoped>
@@ -136,6 +206,7 @@ withDefaults(
 .tile {
   --tile-inset: 8px;
 
+  display: block;
   padding: var(--tile-inset);
   padding-bottom: 0; /* the foot supplies its own, so its text is optically centred */
   border-radius: var(--r-2xl);
@@ -153,7 +224,44 @@ withDefaults(
    * and it stays correct if the surface ramp is ever retuned.
    */
   background: color-mix(in oklch, var(--card) 95%, var(--foreground));
+  color: inherit;
+  text-decoration: none;
   min-width: 0;
+}
+
+/* One accent per tone, read by both the icon tile and the sparkline. */
+.tile[data-tone='brand'] {
+  --tile-accent: var(--brand);
+}
+.tile[data-tone='info'] {
+  --tile-accent: oklch(55% 0.15 255);
+}
+.tile[data-tone='success'] {
+  --tile-accent: oklch(52% 0.12 155);
+}
+/* Deliberately not the attention state colour: see the tone note at the top. */
+.tile[data-tone='accent'] {
+  --tile-accent: oklch(52% 0.13 300);
+}
+
+/*
+ * Only the linked variant reacts. A hover affordance on a tile that does not
+ * navigate promises something it cannot deliver, and the reader learns to
+ * distrust the affordance everywhere else.
+ *
+ * Background only, never border-color (ground rule 6).
+ */
+a.tile {
+  transition: background var(--motion-hover);
+}
+
+a.tile:hover {
+  background: color-mix(in oklch, var(--card) 90%, var(--foreground));
+}
+
+a.tile:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 .tile__card {
@@ -182,23 +290,10 @@ withDefaults(
   width: 28px;
   height: 28px;
   border-radius: var(--r-md);
+  background: var(--tile-accent);
   color: var(--on-solid);
   font-size: 15px; /* june-lint-disable ground-rule-4: icon glyph, not text */
   line-height: 1;
-}
-
-.tile__icon[data-tone='brand'] {
-  background: var(--brand);
-}
-.tile__icon[data-tone='info'] {
-  background: oklch(55% 0.15 255);
-}
-.tile__icon[data-tone='success'] {
-  background: oklch(52% 0.12 155);
-}
-/* Deliberately not the attention state colour: see the tone note at the top. */
-.tile__icon[data-tone='accent'] {
-  background: oklch(52% 0.13 300);
 }
 
 .tile__label {
@@ -210,7 +305,8 @@ withDefaults(
 }
 
 /* The hairline lives on the measure row, not on the value, so it still spans
-   the full card width once a delta chip sits beside the number. */
+   the full card width once a delta chip and a sparkline sit beside the
+   number. */
 .tile__measure {
   display: flex;
   align-items: baseline;
@@ -256,6 +352,31 @@ withDefaults(
 .tile__delta-icon {
   font-size: 12px; /* june-lint-disable ground-rule-4: icon glyph, not text */
   line-height: 1;
+}
+
+/*
+ * ON THE TRAY FLOOR, not in the measure row.
+ *
+ * It started beside the number and pushed the headline into an ellipsis: the
+ * measure row is 245px at four-across, and a 30px serif value plus a delta
+ * chip plus 56px of shape came to exactly 245 with the value needing 246. One
+ * pixel of overflow put the ellipsis on the single most important element on
+ * the card.
+ *
+ * Shrinking things does not fix that; the row was already full. The shape is
+ * supporting evidence, and the floor is the slot this component defines for
+ * supporting evidence -- the same argument that put the context line there.
+ * The floor carries ~140px of text in 245px, so the shape fits with room.
+ *
+ * Tinted from --tile-accent at partial opacity so it reads as belonging to
+ * this tile without competing with the icon that already carries the colour.
+ */
+.tile__spark {
+  flex: none;
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--tile-accent);
+  opacity: 0.55;
 }
 
 /* min-height, not a fixed height: tiles without a context line still reserve
