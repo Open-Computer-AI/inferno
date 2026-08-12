@@ -18,6 +18,16 @@
  * The arc is drawn from a dash offset rather than an arc path: a stroked
  * circle with stroke-linecap round gives the rounded ends for free, and
  * animating one number is cheaper and smoother than rebuilding a path.
+ *
+ * THE BLOCK IS `hring`, NOT `ring`
+ * `ring` is a Tailwind utility, and Tailwind is still in this build. Naming
+ * the block `ring` meant every instance also matched `.ring`, which sets
+ * `box-shadow: var(--tw-ring-shadow)` -- and with no ring colour set, the
+ * default is blue-500/50. The result was a 3px blue box painted around the
+ * health score on every page load, in a design system that has no blue.
+ * Scoped CSS does not protect against this: the scope attribute narrows OUR
+ * rule, it does not stop a global utility of the same name from matching.
+ * june-lint now rejects bare Tailwind utility names as block names.
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -69,11 +79,11 @@ const conditionLabel = computed(() => {
 </script>
 
 <template>
-  <div class="ring" :data-tone="tone">
-    <div class="ring__dial" :style="{ width: `${size}px`, height: `${size}px` }">
-      <svg :width="size" :height="size" class="ring__svg" aria-hidden="true">
+  <div class="hring" :data-tone="tone">
+    <div class="hring__dial" :style="{ width: `${size}px`, height: `${size}px` }">
+      <svg :width="size" :height="size" class="hring__svg" aria-hidden="true">
         <circle
-          class="ring__track"
+          class="hring__track"
           :cx="size / 2"
           :cy="size / 2"
           :r="radius"
@@ -81,7 +91,7 @@ const conditionLabel = computed(() => {
           fill="transparent"
         />
         <circle
-          class="ring__arc"
+          class="hring__arc"
           :cx="size / 2"
           :cy="size / 2"
           :r="radius"
@@ -92,42 +102,42 @@ const conditionLabel = computed(() => {
           :stroke-dashoffset="dashOffset"
         />
       </svg>
-      <div class="ring__centre">
-        <span class="ring__score" :data-large="fullscreen || undefined">{{ display }}</span>
-        <span class="ring__caption">{{ t('admin.ops.health') }}</span>
+      <div class="hring__centre">
+        <span class="hring__score" :data-large="fullscreen || undefined">{{ display }}</span>
+        <span class="hring__caption">{{ t('admin.ops.health') }}</span>
       </div>
     </div>
 
-    <div v-if="!fullscreen" class="ring__condition">
-      <span class="ring__condition-label">
+    <div v-if="!fullscreen" class="hring__condition">
+      <span class="hring__condition-label">
         {{ t('admin.ops.healthCondition') }}
         <HelpTooltip :content="t('admin.ops.healthHelp')" />
       </span>
-      <span class="ring__condition-value">{{ conditionLabel }}</span>
+      <span class="hring__condition-value">{{ conditionLabel }}</span>
     </div>
   </div>
 </template>
 
 <style scoped>
-.ring {
+.hring {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 14px;
 }
 
-.ring__dial {
+.hring__dial {
   position: relative;
   display: grid;
   place-items: center;
 }
 
 /* Rotated so the arc starts at 12 o'clock rather than 3. */
-.ring__svg {
+.hring__svg {
   transform: rotate(-90deg);
 }
 
-.ring__track {
+.hring__track {
   stroke: var(--muted);
 }
 
@@ -135,32 +145,32 @@ const conditionLabel = computed(() => {
  * One tone drives the arc, the number and the condition line. They were three
  * separate colour expressions before, kept in sync by hand.
  */
-.ring[data-tone='idle'] .ring__arc {
+.hring[data-tone='idle'] .hring__arc {
   stroke: var(--muted-foreground);
 }
-.ring[data-tone='ok'] .ring__arc {
+.hring[data-tone='ok'] .hring__arc {
   stroke: var(--brand);
 }
-.ring[data-tone='warning'] .ring__arc {
+.hring[data-tone='warning'] .hring__arc {
   stroke: var(--s2a-attn);
 }
-.ring[data-tone='critical'] .ring__arc {
+.hring[data-tone='critical'] .hring__arc {
   stroke: var(--destructive);
 }
 
-.ring__arc {
+.hring__arc {
   /* Only the offset animates -- never a colour or a width. */
   transition: stroke-dashoffset var(--t-slow) var(--ease-out);
 }
 
-.ring__centre {
+.hring__centre {
   position: absolute;
   display: flex;
   flex-direction: column;
   align-items: center;
 }
 
-.ring__score {
+.hring__score {
   color: var(--foreground);
   font-family: var(--font-serif);
   font-size: var(--fs-display);
@@ -169,27 +179,27 @@ const conditionLabel = computed(() => {
   font-variant-numeric: tabular-nums;
 }
 
-.ring__score[data-large] {
+.hring__score[data-large] {
   font-size: calc(var(--fs-display) * 1.6);
 }
 
-.ring[data-tone='idle'] .ring__score {
+.hring[data-tone='idle'] .hring__score {
   color: var(--muted-foreground);
 }
-.ring[data-tone='warning'] .ring__score {
+.hring[data-tone='warning'] .hring__score {
   color: var(--s2a-attn);
 }
-.ring[data-tone='critical'] .ring__score {
+.hring[data-tone='critical'] .hring__score {
   color: var(--destructive);
 }
 
 /* Sentence case: "HEALTH" was shouting a label (ground rule 1). */
-.ring__caption {
+.hring__caption {
   color: var(--muted-foreground);
   font-size: var(--fs-2xs);
 }
 
-.ring__condition {
+.hring__condition {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -197,7 +207,7 @@ const conditionLabel = computed(() => {
   text-align: center;
 }
 
-.ring__condition-label {
+.hring__condition-label {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -205,19 +215,19 @@ const conditionLabel = computed(() => {
   font-size: var(--fs-sm);
 }
 
-.ring__condition-value {
+.hring__condition-value {
   color: var(--foreground);
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
 }
 
-.ring[data-tone='idle'] .ring__condition-value {
+.hring[data-tone='idle'] .hring__condition-value {
   color: var(--muted-foreground);
 }
-.ring[data-tone='warning'] .ring__condition-value {
+.hring[data-tone='warning'] .hring__condition-value {
   color: var(--s2a-attn);
 }
-.ring[data-tone='critical'] .ring__condition-value {
+.hring[data-tone='critical'] .hring__condition-value {
   color: var(--destructive);
 }
 </style>
