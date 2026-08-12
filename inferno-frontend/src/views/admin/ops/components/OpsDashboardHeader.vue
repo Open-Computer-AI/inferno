@@ -2,6 +2,9 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Select from '@/components/common/Select.vue'
+import Button from '@/components/common/Button.vue'
+import IconButton from '@/components/common/IconButton.vue'
+import Input from '@/components/common/Input.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import OpsResourceMeters from './OpsResourceMeters.vue'
 import OpsTrafficSplit from './OpsTrafficSplit.vue'
@@ -9,12 +12,12 @@ import OpsStatCard from './OpsStatCard.vue'
 import OpsHealthRing from './OpsHealthRing.vue'
 import OpsRealtimeTraffic from './OpsRealtimeTraffic.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
-import Icon from '@/components/icons/Icon.vue'
 import { adminAPI } from '@/api'
 import { opsAPI, type OpsDashboardOverview, type OpsMetricThresholds, type OpsRealtimeTrafficSummary } from '@/api/admin/ops'
 import type { OpsRequestDetailsPreset } from './OpsRequestDetailsModal.vue'
 import { useAdminSettingsStore } from '@/stores'
 import { formatNumber } from '@/utils/format'
+import { formatDateTime } from '../utils/opsFormatters'
 
 type RealtimeWindow = '1min' | '5min' | '30min' | '1h'
 
@@ -56,6 +59,29 @@ const { t } = useI18n()
 const adminSettingsStore = useAdminSettingsStore()
 
 const realtimeWindow = ref<RealtimeWindow>('1min')
+const showDiagnosis = ref(false)
+
+/**
+ * The refresh timestamp used to be hardcoded to zh-CN.
+ *
+ * `toLocaleString('zh-CN', ...)` with the slashes swapped for hyphens: an
+ * English user got a Chinese-locale date, every time, on the most-read line of
+ * the page. It now uses the ops formatter that the alert and log tables use,
+ * so all three clocks on this screen agree.
+ */
+const lastUpdatedLabel = computed(() =>
+  props.lastUpdated ? formatDateTime(props.lastUpdated.toISOString()) : t('common.unknown')
+)
+
+/* Three severities, three glyphs. The old markup drew each as a hand-inlined
+   20x20 SVG with a Tailwind colour, including a blue "info" that this palette
+   does not contain. */
+function diagnosisIcon(type: 'critical' | 'warning' | 'info'): string {
+  if (type === 'critical') return 'hgi-cancel-circle'
+  if (type === 'warning') return 'hgi-alert-02'
+  return 'hgi-information-circle'
+}
+
 
 const overview = computed(() => props.overview ?? null)
 const systemMetrics = computed(() => overview.value?.system_metrics ?? null)
@@ -95,6 +121,15 @@ watch(
 const showCustomTimeRangeDialog = ref(false)
 const customStartTimeInput = ref('')
 const customEndTimeInput = ref('')
+/* A range that ends before it starts silently returned no data. */
+const rangeError = computed(() => {
+  if (!customStartTimeInput.value || !customEndTimeInput.value) return ''
+  const start = new Date(customStartTimeInput.value).getTime()
+  const end = new Date(customEndTimeInput.value).getTime()
+  if (Number.isNaN(start) || Number.isNaN(end)) return ''
+  return end > start ? '' : t('admin.ops.customTimeRange.endBeforeStart')
+})
+
 
 function formatCustomTimeRangeLabel(startTime: string, endTime: string): string {
   const start = new Date(startTime)
@@ -663,62 +698,57 @@ const upstreamTone = computed<CardTone>(() =>
 </script>
 
 <template>
-  <div :class="['flex flex-col gap-4 rounded-3xl bg-white shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700', props.fullscreen ? 'p-8' : 'p-6']">
+  <div class="opshead" :data-fullscreen="props.fullscreen || undefined">
     <!-- Top Toolbar -->
-    <div class="flex flex-wrap items-center justify-between gap-4 border-b border-gray-100 pb-4 dark:border-dark-700">
-      <div>
-        <h1 class="flex items-center gap-2 text-xl font-black text-gray-900 dark:text-white">
-          <svg class="h-6 w-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-            />
-          </svg>
+    <div class="opshead__bar">
+      <div class="opshead__ident">
+        <h1 class="opshead__title">
+          <i class="hgi-stroke hgi-analytics-01 opshead__title-icon" aria-hidden="true" />
           {{ t('admin.ops.title') }}
         </h1>
 
-        <div v-if="!props.fullscreen" class="mt-1 flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
-          <span class="flex items-center gap-1.5" :title="props.loading ? t('admin.ops.loadingText') : t('admin.ops.ready')">
-            <span class="relative flex h-2 w-2">
-              <span class="relative inline-flex h-2 w-2 rounded-full" :class="props.loading ? 'bg-gray-400' : 'bg-green-500'"></span>
-            </span>
+        <div v-if="!props.fullscreen" class="opshead__status">
+          <span
+            class="opshead__state"
+            :data-loading="props.loading || undefined"
+            :title="props.loading ? t('admin.ops.loadingText') : t('admin.ops.ready')"
+          >
+            <span class="opshead__state-dot" aria-hidden="true" />
             {{ props.loading ? t('admin.ops.loadingText') : t('admin.ops.ready') }}
           </span>
 
-          <span>·</span>
-          <span>{{ t('common.refresh') }}: {{ props.lastUpdated ? props.lastUpdated.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(/\//g, '-') : t('common.unknown') }}</span>
+          <span class="opshead__sep" aria-hidden="true" />
+          <span>{{ t('common.refresh') }}: {{ lastUpdatedLabel }}</span>
 
           <template v-if="props.autoRefreshEnabled && props.autoRefreshCountdown !== undefined">
-            <span>·</span>
+            <span class="opshead__sep" aria-hidden="true" />
             <span>{{ t('admin.ops.autoRefreshRemaining', { seconds: props.autoRefreshCountdown }) }}</span>
           </template>
         </div>
       </div>
 
-      <div class="flex flex-wrap items-center gap-3">
+      <div class="opshead__tools">
         <template v-if="!props.fullscreen">
           <Select
             :model-value="platform"
             :options="platformOptions"
-            class="w-full sm:w-[140px]"
+            class="opshead__filter"
             @update:model-value="handlePlatformChange"
           />
 
           <Select
             :model-value="groupId"
             :options="groupOptions"
-            class="w-full sm:w-[160px]"
+            class="opshead__filter opshead__filter--wide"
             @update:model-value="handleGroupChange"
           />
 
-          <div class="mx-1 hidden h-4 w-[1px] bg-gray-200 dark:bg-dark-700 sm:block"></div>
+          <span class="opshead__divider" aria-hidden="true" />
 
           <Select
             :model-value="timeRange"
             :options="timeRangeOptions"
-            class="relative w-full sm:w-[150px]"
+            class="opshead__filter opshead__filter--wide"
             @update:model-value="handleTimeRangeChange"
           />
         </template>
@@ -727,139 +757,84 @@ const upstreamTone = computed<CardTone>(() =>
           v-if="false"
           :model-value="queryMode"
           :options="queryModeOptions"
-          class="relative w-full sm:w-[170px]"
+          class="opshead__filter opshead__filter--wide"
           @update:model-value="handleQueryModeChange"
         />
 
-        <button
-          v-if="!props.fullscreen"
-          type="button"
-          class="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 transition-colors hover:bg-gray-200 dark:bg-dark-700 dark:text-gray-400 dark:hover:bg-dark-600"
-          :disabled="loading"
-          :title="t('common.refresh')"
-          @click="handleToolbarRefresh"
-        >
-          <svg class="h-4 w-4" :class="{ 'animate-spin': loading }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-            />
-          </svg>
-        </button>
+        <template v-if="!props.fullscreen">
+          <IconButton
+            icon="hgi-refresh"
+            :class="{ 'opshead__refresh--busy s2a-spinner': loading }"
+            :label="t('common.refresh')"
+            size="sm"
+            :disabled="loading"
+            @click="handleToolbarRefresh"
+          />
 
-        <div v-if="!props.fullscreen" class="mx-1 hidden h-4 w-[1px] bg-gray-200 dark:bg-dark-700 sm:block"></div>
+          <span class="opshead__divider" aria-hidden="true" />
 
-        <!-- Alert Rules Button (hidden in fullscreen) -->
-        <button
-          v-if="!props.fullscreen"
-          type="button"
-          class="flex h-8 items-center gap-1.5 rounded-lg bg-blue-100 px-3 text-xs font-bold text-blue-700 transition-colors hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50"
-          :title="t('admin.ops.alertRules.title')"
-          @click="emit('openAlertRules')"
-        >
-          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-          </svg>
-          <span class="hidden sm:inline">{{ t('admin.ops.alertRules.manage') }}</span>
-        </button>
+          <!-- Was bg-blue-100/text-blue-700, a colour this system does not
+               have. Alert rules is a normal secondary action. -->
+          <Button
+            variant="secondary"
+            size="sm"
+            icon="hgi-alert-02"
+            :title="t('admin.ops.alertRules.title')"
+            @click="emit('openAlertRules')"
+          >
+            {{ t('admin.ops.alertRules.manage') }}
+          </Button>
 
-        <!-- Settings Button (hidden in fullscreen) -->
-        <button
-          v-if="!props.fullscreen"
-          type="button"
-          class="flex h-8 items-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-bold text-gray-700 transition-colors hover:bg-gray-200 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600"
-          :title="t('admin.ops.settings.title')"
-          @click="emit('openSettings')"
-        >
-          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-          <span class="hidden sm:inline">{{ t('common.settings') }}</span>
-        </button>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon="hgi-settings-01"
+            :title="t('admin.ops.settings.title')"
+            @click="emit('openSettings')"
+          >
+            {{ t('common.settings') }}
+          </Button>
 
-        <!-- Enter Fullscreen Button (hidden in fullscreen mode) -->
-        <button
-          v-if="!props.fullscreen"
-          type="button"
-          class="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-700 transition-colors hover:bg-gray-200 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600"
-          :title="t('admin.ops.fullscreen.enter')"
-          @click="emit('enterFullscreen')"
-        >
-          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-          </svg>
-        </button>
+          <IconButton
+            icon="hgi-arrow-expand"
+            :label="t('admin.ops.fullscreen.enter')"
+            size="sm"
+            @click="emit('enterFullscreen')"
+          />
+        </template>
       </div>
     </div>
 
-    <div v-if="overview" class="grid grid-cols-1 gap-6 lg:grid-cols-12">
-      <!-- Left: Health + Realtime -->
-      <div :class="['rounded-2xl bg-gray-50 dark:bg-dark-900 lg:col-span-5', props.fullscreen ? 'p-6' : 'p-4']">
-        <div class="grid h-full grid-cols-1 gap-6 md:grid-cols-[200px_1fr] md:items-center">
+    <div v-if="overview" class="opshead__grid">
+      <!-- Left: Health + Realtime, then Jobs -->
+      <div class="opshead__left">
+      <div class="opshead__now">
+        <div class="opshead__now-inner">
           <!-- 1) Health Score -->
-          <div
-            class="group relative flex cursor-pointer flex-col items-center justify-center rounded-xl py-2 transition-all hover:bg-white/60 dark:hover:bg-dark-800/60 md:border-r md:border-gray-200 md:pr-6 dark:md:border-dark-700"
-          >
-            <!-- Diagnosis Popover (hover) -->
-            <div
-              class="pointer-events-none absolute left-1/2 top-full z-50 mt-2 w-72 -translate-x-1/2 opacity-0 transition-opacity duration-200 group-hover:pointer-events-auto group-hover:opacity-100 md:left-full md:top-0 md:ml-2 md:mt-0 md:translate-x-0"
-            >
-              <div class="rounded-xl bg-white p-4 shadow-xl ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10">
-                <h4 class="mb-3 border-b border-gray-100 pb-2 text-sm font-bold text-gray-900 dark:border-dark-700 dark:text-white flex items-center gap-2">
-                  <Icon name="brain" size="sm" class="text-blue-500" />
-                  {{ t('admin.ops.diagnosis.title') }}
-                </h4>
-
-                <div class="space-y-3">
-                  <div v-for="(item, idx) in diagnosisReport" :key="idx" class="flex gap-3">
-                    <div class="mt-0.5 shrink-0">
-                      <svg v-if="item.type === 'critical'" class="h-4 w-4 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                        <path
-                          fill-rule="evenodd"
-                          d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                          clip-rule="evenodd"
-                        />
-                      </svg>
-                      <svg v-else-if="item.type === 'warning'" class="h-4 w-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
-                        <path
-                          fill-rule="evenodd"
-                          d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                          clip-rule="evenodd"
-                        />
-                      </svg>
-                      <svg v-else class="h-4 w-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
-                        <path
-                          fill-rule="evenodd"
-                          d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 100 2 1 1 0 000-2zm-1 3a1 1 0 012 0v4a1 1 0 11-2 0v-4z"
-                          clip-rule="evenodd"
-                        />
-                      </svg>
-                    </div>
-                    <div class="flex-1">
-                      <div class="text-xs font-semibold text-gray-900 dark:text-white">{{ item.message }}</div>
-                      <div class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{{ item.impact }}</div>
-                      <div v-if="item.action" class="mt-1 text-[11px] text-blue-600 dark:text-blue-400 flex items-center gap-1">
-                        <Icon name="lightbulb" size="xs" />
-                        {{ item.action }}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="mt-3 border-t border-gray-100 pt-2 text-[10px] text-gray-400 dark:border-dark-700">
-                  {{ t('admin.ops.diagnosis.footer') }}
-                </div>
-              </div>
-            </div>
-
+          <div class="opshead__health">
             <OpsHealthRing
               :score="healthScoreValue"
               :idle="isSystemIdle"
               :fullscreen="props.fullscreen"
             />
+
+            <!--
+              The diagnosis was hover-only on a div with no affordance: nothing
+              said the score could be opened, and a hover target does not exist
+              on touch at all. It is a disclosure button now, which is
+              focusable, announces its state, and works on a phone.
+            -->
+            <button
+              v-if="!props.fullscreen && diagnosisReport.length"
+              type="button"
+              class="opshead__diag-toggle"
+              :aria-expanded="showDiagnosis"
+              @click="showDiagnosis = !showDiagnosis"
+            >
+              <i class="hgi-stroke hgi-idea-01 opshead__diag-icon" aria-hidden="true" />
+              {{ t('admin.ops.diagnosis.title') }}
+              <span class="opshead__diag-count">{{ diagnosisReport.length }}</span>
+            </button>
           </div>
 
           <!-- 2) Realtime Traffic -->
@@ -876,10 +851,54 @@ const upstreamTone = computed<CardTone>(() =>
             @update:window="realtimeWindow = $event as RealtimeWindow"
           />
         </div>
+
+        <!--
+          In flow rather than floating. The old popover was absolutely
+          positioned with a shadow-xl and z-50, escaping its card to overlay
+          whatever was to its right; opening it in place pushes the layout
+          instead of covering it, and needs no elevation to be readable.
+        -->
+        <div v-if="showDiagnosis && !props.fullscreen" class="opshead__diag">
+          <ul class="opshead__diag-list">
+            <li v-for="(item, idx) in diagnosisReport" :key="idx" class="opshead__diag-item">
+              <i
+                class="hgi-stroke opshead__diag-mark"
+                :class="diagnosisIcon(item.type)"
+                :data-tone="item.type"
+                aria-hidden="true"
+              />
+              <div class="opshead__diag-body">
+                <p class="opshead__diag-msg">{{ item.message }}</p>
+                <p class="opshead__diag-impact">{{ item.impact }}</p>
+                <p v-if="item.action" class="opshead__diag-action">{{ item.action }}</p>
+              </div>
+            </li>
+          </ul>
+          <p class="opshead__diag-foot">{{ t('admin.ops.diagnosis.footer') }}</p>
+        </div>
+      </div>
+
+          <div class="ops-jobs">
+            <div class="ops-jobs__head">
+              <span class="ops-jobs__label">
+                {{ t('admin.ops.jobs') }}
+                <HelpTooltip v-if="!props.fullscreen" :content="t('admin.ops.tooltips.jobs')" />
+              </span>
+              <button v-if="!props.fullscreen" class="ops-jobs__action" type="button" @click="openJobsDetails">
+                {{ t('admin.ops.requestDetails.details') }}
+              </button>
+            </div>
+            <div class="ops-jobs__body">
+              <p class="ops-jobs__value">{{ jobsStatusLabel }}</p>
+              <p v-if="!props.fullscreen" class="ops-jobs__meta">
+                {{ t('common.total') }} {{ jobHeartbeats.length }} · {{ t('common.warning') }} {{ jobsWarnCount }}
+              </p>
+            </div>
+          </div>
       </div>
 
       <!-- Right: 6 cards (3 cols x 2 rows) -->
-      <div class="grid h-full grid-cols-1 content-center gap-4 sm:grid-cols-2 lg:col-span-7 lg:grid-cols-3">
+      <div class="opshead__tiles">
         <!-- Card 1: Requests -->
         <div style="order: 1;">
           <OpsStatCard
@@ -977,115 +996,94 @@ const upstreamTone = computed<CardTone>(() =>
       </div>
     </div>
 
-    <!-- Integrated: System health (cards) -->
-    <div v-if="overview" class="mt-2 border-t border-gray-100 pt-4 dark:border-dark-700">
-      <!--
-        Five of the six cards here were flat text -- "CPU 0.5%", "DB ok" --
-        each already knowing its ceiling and its thresholds. OpsResourceMeters
-        gives them the track that was missing. Jobs stays a card because it is
-        not a utilisation: it is a heartbeat roll-up with its own dialog.
-      -->
-      <div class="ops-resources">
-        <OpsResourceMeters :metrics="systemMetrics" />
+    <!--
+      Resource usage, full width.
+      Five of the six cards here were flat text -- "CPU 0.5%", "DB ok" -- each
+      already knowing its ceiling and its thresholds. OpsResourceMeters gives
+      them the track that was missing.
 
-        <div class="ops-jobs">
-          <div class="ops-jobs__head">
-            <span class="ops-jobs__label">
-              {{ t('admin.ops.jobs') }}
-              <HelpTooltip v-if="!props.fullscreen" :content="t('admin.ops.tooltips.jobs')" />
-            </span>
-            <button v-if="!props.fullscreen" class="ops-jobs__action" type="button" @click="openJobsDetails">
-              {{ t('admin.ops.requestDetails.details') }}
-            </button>
-          </div>
-          <p class="ops-jobs__value">{{ jobsStatusLabel }}</p>
-          <p v-if="!props.fullscreen" class="ops-jobs__meta">
-            {{ t('common.total') }} {{ jobHeartbeats.length }} · {{ t('common.warning') }} {{ jobsWarnCount }}
-          </p>
-        </div>
-      </div>
-    </div>
+      Jobs used to sit beside them in a 2/1 grid, where it was three lines of
+      text stranded next to a five-row meter list. It has moved up beside the
+      health ring: jobs are heartbeats, which answer "is the system healthy
+      right now", the same question the ring and the realtime figures answer.
+      Resource usage answers a different one -- what it is consuming -- and is
+      the only thing on this row now.
+
+      The rule that used to separate this block from the tiles above went with
+      the outer card: these are peer blocks on the page background now, and the
+      gap between them is the separation.
+    -->
+    <OpsResourceMeters v-if="overview" :metrics="systemMetrics" />
 
     <BaseDialog :show="showJobsDetails" :title="t('admin.ops.jobs')" width="wide" @close="showJobsDetails = false">
-      <div v-if="!jobHeartbeats.length" class="text-sm text-gray-500 dark:text-gray-400">
+      <p v-if="!jobHeartbeats.length" class="opshead__empty">
         {{ t('admin.ops.noData') }}
-      </div>
-      <div v-else class="space-y-3">
+      </p>
+      <div v-else class="opshead__jobs-list">
+        <!-- A job that last errored is the only one worth finding in this
+             list, so it is the only one that carries any colour. -->
         <div
           v-for="hb in jobHeartbeats"
           :key="hb.job_name"
-          class="rounded-xl border border-gray-100 bg-white p-4 dark:border-dark-700 dark:bg-dark-900"
+          class="opshead__job"
+          :data-failed="hb.last_error ? '' : undefined"
         >
-          <div class="flex items-center justify-between gap-3">
-            <div class="truncate text-sm font-semibold text-gray-900 dark:text-white">{{ hb.job_name }}</div>
-            <div class="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
-              <span v-if="hb.last_duration_ms != null" class="font-mono">{{ hb.last_duration_ms }}ms</span>
+          <div class="opshead__job-head">
+            <span class="opshead__job-name">{{ hb.job_name }}</span>
+            <span class="opshead__job-when">
+              <span v-if="hb.last_duration_ms != null" class="opshead__mono">{{ hb.last_duration_ms }}ms</span>
               <span>{{ formatTimeShort(hb.updated_at) }}</span>
-            </div>
+            </span>
           </div>
 
-          <div class="mt-2 grid grid-cols-1 gap-2 text-xs text-gray-600 dark:text-gray-300 sm:grid-cols-2">
-            <div>
-              {{ t('admin.ops.lastSuccess') }} <span class="font-mono">{{ formatTimeShort(hb.last_success_at) }}</span>
+          <dl class="opshead__job-facts">
+            <div class="opshead__job-fact">
+              <dt>{{ t('admin.ops.lastSuccess') }}</dt>
+              <dd class="opshead__mono">{{ formatTimeShort(hb.last_success_at) }}</dd>
             </div>
-            <div>
-              {{ t('admin.ops.lastError') }} <span class="font-mono">{{ formatTimeShort(hb.last_error_at) }}</span>
+            <div class="opshead__job-fact">
+              <dt>{{ t('admin.ops.lastError') }}</dt>
+              <dd class="opshead__mono">{{ formatTimeShort(hb.last_error_at) }}</dd>
             </div>
-            <div>
-              {{ t('admin.ops.result') }} <span class="font-mono">{{ hb.last_result || '-' }}</span>
+            <!-- The result string is the point of the row, so it gets the
+                 full width and wraps rather than being cut at 180px. -->
+            <div class="opshead__job-fact opshead__job-fact--wide">
+              <dt>{{ t('admin.ops.result') }}</dt>
+              <dd class="opshead__mono">{{ hb.last_result || '-' }}</dd>
             </div>
-          </div>
+          </dl>
 
-          <div
-            v-if="hb.last_error"
-            class="mt-3 rounded-lg bg-rose-50 p-2 text-xs text-rose-700 dark:bg-rose-900/20 dark:text-rose-300"
-          >
-            {{ hb.last_error }}
-          </div>
+          <p v-if="hb.last_error" class="opshead__job-error">{{ hb.last_error }}</p>
         </div>
       </div>
     </BaseDialog>
 
     <!-- Custom Time Range Dialog -->
     <BaseDialog :show="showCustomTimeRangeDialog" :title="t('admin.ops.timeRange.custom')" width="narrow" @close="handleCustomTimeRangeCancel">
-      <div class="space-y-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            {{ t('admin.ops.customTimeRange.startTime') }}
-          </label>
-          <input
-            v-model="customStartTimeInput"
-            type="datetime-local"
-            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-dark-600 dark:bg-dark-800 dark:text-white"
-          />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            {{ t('admin.ops.customTimeRange.endTime') }}
-          </label>
-          <input
-            v-model="customEndTimeInput"
-            type="datetime-local"
-            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-dark-600 dark:bg-dark-800 dark:text-white"
-          />
-        </div>
-        <div class="flex justify-end gap-3 pt-2">
-          <button
-            type="button"
-            class="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600"
-            @click="handleCustomTimeRangeCancel"
-          >
-            {{ t('common.cancel') }}
-          </button>
-          <button
-            type="button"
-            class="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
-            @click="handleCustomTimeRangeConfirm"
-          >
-            {{ t('common.confirm') }}
-          </button>
-        </div>
+      <div class="opshead__range">
+        <Input
+          v-model="customStartTimeInput"
+          type="datetime-local"
+          :label="t('admin.ops.customTimeRange.startTime')"
+        />
+        <Input
+          v-model="customEndTimeInput"
+          type="datetime-local"
+          :label="t('admin.ops.customTimeRange.endTime')"
+          :error="rangeError"
+        />
       </div>
+
+      <template #footer>
+        <div class="opshead__range-actions">
+          <Button variant="ghost" size="md" @click="handleCustomTimeRangeCancel">
+            {{ t('common.cancel') }}
+          </Button>
+          <Button variant="solid" size="md" :disabled="!!rangeError || !customStartTimeInput || !customEndTimeInput" @click="handleCustomTimeRangeConfirm">
+            {{ t('common.confirm') }}
+          </Button>
+        </div>
+      </template>
     </BaseDialog>
   </div>
 </template>
@@ -1104,25 +1102,19 @@ const upstreamTone = computed<CardTone>(() =>
   }
 }
 
-/* Meters take the width; jobs is a single status, so it sits beside them and
-   collapses under on narrow screens. */
-.ops-resources {
-  display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(200px, 1fr);
-  gap: 12px;
-}
-
-@media (max-width: 860px) {
-  .ops-resources {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
 .ops-jobs {
-  padding: 16px;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  padding: 14px 16px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-lg);
   background: var(--card);
+}
+
+.ops-jobs__body {
+  display: flex;
+  flex-direction: column;
 }
 
 .ops-jobs__head {
@@ -1166,5 +1158,457 @@ const upstreamTone = computed<CardTone>(() =>
   color: var(--muted-foreground);
   font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
+}
+
+/* --- shell ------------------------------------------------------------- */
+
+/*
+ * NOT A CARD.
+ *
+ * This was `rounded-3xl bg-white shadow-sm ring-1 ring-gray-900/5` -- a
+ * shadow (ground rule 9) at a 24px radius, wrapping a grey tray that wrapped
+ * six more cards. Three levels of surface for what is really a masthead and a
+ * grid of tiles. Every other block on this page is a peer card sitting on the
+ * page background; the header is now the same, so the top of the screen stops
+ * looking like a different product.
+ */
+.opshead {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.opshead[data-fullscreen] {
+  gap: 20px;
+}
+
+.opshead__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.opshead__ident {
+  min-width: 0;
+}
+
+/* Was text-xl font-black, which is a weight this family does not ship. */
+.opshead__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-medium);
+}
+
+.opshead__title-icon {
+  font-size: 19px; /* june-lint-disable ground-rule-4: icon glyph, not text */
+  color: var(--muted-foreground);
+  line-height: 1;
+}
+
+.opshead__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.opshead__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Brand when live, neutral while fetching. Was bg-green-500, the only green
+   on a page that otherwise reads "good" as brand. */
+.opshead__state-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--brand);
+}
+
+.opshead__state[data-loading] .opshead__state-dot {
+  background: var(--muted-foreground);
+}
+
+/* A dot, not a "·" glyph: the separator was a text character sitting on the
+   baseline at the same colour and size as the words either side of it. */
+.opshead__sep {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.opshead__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.opshead__filter {
+  width: 140px;
+}
+
+.opshead__filter--wide {
+  width: 160px;
+}
+
+.opshead__divider {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+}
+
+@media (max-width: 640px) {
+  .opshead__divider {
+    display: none;
+  }
+
+  .opshead__filter,
+  .opshead__filter--wide {
+    width: 100%;
+  }
+}
+
+.opshead__refresh--busy {
+  animation: s2a-spin 0.7s linear infinite;
+}
+
+/* --- top grid ---------------------------------------------------------- */
+
+/*
+ * 4/8 rather than 5/7. The left column held a 100px dial and a small realtime
+ * block in 42% of the width, vertically centred inside a box as tall as six
+ * stat cards -- roughly 200px of dead space, measured. Narrowing it gives the
+ * width to the tiles that actually have content in them.
+ */
+.opshead__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+  gap: 12px;
+}
+
+@media (max-width: 1100px) {
+  .opshead__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/*
+ * Three columns of tiles, with the traffic split taking two of them.
+ *
+ * This was `lg:col-span-7 lg:grid-cols-3` -- a column span left over from the
+ * 12-column parent. Against the 2-column grid above it, `span 7` makes the
+ * browser generate five implicit columns and the whole row falls apart: the
+ * tiles drop out of the right cell and stack at full width under the health
+ * card. Sized by its own grid now, not by a leftover span.
+ */
+.opshead__tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-content: center;
+  gap: 12px;
+}
+
+/* Each tile is wrapped in a positioning div carrying `order`. Without this the
+   wrapper stretched to the row but the card inside kept its content height, so
+   a short tile like Requests left a hairline-bounded gap under itself while
+   its neighbour ran the full row. */
+.opshead__tiles > div {
+  display: flex;
+  min-width: 0;
+}
+
+.opshead__tiles > div > * {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .opshead__tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .opshead__tiles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Health + realtime, then jobs. Stacking the two lets this column reach the
+   height the six tiles set, instead of one card being padded out to match. */
+.opshead__left {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.opshead__now {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--card);
+}
+
+/* Stretch, not centre. The tiles column sets the row height, and this card
+   holds less, so centring left a band of empty card above and below the
+   content. Spreading it fills the same box and reads as deliberate. */
+.opshead__now-inner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 18px;
+  flex: 1;
+}
+
+@media (max-width: 560px) {
+  .opshead__now-inner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.opshead__health {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-evenly;
+  gap: 10px;
+  padding-right: 18px;
+  border-right: 1px solid var(--border-subtle);
+}
+
+@media (max-width: 560px) {
+  .opshead__health {
+    padding-right: 0;
+    padding-bottom: 14px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+}
+
+/* --- diagnosis --------------------------------------------------------- */
+
+.opshead__diag-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: background var(--motion-hover);
+}
+
+.opshead__diag-toggle:hover {
+  background: var(--sidebar-accent);
+}
+
+.opshead__diag-icon {
+  font-size: 13px; /* june-lint-disable ground-rule-4: icon glyph, not text */
+  line-height: 1;
+}
+
+.opshead__diag-count {
+  color: var(--body-copy);
+  font-variant-numeric: tabular-nums;
+}
+
+.opshead__diag {
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+}
+
+.opshead__diag-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.opshead__diag-item {
+  display: flex;
+  gap: 9px;
+}
+
+.opshead__diag-mark {
+  flex: none;
+  margin-top: 1px;
+  font-size: 14px; /* june-lint-disable ground-rule-4: icon glyph, not text */
+  color: var(--muted-foreground);
+  line-height: 1.2;
+}
+
+.opshead__diag-mark[data-tone='critical'] {
+  color: var(--destructive);
+}
+
+.opshead__diag-mark[data-tone='warning'] {
+  color: var(--s2a-attn);
+}
+
+.opshead__diag-body {
+  min-width: 0;
+}
+
+.opshead__diag-msg {
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--fs-md);
+}
+
+.opshead__diag-impact {
+  margin: 2px 0 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+/* The suggested action was text-blue-600. It is advice, not a link. */
+.opshead__diag-action {
+  margin: 3px 0 0;
+  color: var(--body-copy);
+  font-size: var(--fs-sm);
+}
+
+.opshead__diag-foot {
+  margin: 10px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+
+/* --- jobs dialog ------------------------------------------------------- */
+
+.opshead__empty {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-md);
+}
+
+.opshead__jobs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.opshead__job {
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--card);
+}
+
+.opshead__job-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.opshead__job-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: var(--fs-md);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.opshead__job-when {
+  display: inline-flex;
+  flex: none;
+  align-items: baseline;
+  gap: 10px;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.opshead__job-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 4px 14px;
+  margin: 8px 0 0;
+}
+
+.opshead__job-fact {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.opshead__job-fact dd {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--body-copy);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.opshead__job-fact--wide {
+  grid-column: 1 / -1;
+  align-items: baseline;
+}
+
+.opshead__job-fact--wide dd {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.opshead__mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.opshead__job-error {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: color-mix(in oklch, var(--destructive) 10%, var(--card));
+  color: var(--destructive);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+/* --- custom range dialog ----------------------------------------------- */
+
+.opshead__range {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.opshead__range-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 </style>
