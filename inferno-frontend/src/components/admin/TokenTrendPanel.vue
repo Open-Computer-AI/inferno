@@ -70,6 +70,13 @@ const labels = computed(() =>
 
 const total = computed(() => values.value.reduce((a, b) => a + b, 0))
 
+/* One series: this card is about the total, and splitting it by token type
+   would duplicate the donut sitting beside it. */
+const areaSeries = computed(() => [
+  { key: 'tokens', label: t('admin.dashboard.tokens'), values: values.value, color: tokens.brand }
+])
+
+
 const delta = computed(() => {
   const prior = previous.value.reduce((sum, p) => sum + (Number(p.total_tokens) || 0), 0)
   if (prior <= 0) return null
@@ -168,9 +175,8 @@ onMounted(async () => {
               :style="{ top: `${(1 - tick.f) * 100}%` }"
             />
             <DitherArea
-              :values="values"
+              :series="areaSeries"
               :labels="labels"
-              :color="tokens.brand"
               :rest-color="restColor"
               :marker-color="tokens.brand"
             />
