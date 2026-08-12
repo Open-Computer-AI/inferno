@@ -123,6 +123,7 @@ export default {
       failedToLoadErrorDetail: 'Failed to load error detail',
       retryFailed: 'Retry failed',
       tpsK: 'TPS (K)',
+      switchRateCaption: 'switches per request in this window',
       latency: {
         totalCaption: 'requests in this window',
         inBucket: 'in {bucket}'
