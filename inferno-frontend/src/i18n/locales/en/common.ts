@@ -14,6 +14,7 @@ export default {
     create: 'Create',
     update: 'Update',
     confirm: 'Confirm',
+    apply: 'Apply',
     reset: 'Reset',
     search: 'Search',
     filter: 'Filter',
