@@ -14,6 +14,21 @@ export default {
       /* The tray-floor line under each tile. Each one is the second value that
          gives its headline number a baseline: a count with no rate, or a
          charge with no list price, cannot be read as good or bad on its own. */
+      period: {
+        week: 'Week',
+        month: 'Month',
+        quarter: 'Quarter',
+        year: 'Year',
+        toDate: '{period} to date'
+      },
+      mix: {
+        title: 'Token mix',
+        caption: 'total tokens',
+        input: 'Input',
+        output: 'Output',
+        cacheWrite: 'Cache write',
+        cacheRead: 'Cache read'
+      },
       tileAccountsHealthy: 'All serving normally',
       tileAccountsAttention: '{count} need attention',
       tileAccountsEmpty: 'None connected yet',
