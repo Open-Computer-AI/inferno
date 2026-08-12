@@ -35,6 +35,12 @@ interface Props {
   hint?: string
   id?: string
   autocomplete?: string
+  /* Forwarded to the inner control. Purely additive -- the root element is a
+     div, so a fallthrough `min` would land on the wrapper and never reach the
+     input that has to enforce it. No existing call site passes these. */
+  min?: number | string
+  max?: number | string
+  step?: number | string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -88,6 +94,9 @@ defineExpose({
         :readonly="readonly"
         :placeholder="placeholderText"
         :autocomplete="autocomplete"
+        :min="min"
+        :max="max"
+        :step="step"
         :data-has-prefix="$slots.prefix ? '' : undefined"
         :data-has-suffix="$slots.suffix ? '' : undefined"
         :data-invalid="error ? '' : undefined"
