@@ -151,6 +151,20 @@ defineExpose({ replayTour })
   box-shadow: var(--shadow-sm), var(--shadow-inset);
   overflow: auto;
   padding: 16px;
+  /* Scrolls, never shows a bar -- and that is a padding fix as much as a
+     cosmetic one. A classic scrollbar is laid out INSIDE the content box, so
+     it took 8px off the right: content sat 40px from the right edge against
+     32px on the other three sides. Removing the bar restores the symmetry the
+     padding always declared. Wheel, trackpad, keyboard and scrollIntoView are
+     untouched. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.shell__card::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 @media (min-width: 768px) {
