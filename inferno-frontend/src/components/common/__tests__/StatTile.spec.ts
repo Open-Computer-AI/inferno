@@ -44,6 +44,54 @@ describe('StatTile nested-card geometry', () => {
   })
 })
 
+describe('StatTile context-line emphasis', () => {
+  /*
+   * Mirrors the component's regex. Kept as a local copy on purpose: the point
+   * is to pin the BEHAVIOUR against real locale strings from both languages,
+   * and importing from an SFC is not possible without mounting it.
+   */
+  const firstValue = (text: string) => text.match(/[$€£¥]?\d[\d,.]*%?/)?.[0] ?? ''
+
+  it('emphasises the value in every context line the dashboard ships', () => {
+    expect(firstValue('87% served from cache')).toBe('87%')
+    expect(firstValue('$9.71 standard, $1.41 saved')).toBe('$9.71')
+    expect(firstValue('across 4,240,000 requests')).toBe('4,240,000')
+    expect(firstValue('1,204 per minute over the last 5')).toBe('1,204')
+    expect(firstValue('8 active')).toBe('8')
+    expect(firstValue('3 need attention')).toBe('3')
+  })
+
+  it('takes only the FIRST number, so one line never has two bold spans', () => {
+    // Bolding "4 new today" as well as "12 active" would leave neither
+    // emphasised; the first number is the finding, the rest is detail.
+    expect(firstValue('12 active, 4 new today')).toBe('12')
+    expect(firstValue('1,204 per minute over the last 5')).not.toBe('5')
+  })
+
+  it('leaves a line with no number entirely unemphasised', () => {
+    expect(firstValue('All serving normally')).toBe('')
+    expect(firstValue('Billed at the standard rate')).toBe('')
+    expect(firstValue('None connected yet')).toBe('')
+  })
+
+  it('lands on the right token in Chinese, where the number is not leading', () => {
+    expect(firstValue('87% 来自缓存')).toBe('87%')
+    expect(firstValue('活跃 12，今日新增 4')).toBe('12')
+    expect(firstValue('基于 950 次请求')).toBe('950')
+  })
+
+  it('renders the split as text nodes, never as injected markup', () => {
+    // Locale strings are translator-authored. Rendering them through v-html
+    // for the sake of one bold span would make every future translation an
+    // injection surface.
+    // Matches the directive in use (`v-html="`), not the bare word, which
+    // also appears in the comment explaining why it is avoided.
+    expect(tileSource).not.toMatch(/v-html\s*=/)
+    expect(tileSource).toContain('contextParts.before')
+    expect(tileSource).toContain('contextParts.after')
+  })
+})
+
 describe('StatTile surface colours', () => {
   /*
    * The tray has to step AWAY from the page surface, which is --card: darker in
