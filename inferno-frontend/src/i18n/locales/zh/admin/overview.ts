@@ -16,6 +16,9 @@ export default {
         toDate: '{period}至今',
         thisPeriod: '本{period}',
       },
+      tokenTrend: {
+        title: '每日 Token'
+      },
       modelMix: {
         title: '各模型 Token',
         cacheBadge: '{pct}% 缓存',

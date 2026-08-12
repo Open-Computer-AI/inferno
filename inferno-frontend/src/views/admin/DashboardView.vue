@@ -110,6 +110,7 @@
         <div class="panels">
           <TokenMixPanel />
           <ModelMixPanel />
+          <TokenTrendPanel class="panels__wide" />
         </div>
 
         <!-- Below the fold: the other four numbers, then distribution and
@@ -260,6 +261,7 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import StatTile from '@/components/common/StatTile.vue'
 import TokenMixPanel from '@/components/admin/TokenMixPanel.vue'
 import ModelMixPanel from '@/components/admin/ModelMixPanel.vue'
+import TokenTrendPanel from '@/components/admin/TokenTrendPanel.vue'
 import DashboardVerdict from '@/components/admin/DashboardVerdict.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -865,6 +867,13 @@ onMounted(() => {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
   gap: 16px;
+}
+
+/* The trend spans the row: a time series wants length, and squeezing 90 days
+   into a half-width plot puts the cell columns closer together than the daily
+   points they sample, which loses the shape it exists to show. */
+.panels__wide {
+  grid-column: 1 / -1;
 }
 
 /* The fold. auto-fit rather than a fixed 4 so the tiles reflow to 2x2 and
