@@ -257,13 +257,29 @@ const statusLabel = (status: MeterStatus) =>
   font-size: var(--fs-sm);
 }
 
+/*
+ * Two columns once there is room for them.
+ *
+ * This panel used to sit in a 2/3 column with the jobs card beside it. Jobs
+ * moved up next to the health ring, which left the meters running the full
+ * page width -- and a full-width meter puts its value roughly 1,200px from
+ * its own label, with a bar that is longer without saying more. A proportion
+ * does not get more legible by being wider. Two columns halve that travel and
+ * take the block from five rows to three.
+ */
 .meters__list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px 28px;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+@media (min-width: 900px) {
+  .meters__list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /*
