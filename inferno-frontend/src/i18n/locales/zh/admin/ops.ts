@@ -441,7 +441,14 @@ export default {
         description: '最近的告警触发/恢复记录（仅邮件通知）',
         loading: '加载中...',
         empty: '暂无告警事件',
+        emptyHint: '此时间范围内没有指标超过规则阈值。',
         loadFailed: '加载告警事件失败',
+        endOfList: '已到底部',
+        filters: {
+          anySeverity: '全部级别',
+          anyStatus: '全部状态',
+          anyEmail: '全部邮件状态'
+        },
         status: {
           firing: '告警中',
           resolved: '已恢复',
@@ -464,6 +471,7 @@ export default {
           resolvedAt: '解决时间',
           ruleId: '规则 ID',
           dimensions: '维度信息',
+          measured: '实测值 / 阈值',
           historyTitle: '历史记录',
           historyHint: '同一规则 + 相同维度的最近事件',
           historyLoading: '加载历史中...',
@@ -474,12 +482,12 @@ export default {
           status: '状态',
           severity: '级别',
           platform: '平台',
-          ruleId: '规则ID',
+          ruleId: '规则',
           title: '标题',
           duration: '持续时间',
-          metric: '指标 / 阈值',
+          metric: '实测值 / 阈值',
           dimensions: '维度',
-          email: '邮件已发送',
+          email: '邮件',
           emailSent: '已发送',
           emailIgnored: '已忽略'
         }
