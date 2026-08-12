@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
 import OpsErrorDistributionChart from '../OpsErrorDistributionChart.vue'
+import DitherDonut from '@/components/charts/DitherDonut.vue'
 import OpsErrorTrendChart from '../OpsErrorTrendChart.vue'
 
 vi.mock('chart.js', () => ({
@@ -97,12 +98,18 @@ describe('Ops SLA-scoped error charts', () => {
       global: globalStubs,
     })
 
-    const doughnut = wrapper.findComponent({ name: 'Doughnut' })
-    expect(doughnut.exists()).toBe(true)
-    expect(doughnut.props('data')).toMatchObject({
-      labels: ['admin.ops.client'],
-      datasets: [{ data: [2] }],
-    })
+    /*
+     * Reads DitherDonut's `slices` prop rather than Chart.js's `data`. The
+     * chart is a canvas now, so the props ARE the assertable contract -- and
+     * the guarantee under test is unchanged: only the 2 SLA errors from the
+     * 400 row count, the 5 business-limited ones do not, and the 503 row
+     * contributes nothing because all 3 of its errors were business limits.
+     */
+    const donut = wrapper.findComponent(DitherDonut)
+    expect(donut.exists()).toBe(true)
+    const slices = donut.props('slices') as { label: string; value: number }[]
+    expect(slices.map((s) => s.label)).toEqual(['admin.ops.client'])
+    expect(slices.map((s) => s.value)).toEqual([2])
   })
 
   it('错误分布图在只有业务限制错误时显示为空态', () => {
@@ -117,7 +124,7 @@ describe('Ops SLA-scoped error charts', () => {
       global: globalStubs,
     })
 
-    expect(wrapper.findComponent({ name: 'Doughnut' }).exists()).toBe(false)
+    expect(wrapper.findComponent(DitherDonut).exists()).toBe(false)
     expect(wrapper.find('.empty-state-stub').exists()).toBe(true)
   })
 
