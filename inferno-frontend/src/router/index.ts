@@ -741,13 +741,27 @@ const routes: RouteRecordRaw[] = [
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
+  /**
+   * The shell card scrolls, not the document.
+   *
+   * vue-router's return value drives `window.scrollTo`, and the window no
+   * longer scrolls -- AppLayout pins the shell to 100dvh and gives the card
+   * `overflow: auto`. Returning `{ top: 0 }` would therefore be a silent
+   * no-op: every route change would land mid-page at whatever offset the
+   * previous route was scrolled to.
+   *
+   * Scrolling the element directly and returning false keeps back/forward
+   * restoration working too, since savedPosition is still the router's.
+   */
   scrollBehavior(_to, _from, savedPosition) {
-    // Scroll to saved position when using browser back/forward
-    if (savedPosition) {
-      return savedPosition
+    const card = document.querySelector('.shell__card')
+    if (!card) {
+      // Auth and other routes render outside the shell, where the document
+      // really is the scroller.
+      return savedPosition ?? { top: 0 }
     }
-    // Scroll to top for new routes
-    return { top: 0 }
+    card.scrollTo({ top: savedPosition?.top ?? 0 })
+    return false
   }
 })
 
