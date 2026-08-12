@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import Select from '@/components/common/Select.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import OpsResourceMeters from './OpsResourceMeters.vue'
+import OpsTrafficSplit from './OpsTrafficSplit.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { adminAPI } from '@/api'
@@ -221,20 +222,6 @@ function openErrorDetails(kind: 'request' | 'upstream') {
 // --- Threshold checking helpers ---
 type ThresholdLevel = 'normal' | 'warning' | 'critical'
 
-function getSLAThresholdLevel(slaPercent: number | null): ThresholdLevel {
-  if (slaPercent == null) return 'normal'
-  const threshold = props.thresholds?.sla_percent_min
-  if (threshold == null) return 'normal'
-
-  // SLA is "higher is better":
-  // - below threshold => critical
-  // - within +0.1% buffer => warning
-  const warningBuffer = 0.1
-
-  if (slaPercent < threshold) return 'critical'
-  if (slaPercent < threshold + warningBuffer) return 'warning'
-  return 'normal'
-}
 
 function getTTFTThresholdLevel(ttftMs: number | null): ThresholdLevel {
   if (ttftMs == null) return 'normal'
@@ -245,14 +232,6 @@ function getTTFTThresholdLevel(ttftMs: number | null): ThresholdLevel {
   return 'normal'
 }
 
-function getRequestErrorRateThresholdLevel(errorRatePercent: number | null): ThresholdLevel {
-  if (errorRatePercent == null) return 'normal'
-  const threshold = props.thresholds?.request_error_rate_percent_max
-  if (threshold == null) return 'normal'
-  if (errorRatePercent >= threshold) return 'critical'
-  if (errorRatePercent >= threshold * 0.8) return 'warning'
-  return 'normal'
-}
 
 function getUpstreamErrorRateThresholdLevel(upstreamErrorRatePercent: number | null): ThresholdLevel {
   if (upstreamErrorRatePercent == null) return 'normal'
@@ -391,17 +370,7 @@ const tpsAvgLabel = computed(() => {
   return v.toFixed(1)
 })
 
-const slaPercent = computed(() => {
-  const v = overview.value?.sla
-  if (typeof v !== 'number') return null
-  return v * 100
-})
 
-const errorRatePercent = computed(() => {
-  const v = overview.value?.error_rate
-  if (typeof v !== 'number') return null
-  return v * 100
-})
 
 const upstreamErrorRatePercent = computed(() => {
   const v = overview.value?.upstream_error_rate
@@ -1101,35 +1070,23 @@ function handleToolbarRefresh() {
           </div>
         </div>
 
-        <!-- Card 2: SLA -->
-        <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900" style="order: 2;">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <span class="text-[10px] font-bold uppercase text-gray-400">{{ t('admin.ops.sla') }}</span>
-              <HelpTooltip v-if="!props.fullscreen" :content="t('admin.ops.tooltips.sla')" />
-              <span class="h-1.5 w-1.5 rounded-full" :class="getSLAThresholdLevel(slaPercent) === 'critical' ? 'bg-red-500' : getSLAThresholdLevel(slaPercent) === 'warning' ? 'bg-yellow-500' : 'bg-green-500'"></span>
-            </div>
-            <button
-              v-if="!props.fullscreen"
-              class="text-[10px] font-bold text-blue-500 hover:underline"
-              type="button"
-              @click="openDetails({ title: t('admin.ops.requestDetails.title'), kind: 'error' })"
-            >
-              {{ t('admin.ops.requestDetails.details') }}
-            </button>
-          </div>
-          <div class="mt-2 text-3xl font-black" :class="getThresholdColorClass(getSLAThresholdLevel(slaPercent))">
-            {{ slaPercent == null ? '-' : `${slaPercent.toFixed(3)}%` }}
-          </div>
-          <div class="mt-3 h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700">
-            <div class="h-full transition-all" :class="getSLAThresholdLevel(slaPercent) === 'critical' ? 'bg-red-500' : getSLAThresholdLevel(slaPercent) === 'warning' ? 'bg-yellow-500' : 'bg-green-500'" :style="{ width: `${Math.max((slaPercent ?? 0) - 90, 0) * 10}%` }"></div>
-          </div>
-          <div class="mt-3 text-xs">
-            <div class="flex justify-between">
-              <span class="text-gray-500">{{ t('admin.ops.exceptions') }}:</span>
-              <span class="font-bold text-red-600 dark:text-red-400">{{ formatNumber((overview.request_count_sla ?? 0) - (overview.success_count ?? 0)) }}</span>
-            </div>
-          </div>
+        <!--
+          Was two cards: "SLA 88.050%" and "Request errors 11.95%", shown as if
+          unrelated, with business-limited in small print under one of them.
+          They are three parts of one total -- and the first two do NOT sum to
+          100% whenever the third is non-zero, because business limits are
+          excluded from the SLA denominator. One split bar shows that instead
+          of leaving it as arithmetic for the reader.
+        -->
+        <div class="ops-traffic-cell" style="order: 2;">
+          <OpsTrafficSplit
+            :success-count="overview?.success_count ?? 0"
+            :error-count-sla="overview?.error_count_sla ?? 0"
+            :business-limited-count="overview?.business_limited_count ?? 0"
+            :sla="overview?.sla ?? null"
+            :fullscreen="props.fullscreen"
+            @open-details="openErrorDetails('request')"
+          />
         </div>
 
         <!-- Card 4: Request Duration -->
@@ -1234,31 +1191,6 @@ function handleToolbarRefresh() {
           </div>
         </div>
 
-        <!-- Card 3: Request Errors -->
-        <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900" style="order: 3;">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-1">
-              <span class="text-[10px] font-bold uppercase text-gray-400">{{ t('admin.ops.requestErrors') }}</span>
-              <HelpTooltip v-if="!props.fullscreen" :content="t('admin.ops.tooltips.errors')" />
-            </div>
-            <button v-if="!props.fullscreen" class="text-[10px] font-bold text-blue-500 hover:underline" type="button" @click="openErrorDetails('request')">
-              {{ t('admin.ops.requestDetails.details') }}
-            </button>
-          </div>
-          <div class="mt-2 text-3xl font-black" :class="getThresholdColorClass(getRequestErrorRateThresholdLevel(errorRatePercent))">
-            {{ errorRatePercent == null ? '-' : `${errorRatePercent.toFixed(2)}%` }}
-          </div>
-          <div class="mt-3 space-y-1 text-xs">
-            <div class="flex justify-between">
-              <span class="text-gray-500">{{ t('admin.ops.errorCount') }}:</span>
-              <span class="font-bold text-gray-900 dark:text-white">{{ formatNumber(overview.error_count_sla ?? 0) }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-gray-500">{{ t('admin.ops.businessLimited') }}:</span>
-              <span class="font-bold text-gray-900 dark:text-white">{{ formatNumber(overview.business_limited_count ?? 0) }}</span>
-            </div>
-          </div>
-        </div>
 
         <!-- Card 6: Upstream Errors -->
         <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900" style="order: 6;">
@@ -1402,6 +1334,19 @@ function handleToolbarRefresh() {
 </template>
 
 <style scoped>
+/* The split takes the width of the two cards it replaces, because it is
+   showing what both of them used to. */
+.ops-traffic-cell {
+  grid-column: span 2;
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .ops-traffic-cell {
+    grid-column: span 1;
+  }
+}
+
 /* Meters take the width; jobs is a single status, so it sits beside them and
    collapses under on narrow screens. */
 .ops-resources {
