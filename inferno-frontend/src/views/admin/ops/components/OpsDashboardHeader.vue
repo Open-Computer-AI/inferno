@@ -6,6 +6,7 @@ import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import OpsResourceMeters from './OpsResourceMeters.vue'
 import OpsTrafficSplit from './OpsTrafficSplit.vue'
 import OpsStatCard from './OpsStatCard.vue'
+import OpsHealthRing from './OpsHealthRing.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { adminAPI } from '@/api'
@@ -398,34 +399,8 @@ const healthScoreValue = computed<number | null>(() => {
   return typeof v === 'number' && Number.isFinite(v) ? v : null
 })
 
-const healthScoreColor = computed(() => {
-  if (isSystemIdle.value) return '#9ca3af' // gray-400
-  const score = healthScoreValue.value
-  if (score == null) return '#9ca3af'
-  if (score >= 90) return '#10b981' // green
-  if (score >= 60) return '#f59e0b' // yellow
-  return '#ef4444' // red
-})
 
-const healthScoreClass = computed(() => {
-  if (isSystemIdle.value) return 'text-gray-400'
-  const score = healthScoreValue.value
-  if (score == null) return 'text-gray-400'
-  if (score >= 90) return 'text-green-500'
-  if (score >= 60) return 'text-yellow-500'
-  return 'text-red-500'
-})
 
-const circleSize = computed(() => props.fullscreen ? 140 : 100)
-const strokeWidth = computed(() => props.fullscreen ? 10 : 8)
-const radius = computed(() => (circleSize.value - strokeWidth.value) / 2)
-const circumference = computed(() => 2 * Math.PI * radius.value)
-const dashOffset = computed(() => {
-  if (isSystemIdle.value) return 0
-  if (healthScoreValue.value == null) return 0
-  const score = Math.max(0, Math.min(100, healthScoreValue.value))
-  return circumference.value - (score / 100) * circumference.value
-})
 
 interface DiagnosisItem {
   type: 'critical' | 'warning' | 'info'
@@ -879,54 +854,11 @@ const upstreamTone = computed<CardTone>(() =>
               </div>
             </div>
 
-            <div class="relative flex items-center justify-center">
-              <svg :width="circleSize" :height="circleSize" class="-rotate-90 transform">
-                <circle
-                  :cx="circleSize / 2"
-                  :cy="circleSize / 2"
-                  :r="radius"
-                  :stroke-width="strokeWidth"
-                  fill="transparent"
-                  class="text-gray-200 dark:text-dark-700"
-                  stroke="currentColor"
-                />
-                <circle
-                  :cx="circleSize / 2"
-                  :cy="circleSize / 2"
-                  :r="radius"
-                  :stroke-width="strokeWidth"
-                  fill="transparent"
-                  :stroke="healthScoreColor"
-                  stroke-linecap="round"
-                  :stroke-dasharray="circumference"
-                  :stroke-dashoffset="dashOffset"
-                  class="transition-all duration-1000 ease-out"
-                />
-              </svg>
-
-              <div class="absolute flex flex-col items-center">
-                <span :class="[props.fullscreen ? 'text-5xl' : 'text-3xl', 'font-black', healthScoreClass]">
-                  {{ isSystemIdle ? t('admin.ops.idleStatus') : (overview.health_score ?? '--') }}
-                </span>
-                <span :class="[props.fullscreen ? 'text-xs' : 'text-[10px]', 'font-bold uppercase tracking-wider text-gray-400']">{{ t('admin.ops.health') }}</span>
-              </div>
-            </div>
-
-            <div class="mt-4 text-center" v-if="!props.fullscreen">
-              <div class="flex items-center justify-center gap-1 text-xs font-medium text-gray-500">
-                {{ t('admin.ops.healthCondition') }}
-                <HelpTooltip :content="t('admin.ops.healthHelp')" />
-              </div>
-              <div class="mt-1 text-xs font-bold" :class="healthScoreClass">
-                {{
-                  isSystemIdle
-                    ? t('admin.ops.idleStatus')
-                    : typeof overview.health_score === 'number' && overview.health_score >= 90
-                      ? t('admin.ops.healthyStatus')
-                      : t('admin.ops.riskyStatus')
-                }}
-              </div>
-            </div>
+            <OpsHealthRing
+              :score="healthScoreValue"
+              :idle="isSystemIdle"
+              :fullscreen="props.fullscreen"
+            />
           </div>
 
           <!-- 2) Realtime Traffic -->
