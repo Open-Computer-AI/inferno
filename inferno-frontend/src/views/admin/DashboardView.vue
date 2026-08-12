@@ -43,7 +43,6 @@
             to="/admin/usage"
             :exact="String(stats.today_requests)"
             :delta="requestsDelta"
-            :series="requestsSeries"
             :context="t('admin.dashboard.tileRequestsRate', { rate: formatNumber(Math.round(stats.rpm)) })"
           />
           <StatTile
@@ -54,7 +53,6 @@
             to="/admin/usage"
             :exact="String(stats.today_tokens)"
             :delta="tokensDelta"
-            :series="tokensSeries"
             :context="todayCacheContext"
           />
           <StatTile
@@ -64,7 +62,6 @@
             to="/admin/usage"
             :value="`$${formatCost(stats.today_actual_cost)}`"
             :delta="costDelta"
-            :series="costSeries"
             :context="costContext.text"
             :context-tone="costContext.tone"
           />
@@ -260,7 +257,7 @@ import Select from '@/components/common/Select.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
-import { densifyHours, latestHourOn, sumWindow, toDelta } from '@/utils/dayOverDay'
+import { latestHourOn, sumWindow, toDelta } from '@/utils/dayOverDay'
 
 import {
   Chart as ChartJS,
@@ -587,7 +584,7 @@ type ContextTone = 'muted' | 'good' | 'attention'
 const deltaTrend = ref<TrendDataPoint[]>([])
 
 /*
- * The hour both windows are bounded at.
+ * The hour both comparison windows are bounded at.
  *
  * NOT simply the browser's hour: buckets are stamped in the DATABASE's
  * timezone, so a browser behind the DB would discard the most recent buckets.
@@ -612,23 +609,6 @@ const dayOverDay = computed(() => {
     )
   }
 })
-
-/*
- * Today's shape, one point per hour, zero-filled. See densifyHours in
- * utils/dayOverDay.ts for why the zero-fill is load-bearing: an idle hour is
- * an ABSENT row in the aggregate table, not a zero one, and a sparkline that
- * spaces points evenly would silently erase the gap.
- *
- * Reuses the fetch the deltas already make, so the shape costs rendering and
- * not a request.
- */
-function todaySeries(pick: (p: TrendDataPoint) => number): number[] {
-  return densifyHours(deltaTrend.value, formatLocalDate(new Date()), boundHour.value, pick)
-}
-
-const requestsSeries = computed(() => todaySeries((p) => p.requests))
-const tokensSeries = computed(() => todaySeries((p) => p.total_tokens))
-const costSeries = computed(() => todaySeries((p) => p.actual_cost))
 
 const requestsDelta = computed(() =>
   dayOverDay.value ? toDelta(dayOverDay.value.today.requests, dayOverDay.value.yesterday.requests) : null
