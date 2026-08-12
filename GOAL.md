@@ -1,0 +1,190 @@
+# GOAL — finish the June conversion
+
+Single entrypoint. Read this first, work top-down, stop when a gate fails.
+Build history and design rationale live in `INFERNO-BUILD.md`; this file is the
+backlog and the definition of done.
+
+Baseline taken 2026-08-13, immediately after the dashboard chart conversion:
+
+```
+conversion: 118/326 files (36.2%), 14674 legacy utilities across 113384 lines
+224 test files / 1588 tests green · june-lint clean across 129 files
+```
+
+---
+
+## The one number
+
+```bash
+cd inferno-frontend && node scripts/conversion-status.mjs
+```
+
+`filesRemaining` and `legacyUtilitiesRemaining` must **only ever go down**.
+`--json` for machine use. This reports; it does not gate. The gate is below.
+
+---
+
+## GATES — every one must pass before any commit
+
+Run from `inferno-frontend/`. A red gate means stop and fix, never commit past it.
+
+| # | command | pass condition |
+|---|---------|----------------|
+| 1 | `npm run typecheck` | zero output after the banner |
+| 2 | `node scripts/june-lint.mjs` | `clean across N files` |
+| 3 | `npm run test:run` | all green, **and the test count never drops** |
+| 4 | `npm run build` | `built in …`, no new errors |
+| 5 | `cd .. && git diff --name-only upstream/main..HEAD -- backend frontend deploy docs` | **empty** — thin-fork discipline, backend is read-only |
+| 6 | `node scripts/conversion-status.mjs` | remaining count strictly lower than the line above |
+
+Gate 5 is the one that ends the project if broken. Check it every time.
+
+### Known-good exceptions, do not "fix" these
+- `npm run lint:check` reports one pre-existing eslint error in
+  `scripts/june-lint.mjs` (`no-misleading-character-class`, the emoji range).
+  It reproduces on a clean tree. Leave it or fix it deliberately, but it is not
+  a regression you caused.
+- `/admin/audit-logs` has one nested scrollbar: `DataTable`'s `.table-wrapper`
+  inside `TablePageLayout`, which scrolls internally **by design**.
+
+---
+
+## Verification that is not a gate, but is required
+
+Type-checking proves nothing about whether a screen looks right. For any visual
+change:
+
+1. **Render it.** Dev server on `:5173`, log in, navigate to the actual route.
+2. **Measure, do not eyeball.** `getBoundingClientRect`, `getComputedStyle`,
+   `scrollHeight` vs `clientHeight`. Numbers in the commit message.
+3. **Both themes.** `localStorage.setItem('theme','dark')` then reload.
+4. **Two widths minimum**, one of them below 1024 where the rail goes off-canvas.
+5. **Seed first if the screen is empty.** A component cannot be verified against
+   no data — see "Seeds" below.
+
+### The shell audit — rerun after any layout change
+Walks every in-shell route asserting: document must not scroll · card frame must
+not drift while scrolled · outer gaps 7/7/7 · no reserved scrollbar gutter · no
+nested scrollbar · no new console errors. Last run: **48/49 clean**, the one
+being the by-design table-wrapper above. The script is in the session log for
+`384cd7d0`; rebuild it from that commit message if needed.
+
+---
+
+## BACKLOG — ordered. Do them in this order.
+
+### 1. `TablePageLayout` height coupling — SMALL, DO FIRST
+`src/components/layout/TablePageLayout.vue` hardcodes
+`height: calc(100vh - 46px / 62px / 78px)` at three breakpoints. Its own comment
+explains why: *"shell__card is a plain block … so this element cannot inherit a
+height through it"*. **That stopped being true in `31a75e07`** — the shell is a
+flex chain pinned to `100dvh` now.
+
+- Replace the three `calc()` rules with `height: 100%` (or `flex: 1; min-height: 0`).
+- **Done when:** the three `calc(100vh` occurrences are gone AND all 15 table
+  views still render with `.tpl` height == the card's client height, measured.
+- **Risk:** touches every admin table page. Measure `.tpl` on at least
+  `/admin/users`, `/admin/accounts`, `/admin/audit-logs` before and after.
+
+### 2. Finish ops — the modal-only surfaces
+Everything on the ops page that renders on load is converted. What is left only
+appears once you open something:
+
+| file | legacy utils |
+|------|--------------|
+| `OpsEmailNotificationCard.vue` | 121 |
+| `OpsRuntimeSettingsCard.vue` | 118 |
+| `OpsSettingsDialog.vue` | 93 |
+| `OpsErrorDetailModal.vue` | 89 |
+| `OpsRequestDetailsModal.vue` | 87 |
+| `OpsAlertRulesCard.vue` | 82 |
+| `OpsErrorLogTable.vue` | 54 |
+| `OpsOpenAITokenStatsCard.vue` | 50 |
+
+- **Done when:** `conversion-status.mjs` reports 0 for every file under
+  `src/views/admin/ops/`.
+- Each must be **opened in the browser** and verified, not just typechecked.
+  A modal that typechecks and renders blank is the failure mode here.
+
+### 3. `SettingsView` — the elephant, 12,923 lines / 1,742 utilities
+`INFERNO-BUILD.md` archetype C says it splits into **seven routes**. Do not
+attempt it as one pass.
+
+- Read the archetype C section of `INFERNO-BUILD.md` first.
+- Split the routes **before** restyling. A 12,923-line file cannot be reviewed;
+  seven files can.
+- One route per commit, each passing all six gates.
+- It is on the june-lint `TOUCHED_NOT_CONVERTED` waiver — **remove that entry**
+  when the last route lands, and confirm the lint still passes with it gone.
+
+### 4. Remaining Chart.js — 4 consumers left
+`grep -rln "chart\.js" src/` should reach zero, then drop the dependency.
+
+- `src/components/admin/payment/DailyRevenueChart.vue` — needs `payment_enabled`
+  and order data to verify; seed before starting.
+- `src/features/channel-monitor-v2/MonitorTrendChart.vue`
+- `src/components/account/AccountStatsModal.vue` **and**
+  `src/components/admin/account/AccountStatsModal.vue` — ⚠️ these are two copies
+  of the same component (749L and 713L, different hashes, both import Chart.js).
+  **Reconcile them into one before converting**, or the work is done twice into
+  two files that keep diverging.
+- **Done when:** `grep -rln "chart\.js" src/` is empty and `chart.js` +
+  `vue-chartjs` are out of `package.json`.
+
+### 5. The rest, by weight
+`node scripts/conversion-status.mjs --top 30`. Largest first, except that the
+three account modals (`CreateAccountModal` 965, `EditAccountModal` 620,
+`BulkEditAccountModal` 293) are one job, not three — they share structure and
+are all on the waiver list.
+
+---
+
+## Seeds — a screen with no data cannot be verified
+
+All seeds are `now()`-relative, so re-running re-anchors them. The DB clock
+drifts ahead of the seed; if a page reads Idle or "No data", reseed before
+concluding anything is broken.
+
+```bash
+cd inferno-frontend/scripts/seed
+for f in seed-dashboard seed-year seed-models seed-ops seed-ops-dense seed-alert-events seed-users; do
+  docker cp $f.sql sub2api-postgres:/tmp/
+  docker exec sub2api-postgres psql -U sub2api -d sub2api -q -f /tmp/$f.sql
+done
+```
+
+See `inferno-frontend/scripts/seed/README.md` for what each one covers.
+
+Seeded so far: a year of dashboard daily/hourly, per-model usage, dense ops
+traffic + error logs + hourly metrics, 24 alert events across the full P0–P3
+ramp and all three statuses, and 11 users with 30 days of usage.
+
+Local dev login: `admin@sub2api.local` / `36232e0cd5be929e4004e4ca025b100e`.
+
+---
+
+## Rules that are not negotiable
+
+1. **Gate 5.** The backend is read-only. If `upstream/main..HEAD` shows anything
+   under `backend/`, `frontend/`, `deploy/` or `docs/`, revert it.
+2. **Never weaken a test to make it green.** If a spec fails, decide whether the
+   test or the code is wrong and fix that one. `INFERNO-BUILD.md` has a worked
+   example of this going right.
+3. **Never delete a row, column or control to make a layout tidy.** Reducing
+   scope is the owner's call. If something must go, say so explicitly.
+4. **Measure before claiming.** "Looks fine" is not evidence. Every completion
+   claim in the log so far carries numbers; keep that.
+5. **A BEM block may not be named after a bare Tailwind utility** while Tailwind
+   is still in the build. `june-lint` enforces this now — it was found the hard
+   way when `.ring` inherited Tailwind's blue focus ring for three commits.
+
+---
+
+## Status log — append one line per landed commit
+
+| date | commit | what | files remaining |
+|------|--------|------|-----------------|
+| 2026-08-13 | `0ae68c16` | ops skeleton matched to the real page | 119 |
+| 2026-08-13 | `31a75e07` | shell: card scrolls, not the document | 119 |
+| 2026-08-13 | `384cd7d0` | card scrollbar hidden, padding squared | 119 |
+| 2026-08-13 | _this_ | dashboard user-trend chart off Chart.js | 118 |
