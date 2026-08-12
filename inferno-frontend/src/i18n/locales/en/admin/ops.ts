@@ -123,6 +123,15 @@ export default {
       failedToLoadErrorDetail: 'Failed to load error detail',
       retryFailed: 'Retry failed',
       tpsK: 'TPS (K)',
+      traffic: {
+        title: 'Traffic outcome',
+        slaCaption: 'SLA',
+        succeeded: 'Succeeded',
+        failed: 'Failed',
+        limited: 'Limited',
+        unit: 'req',
+        caption: 'Every request in this window, by how it landed'
+      },
       resources: {
         title: 'Resource usage',
         peakLabel: 'Tightest resource right now',
