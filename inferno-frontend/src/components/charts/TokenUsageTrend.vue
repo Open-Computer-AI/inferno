@@ -1,282 +1,99 @@
 <script setup lang="ts">
 /**
- * TokenUsageTrend -- part 09, section 05.
+ * Token volume over time, as a field of drifting tiles, with the cache hit
+ * rate on a strip beneath it.
  *
- * Migration note from the prototype:
- *   "Five series on one canvas, a percentage and four volumes on the same
- *    chart, means lines cross for reasons that have no meaning. Three volume
- *    series and the rate pulled into its own strip below, sharing the x
- *    axis, no right hand axis. Cache creation and cache read become one
- *    cache series -- the question is how much traffic is cached, not which
- *    half of the mechanism it went through. Both stay in the tooltip."
+ * WHY THIS ONE MOVED OFF CHART.JS
+ * It renders on four routes -- both dashboards and both usage pages -- so it
+ * is the single highest-leverage chart in the app, and leaving it as a
+ * Chart.js line while the dashboard panels beside it were tile fields made the
+ * page read as two products stitched together.
  *
- * Two Chart.js Line instances instead of one dual-axis chart: `mainChart`
- * (Input, Output, Cache -- Input alone carries the area fill) and `rateChart`
- * (Cache hit rate, its own 0-100 scale, 34px per the anatomy spec). They
- * share x labels and are kept in sync on hover -- see `syncHover` below --
- * rather than merged back into one canvas, so neither series has to fight
- * the other's scale again.
+ * STACKED, NOT THREE OVERLAID LINES
+ * The old chart drew input filled, output as a line, and cache as a dashed
+ * line -- three encodings for three series that actually SUM to the total
+ * shown everywhere else on the page. Stacking says that: the envelope is total
+ * tokens, and each band is its share. It also removes the dashed line, which
+ * was carrying "this one is different" rather than any property of the data.
  *
- * All five June colors below (--sr-1 input, --sr-3 output/rate, --sr-8
- * dashed cache, --brand-tint fill) come through `useChartTokens()`: Chart.js
- * draws to a <canvas>, which cannot read a CSS custom property, so every one
- * of them is resolved to a literal and re-resolved on a theme or brand
- * change. See src/composables/useChartTokens.ts for the mechanism.
- *
- * "The dark mode text and grid colours come from tokens, so the isDarkMode
- * computed can go" -- it does; nothing here reads document.documentElement
- * directly any more.
+ * The hover-sync machinery between the two charts is gone with it. DitherArea
+ * owns its own scrubber, and two independent scrubbers on stacked plots would
+ * fight; the strip is a readout, so it gets the value in its header instead of
+ * a second interactive surface.
  */
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Tooltip,
-  Legend,
-  Filler
-} from 'chart.js'
-import { Line } from 'vue-chartjs'
-import type { ChartComponentRef } from 'vue-chartjs'
+import type { TrendDataPoint } from '@/types'
+import DitherArea from './DitherArea.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useChartTokens } from '@/composables/useChartTokens'
-import type { TrendDataPoint } from '@/types'
-
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler)
-
-const { t } = useI18n()
+import { useSequentialRamp } from '@/composables/useSequentialRamp'
 
 const props = defineProps<{
   trendData: TrendDataPoint[]
   loading?: boolean
 }>()
 
-const { tokens, prefersReducedMotion } = useChartTokens()
+const { t } = useI18n()
+const { tokens } = useChartTokens()
+const ramp = useSequentialRamp(3)
 
-const formatTokens = (value: number): string => {
-  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`
-  if (value >= 1_000) return `${(value / 1_000).toFixed(2)}K`
-  return value.toLocaleString()
-}
-
-const formatCost = (value: number): string => {
-  if (value >= 1000) return (value / 1000).toFixed(2) + 'K'
-  if (value >= 1) return value.toFixed(2)
-  if (value >= 0.01) return value.toFixed(3)
-  return value.toFixed(4)
-}
-
-// Same formula as before the rewrite: cache reads over every prompt token
-// (input + both halves of cache), so Anthropic-style cache creation counts
-// toward the denominator too.
+/*
+ * Cache hit rate is measured against ALL prompt tokens (input + both halves of
+ * cache), so Anthropic-style cache creation counts toward the denominator too.
+ */
 const rateFor = (d: TrendDataPoint): number => {
   const totalPromptTokens = d.input_tokens + d.cache_read_tokens + d.cache_creation_tokens
   return totalPromptTokens > 0 ? (d.cache_read_tokens / totalPromptTokens) * 100 : 0
 }
 
-const cacheLabel = computed(() => t('admin.dashboard.cache'))
+const hasData = computed(() => (props.trendData?.length ?? 0) > 0)
 
-const mainChartData = computed(() => {
-  if (!props.trendData?.length) return null
-  return {
-    labels: props.trendData.map((d) => d.date),
-    datasets: [
-      {
-        label: t('admin.dashboard.input'),
-        data: props.trendData.map((d) => d.input_tokens),
-        borderColor: tokens.ramp[0],
-        backgroundColor: tokens.brandTint,
-        borderWidth: 1.75,
-        fill: true,
-        tension: 0.3,
-        pointRadius: 0,
-        pointHoverRadius: 3
-      },
-      {
-        label: t('admin.dashboard.output'),
-        data: props.trendData.map((d) => d.output_tokens),
-        borderColor: tokens.ramp[2],
-        backgroundColor: 'transparent',
-        borderWidth: 1.75,
-        fill: false,
-        tension: 0.3,
-        pointRadius: 0,
-        pointHoverRadius: 3
-      },
-      {
-        label: cacheLabel.value,
-        // Cache creation and cache read merged into one series (migration
-        // note above); both numbers still surface in the tooltip callback.
-        data: props.trendData.map((d) => d.cache_creation_tokens + d.cache_read_tokens),
-        borderColor: tokens.ramp[7],
-        backgroundColor: 'transparent',
-        borderWidth: 1.5,
-        borderDash: [5, 5],
-        fill: false,
-        tension: 0.3,
-        pointRadius: 0,
-        pointHoverRadius: 3
-      }
-    ]
-  }
-})
+/* Dates only, no time: the strip and the main field share these, and an hourly
+   bucket's full stamp is too long to sit under a 34px strip. */
+const labels = computed(() => props.trendData.map((d) => d.date.slice(0, 10)))
 
-const rateChartData = computed(() => {
-  if (!props.trendData?.length) return null
-  return {
-    labels: props.trendData.map((d) => d.date),
-    datasets: [
-      {
-        label: t('usage.cacheHitRate'),
-        data: props.trendData.map(rateFor),
-        borderColor: tokens.ramp[2],
-        backgroundColor: 'transparent',
-        borderWidth: 1.75,
-        fill: false,
-        tension: 0.3,
-        pointRadius: 0,
-        pointHoverRadius: 3
-      }
-    ]
+/* Bottom-first, so the deepest ramp step is the largest band and the stack
+   reads dark to pale from the floor up. */
+const mainSeries = computed(() => [
+  {
+    key: 'cache',
+    label: t('admin.dashboard.cache'),
+    values: props.trendData.map((d) => d.cache_creation_tokens + d.cache_read_tokens),
+    color: ramp.value[0] ?? ''
+  },
+  {
+    key: 'input',
+    label: t('admin.dashboard.input'),
+    values: props.trendData.map((d) => d.input_tokens),
+    color: ramp.value[1] ?? ''
+  },
+  {
+    key: 'output',
+    label: t('admin.dashboard.output'),
+    values: props.trendData.map((d) => d.output_tokens),
+    color: ramp.value[2] ?? ''
   }
-})
+])
+
+const rateSeries = computed(() => [
+  {
+    key: 'rate',
+    label: t('usage.cacheHitRate'),
+    values: props.trendData.map(rateFor),
+    color: ramp.value[1] ?? ''
+  }
+])
 
 const latestRateLabel = computed(() => {
-  if (!props.trendData?.length) return ''
+  if (!hasData.value) return ''
   return `${rateFor(props.trendData[props.trendData.length - 1]).toFixed(1)}%`
 })
 
-const mainChartOptions = computed(() => ({
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: prefersReducedMotion.value ? (false as const) : undefined,
-  interaction: {
-    intersect: false,
-    mode: 'index' as const
-  },
-  plugins: {
-    legend: {
-      position: 'top' as const,
-      labels: {
-        color: tokens.bodyCopy,
-        usePointStyle: true,
-        pointStyle: 'circle',
-        padding: 14,
-        font: { size: 11 }
-      }
-    },
-    tooltip: {
-      callbacks: {
-        label: (context: any) => {
-          if (context.dataset.label === cacheLabel.value) {
-            const point = props.trendData[context.dataIndex]
-            const breakdown = t('admin.dashboard.cacheBreakdownTooltip', {
-              total: formatTokens(context.raw),
-              created: formatTokens(point?.cache_creation_tokens ?? 0),
-              read: formatTokens(point?.cache_read_tokens ?? 0)
-            })
-            return `${context.dataset.label}: ${breakdown}`
-          }
-          return `${context.dataset.label}: ${formatTokens(context.raw)}`
-        },
-        footer: (tooltipItems: any) => {
-          const dataIndex = tooltipItems[0]?.dataIndex
-          const data = dataIndex !== undefined ? props.trendData[dataIndex] : undefined
-          if (!data) return ''
-          return t('admin.dashboard.trendTooltipFooter', {
-            actual: formatCost(data.actual_cost),
-            standard: formatCost(data.cost)
-          })
-        }
-      }
-    }
-  },
-  scales: {
-    x: {
-      grid: { color: tokens.borderSubtle },
-      ticks: { color: tokens.mutedForeground, maxTicksLimit: 6, font: { size: 10 } }
-    },
-    y: {
-      beginAtZero: true,
-      grid: { color: tokens.borderSubtle },
-      ticks: {
-        color: tokens.mutedForeground,
-        maxTicksLimit: 5,
-        font: { size: 10 },
-        callback: (value: string | number) => formatTokens(Number(value))
-      }
-    }
-  }
-}))
-
-const rateChartOptions = computed(() => ({
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: prefersReducedMotion.value ? (false as const) : undefined,
-  interaction: {
-    intersect: false,
-    mode: 'index' as const
-  },
-  plugins: {
-    legend: { display: false },
-    tooltip: {
-      callbacks: {
-        label: (context: any) => `${context.dataset.label}: ${Number(context.raw).toFixed(1)}%`
-      }
-    }
-  },
-  // No right hand axis (the defect the "Today" panel illustrates): this
-  // strip has its own 0-100 scale, not a second axis sharing the main chart.
-  scales: {
-    x: { display: false },
-    y: { display: false, min: 0, max: 100 }
-  }
-}))
-
-// --- one shared crosshair across both canvases ----------------------------
-//
-// Two separate Chart.js instances, so Chart.js's own `interaction.mode:
-// 'index'` only ever syncs a chart with itself. This mirrors the active
-// index (and its tooltip) onto both charts on every pointer move over
-// either one, so hovering the volume chart also lights up the rate strip
-// and vice versa -- "same hover, one shared crosshair" per the anatomy spec.
-// No custom Chart.js plugin: just the two public instances Chart.js already
-// exposes, kept in step.
-const mainChartRef = ref<ChartComponentRef<'line'> | null>(null)
-const rateChartRef = ref<ChartComponentRef<'line'> | null>(null)
-
-const liveCharts = () =>
-  [mainChartRef.value?.chart, rateChartRef.value?.chart].filter(
-    (c): c is NonNullable<typeof c> => !!c
-  )
-
-const syncHover = (event: MouseEvent) => {
-  const charts = liveCharts()
-  const [primary] = charts
-  if (!primary) return
-  const elements = primary.getElementsAtEventForMode(event, 'index', { intersect: false }, false)
-  if (!elements.length) return
-  const index = elements[0].index
-  for (const chart of charts) {
-    const active = chart.data.datasets.map((_, datasetIndex) => ({ datasetIndex, index }))
-    chart.setActiveElements(active)
-    chart.tooltip?.setActiveElements(active, { x: 0, y: 0 })
-    chart.update('none')
-  }
-}
-
-const clearHover = () => {
-  for (const chart of liveCharts()) {
-    chart.setActiveElements([])
-    chart.tooltip?.setActiveElements([], { x: 0, y: 0 })
-    chart.update('none')
-  }
-}
+const restColor = computed(
+  () => `color-mix(in oklch, ${tokens.mutedForeground} 26%, ${tokens.card})`
+)
 </script>
 
 <template>
@@ -286,20 +103,38 @@ const clearHover = () => {
     <div v-if="loading" class="trend2__state">
       <LoadingSpinner />
     </div>
-    <div v-else-if="!trendData.length || !mainChartData || !rateChartData" class="trend2__state">
+    <div v-else-if="!hasData" class="trend2__state">
       <EmptyState :title="t('admin.dashboard.noDataAvailable')" icon="hgi-chart-bar-big" />
     </div>
-    <div v-else class="trend2__body" @mousemove="syncHover" @mouseleave="clearHover">
+    <div v-else class="trend2__body">
+      <ul class="trend2__legend">
+        <li v-for="entry in mainSeries" :key="entry.key" class="trend2__chip">
+          <span class="trend2__swatch" :style="{ background: entry.color }" />
+          {{ entry.label }}
+        </li>
+      </ul>
+
       <div class="trend2__main">
-        <Line ref="mainChartRef" :data="mainChartData" :options="mainChartOptions" />
+        <DitherArea
+          :series="mainSeries"
+          :labels="labels"
+          :rest-color="restColor"
+          :marker-color="tokens.brand"
+        />
       </div>
+
       <div class="trend2__rate">
         <div class="trend2__rate-head">
           <span>{{ t('usage.cacheHitRate') }}</span>
           <span class="trend2__rate-value">{{ latestRateLabel }}</span>
         </div>
         <div class="trend2__rate-chart">
-          <Line ref="rateChartRef" :data="rateChartData" :options="rateChartOptions" />
+          <DitherArea
+            :series="rateSeries"
+            :labels="labels"
+            :rest-color="restColor"
+            :marker-color="tokens.brand"
+          />
         </div>
       </div>
     </div>
@@ -326,6 +161,32 @@ const clearHover = () => {
   align-items: center;
   justify-content: center;
   min-height: 192px;
+}
+
+/* The bands carry no shape of their own once stacked, so the legend is the
+   only thing naming them -- it replaces the line styles the old chart used to
+   distinguish the three series. */
+.trend2__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.trend2__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--body-copy);
+  font-size: var(--fs-sm);
+}
+
+.trend2__swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
 }
 
 .trend2__main {
