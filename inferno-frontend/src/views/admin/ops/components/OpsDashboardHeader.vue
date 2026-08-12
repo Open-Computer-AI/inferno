@@ -7,6 +7,7 @@ import OpsResourceMeters from './OpsResourceMeters.vue'
 import OpsTrafficSplit from './OpsTrafficSplit.vue'
 import OpsStatCard from './OpsStatCard.vue'
 import OpsHealthRing from './OpsHealthRing.vue'
+import OpsRealtimeTraffic from './OpsRealtimeTraffic.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { adminAPI } from '@/api'
@@ -862,107 +863,18 @@ const upstreamTone = computed<CardTone>(() =>
           </div>
 
           <!-- 2) Realtime Traffic -->
-          <div class="flex h-full flex-col justify-center py-2">
-            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div class="flex items-center gap-2">
-                <div class="relative flex h-3 w-3 shrink-0">
-                  <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75"></span>
-                  <span class="relative inline-flex h-3 w-3 rounded-full bg-blue-500"></span>
-                </div>
-                <h3 class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.realtime.title') }}</h3>
-                <HelpTooltip v-if="!props.fullscreen" :content="t('admin.ops.tooltips.qps')" />
-              </div>
-
-              <!-- Time Window Selector -->
-              <div class="flex flex-wrap gap-1">
-                <button
-                  v-for="window in availableRealtimeWindows"
-                  :key="window"
-                  type="button"
-                  class="rounded px-1.5 py-0.5 text-[9px] font-bold transition-colors sm:px-2 sm:text-[10px]"
-                  :class="realtimeWindow === window
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-200 text-gray-600 hover:bg-gray-300 dark:bg-dark-700 dark:text-gray-400 dark:hover:bg-dark-600'"
-                  @click="realtimeWindow = window"
-                >
-                  {{ window }}
-                </button>
-              </div>
-            </div>
-
-            <div :class="props.fullscreen ? 'space-y-4' : 'space-y-3'">
-              <!-- Row 1: Current -->
-              <div>
-                <div :class="[props.fullscreen ? 'text-xs' : 'text-[10px]', 'font-bold uppercase text-gray-400']">{{ t('admin.ops.current') }}</div>
-                <div class="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-2">
-                  <div class="flex items-baseline gap-1.5">
-                    <span :class="[props.fullscreen ? 'text-4xl' : 'text-xl sm:text-2xl', 'font-black text-gray-900 dark:text-white']">{{ displayRealTimeQps.toFixed(1) }}</span>
-                    <span :class="[props.fullscreen ? 'text-sm' : 'text-xs', 'font-bold text-gray-500']">QPS</span>
-                  </div>
-                  <div class="flex items-baseline gap-1.5">
-                    <span :class="[props.fullscreen ? 'text-4xl' : 'text-xl sm:text-2xl', 'font-black text-gray-900 dark:text-white']">{{ displayRealTimeTps.toFixed(1) }}</span>
-                    <span :class="[props.fullscreen ? 'text-sm' : 'text-xs', 'font-bold text-gray-500']">{{ t('admin.ops.tps') }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Row 2: Peak + Average -->
-              <div class="grid grid-cols-2 gap-3">
-                <!-- Peak -->
-                <div>
-                  <div :class="[props.fullscreen ? 'text-xs' : 'text-[10px]', 'font-bold uppercase text-gray-400']">{{ t('admin.ops.peak') }}</div>
-                  <div :class="[props.fullscreen ? 'text-base' : 'text-sm', 'mt-1 space-y-0.5 font-medium text-gray-600 dark:text-gray-400']">
-                    <div class="flex items-baseline gap-1.5">
-                      <span class="font-black text-gray-900 dark:text-white">{{ realtimeQpsPeakLabel }}</span>
-                      <span class="text-xs">QPS</span>
-                    </div>
-                    <div class="flex items-baseline gap-1.5">
-                      <span class="font-black text-gray-900 dark:text-white">{{ realtimeTpsPeakLabel }}</span>
-                      <span class="text-xs">{{ t('admin.ops.tps') }}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Average -->
-                <div>
-                  <div :class="[props.fullscreen ? 'text-xs' : 'text-[10px]', 'font-bold uppercase text-gray-400']">{{ t('admin.ops.average') }}</div>
-                  <div :class="[props.fullscreen ? 'text-base' : 'text-sm', 'mt-1 space-y-0.5 font-medium text-gray-600 dark:text-gray-400']">
-                    <div class="flex items-baseline gap-1.5">
-                      <span class="font-black text-gray-900 dark:text-white">{{ realtimeQpsAvgLabel }}</span>
-                      <span class="text-xs">QPS</span>
-                    </div>
-                    <div class="flex items-baseline gap-1.5">
-                      <span class="font-black text-gray-900 dark:text-white">{{ realtimeTpsAvgLabel }}</span>
-                      <span class="text-xs">{{ t('admin.ops.tps') }}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Animated Pulse Line (Heart Beat Animation) -->
-              <div class="h-8 w-full overflow-hidden opacity-50">
-                <svg class="h-full w-full" viewBox="0 0 280 32" preserveAspectRatio="none">
-                  <path
-                    d="M0 16 Q 20 16, 40 16 T 80 16 T 120 10 T 160 22 T 200 16 T 240 16 T 280 16"
-                    fill="none"
-                    stroke="#3b82f6"
-                    stroke-width="2"
-                    vector-effect="non-scaling-stroke"
-                  >
-                    <animate
-                      attributeName="d"
-                      dur="2s"
-                      repeatCount="indefinite"
-                      values="M0 16 Q 20 16, 40 16 T 80 16 T 120 10 T 160 22 T 200 16 T 240 16 T 280 16;
-                              M0 16 Q 20 16, 40 16 T 80 16 T 120 16 T 160 16 T 200 10 T 240 22 T 280 16;
-                              M0 16 Q 20 16, 40 16 T 80 16 T 120 16 T 160 16 T 200 16 T 240 16 T 280 16"
-                      keyTimes="0;0.5;1"
-                    />
-                  </path>
-                </svg>
-              </div>
-            </div>
-          </div>
+          <OpsRealtimeTraffic
+            :window="realtimeWindow"
+            :windows="availableRealtimeWindows"
+            :qps="displayRealTimeQps"
+            :tps="displayRealTimeTps"
+            :qps-peak="realtimeQpsPeakLabel"
+            :tps-peak="realtimeTpsPeakLabel"
+            :qps-avg="realtimeQpsAvgLabel"
+            :tps-avg="realtimeTpsAvgLabel"
+            :fullscreen="props.fullscreen"
+            @update:window="realtimeWindow = $event as RealtimeWindow"
+          />
         </div>
       </div>
 
