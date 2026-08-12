@@ -123,6 +123,10 @@ export default {
       failedToLoadErrorDetail: '加载错误详情失败',
       retryFailed: '重试失败',
       tpsK: 'TPS（千）',
+      latency: {
+        totalCaption: '本时段请求数',
+        inBucket: '{bucket} 区间'
+      },
       traffic: {
         title: '请求结果',
         slaCaption: 'SLA',
