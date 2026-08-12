@@ -22,6 +22,9 @@ export default {
         toDate: '{period} to date',
         thisPeriod: 'This {period}',
       },
+      tokenTrend: {
+        title: 'Tokens per day'
+      },
       modelMix: {
         title: 'Tokens by model',
         cacheBadge: '{pct}% cache',
