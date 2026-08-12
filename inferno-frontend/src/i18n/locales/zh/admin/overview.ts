@@ -8,6 +8,21 @@ export default {
       verdictHealthy: '一切正常。{serving} 个账号服务中，无错误。',
       verdictAttention: '{count} 个账号需要处理。{total} 个中仍有 {serving} 个服务中。',
       verdictEmpty: '尚未连接账号。添加一个即可开始服务流量。',
+      period: {
+        week: '本周',
+        month: '本月',
+        quarter: '本季',
+        year: '本年',
+        toDate: '{period}至今'
+      },
+      mix: {
+        title: 'Token 构成',
+        caption: 'Token 总量',
+        input: '输入',
+        output: '输出',
+        cacheWrite: '缓存写入',
+        cacheRead: '缓存读取'
+      },
       tileAccountsHealthy: '全部正常服务',
       tileAccountsAttention: '{count} 个需要处理',
       tileAccountsEmpty: '尚未连接任何账号',
