@@ -330,6 +330,49 @@ function formatDuration(seconds: number): string {
   return `${hours}h`
 }
 
+/**
+ * One account state, derived once.
+ *
+ * This was five sibling spans in the template, each with its own hand-inlined
+ * SVG and its own Tailwind colour pair -- and two of them (overloaded and
+ * errored) were byte-identical in styling, so the markup carried the same
+ * decision twice. The branch order is preserved exactly: available, then rate
+ * limited, then overloaded, then errored, then unavailable.
+ *
+ * Available is deliberately toneless. It is the state almost every row is in,
+ * and a green chip on every healthy account is colour that marks nothing --
+ * the same reason `info` lost its badge in the system log table.
+ */
+type AccountTone = 'ok' | 'warning' | 'critical' | 'muted'
+
+function accountState(row: AccountRow): { tone: AccountTone; icon: string; label: string } {
+  if (row.is_available) {
+    return { tone: 'ok', icon: 'hgi-tick-02', label: t('admin.ops.accountAvailability.available') }
+  }
+  if (row.is_rate_limited) {
+    return {
+      tone: 'warning',
+      icon: 'hgi-clock-01',
+      label: formatDuration(row.rate_limit_remaining_sec || 0)
+    }
+  }
+  if (row.is_overloaded) {
+    return {
+      tone: 'critical',
+      icon: 'hgi-alert-02',
+      label: formatDuration(row.overload_remaining_sec || 0)
+    }
+  }
+  if (row.has_error) {
+    return {
+      tone: 'critical',
+      icon: 'hgi-cancel-01',
+      label: t('admin.ops.accountAvailability.accountError')
+    }
+  }
+  return { tone: 'muted', icon: '', label: t('admin.ops.accountAvailability.unavailable') }
+}
+
 
 watch(
   () => realtimeEnabled.value,
@@ -402,7 +445,7 @@ watch(
       </div>
 
       <!-- 空状态 -->
-      <div v-if="displayRows.length === 0" class="flex flex-1 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+      <div v-if="displayRows.length === 0" class="conc__empty">
         {{ t('admin.ops.concurrency.empty') }}
       </div>
 
@@ -412,15 +455,15 @@ watch(
           <!-- 用户信息和并发 -->
           <div class="mb-1.5 flex items-center justify-between gap-2">
             <div class="flex min-w-0 flex-1 items-center gap-1.5">
-              <span class="truncate text-[11px] text-gray-900 dark:text-white" :title="row.username || row.user_email">
+              <span class="conc__name" :title="row.username || row.user_email">
                 {{ row.username || row.user_email }}
               </span>
-              <span v-if="row.username" class="shrink-0 truncate text-[10px] text-gray-400 dark:text-gray-500" :title="row.user_email">
+              <span v-if="row.username" class="conc__sub" :title="row.user_email">
                 {{ row.user_email }}
               </span>
             </div>
             <div class="flex shrink-0 items-center gap-2 text-[10px]">
-              <span class="font-mono text-gray-900 dark:text-white"> {{ row.current_in_use }}/{{ row.max_capacity }} </span>
+              <span class="conc__ratio"> {{ row.current_in_use }}/{{ row.max_capacity }} </span>
               <span class="conc__pct" :data-tone="loadTone(row.load_percentage)">{{ Math.round(row.load_percentage) }}%</span>
             </div>
           </div>
@@ -445,15 +488,15 @@ watch(
           <!-- 标题行 -->
           <div class="mb-2 flex items-center justify-between gap-2">
             <div class="flex items-center gap-2">
-              <div class="truncate text-[11px] text-gray-900 dark:text-white" :title="row.name">
+              <div class="conc__name" :title="row.name">
                 {{ row.name }}
               </div>
-              <span v-if="displayDimension === 'group' && row.platform" class="text-[10px] text-gray-400 dark:text-gray-500">
+              <span v-if="displayDimension === 'group' && row.platform" class="conc__sub">
                 {{ row.platform }}
               </span>
             </div>
             <div class="flex shrink-0 items-center gap-2 text-[10px]">
-              <span class="font-mono text-gray-900 dark:text-white"> {{ row.used_concurrency }}/{{ row.total_concurrency }} </span>
+              <span class="conc__ratio"> {{ row.used_concurrency }}/{{ row.total_concurrency }} </span>
               <span class="conc__pct" :data-tone="loadTone(row.concurrency_percentage)">{{ row.concurrency_percentage }}%</span>
             </div>
           </div>
@@ -471,7 +514,7 @@ watch(
           <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]">
             <!-- 账号统计 -->
             <div class="flex items-center gap-1">
-              <svg class="h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg class="conc__stat-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
                   stroke-linecap="round"
                   stroke-linejoin="round"
@@ -479,11 +522,11 @@ watch(
                   d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
                 />
               </svg>
-              <span class="text-gray-600 dark:text-gray-300">
-                <span class="text-green-600 dark:text-green-400">{{ row.available_accounts }}</span
+              <span class="conc__stat">
+                <span class="conc__stat-strong">{{ row.available_accounts }}</span
                 >/{{ row.total_accounts }}
               </span>
-              <span class="text-gray-400 dark:text-gray-500">{{ row.availability_percentage }}%</span>
+              <span class="conc__sub">{{ row.availability_percentage }}%</span>
             </div>
 
             <!-- 限流账号 -->
@@ -519,63 +562,25 @@ watch(
           <!-- 账号名称和并发 -->
           <div class="mb-1.5 flex items-center justify-between gap-2">
             <div class="min-w-0 flex-1">
-              <div class="truncate text-[11px] text-gray-900 dark:text-white" :title="row.name">
+              <div class="conc__name" :title="row.name">
                 {{ row.name }}
               </div>
-              <div class="mt-0.5 text-[9px] text-gray-400 dark:text-gray-500">
+              <div class="conc__sub conc__sub--under">
                 {{ row.group_name }}
               </div>
             </div>
             <div class="flex shrink-0 items-center gap-2">
               <!-- 并发使用 -->
-              <span class="font-mono text-[11px] text-gray-900 dark:text-white"> {{ row.current_in_use }}/{{ row.max_capacity }} </span>
+              <span class="conc__ratio"> {{ row.current_in_use }}/{{ row.max_capacity }} </span>
               <!-- 状态徽章 -->
-              <span
-                v-if="row.is_available"
-                class="inline-flex items-center gap-1 rounded bg-green-100 px-1.5 py-0.5 text-[10px] text-green-700 dark:bg-green-900/30 dark:text-green-400"
-              >
-                <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                </svg>
-                {{ t('admin.ops.accountAvailability.available') }}
-              </span>
-              <span
-                v-else-if="row.is_rate_limited"
-                class="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-              >
-                <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                {{ formatDuration(row.rate_limit_remaining_sec || 0) }}
-              </span>
-              <span
-                v-else-if="row.is_overloaded"
-                class="inline-flex items-center gap-1 rounded bg-red-100 px-1.5 py-0.5 text-[10px] text-red-700 dark:bg-red-900/30 dark:text-red-400"
-              >
-                <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                  />
-                </svg>
-                {{ formatDuration(row.overload_remaining_sec || 0) }}
-              </span>
-              <span
-                v-else-if="row.has_error"
-                class="inline-flex items-center gap-1 rounded bg-red-100 px-1.5 py-0.5 text-[10px] text-red-700 dark:bg-red-900/30 dark:text-red-400"
-              >
-                <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                {{ t('admin.ops.accountAvailability.accountError') }}
-              </span>
-              <span
-                v-else
-                class="inline-flex items-center gap-1 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-700 dark:bg-gray-800 dark:text-gray-400"
-              >
-                {{ t('admin.ops.accountAvailability.unavailable') }}
+              <span class="conc__state" :data-tone="accountState(row).tone">
+                <i
+                  v-if="accountState(row).icon"
+                  class="hgi-stroke conc__state-icon"
+                  :class="accountState(row).icon"
+                  aria-hidden="true"
+                />
+                {{ accountState(row).label }}
               </span>
             </div>
           </div>
@@ -706,6 +711,93 @@ watch(
 }
 .conc__pct[data-tone='critical'] {
   color: var(--destructive);
+}
+
+/* --- row text ---------------------------------------------------------- */
+
+.conc__name {
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conc__sub {
+  flex: none;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: var(--fs-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conc__sub--under {
+  margin-top: 2px;
+}
+
+.conc__ratio {
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.conc__stat {
+  color: var(--body-copy);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The available count against the total. Brand, not green: this page reads
+   "good" as brand everywhere else. */
+.conc__stat-strong {
+  color: var(--brand);
+}
+
+.conc__stat-icon {
+  width: 12px;
+  height: 12px;
+  color: var(--muted-foreground);
+}
+
+.conc__empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+  font-size: var(--fs-md);
+}
+
+/* --- account state chip ------------------------------------------------ */
+
+/* Available is toneless on purpose: it is the state nearly every row is in,
+   and a green chip on every healthy account marks nothing. */
+.conc__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: var(--r-sm);
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+  font-size: var(--fs-2xs);
+  white-space: nowrap;
+}
+
+.conc__state[data-tone='warning'] {
+  background: var(--s2a-attn-soft);
+  color: var(--s2a-attn);
+}
+
+.conc__state[data-tone='critical'] {
+  background: color-mix(in oklch, var(--destructive) 14%, var(--card));
+  color: var(--destructive);
+}
+
+.conc__state-icon {
+  font-size: 12px; /* june-lint-disable ground-rule-4: icon glyph, not text */
+  line-height: 1;
 }
 
 .conc__pill {
