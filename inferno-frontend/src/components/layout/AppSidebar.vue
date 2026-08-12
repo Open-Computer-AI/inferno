@@ -648,10 +648,11 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   width: var(--sidebar-w);
-  height: 100vh;
-  position: sticky;
-  top: 0;
-  align-self: start;
+  /* Was `position: sticky; height: 100vh; align-self: start`, which only
+     LOOKED anchored -- it stuck while the document scrolled underneath it.
+     The shell is fixed to the viewport now, so the rail is simply a full
+     height column and needs no stickiness to stay put. */
+  height: 100%;
   padding: 10px 8px;
   gap: 8px;
   overflow: hidden;
