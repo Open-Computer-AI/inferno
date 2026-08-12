@@ -62,6 +62,7 @@
             to="/admin/usage"
             :value="`$${formatCost(stats.today_actual_cost)}`"
             :delta="costDelta"
+            delta-polarity="lower-is-better"
             :context="costContext.text"
             :context-tone="costContext.tone"
           />
