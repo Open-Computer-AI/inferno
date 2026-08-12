@@ -1,25 +1,30 @@
 <script setup lang="ts">
+/**
+ * Error trend, as a stacked tile field.
+ *
+ * Converted from three overlaid Chart.js lines painted red, purple and grey.
+ * They are STACKABLE -- SLA errors, upstream errors and business limits are
+ * disjoint counts of requests in the same buckets -- so stacking them says
+ * something the overlay did not: the envelope is every failed or refused
+ * request in that minute, and each band is its share.
+ *
+ * Ordered by how much they demand attention, floor upward: SLA errors are what
+ * the operator is held to, so they sit on the baseline where the eye lands
+ * first and where a band's height is easiest to judge. Business limits go on
+ * top because they are the least alarming -- the gateway refusing a
+ * quota-exceeded request is it working, not failing.
+ */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  Filler,
-  Legend,
-  LineElement,
-  LinearScale,
-  PointElement,
-  Title,
-  Tooltip
-} from 'chart.js'
-import { Line } from 'vue-chartjs'
 import type { OpsErrorTrendPoint } from '@/api/admin/ops'
 import type { ChartState } from '../types'
-import { formatHistoryLabel, sumNumbers } from '../utils/opsFormatters'
+import { formatHistoryLabel } from '../utils/opsFormatters'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-
-ChartJS.register(Title, Tooltip, Legend, LineElement, LinearScale, PointElement, CategoryScale, Filler)
+import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import DitherArea from '@/components/charts/DitherArea.vue'
+import { useChartTokens } from '@/composables/useChartTokens'
+import { useSequentialRamp } from '@/composables/useSequentialRamp'
 
 interface Props {
   points: OpsErrorTrendPoint[]
@@ -32,145 +37,76 @@ const emit = defineEmits<{
   (e: 'openRequestErrors'): void
   (e: 'openUpstreamErrors'): void
 }>()
+
 const { t } = useI18n()
+const { tokens } = useChartTokens()
+const ramp = useSequentialRamp(3)
 
-const isDarkMode = computed(() => document.documentElement.classList.contains('dark'))
-const colors = computed(() => ({
-  red: '#ef4444',
-  redAlpha: '#ef444420',
-  purple: '#8b5cf6',
-  purpleAlpha: '#8b5cf620',
-  gray: '#9ca3af',
-  grid: isDarkMode.value ? '#374151' : '#f3f4f6',
-  text: isDarkMode.value ? '#9ca3af' : '#6b7280'
-}))
-
-const totalRequestErrors = computed(() => sumNumbers(props.points.map((p) => p.error_count_sla ?? 0)))
-
-const totalUpstreamErrors = computed(() =>
-  sumNumbers(
-    props.points.map((p) => (p.upstream_error_count_excl_429_529 ?? 0) + (p.upstream_429_count ?? 0) + (p.upstream_529_count ?? 0))
-  )
+const totalRequestErrors = computed(() =>
+  props.points.reduce((sum, p) => sum + (p.error_count_sla ?? 0), 0)
 )
-
-const totalDisplayed = computed(() =>
-  sumNumbers(props.points.map((p) => (p.error_count_sla ?? 0) + (p.upstream_error_count_excl_429_529 ?? 0) + (p.business_limited_count ?? 0)))
+const totalUpstreamErrors = computed(() =>
+  props.points.reduce((sum, p) => sum + (p.upstream_error_count_excl_429_529 ?? 0), 0)
+)
+const totalLimited = computed(() =>
+  props.points.reduce((sum, p) => sum + (p.business_limited_count ?? 0), 0)
 )
 
 const hasRequestErrors = computed(() => totalRequestErrors.value > 0)
 const hasUpstreamErrors = computed(() => totalUpstreamErrors.value > 0)
 
-const chartData = computed(() => {
-  if (!props.points.length || totalDisplayed.value <= 0) return null
-  return {
-    labels: props.points.map((p) => formatHistoryLabel(p.bucket_start, props.timeRange)),
-    datasets: [
-      {
-        label: t('admin.ops.errorsSla'),
-        data: props.points.map((p) => p.error_count_sla ?? 0),
-        borderColor: colors.value.red,
-        backgroundColor: colors.value.redAlpha,
-        fill: true,
-        tension: 0.35,
-        pointRadius: 0,
-        pointHitRadius: 10
-      },
-      {
-        label: t('admin.ops.upstreamExcl429529'),
-        data: props.points.map((p) => p.upstream_error_count_excl_429_529 ?? 0),
-        borderColor: colors.value.purple,
-        backgroundColor: colors.value.purpleAlpha,
-        fill: true,
-        tension: 0.35,
-        pointRadius: 0,
-        pointHitRadius: 10
-      },
-      {
-        label: t('admin.ops.businessLimited'),
-        data: props.points.map((p) => p.business_limited_count ?? 0),
-        borderColor: colors.value.gray,
-        backgroundColor: 'transparent',
-        borderDash: [6, 6],
-        fill: false,
-        tension: 0.35,
-        pointRadius: 0,
-        pointHitRadius: 10
-      }
-    ]
+const totalDisplayed = computed(
+  () => totalRequestErrors.value + totalUpstreamErrors.value + totalLimited.value
+)
+
+const labels = computed(() =>
+  props.points.map((p) => formatHistoryLabel(p.bucket_start, props.timeRange))
+)
+
+const series = computed(() => [
+  {
+    key: 'sla',
+    label: t('admin.ops.errorsSla'),
+    values: props.points.map((p) => p.error_count_sla ?? 0),
+    color: ramp.value[0] ?? ''
+  },
+  {
+    key: 'upstream',
+    label: t('admin.ops.upstreamExcl429529'),
+    values: props.points.map((p) => p.upstream_error_count_excl_429_529 ?? 0),
+    color: ramp.value[1] ?? ''
+  },
+  {
+    key: 'limited',
+    label: t('admin.ops.businessLimited'),
+    values: props.points.map((p) => p.business_limited_count ?? 0),
+    color: ramp.value[2] ?? ''
   }
-})
+])
 
 const state = computed<ChartState>(() => {
-  if (chartData.value) return 'ready'
+  if (props.points.length && totalDisplayed.value > 0) return 'ready'
   if (props.loading) return 'loading'
   return 'empty'
 })
 
-const options = computed(() => {
-  const c = colors.value
-  return {
-    responsive: true,
-    maintainAspectRatio: false,
-    interaction: { intersect: false, mode: 'index' as const },
-    plugins: {
-      legend: {
-        position: 'top' as const,
-        align: 'end' as const,
-        labels: { color: c.text, usePointStyle: true, boxWidth: 6, font: { size: 10 } }
-      },
-      tooltip: {
-        backgroundColor: isDarkMode.value ? '#1f2937' : '#ffffff',
-        titleColor: isDarkMode.value ? '#f3f4f6' : '#111827',
-        bodyColor: isDarkMode.value ? '#d1d5db' : '#4b5563',
-        borderColor: c.grid,
-        borderWidth: 1,
-        padding: 10,
-        displayColors: true
-      }
-    },
-    scales: {
-      x: {
-        type: 'category' as const,
-        grid: { display: false },
-        ticks: {
-          color: c.text,
-          font: { size: 10 },
-          maxTicksLimit: 8,
-          autoSkip: true,
-          autoSkipPadding: 10
-        }
-      },
-      y: {
-        type: 'linear' as const,
-        display: true,
-        position: 'left' as const,
-        grid: { color: c.grid, borderDash: [4, 4] },
-        ticks: { color: c.text, font: { size: 10 }, precision: 0 }
-      }
-    }
-  }
-})
+const restColor = computed(
+  () => `color-mix(in oklch, ${tokens.mutedForeground} 26%, ${tokens.card})`
+)
 </script>
 
 <template>
-  <div class="flex h-full flex-col rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
-    <div class="mb-4 flex shrink-0 items-center justify-between">
-      <h3 class="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white">
-        <svg class="h-4 w-4 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"
-          />
-        </svg>
+  <div class="opstrend">
+    <div class="opstrend__head">
+      <h3 class="opstrend__title">
+        <i class="hgi-stroke hgi-alert-02 opstrend__title-icon" aria-hidden="true" />
         {{ t('admin.ops.errorTrend') }}
         <HelpTooltip :content="t('admin.ops.tooltips.errorTrend')" />
       </h3>
-      <div class="flex items-center gap-2">
+      <div class="opstrend__actions">
         <button
           type="button"
-          class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:hover:bg-dark-800"
+          class="opstrend__action"
           :disabled="!hasRequestErrors"
           @click="emit('openRequestErrors')"
         >
@@ -178,7 +114,7 @@ const options = computed(() => {
         </button>
         <button
           type="button"
-          class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:hover:bg-dark-800"
+          class="opstrend__action"
           :disabled="!hasUpstreamErrors"
           @click="emit('openUpstreamErrors')"
         >
@@ -187,12 +123,128 @@ const options = computed(() => {
       </div>
     </div>
 
-    <div class="min-h-0 flex-1">
-      <Line v-if="state === 'ready' && chartData" :data="chartData" :options="options" />
-      <div v-else class="flex h-full items-center justify-center">
-        <div v-if="state === 'loading'" class="animate-pulse text-sm text-gray-400">{{ t('common.loading') }}</div>
-        <EmptyState v-else :title="t('common.noData')" :description="t('admin.ops.charts.emptyError')" />
+    <template v-if="state === 'ready'">
+      <ul class="opstrend__legend">
+        <li v-for="entry in series" :key="entry.key" class="opstrend__chip">
+          <span class="opstrend__swatch" :style="{ background: entry.color }" />
+          {{ entry.label }}
+        </li>
+      </ul>
+      <div class="opstrend__plot">
+        <DitherArea
+          :series="series"
+          :labels="labels"
+          :rest-color="restColor"
+          :marker-color="tokens.brand"
+        />
       </div>
+    </template>
+
+    <div v-else class="opstrend__state">
+      <LoadingSpinner v-if="state === 'loading'" size="md" />
+      <EmptyState v-else :title="t('common.noData')" :description="t('admin.ops.charts.emptyError')" />
     </div>
   </div>
 </template>
+
+<style scoped>
+.opstrend {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--card);
+}
+
+.opstrend__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.opstrend__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
+}
+
+/* Muted, not rose: errors trending is what this panel is FOR, so a coloured
+   glyph would be permanently alarmed (ground rule 5). */
+.opstrend__title-icon {
+  font-size: 15px; /* june-lint-disable ground-rule-4: icon glyph, not text */
+  color: var(--muted-foreground);
+  line-height: 1;
+}
+
+.opstrend__actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+.opstrend__action {
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: background var(--motion-hover);
+}
+
+.opstrend__action:hover:not(:disabled) {
+  background: var(--sidebar-accent);
+}
+
+.opstrend__action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.opstrend__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.opstrend__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--body-copy);
+  font-size: var(--fs-sm);
+}
+
+.opstrend__swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+
+.opstrend__plot {
+  position: relative;
+  flex: 1;
+  min-height: 150px;
+  border-radius: 5px;
+  background-image: repeating-linear-gradient(-45deg, color-mix(in oklch, var(--foreground) 5%, transparent) 0 1px, transparent 1px 7px); /* june-lint-disable ground-rule-7: hard-stop hatch, not a colour ramp */
+}
+
+.opstrend__state {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+}
+</style>
