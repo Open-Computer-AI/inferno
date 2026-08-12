@@ -260,7 +260,7 @@ import Select from '@/components/common/Select.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
-import { sumWindow, toDelta } from '@/utils/dayOverDay'
+import { densifyHours, latestHourOn, sumWindow, toDelta } from '@/utils/dayOverDay'
 
 import {
   Chart as ChartJS,
@@ -586,10 +586,23 @@ type ContextTone = 'muted' | 'good' | 'attention'
  */
 const deltaTrend = ref<TrendDataPoint[]>([])
 
+/*
+ * The hour both windows are bounded at.
+ *
+ * NOT simply the browser's hour: buckets are stamped in the DATABASE's
+ * timezone, so a browser behind the DB would discard the most recent buckets.
+ * Taking the max with the latest bucket actually present today self-corrects
+ * either offset -- see latestHourOn.
+ */
+const boundHour = computed(() => {
+  const today = formatLocalDate(new Date())
+  return Math.max(new Date().getHours(), latestHourOn(deltaTrend.value, today))
+})
+
 const dayOverDay = computed(() => {
   if (deltaTrend.value.length === 0) return null
   const now = new Date()
-  const hour = now.getHours()
+  const hour = boundHour.value
   return {
     today: sumWindow(deltaTrend.value, formatLocalDate(now), hour),
     yesterday: sumWindow(
@@ -601,20 +614,16 @@ const dayOverDay = computed(() => {
 })
 
 /*
- * Today's hourly buckets, in order, for the sparklines. Reuses the fetch the
- * deltas already make -- the shape costs no extra request, only rendering.
+ * Today's shape, one point per hour, zero-filled. See densifyHours in
+ * utils/dayOverDay.ts for why the zero-fill is load-bearing: an idle hour is
+ * an ABSENT row in the aggregate table, not a zero one, and a sparkline that
+ * spaces points evenly would silently erase the gap.
  *
- * Sorted explicitly rather than trusting arrival order: the query does ORDER
- * BY today, but a sparkline silently draws whatever sequence it is handed, so
- * an unordered response would produce a plausible-looking scribble rather than
- * an obvious failure.
+ * Reuses the fetch the deltas already make, so the shape costs rendering and
+ * not a request.
  */
 function todaySeries(pick: (p: TrendDataPoint) => number): number[] {
-  const today = formatLocalDate(new Date())
-  return deltaTrend.value
-    .filter((p) => typeof p.date === 'string' && p.date.slice(0, 10) === today)
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .map((p) => toFiniteNumber(pick(p)))
+  return densifyHours(deltaTrend.value, formatLocalDate(new Date()), boundHour.value, pick)
 }
 
 const requestsSeries = computed(() => todaySeries((p) => p.requests))
@@ -810,7 +819,22 @@ const loadDayOverDay = async () => {
   const now = new Date()
   try {
     const response = await adminAPI.dashboard.getSnapshotV2({
-      start_date: formatLocalDate(new Date(now.getTime() - 24 * 60 * 60 * 1000)),
+      /*
+       * TWO days back, not one, to fetch a day we do not display.
+       *
+       * The backend filters the range in the CLIENT's timezone but labels the
+       * buckets in the DATABASE's. Asking for yesterday from a viewer 2.5h
+       * behind the DB starts the window at yesterday 02:30 DB-time, so the
+       * first three labelled buckets of the comparison day are missing -- the
+       * baseline is understated and every delta reads too high. Observed
+       * exactly that: a true +21% rendered as +25%.
+       *
+       * Widening the request is the whole fix, because sumWindow and
+       * densifyHours both select by the label date string. The extra day is
+       * fetched and then ignored; it exists only to push the clipped edge
+       * outside the two days we actually read.
+       */
+      start_date: formatLocalDate(new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000)),
       end_date: formatLocalDate(now),
       granularity: 'hour',
       include_stats: false,

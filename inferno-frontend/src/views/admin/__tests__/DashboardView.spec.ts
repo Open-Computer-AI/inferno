@@ -175,9 +175,20 @@ describe('admin DashboardView', () => {
       include_stats: true
     }))
 
-    // The comparison snapshot: trend only, and never the stats payload.
+    /*
+     * The comparison snapshot: trend only, never the stats payload, and TWO
+     * days back rather than one.
+     *
+     * The extra day is load-bearing. The backend filters the range in the
+     * client's timezone but labels buckets in the database's, so requesting
+     * only yesterday clips the comparison day's first hours for any viewer
+     * behind the DB -- understating the baseline and inflating every delta
+     * (observed: a true +21% rendering as +25%). The third day is fetched and
+     * ignored; it only pushes the clipped edge outside the range we read.
+     */
+    const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000)
     expect(getSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({
-      start_date: formatLocalDate(yesterday),
+      start_date: formatLocalDate(twoDaysAgo),
       end_date: formatLocalDate(now),
       granularity: 'hour',
       include_stats: false,
