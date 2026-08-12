@@ -1,14 +1,29 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+/**
+ * Error distribution, as a tile ring.
+ *
+ * Converted from a Chart.js doughnut whose four categories were painted
+ * #f59e0b / #3b82f6 / #ef4444 / #9ca3af -- orange, blue, red and grey. Four
+ * unrelated hues for four parts of ONE total, which is the encoding part 09
+ * removed everywhere else, and none of them Inferno's. The sequential brand
+ * ramp replaces the lot: the slices are shares of a single number, so an
+ * ordered ramp is what they want.
+ *
+ * The card chrome moved with it. `rounded-3xl bg-white shadow-sm
+ * ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700` is legacy
+ * Tailwind on a dead palette; it is now the same bordered --card surface every
+ * converted panel uses, so this page stops looking like a different product
+ * from the dashboard.
+ */
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Chart as ChartJS, ArcElement, Legend, Tooltip } from 'chart.js'
-import { Doughnut } from 'vue-chartjs'
 import type { OpsErrorDistributionResponse } from '@/api/admin/ops'
 import type { ChartState } from '../types'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-
-ChartJS.register(ArcElement, Tooltip, Legend)
+import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import DitherDonut, { type DonutSlice } from '@/components/charts/DitherDonut.vue'
+import { useSequentialRamp } from '@/composables/useSequentialRamp'
 
 interface Props {
   data: OpsErrorDistributionResponse | null
@@ -20,15 +35,8 @@ const emit = defineEmits<{
   (e: 'openDetails'): void
 }>()
 const { t } = useI18n()
-
-const isDarkMode = computed(() => document.documentElement.classList.contains('dark'))
-const colors = computed(() => ({
-  blue: '#3b82f6',
-  red: '#ef4444',
-  orange: '#f59e0b',
-  gray: '#9ca3af',
-  text: isDarkMode.value ? '#9ca3af' : '#6b7280'
-}))
+const ramp = useSequentialRamp(4)
+const hovered = ref<number | null>(null)
 
 const totalSlaErrors = computed(() =>
   (props.data?.items ?? []).reduce((total, item) => total + Number(item.sla || 0), 0)
@@ -42,13 +50,12 @@ const state = computed<ChartState>(() => {
   return 'empty'
 })
 
-interface ErrorCategory {
-  label: string
-  count: number
-  color: string
-}
-
-const categories = computed<ErrorCategory[]>(() => {
+/*
+ * Status codes collapse into four causes an operator can act on. Order is
+ * fixed rather than sorted by size so a category keeps its ramp step -- a
+ * slice that changed colour between refreshes would be unreadable.
+ */
+const categories = computed<DonutSlice[]>(() => {
   if (!props.data) return []
 
   let upstream = 0 // 502, 503, 504
@@ -67,65 +74,35 @@ const categories = computed<ErrorCategory[]>(() => {
     else other += count
   }
 
-  const out: ErrorCategory[] = []
-  if (upstream > 0) out.push({ label: t('admin.ops.upstream'), count: upstream, color: colors.value.orange })
-  if (client > 0) out.push({ label: t('admin.ops.client'), count: client, color: colors.value.blue })
-  if (system > 0) out.push({ label: t('admin.ops.system'), count: system, color: colors.value.red })
-  if (other > 0) out.push({ label: t('admin.ops.other'), count: other, color: colors.value.gray })
-  return out
+  const rows: { key: string; label: string; value: number }[] = [
+    { key: 'upstream', label: t('admin.ops.upstream'), value: upstream },
+    { key: 'client', label: t('admin.ops.client'), value: client },
+    { key: 'system', label: t('admin.ops.system'), value: system },
+    { key: 'other', label: t('admin.ops.other'), value: other }
+  ]
+
+  return rows
+    .filter((r) => r.value > 0)
+    .map((r, i) => ({ ...r, color: ramp.value[i] ?? '' }))
 })
 
 const topReason = computed(() => {
   if (categories.value.length === 0) return null
-  return categories.value.reduce((prev, cur) => (cur.count > prev.count ? cur : prev))
+  return categories.value.reduce((prev, cur) => (cur.value > prev.value ? cur : prev))
 })
-
-const chartData = computed(() => {
-  if (!hasData.value || categories.value.length === 0) return null
-  return {
-    labels: categories.value.map((c) => c.label),
-    datasets: [
-      {
-        data: categories.value.map((c) => c.count),
-        backgroundColor: categories.value.map((c) => c.color),
-        borderWidth: 0
-      }
-    ]
-  }
-})
-
-const options = computed(() => ({
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: {
-    legend: { display: false },
-    tooltip: {
-      backgroundColor: isDarkMode.value ? '#1f2937' : '#ffffff',
-      titleColor: isDarkMode.value ? '#f3f4f6' : '#111827',
-      bodyColor: isDarkMode.value ? '#d1d5db' : '#4b5563'
-    }
-  }
-}))
 </script>
 
 <template>
-  <div class="flex h-full flex-col rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
-    <div class="mb-4 flex items-center justify-between">
-      <h3 class="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white">
-        <svg class="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-          />
-        </svg>
+  <div class="opsdist">
+    <div class="opsdist__head">
+      <h3 class="opsdist__title">
+        <i class="hgi-stroke hgi-alert-circle opsdist__title-icon" aria-hidden="true" />
         {{ t('admin.ops.errorDistribution') }}
         <HelpTooltip :content="t('admin.ops.tooltips.errorDistribution')" />
       </h3>
       <button
         type="button"
-        class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:hover:bg-dark-800"
+        class="opsdist__action"
         :disabled="state !== 'ready'"
         :title="t('admin.ops.errorTrend')"
         @click="emit('openDetails')"
@@ -134,28 +111,181 @@ const options = computed(() => ({
       </button>
     </div>
 
-    <div class="relative min-h-0 flex-1">
-      <div v-if="state === 'ready' && chartData" class="flex h-full flex-col">
-        <div class="flex-1">
-          <Doughnut :data="chartData" :options="{ ...options, cutout: '65%' }" />
+    <div class="opsdist__body">
+      <template v-if="state === 'ready' && categories.length">
+        <div class="opsdist__ring">
+          <DitherDonut
+            :slices="categories"
+            :hovered="hovered"
+            @update:hovered="hovered = $event"
+          />
         </div>
-        <div class="mt-4 flex flex-col items-center gap-2">
-          <div v-if="topReason" class="text-xs font-bold text-gray-900 dark:text-white">
-            {{ t('admin.ops.top') }}: <span :style="{ color: topReason.color }">{{ topReason.label }}</span>
-          </div>
-          <div class="flex flex-wrap justify-center gap-3">
-            <div v-for="item in categories" :key="item.label" class="flex items-center gap-1.5 text-xs">
-              <span class="h-2 w-2 rounded-full" :style="{ backgroundColor: item.color }"></span>
-              <span class="text-gray-500 dark:text-gray-400">{{ item.count }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
+        <ul class="opsdist__legend">
+          <li
+            v-for="(item, i) in categories"
+            :key="item.key"
+            class="opsdist__row"
+            :data-hot="hovered === i || undefined"
+            :data-dim="(hovered !== null && hovered !== i) || undefined"
+            @pointerenter="hovered = i"
+            @pointerleave="hovered = null"
+          >
+            <span class="opsdist__swatch" :style="{ background: item.color }" />
+            <span class="opsdist__label">{{ item.label }}</span>
+            <span class="opsdist__value">{{ item.value }}</span>
+          </li>
+        </ul>
+        <p v-if="topReason" class="opsdist__top">
+          <!-- The locale string already ends in a colon ("Top:"), so adding
+               one here rendered "Top:: Other". -->
+          {{ t('admin.ops.top') }} <strong>{{ topReason.label }}</strong>
+        </p>
+      </template>
 
-      <div v-else class="flex h-full items-center justify-center">
-        <div v-if="state === 'loading'" class="animate-pulse text-sm text-gray-400">{{ t('common.loading') }}</div>
+      <div v-else class="opsdist__state">
+        <LoadingSpinner v-if="state === 'loading'" size="md" />
         <EmptyState v-else :title="t('common.noData')" :description="t('admin.ops.charts.emptyError')" />
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.opsdist {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--card);
+}
+
+.opsdist__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.opsdist__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
+}
+
+/* The old header used a red triangle glyph. Errors being present is not a
+   fault -- some always are -- so the icon stays muted and the numbers carry
+   the reading (ground rule 5). */
+.opsdist__title-icon {
+  font-size: 15px; /* june-lint-disable ground-rule-4: icon glyph, not text */
+  color: var(--muted-foreground);
+  line-height: 1;
+}
+
+.opsdist__action {
+  flex: none;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: background var(--motion-hover);
+}
+
+.opsdist__action:hover:not(:disabled) {
+  background: var(--sidebar-accent);
+}
+
+.opsdist__action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.opsdist__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 0;
+}
+
+.opsdist__ring {
+  width: 100%;
+  max-width: 168px;
+}
+
+.opsdist__legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.opsdist__row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 7px;
+  border-radius: var(--r-sm);
+  cursor: default;
+  transition:
+    background var(--motion-hover),
+    opacity var(--motion-hover);
+}
+
+.opsdist__row[data-hot] {
+  background: var(--brand-tint);
+}
+
+.opsdist__row[data-dim] {
+  opacity: 0.5;
+}
+
+.opsdist__swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+
+.opsdist__label {
+  color: var(--body-copy);
+  font-size: var(--fs-sm);
+}
+
+.opsdist__value {
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.opsdist__top {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.opsdist__top strong {
+  color: var(--foreground);
+  font-weight: var(--fw-medium);
+}
+
+.opsdist__state {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+}
+</style>
