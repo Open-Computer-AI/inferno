@@ -66,14 +66,6 @@ const TOUCHED_NOT_CONVERTED = [
   // utilities are part 13's job; changing them here would be a visual change to
   // an unconverted screen made blind.
   /src\/components\/modelPlaza\/PlazaNavBar\.vue$/,
-  // OpsDashboardHeader: touched only to swap five flat resource text-cards for
-  // OpsResourceMeters (the new panel is fully converted and IS linted). The
-  // host file is a ~1,600 line unconverted Tailwind screen carrying 110
-  // violations of its own -- 65 weights, 11 title-case strings, 4 emoji in the
-  // zh locale and 3 transition-all -- none of which this change introduced or
-  // is in a position to judge. The ops screens land as their own pass; remove
-  // this line then.
-  /src\/views\/admin\/ops\/components\/OpsDashboardHeader\.vue$/,
   // EmailVerifyView and LegalDocumentView: touched only for PRODUCT_NAME (and,
   // in the first, to narrow a `transition: all` that was a genuine
   // ground-rule-6 break). Their remaining weights and sizes are phase-4 work on

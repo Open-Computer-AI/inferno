@@ -203,7 +203,8 @@ export default {
       },
       customTimeRange: {
         startTime: '开始时间',
-        endTime: '结束时间'
+        endTime: '结束时间',
+        endBeforeStart: '结束时间必须晚于开始时间。'
       },
       fullscreen: {
         enter: '进入全屏'
