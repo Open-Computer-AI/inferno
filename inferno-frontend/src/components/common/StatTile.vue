@@ -84,15 +84,25 @@ const props = withDefaults(
     /**
      * Like-for-like change against the same window yesterday, as a whole
      * percent plus its direction.
-     *
-     * DELIBERATELY TONELESS. The arrow says which way; nothing says whether
-     * that is good. Requests up 21% is growth, cost up 21% might be growth or
-     * might be a leak -- it depends entirely on whether requests moved with
-     * it, which this component cannot know. Painting it green would be a claim
-     * the number does not support, and on the cost tile it would be actively
-     * misleading.
      */
     delta?: { pct: number; direction: 'up' | 'down' } | null
+    /**
+     * Which direction is GOOD for this metric, which is what the pill colours.
+     *
+     * Colouring by direction would break ground rule 5, because up and down
+     * are not states. Colouring by SENTIMENT satisfies it, because good and
+     * bad are exactly what state means -- so the caller has to say which way
+     * is which rather than the component assuming.
+     *
+     * The two readings only diverge on one tile here, and it matters: requests
+     * and tokens rising is growth, but cost is money leaving the account, and
+     * green on "you spent 21% more today" reads backwards. Every billing
+     * console shows spend rising in red for the same reason.
+     *
+     * 'neutral' keeps the old toneless pill for metrics where neither
+     * direction is an outcome.
+     */
+    deltaPolarity?: 'higher-is-better' | 'lower-is-better' | 'neutral'
     /**
      * Route this tile drills into. Omit when there is no page that explains
      * the number: a link that lands somewhere unrelated is worse than none,
@@ -100,8 +110,21 @@ const props = withDefaults(
      */
     to?: string
   }>(),
-  { tone: 'brand', contextTone: 'muted' }
+  { tone: 'brand', contextTone: 'muted', deltaPolarity: 'higher-is-better' }
 )
+
+/*
+ * Resolves direction + polarity into the only thing worth painting: whether
+ * this movement is good, bad, or neither.
+ */
+const deltaSentiment = computed(() => {
+  if (!props.delta || props.deltaPolarity === 'neutral') return 'neutral'
+  const good =
+    props.deltaPolarity === 'higher-is-better'
+      ? props.delta.direction === 'up'
+      : props.delta.direction === 'down'
+  return good ? 'good' : 'bad'
+})
 
 /*
  * Splits the context line so its VALUE can carry weight while the prose does
@@ -145,7 +168,7 @@ const contextParts = computed(() => {
       </div>
       <div class="tile__measure">
         <p class="tile__value" :title="exact || value">{{ value }}</p>
-        <span v-if="delta" class="tile__delta">
+        <span v-if="delta" class="tile__delta" :data-sentiment="deltaSentiment">
           <i
             class="hgi-stroke tile__delta-icon"
             :class="delta.direction === 'up' ? 'hgi-arrow-up-right-01' : 'hgi-arrow-down-right-01'"
@@ -319,6 +342,27 @@ a.tile:focus-visible {
   font-weight: var(--fw-medium);
   line-height: 1.4;
   white-space: nowrap;
+}
+
+/*
+ * Painted by SENTIMENT, never by direction -- see deltaPolarity. On this fold
+ * that means requests and tokens go green when they rise, while cost goes red,
+ * because cost is money out.
+ *
+ * The fill is mixed toward --card rather than being a fixed tint, so it tracks
+ * the surface in both themes: a 12% wash reads as a soft pill on white and as
+ * a dim one on near-black, where a hard rgba would either wash out or glare.
+ * The text keeps the full-strength token so the contrast is carried by the
+ * glyph and digits, not by the fill.
+ */
+.tile__delta[data-sentiment='good'] {
+  background: color-mix(in oklch, var(--success) 12%, var(--card));
+  color: var(--success);
+}
+
+.tile__delta[data-sentiment='bad'] {
+  background: color-mix(in oklch, var(--destructive) 12%, var(--card));
+  color: var(--destructive);
 }
 
 .tile__delta-icon {
