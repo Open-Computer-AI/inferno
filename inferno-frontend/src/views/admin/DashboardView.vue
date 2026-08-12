@@ -104,6 +104,11 @@
           <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" />
         </div>
 
+        <!-- The token mix, as a canvas donut. Part-of-whole by definition:
+             input + output + cache write + cache read IS total tokens, and the
+             split is what explains the cost tile above. -->
+        <TokenMixPanel class="mix-panel" />
+
         <!-- Below the fold: the other four numbers, then distribution and
              history. Part 14 puts distribution here because "which model is
              popular" is never the answer to "is anything wrong".
@@ -250,6 +255,7 @@ import type {
 } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import StatTile from '@/components/common/StatTile.vue'
+import TokenMixPanel from '@/components/admin/TokenMixPanel.vue'
 import DashboardVerdict from '@/components/admin/DashboardVerdict.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -847,6 +853,13 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* The donut panel carries its own tray, so it is width-capped rather than
+   stretched: a 200px ring beside a four-row legend has a natural size, and
+   letting it span a 1600px content column would leave the ring marooned. */
+.mix-panel {
+  max-width: 520px;
+}
+
 /* The fold. auto-fit rather than a fixed 4 so the tiles reflow to 2x2 and
    then 1-up without a media query: below about 240px a tile truncates its
    own number, which is the one thing it exists to show. */
