@@ -182,8 +182,9 @@ export default {
         custom: 'Custom Range'
       },
       customTimeRange: {
-        startTime: 'Start Time',
-        endTime: 'End Time'
+        startTime: 'Start time',
+        endTime: 'End time',
+        endBeforeStart: 'End time must be after the start time.'
       },
       openaiTokenStats: {
         title: 'OpenAI Token Request Stats',
