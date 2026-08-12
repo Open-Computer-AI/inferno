@@ -123,6 +123,15 @@ export default {
       failedToLoadErrorDetail: '加载错误详情失败',
       retryFailed: '重试失败',
       tpsK: 'TPS（千）',
+      traffic: {
+        title: '请求结果',
+        slaCaption: 'SLA',
+        succeeded: '成功',
+        failed: '失败',
+        limited: '限流',
+        unit: '次',
+        caption: '本时段全部请求的结果分布'
+      },
       resources: {
         title: '资源占用',
         peakLabel: '当前最紧张的资源',
