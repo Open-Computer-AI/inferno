@@ -5,6 +5,7 @@ import Select from '@/components/common/Select.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import OpsResourceMeters from './OpsResourceMeters.vue'
 import OpsTrafficSplit from './OpsTrafficSplit.vue'
+import OpsStatCard from './OpsStatCard.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { adminAPI } from '@/api'
@@ -242,16 +243,6 @@ function getUpstreamErrorRateThresholdLevel(upstreamErrorRatePercent: number | n
   return 'normal'
 }
 
-function getThresholdColorClass(level: ThresholdLevel): string {
-  switch (level) {
-    case 'critical':
-      return 'text-red-600 dark:text-red-400'
-    case 'warning':
-      return 'text-yellow-600 dark:text-yellow-400'
-    default:
-      return 'text-green-600 dark:text-green-400'
-  }
-}
 
 // --- Realtime / Overview labels ---
 
@@ -682,6 +673,17 @@ function handleToolbarRefresh() {
   loadRealtimeTrafficSummary()
   emit('refresh')
 }
+/* The old cards mapped a threshold level to a Tailwind colour class. The card
+   now takes a tone name and owns the ink, so the mapping is level -> tone. */
+type CardTone = 'none' | 'ok' | 'warning' | 'critical'
+const toCardTone = (level: ThresholdLevel): CardTone =>
+  level === 'critical' ? 'critical' : level === 'warning' ? 'warning' : 'none'
+
+const ttftTone = computed<CardTone>(() => toCardTone(getTTFTThresholdLevel(ttftP99Ms.value)))
+const upstreamTone = computed<CardTone>(() =>
+  toCardTone(getUpstreamErrorRateThresholdLevel(upstreamErrorRatePercent.value))
+)
+
 </script>
 
 <template>
@@ -1035,39 +1037,20 @@ function handleToolbarRefresh() {
       <!-- Right: 6 cards (3 cols x 2 rows) -->
       <div class="grid h-full grid-cols-1 content-center gap-4 sm:grid-cols-2 lg:col-span-7 lg:grid-cols-3">
         <!-- Card 1: Requests -->
-        <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900" style="order: 1;">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-1">
-              <span class="text-[10px] font-bold uppercase text-gray-400">{{ t('admin.ops.requestsTitle') }}</span>
-              <HelpTooltip v-if="!props.fullscreen" :content="t('admin.ops.tooltips.totalRequests')" />
-            </div>
-            <button
-              v-if="!props.fullscreen"
-              class="text-[10px] font-bold text-blue-500 hover:underline"
-              type="button"
-              @click="openDetails({ title: t('admin.ops.requestDetails.title') })"
-            >
-              {{ t('admin.ops.requestDetails.details') }}
-            </button>
-          </div>
-          <div class="mt-2 space-y-2 text-xs">
-            <div class="flex justify-between">
-              <span class="text-gray-500">{{ t('admin.ops.requests') }}:</span>
-              <span class="font-bold text-gray-900 dark:text-white">{{ totalRequestsLabel }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-gray-500">{{ t('admin.ops.tokens') }}:</span>
-              <span class="font-bold text-gray-900 dark:text-white">{{ totalTokensLabel }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-gray-500">{{ t('admin.ops.avgQps') }}:</span>
-              <span class="font-bold text-gray-900 dark:text-white">{{ qpsAvgLabel }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-gray-500">{{ t('admin.ops.avgTps') }}:</span>
-              <span class="font-bold text-gray-900 dark:text-white">{{ tpsAvgLabel }}</span>
-            </div>
-          </div>
+        <div style="order: 1;">
+          <OpsStatCard
+            :title="t('admin.ops.requestsTitle')"
+            :tooltip="props.fullscreen ? '' : t('admin.ops.tooltips.totalRequests')"
+            :rows="[
+              { label: t('admin.ops.requests'), value: totalRequestsLabel },
+              { label: t('admin.ops.tokens'), value: totalTokensLabel },
+              { label: t('admin.ops.avgQps'), value: qpsAvgLabel },
+              { label: t('admin.ops.avgTps'), value: tpsAvgLabel }
+            ]"
+            :show-details="!props.fullscreen"
+            :details-label="t('admin.ops.requestDetails.details')"
+            @open-details="openDetails({ title: t('admin.ops.requestDetails.title') })"
+          />
         </div>
 
         <!--
@@ -1090,132 +1073,62 @@ function handleToolbarRefresh() {
         </div>
 
         <!-- Card 4: Request Duration -->
-        <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900" style="order: 4;">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-1">
-              <span class="text-[10px] font-bold uppercase text-gray-400">{{ t('admin.ops.latencyDuration') }}</span>
-              <HelpTooltip v-if="!props.fullscreen" :content="t('admin.ops.tooltips.latency')" />
-            </div>
-            <button
-              v-if="!props.fullscreen"
-              class="text-[10px] font-bold text-blue-500 hover:underline"
-              type="button"
-              @click="openDetails({ title: t('admin.ops.latencyDuration'), sort: 'duration_desc' })"
-            >
-              {{ t('admin.ops.requestDetails.details') }}
-            </button>
-          </div>
-          <div class="mt-2 flex items-baseline gap-2">
-            <div class="text-3xl font-black text-gray-900 dark:text-white">
-              {{ durationP99Ms ?? '-' }}
-            </div>
-            <span class="text-xs font-bold text-gray-400">ms (P99)</span>
-          </div>
-          <div class="mt-3 grid grid-cols-1 gap-x-3 gap-y-1 text-xs 2xl:grid-cols-2">
-            <div class="flex items-baseline gap-1 whitespace-nowrap">
-              <span class="text-gray-500">P95:</span>
-              <span class="font-bold text-gray-900 dark:text-white">{{ durationP95Ms ?? '-' }}</span>
-              <span class="text-gray-400">ms</span>
-            </div>
-            <div class="flex items-baseline gap-1 whitespace-nowrap">
-              <span class="text-gray-500">P90:</span>
-              <span class="font-bold text-gray-900 dark:text-white">{{ durationP90Ms ?? '-' }}</span>
-              <span class="text-gray-400">ms</span>
-            </div>
-            <div class="flex items-baseline gap-1 whitespace-nowrap">
-              <span class="text-gray-500">P50:</span>
-              <span class="font-bold text-gray-900 dark:text-white">{{ durationP50Ms ?? '-' }}</span>
-              <span class="text-gray-400">ms</span>
-            </div>
-            <div class="flex items-baseline gap-1 whitespace-nowrap">
-              <span class="text-gray-500">Avg:</span>
-              <span class="font-bold text-gray-900 dark:text-white">{{ durationAvgMs ?? '-' }}</span>
-              <span class="text-gray-400">ms</span>
-            </div>
-            <div class="flex items-baseline gap-1 whitespace-nowrap">
-              <span class="text-gray-500">Max:</span>
-              <span class="font-bold text-gray-900 dark:text-white">{{ durationMaxMs ?? '-' }}</span>
-              <span class="text-gray-400">ms</span>
-            </div>
-          </div>
+        <div style="order: 4;">
+          <OpsStatCard
+            :title="t('admin.ops.latencyDuration')"
+            :tooltip="props.fullscreen ? '' : t('admin.ops.tooltips.latency')"
+            :value="durationP99Ms == null ? '-' : String(durationP99Ms)"
+            unit="ms (P99)"
+            :rows="[
+              { label: 'P95', value: durationP95Ms == null ? '-' : `${durationP95Ms} ms` },
+              { label: 'P90', value: durationP90Ms == null ? '-' : `${durationP90Ms} ms` },
+              { label: 'P50', value: durationP50Ms == null ? '-' : `${durationP50Ms} ms` },
+              { label: 'Avg', value: durationAvgMs == null ? '-' : `${durationAvgMs} ms` },
+              { label: 'Max', value: durationMaxMs == null ? '-' : `${durationMaxMs} ms` }
+            ]"
+            :show-details="!props.fullscreen"
+            :details-label="t('admin.ops.requestDetails.details')"
+            @open-details="openDetails({ title: t('admin.ops.latencyDuration'), sort: 'duration_desc' })"
+          />
         </div>
 
         <!-- Card 5: TTFT -->
-        <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900" style="order: 5;">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-1">
-              <span class="text-[10px] font-bold uppercase text-gray-400">TTFT</span>
-              <HelpTooltip v-if="!props.fullscreen" :content="t('admin.ops.tooltips.ttft')" />
-            </div>
-            <button
-              v-if="!props.fullscreen"
-              class="text-[10px] font-bold text-blue-500 hover:underline"
-              type="button"
-              @click="openDetails({ title: t('admin.ops.ttftLabel'), sort: 'duration_desc' })"
-            >
-              {{ t('admin.ops.requestDetails.details') }}
-            </button>
-          </div>
-          <div class="mt-2 flex items-baseline gap-2">
-            <div class="text-3xl font-black" :class="getThresholdColorClass(getTTFTThresholdLevel(ttftP99Ms))">
-              {{ ttftP99Ms ?? '-' }}
-            </div>
-            <span class="text-xs font-bold text-gray-400">ms (P99)</span>
-          </div>
-          <div class="mt-3 grid grid-cols-1 gap-x-3 gap-y-1 text-xs 2xl:grid-cols-2">
-            <div class="flex items-baseline gap-1 whitespace-nowrap">
-              <span class="text-gray-500">P95:</span>
-              <span class="font-bold" :class="getThresholdColorClass(getTTFTThresholdLevel(ttftP95Ms))">{{ ttftP95Ms ?? '-' }}</span>
-              <span class="text-gray-400">ms</span>
-            </div>
-            <div class="flex items-baseline gap-1 whitespace-nowrap">
-              <span class="text-gray-500">P90:</span>
-              <span class="font-bold" :class="getThresholdColorClass(getTTFTThresholdLevel(ttftP90Ms))">{{ ttftP90Ms ?? '-' }}</span>
-              <span class="text-gray-400">ms</span>
-            </div>
-            <div class="flex items-baseline gap-1 whitespace-nowrap">
-              <span class="text-gray-500">P50:</span>
-              <span class="font-bold" :class="getThresholdColorClass(getTTFTThresholdLevel(ttftP50Ms))">{{ ttftP50Ms ?? '-' }}</span>
-              <span class="text-gray-400">ms</span>
-            </div>
-            <div class="flex items-baseline gap-1 whitespace-nowrap">
-              <span class="text-gray-500">Avg:</span>
-              <span class="font-bold" :class="getThresholdColorClass(getTTFTThresholdLevel(ttftAvgMs))">{{ ttftAvgMs ?? '-' }}</span>
-              <span class="text-gray-400">ms</span>
-            </div>
-            <div class="flex items-baseline gap-1 whitespace-nowrap">
-              <span class="text-gray-500">Max:</span>
-              <span class="font-bold" :class="getThresholdColorClass(getTTFTThresholdLevel(ttftMaxMs))">{{ ttftMaxMs ?? '-' }}</span>
-              <span class="text-gray-400">ms</span>
-            </div>
-          </div>
+        <div style="order: 5;">
+          <OpsStatCard
+            :title="t('admin.ops.ttftLabel')"
+            :tooltip="props.fullscreen ? '' : t('admin.ops.tooltips.ttft')"
+            :value="ttftP99Ms == null ? '-' : String(ttftP99Ms)"
+            unit="ms (P99)"
+            :tone="ttftTone"
+            :rows="[
+              { label: 'P95', value: ttftP95Ms == null ? '-' : `${ttftP95Ms} ms` },
+              { label: 'P90', value: ttftP90Ms == null ? '-' : `${ttftP90Ms} ms` },
+              { label: 'P50', value: ttftP50Ms == null ? '-' : `${ttftP50Ms} ms` },
+              { label: 'Avg', value: ttftAvgMs == null ? '-' : `${ttftAvgMs} ms` },
+              { label: 'Max', value: ttftMaxMs == null ? '-' : `${ttftMaxMs} ms` }
+            ]"
+            :show-details="!props.fullscreen"
+            :details-label="t('admin.ops.requestDetails.details')"
+            @open-details="openDetails({ title: t('admin.ops.ttftLabel'), sort: 'duration_desc' })"
+          />
         </div>
 
 
         <!-- Card 6: Upstream Errors -->
-        <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900" style="order: 6;">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-1">
-              <span class="text-[10px] font-bold uppercase text-gray-400">{{ t('admin.ops.upstreamErrors') }}</span>
-              <HelpTooltip v-if="!props.fullscreen" :content="t('admin.ops.tooltips.upstreamErrors')" />
-            </div>
-            <button v-if="!props.fullscreen" class="text-[10px] font-bold text-blue-500 hover:underline" type="button" @click="openErrorDetails('upstream')">
-              {{ t('admin.ops.requestDetails.details') }}
-            </button>
-          </div>
-          <div class="mt-2 text-3xl font-black" :class="getThresholdColorClass(getUpstreamErrorRateThresholdLevel(upstreamErrorRatePercent))">
-            {{ upstreamErrorRatePercent == null ? '-' : `${upstreamErrorRatePercent.toFixed(2)}%` }}
-          </div>
-          <div class="mt-3 space-y-1 text-xs">
-            <div class="flex justify-between">
-              <span class="text-gray-500">{{ t('admin.ops.errorCountExcl429529') }}:</span>
-              <span class="font-bold text-gray-900 dark:text-white">{{ formatNumber(overview.upstream_error_count_excl_429_529 ?? 0) }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-gray-500">429/529:</span>
-              <span class="font-bold text-gray-900 dark:text-white">{{ formatNumber((overview.upstream_429_count ?? 0) + (overview.upstream_529_count ?? 0)) }}</span>
-            </div>
-          </div>
+        <div style="order: 6;">
+          <OpsStatCard
+            :title="t('admin.ops.upstreamErrors')"
+            :tooltip="props.fullscreen ? '' : t('admin.ops.tooltips.upstreamErrors')"
+            :value="upstreamErrorRatePercent == null ? '-' : `${upstreamErrorRatePercent.toFixed(2)}%`"
+            :tone="upstreamTone"
+            :rows="[
+              { label: t('admin.ops.errorCountExcl429529'), value: formatNumber(overview.upstream_error_count_excl_429_529 ?? 0) },
+              { label: '429/529', value: formatNumber((overview.upstream_429_count ?? 0) + (overview.upstream_529_count ?? 0)) }
+            ]"
+            :show-details="!props.fullscreen"
+            :details-label="t('admin.ops.requestDetails.details')"
+            @open-details="openErrorDetails('upstream')"
+          />
         </div>
       </div>
     </div>
