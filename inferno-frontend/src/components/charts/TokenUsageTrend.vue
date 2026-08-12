@@ -132,7 +132,7 @@ const rateChartData = computed(() => {
     labels: props.trendData.map((d) => d.date),
     datasets: [
       {
-        label: t('dashboard.cacheHitRate'),
+        label: t('usage.cacheHitRate'),
         data: props.trendData.map(rateFor),
         borderColor: tokens.ramp[2],
         backgroundColor: 'transparent',
@@ -295,7 +295,7 @@ const clearHover = () => {
       </div>
       <div class="trend2__rate">
         <div class="trend2__rate-head">
-          <span>{{ t('dashboard.cacheHitRate') }}</span>
+          <span>{{ t('usage.cacheHitRate') }}</span>
           <span class="trend2__rate-value">{{ latestRateLabel }}</span>
         </div>
         <div class="trend2__rate-chart">

@@ -9,7 +9,12 @@ const messages: Record<string, string> = {
   'admin.dashboard.input': 'Input',
   'admin.dashboard.output': 'Output',
   'admin.dashboard.cache': 'Cache',
-  'dashboard.cacheHitRate': 'Cache Hit Rate',
+  /* Lives under `usage.`, not `dashboard.`. The component asked for
+     dashboard.cacheHitRate, which exists in neither the en nor the zh locale,
+     so the raw key rendered on screen under the trend chart. This stub had
+     been masking that by defining the key the component wanted rather than
+     the one the app ships. */
+  'usage.cacheHitRate': 'Cache hit rate',
 }
 
 vi.mock('vue-i18n', async () => {
@@ -86,7 +91,7 @@ describe('TokenUsageTrend', () => {
 
     const rateChart = readChart(wrapper, '.trend2__rate-chart')
     expect(rateChart.datasets).toHaveLength(1)
-    expect(rateChart.datasets[0].label).toBe('Cache Hit Rate')
+    expect(rateChart.datasets[0].label).toBe('Cache hit rate')
     // Hit rate = 1500 / (500 + 1500 + 0) * 100 = 75%
     expect(rateChart.datasets[0].data[0]).toBe(75)
   })
@@ -195,7 +200,7 @@ describe('TokenUsageTrend', () => {
     expect(rateChart.labels).toEqual(mainChart.labels)
 
     expect(mainChart.datasets.map((ds: { label: string }) => ds.label)).toEqual(['Input', 'Output', 'Cache'])
-    expect(rateChart.datasets.map((ds: { label: string }) => ds.label)).toEqual(['Cache Hit Rate'])
+    expect(rateChart.datasets.map((ds: { label: string }) => ds.label)).toEqual(['Cache hit rate'])
 
     expect(mainChart.datasets[0].borderColor).toBe('ramp-0') // Input
     expect(mainChart.datasets[1].borderColor).toBe('ramp-2') // Output

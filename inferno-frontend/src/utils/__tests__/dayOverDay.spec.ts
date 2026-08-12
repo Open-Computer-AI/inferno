@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { sumWindow, toDelta } from '../dayOverDay'
+import { densifyHours, sumWindow, toDelta } from '../dayOverDay'
 import type { TrendDataPoint } from '@/types'
 
 function point(date: string, requests: number, tokens = 0, cost = 0): TrendDataPoint {
@@ -61,6 +61,45 @@ describe('sumWindow', () => {
       { ...point('2026-08-11 10:00', 3), date: undefined as unknown as string }
     ]
     expect(sumWindow(dirty, '2026-08-11', 23)).toEqual({ requests: 0, tokens: 0, cost: 5 })
+  })
+})
+
+describe('densifyHours', () => {
+  /*
+   * The bug this exists to prevent: usage_dashboard_hourly holds a row only
+   * for buckets that saw traffic, so an idle hour is ABSENT rather than zero.
+   * A sparkline spaces points evenly, making index stand in for hour -- so raw
+   * rows would draw 12:00 and 17:00 adjacent and erase the dead afternoon.
+   */
+  it('zero-fills absent hours so index maps to hour', () => {
+    const sparse = [
+      point('2026-08-11 09:00', 10),
+      point('2026-08-11 12:00', 40),
+      point('2026-08-11 14:00', 25)
+    ]
+    expect(densifyHours(sparse, '2026-08-11', 14, (p) => p.requests)).toEqual([
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 40, 0, 25
+    ])
+  })
+
+  it('always returns throughHour + 1 entries, starting at midnight', () => {
+    expect(densifyHours([], '2026-08-11', 5, (p) => p.requests)).toHaveLength(6)
+    expect(densifyHours([], '2026-08-11', 0, (p) => p.requests)).toEqual([0])
+  })
+
+  it('orders by hour regardless of the order rows arrived in', () => {
+    const shuffled = [point('2026-08-11 03:00', 3), point('2026-08-11 01:00', 1)]
+    expect(densifyHours(shuffled, '2026-08-11', 3, (p) => p.requests)).toEqual([0, 1, 0, 3])
+  })
+
+  it('drops other days, later hours, and malformed rows', () => {
+    const mixed = [
+      point('2026-08-10 02:00', 99), // yesterday
+      point('2026-08-11 23:00', 99), // beyond the bound
+      { ...point('2026-08-11 02:00', 7), date: null as unknown as string },
+      point('2026-08-11 02:00', 5)
+    ]
+    expect(densifyHours(mixed, '2026-08-11', 3, (p) => p.requests)).toEqual([0, 0, 5, 0])
   })
 })
 
