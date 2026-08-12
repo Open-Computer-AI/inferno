@@ -123,6 +123,7 @@ export default {
       failedToLoadErrorDetail: '加载错误详情失败',
       retryFailed: '重试失败',
       tpsK: 'TPS（千）',
+      switchRateCaption: '本时段每请求切换次数',
       latency: {
         totalCaption: '本时段请求数',
         inBucket: '{bucket} 区间'
