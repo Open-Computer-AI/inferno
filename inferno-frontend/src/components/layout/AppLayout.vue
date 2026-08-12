@@ -75,7 +75,12 @@ defineExpose({ replayTour })
 .shell {
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
-  min-height: 100vh;
+  /* Exactly the viewport, not a floor. The shell is the window frame, so it
+     never grows -- scrolling happens inside the card below. dvh, not vh, so
+     mobile Safari's collapsing URL bar does not leave a strip of canvas under
+     the card. */
+  height: 100dvh;
+  overflow: hidden;
   background: var(--sidebar);
   transition: grid-template-columns var(--motion-layout);
 }
@@ -84,7 +89,10 @@ defineExpose({ replayTour })
 }
 
 .shell__content {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
   position: relative;
 }
 
@@ -119,9 +127,25 @@ defineExpose({ replayTour })
    the one surface in the whole shell allowed a shadow -- ground rule 9 says
    cards carry none, and this composite of --shadow-sm plus --shadow-inset is
    the shell's documented exception to it, not an oversight. */
+/*
+ * THE CARD IS THE SCROLL CONTAINER, NOT THE DOCUMENT.
+ *
+ * This was `min-height: calc(100vh - 14px)`, and a minimum let the card grow
+ * to whatever its content needed -- 2,485px on the admin dashboard. Its
+ * `overflow: auto` therefore never engaged (scrollHeight === clientHeight) and
+ * the DOCUMENT scrolled instead, dragging the card with it: the 7px inset, the
+ * rounded corners and the shadow all slid off the top, so the window frame only
+ * existed at scroll position 0.
+ *
+ * `flex: 1` against a shell fixed to 100dvh pins the card to the viewport, and
+ * `min-height: 0` is what actually lets it shrink below its content so the
+ * overflow can do its job -- a flex item defaults to min-height:auto and would
+ * refuse. Now the frame never moves and only the content inside it scrolls.
+ */
 .shell__card {
+  flex: 1;
+  min-height: 0;
   margin: 7px 7px 7px 0;
-  min-height: calc(100vh - 14px);
   border-radius: var(--r-window);
   background: var(--card);
   box-shadow: var(--shadow-sm), var(--shadow-inset);
