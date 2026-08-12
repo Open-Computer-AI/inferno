@@ -40,11 +40,12 @@
  * something. Hence `accent` (a hue with no assigned meaning) rather than
  * `attention`.
  */
+import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 
 type Tone = 'brand' | 'info' | 'success' | 'accent'
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     /** The metric's name. Sentence case, ground rule 1. */
     label: string
@@ -102,6 +103,35 @@ withDefaults(
   { tone: 'brand', contextTone: 'muted' }
 )
 
+/*
+ * Splits the context line so its VALUE can carry weight while the prose does
+ * not: "87% served from cache", "$9.71 standard", "across 950 requests".
+ *
+ * The FIRST numeric run only, deliberately. Emphasising every number would
+ * bold "4 new today" alongside "12 active" and "the last 5" alongside "0 per
+ * minute" -- and once several things on one short line are bold, none of them
+ * is. The first number is the line's finding; anything after it is detail.
+ *
+ * Done by splitting into three plain segments rather than by injecting markup,
+ * so this never touches v-html. Locale strings are translator-authored, but
+ * they are still strings, and building a component that renders them as HTML
+ * would make every future translation an injection surface for the sake of
+ * one bold span.
+ *
+ * Matches an optional currency symbol, digits with separators, and an optional
+ * percent sign, which covers en and zh alike -- "87% 来自缓存" and "活跃 12"
+ * both land on the right token.
+ */
+const contextParts = computed(() => {
+  const text = props.context ?? ''
+  const match = text.match(/[$€£¥]?\d[\d,.]*%?/)
+  if (!match || match.index === undefined) return { before: text, value: '', after: '' }
+  return {
+    before: text.slice(0, match.index),
+    value: match[0],
+    after: text.slice(match.index + match[0].length)
+  }
+})
 </script>
 
 <template>
@@ -131,7 +161,11 @@ withDefaults(
         :class="contextTone === 'attention' ? 'hgi-alert-circle' : 'hgi-checkmark-circle-02'"
         aria-hidden="true"
       />
-      <span class="tile__foot-text">{{ context }}</span>
+      <span class="tile__foot-text"
+        >{{ contextParts.before
+        }}<b v-if="contextParts.value" class="tile__foot-value">{{ contextParts.value }}</b
+        >{{ contextParts.after }}</span
+      >
     </p>
   </component>
 </template>
@@ -318,6 +352,18 @@ a.tile:focus-visible {
   flex: none;
   font-size: 13px; /* june-lint-disable ground-rule-4: icon glyph, not text */
   line-height: 1;
+}
+
+/*
+ * Weight only, not colour. --fw-medium is one of the two weights the type
+ * scale allows (ground rule 3), and it is enough to lift the value out of the
+ * muted prose around it. Giving it --foreground as well would make the floor
+ * of a healthy tile compete with the headline number directly above it, and
+ * on an attention line it would break the single-colour read that makes a
+ * failing account findable without reading.
+ */
+.tile__foot-value {
+  font-weight: var(--fw-medium);
 }
 
 .tile__foot[data-tone='muted'] {
