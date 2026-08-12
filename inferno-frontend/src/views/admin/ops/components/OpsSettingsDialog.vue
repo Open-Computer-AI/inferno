@@ -6,6 +6,9 @@ import { opsAPI } from '@/api/admin/ops'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
 import Toggle from '@/components/common/Toggle.vue'
+import Input from '@/components/common/Input.vue'
+import NumberField from '@/components/common/NumberField.vue'
+import Button from '@/components/common/Button.vue'
 import type { OpsAlertRuntimeSettings, EmailNotificationConfig, AlertSeverity, OpsAdvancedSettings, OpsMetricThresholds } from '../types'
 
 const { t } = useI18n()
@@ -233,272 +236,247 @@ async function saveAllSettings() {
 
 <template>
   <BaseDialog :show="show" :title="t('admin.ops.settings.title')" width="extra-wide" @close="emit('close')">
-    <div v-if="loading" class="py-10 text-center text-sm text-gray-500">
+    <div v-if="loading" class="opsset__loading">
       {{ t('common.loading') }}
     </div>
 
-    <div v-else-if="runtimeSettings && emailConfig && advancedSettings" class="space-y-6">
+    <div v-else-if="runtimeSettings && emailConfig && advancedSettings" class="opsset__body">
       <!-- 验证错误 -->
-      <div v-if="!validation.valid" class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200">
-        <div class="font-bold">{{ t('admin.ops.settings.validation.title') }}</div>
-        <ul class="mt-1 list-disc space-y-1 pl-4">
+      <div v-if="!validation.valid" class="opsset__invalid">
+        <p class="opsset__invalid-title">{{ t('admin.ops.settings.validation.title') }}</p>
+        <ul class="opsset__invalid-list">
           <li v-for="msg in validation.errors" :key="msg">{{ msg }}</li>
         </ul>
       </div>
 
       <!-- 数据采集频率 -->
-      <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-700/50">
-        <h4 class="mb-3 text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.ops.settings.dataCollection') }}</h4>
+      <div class="opsset__section">
+        <h4 class="opsset__title">{{ t('admin.ops.settings.dataCollection') }}</h4>
         <div>
-          <label class="input-label">{{ t('admin.ops.settings.evaluationInterval') }}</label>
-          <input
-            v-model.number="runtimeSettings.evaluation_interval_seconds"
-            type="number"
-            min="1"
-            max="86400"
-            class="input"
-          />
-          <p class="mt-1 text-xs text-gray-500">{{ t('admin.ops.settings.evaluationIntervalHint') }}</p>
+          <NumberField
+              :label="t('admin.ops.settings.evaluationInterval')"
+              v-model="runtimeSettings.evaluation_interval_seconds"
+              :min="1"
+              :max="86400"
+              :hint="t('admin.ops.settings.evaluationIntervalHint')"
+            />
         </div>
       </div>
 
       <!-- 预警配置 -->
-      <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-700/50">
-        <h4 class="mb-3 text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.ops.settings.alertConfig') }}</h4>
+      <div class="opsset__section">
+        <h4 class="opsset__title">{{ t('admin.ops.settings.alertConfig') }}</h4>
 
-        <div class="space-y-4">
-          <div class="flex items-center justify-between">
+        <div class="opsset__stack">
+          <div class="opsset__row">
             <div>
-              <label class="font-medium text-gray-900 dark:text-white">{{ t('admin.ops.settings.enableAlert') }}</label>
+              <label class="opsset__row-label">{{ t('admin.ops.settings.enableAlert') }}</label>
             </div>
             <Toggle v-model="emailConfig.alert.enabled" />
           </div>
 
           <div v-if="emailConfig.alert.enabled">
-            <label class="input-label">{{ t('admin.ops.settings.alertRecipients') }}</label>
-            <div class="flex gap-2">
-              <input
+            <label class="opsset__label">{{ t('admin.ops.settings.alertRecipients') }}</label>
+            <div class="opsset__inline">
+              <Input
                 v-model="alertRecipientInput"
                 type="email"
-                class="input"
+                class="opsset__inline-field"
                 :placeholder="t('admin.ops.settings.emailPlaceholder')"
-                @keydown.enter.prevent="addRecipient('alert')"
+                @enter="addRecipient('alert')"
               />
-              <button class="btn btn-secondary whitespace-nowrap" type="button" @click="addRecipient('alert')">
-                {{ t('common.add') }}
-              </button>
+              <Button variant="secondary" size="md" @click="addRecipient('alert')">{{ t('common.add') }}</Button>
             </div>
-            <div class="mt-2 flex flex-wrap gap-2">
+            <div class="opsset__chips">
               <span
                 v-for="email in emailConfig.alert.recipients"
                 :key="email"
-                class="inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                class="opsset__chip"
               >
                 {{ email }}
-                <button type="button" class="text-blue-700/80 hover:text-blue-900" @click="removeRecipient('alert', email)">×</button>
+                <button type="button" class="opsset__chip-remove" :aria-label="t('common.delete')" @click="removeRecipient('alert', email)">×</button>
               </span>
             </div>
-            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            <p class="opsset__hint">
               {{ t('admin.ops.settings.recipientsHint') }}
             </p>
           </div>
 
           <div v-if="emailConfig.alert.enabled">
-            <label class="input-label">{{ t('admin.ops.settings.minSeverity') }}</label>
+            <label class="opsset__label">{{ t('admin.ops.settings.minSeverity') }}</label>
             <Select v-model="emailConfig.alert.min_severity" :options="severityOptions" />
           </div>
         </div>
       </div>
 
       <!-- 评估报告配置 -->
-      <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-700/50">
-        <h4 class="mb-3 text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.ops.settings.reportConfig') }}</h4>
+      <div class="opsset__section">
+        <h4 class="opsset__title">{{ t('admin.ops.settings.reportConfig') }}</h4>
 
-        <div class="space-y-4">
-          <div class="flex items-center justify-between">
+        <div class="opsset__stack">
+          <div class="opsset__row">
             <div>
-              <label class="font-medium text-gray-900 dark:text-white">{{ t('admin.ops.settings.enableReport') }}</label>
+              <label class="opsset__row-label">{{ t('admin.ops.settings.enableReport') }}</label>
             </div>
             <Toggle v-model="emailConfig.report.enabled" />
           </div>
 
           <div v-if="emailConfig.report.enabled">
-            <label class="input-label">{{ t('admin.ops.settings.reportRecipients') }}</label>
-            <div class="flex gap-2">
-              <input
+            <label class="opsset__label">{{ t('admin.ops.settings.reportRecipients') }}</label>
+            <div class="opsset__inline">
+              <Input
                 v-model="reportRecipientInput"
                 type="email"
-                class="input"
+                class="opsset__inline-field"
                 :placeholder="t('admin.ops.settings.emailPlaceholder')"
-                @keydown.enter.prevent="addRecipient('report')"
+                @enter="addRecipient('report')"
               />
-              <button class="btn btn-secondary whitespace-nowrap" type="button" @click="addRecipient('report')">
-                {{ t('common.add') }}
-              </button>
+              <Button variant="secondary" size="md" @click="addRecipient('report')">{{ t('common.add') }}</Button>
             </div>
-            <div class="mt-2 flex flex-wrap gap-2">
+            <div class="opsset__chips">
               <span
                 v-for="email in emailConfig.report.recipients"
                 :key="email"
-                class="inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                class="opsset__chip"
               >
                 {{ email }}
-                <button type="button" class="text-blue-700/80 hover:text-blue-900" @click="removeRecipient('report', email)">×</button>
+                <button type="button" class="opsset__chip-remove" :aria-label="t('common.delete')" @click="removeRecipient('report', email)">×</button>
               </span>
             </div>
-            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            <p class="opsset__hint">
               {{ t('admin.ops.settings.recipientsHint') }}
             </p>
           </div>
 
-          <div v-if="emailConfig.report.enabled" class="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div class="flex items-center justify-between">
-              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.ops.settings.dailySummary') }}</label>
+          <div v-if="emailConfig.report.enabled" class="opsset__grid">
+            <div class="opsset__row">
+              <label class="opsset__row-label">{{ t('admin.ops.settings.dailySummary') }}</label>
               <Toggle v-model="emailConfig.report.daily_summary_enabled" />
             </div>
             <div v-if="emailConfig.report.daily_summary_enabled">
-              <input v-model="emailConfig.report.daily_summary_schedule" type="text" class="input" placeholder="0 9 * * *" />
+              <Input v-model="emailConfig.report.daily_summary_schedule" placeholder="0 9 * * *" />
             </div>
-            <div class="flex items-center justify-between">
-              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.ops.settings.weeklySummary') }}</label>
+            <div class="opsset__row">
+              <label class="opsset__row-label">{{ t('admin.ops.settings.weeklySummary') }}</label>
               <Toggle v-model="emailConfig.report.weekly_summary_enabled" />
             </div>
             <div v-if="emailConfig.report.weekly_summary_enabled">
-              <input v-model="emailConfig.report.weekly_summary_schedule" type="text" class="input" placeholder="0 9 * * 1" />
+              <Input v-model="emailConfig.report.weekly_summary_schedule" placeholder="0 9 * * 1" />
             </div>
           </div>
         </div>
       </div>
 
       <!-- 指标阈值配置 -->
-      <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-700/50">
-        <h4 class="mb-3 text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.ops.settings.metricThresholds') }}</h4>
-        <p class="mb-4 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.ops.settings.metricThresholdsHint') }}</p>
+      <div class="opsset__section">
+        <h4 class="opsset__title">{{ t('admin.ops.settings.metricThresholds') }}</h4>
+        <p class="opsset__lead">{{ t('admin.ops.settings.metricThresholdsHint') }}</p>
 
-        <div class="space-y-4">
+        <div class="opsset__stack">
           <div>
-            <label class="input-label">{{ t('admin.ops.settings.slaMinPercent') }}</label>
-            <input
-              v-model.number="metricThresholds.sla_percent_min"
-              type="number"
-              min="0"
-              max="100"
-              step="0.1"
-              class="input"
+            <NumberField
+              :label="t('admin.ops.settings.slaMinPercent')"
+              v-model="metricThresholds.sla_percent_min"
+              :min="0"
+              :max="100"
+              :step="0.1"
+              :hint="t('admin.ops.settings.slaMinPercentHint')"
             />
-            <p class="mt-1 text-xs text-gray-500">{{ t('admin.ops.settings.slaMinPercentHint') }}</p>
           </div>
 
 
           <div>
-            <label class="input-label">{{ t('admin.ops.settings.ttftP99MaxMs') }}</label>
-            <input
-              v-model.number="metricThresholds.ttft_p99_ms_max"
-              type="number"
-              min="0"
-              step="50"
-              class="input"
+            <NumberField
+              :label="t('admin.ops.settings.ttftP99MaxMs')"
+              v-model="metricThresholds.ttft_p99_ms_max"
+              :min="0"
+              :step="50"
+              :hint="t('admin.ops.settings.ttftP99MaxMsHint')"
             />
-            <p class="mt-1 text-xs text-gray-500">{{ t('admin.ops.settings.ttftP99MaxMsHint') }}</p>
           </div>
 
           <div>
-            <label class="input-label">{{ t('admin.ops.settings.requestErrorRateMaxPercent') }}</label>
-            <input
-              v-model.number="metricThresholds.request_error_rate_percent_max"
-              type="number"
-              min="0"
-              max="100"
-              step="0.1"
-              class="input"
+            <NumberField
+              :label="t('admin.ops.settings.requestErrorRateMaxPercent')"
+              v-model="metricThresholds.request_error_rate_percent_max"
+              :min="0"
+              :max="100"
+              :step="0.1"
+              :hint="t('admin.ops.settings.requestErrorRateMaxPercentHint')"
             />
-            <p class="mt-1 text-xs text-gray-500">{{ t('admin.ops.settings.requestErrorRateMaxPercentHint') }}</p>
           </div>
 
           <div>
-            <label class="input-label">{{ t('admin.ops.settings.upstreamErrorRateMaxPercent') }}</label>
-            <input
-              v-model.number="metricThresholds.upstream_error_rate_percent_max"
-              type="number"
-              min="0"
-              max="100"
-              step="0.1"
-              class="input"
+            <NumberField
+              :label="t('admin.ops.settings.upstreamErrorRateMaxPercent')"
+              v-model="metricThresholds.upstream_error_rate_percent_max"
+              :min="0"
+              :max="100"
+              :step="0.1"
+              :hint="t('admin.ops.settings.upstreamErrorRateMaxPercentHint')"
             />
-            <p class="mt-1 text-xs text-gray-500">{{ t('admin.ops.settings.upstreamErrorRateMaxPercentHint') }}</p>
           </div>
         </div>
       </div>
 
       <!-- 高级设置 -->
-      <details class="rounded-2xl bg-gray-50 dark:bg-dark-700/50">
-        <summary class="cursor-pointer p-4 text-sm font-semibold text-gray-900 dark:text-white">
+      <details class="opsset__advanced">
+        <summary class="opsset__advanced-summary">
           {{ t('admin.ops.settings.advancedSettings') }}
         </summary>
         <div class="space-y-4 px-4 pb-4">
           <!-- 数据保留策略 -->
           <div class="space-y-3">
-            <h5 class="text-xs font-semibold text-gray-700 dark:text-gray-300">{{ t('admin.ops.settings.dataRetention') }}</h5>
+            <h5 class="opsset__subtitle">{{ t('admin.ops.settings.dataRetention') }}</h5>
 
-            <div class="flex items-center justify-between">
-              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.ops.settings.enableCleanup') }}</label>
+            <div class="opsset__row">
+              <label class="opsset__row-label">{{ t('admin.ops.settings.enableCleanup') }}</label>
               <Toggle v-model="advancedSettings.data_retention.cleanup_enabled" />
             </div>
 
             <div v-if="advancedSettings.data_retention.cleanup_enabled">
-              <label class="input-label">{{ t('admin.ops.settings.cleanupSchedule') }}</label>
-              <input
+              <Input
                 v-model="advancedSettings.data_retention.cleanup_schedule"
-                type="text"
-                class="input"
+                :label="t('admin.ops.settings.cleanupSchedule')"
+                :hint="t('admin.ops.settings.cleanupScheduleHint')"
                 placeholder="0 2 * * *"
               />
-              <p class="mt-1 text-xs text-gray-500">{{ t('admin.ops.settings.cleanupScheduleHint') }}</p>
             </div>
 
             <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div>
-                <label class="input-label">{{ t('admin.ops.settings.errorLogRetentionDays') }}</label>
-                <input
-                  v-model.number="advancedSettings.data_retention.error_log_retention_days"
-                  type="number"
-                  min="0"
-                  max="365"
-                  class="input"
-                />
-              </div>
+                <NumberField
+              :label="t('admin.ops.settings.errorLogRetentionDays')"
+              v-model="advancedSettings.data_retention.error_log_retention_days"
+              :min="0"
+              :max="365"
+            /></div>
               <div>
-                <label class="input-label">{{ t('admin.ops.settings.minuteMetricsRetentionDays') }}</label>
-                <input
-                  v-model.number="advancedSettings.data_retention.minute_metrics_retention_days"
-                  type="number"
-                  min="0"
-                  max="365"
-                  class="input"
-                />
-              </div>
+                <NumberField
+              :label="t('admin.ops.settings.minuteMetricsRetentionDays')"
+              v-model="advancedSettings.data_retention.minute_metrics_retention_days"
+              :min="0"
+              :max="365"
+            /></div>
               <div>
-                <label class="input-label">{{ t('admin.ops.settings.hourlyMetricsRetentionDays') }}</label>
-                <input
-                  v-model.number="advancedSettings.data_retention.hourly_metrics_retention_days"
-                  type="number"
-                  min="0"
-                  max="365"
-                  class="input"
-                />
-              </div>
+                <NumberField
+              :label="t('admin.ops.settings.hourlyMetricsRetentionDays')"
+              v-model="advancedSettings.data_retention.hourly_metrics_retention_days"
+              :min="0"
+              :max="365"
+            /></div>
             </div>
-            <p class="text-xs text-gray-500">{{ t('admin.ops.settings.retentionDaysHint') }}</p>
+            <p class="opsset__hint">{{ t('admin.ops.settings.retentionDaysHint') }}</p>
           </div>
 
           <!-- 预聚合任务 -->
           <div class="space-y-3">
-            <h5 class="text-xs font-semibold text-gray-700 dark:text-gray-300">{{ t('admin.ops.settings.aggregation') }}</h5>
+            <h5 class="opsset__subtitle">{{ t('admin.ops.settings.aggregation') }}</h5>
 
-            <div class="flex items-center justify-between">
+            <div class="opsset__row">
               <div>
-                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.ops.settings.enableAggregation') }}</label>
-                <p class="mt-1 text-xs text-gray-500">{{ t('admin.ops.settings.aggregationHint') }}</p>
+                <label class="opsset__row-label">{{ t('admin.ops.settings.enableAggregation') }}</label>
+                <p class="opsset__hint">{{ t('admin.ops.settings.aggregationHint') }}</p>
               </div>
               <Toggle v-model="advancedSettings.aggregation.aggregation_enabled" />
             </div>
@@ -506,76 +484,72 @@ async function saveAllSettings() {
 
           <!-- OpenAI 账号配额自动暂停（全局默认阈值） -->
           <div class="space-y-3">
-            <h5 class="text-xs font-semibold text-gray-700 dark:text-gray-300">{{ t('admin.ops.settings.openaiQuotaAutoPause') }}</h5>
-            <p class="text-xs text-gray-500">{{ t('admin.ops.settings.openaiQuotaAutoPauseHint') }}</p>
+            <h5 class="opsset__subtitle">{{ t('admin.ops.settings.openaiQuotaAutoPause') }}</h5>
+            <p class="opsset__hint">{{ t('admin.ops.settings.openaiQuotaAutoPauseHint') }}</p>
 
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div class="opsset__grid">
               <div>
-                <label class="input-label">{{ t('admin.ops.settings.openaiQuotaAutoPauseDefault5h') }}</label>
-                <input
-                  v-model.number="quotaAutoPause5hPercent"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.1"
-                  class="input"
+                <NumberField
+                  v-model="quotaAutoPause5hPercent"
+                  :label="t('admin.ops.settings.openaiQuotaAutoPauseDefault5h')"
+                  :min="0"
+                  :max="100"
+                  :step="0.1"
                   data-testid="ops-quota-auto-pause-5h"
                 />
               </div>
               <div>
-                <label class="input-label">{{ t('admin.ops.settings.openaiQuotaAutoPauseDefault7d') }}</label>
-                <input
-                  v-model.number="quotaAutoPause7dPercent"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.1"
-                  class="input"
+                <NumberField
+                  v-model="quotaAutoPause7dPercent"
+                  :label="t('admin.ops.settings.openaiQuotaAutoPauseDefault7d')"
+                  :min="0"
+                  :max="100"
+                  :step="0.1"
                   data-testid="ops-quota-auto-pause-7d"
                 />
               </div>
             </div>
-            <p class="text-xs text-gray-500">{{ t('admin.ops.settings.openaiQuotaAutoPauseThresholdHint') }}</p>
+            <p class="opsset__hint">{{ t('admin.ops.settings.openaiQuotaAutoPauseThresholdHint') }}</p>
           </div>
 
           <!-- Error Filtering -->
           <div class="space-y-3">
-            <h5 class="text-xs font-semibold text-gray-700 dark:text-gray-300">{{ t('admin.ops.settings.errorFiltering') }}</h5>
+            <h5 class="opsset__subtitle">{{ t('admin.ops.settings.errorFiltering') }}</h5>
 
-            <div class="flex items-center justify-between">
+            <div class="opsset__row">
               <div>
-                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.ops.settings.ignoreCountTokensErrors') }}</label>
-                <p class="mt-1 text-xs text-gray-500">
+                <label class="opsset__row-label">{{ t('admin.ops.settings.ignoreCountTokensErrors') }}</label>
+                <p class="opsset__hint">
                   {{ t('admin.ops.settings.ignoreCountTokensErrorsHint') }}
                 </p>
               </div>
               <Toggle v-model="advancedSettings.ignore_count_tokens_errors" />
             </div>
 
-            <div class="flex items-center justify-between">
+            <div class="opsset__row">
               <div>
-                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.ops.settings.ignoreContextCanceled') }}</label>
-                <p class="mt-1 text-xs text-gray-500">
+                <label class="opsset__row-label">{{ t('admin.ops.settings.ignoreContextCanceled') }}</label>
+                <p class="opsset__hint">
                   {{ t('admin.ops.settings.ignoreContextCanceledHint') }}
                 </p>
               </div>
               <Toggle v-model="advancedSettings.ignore_context_canceled" />
             </div>
 
-            <div class="flex items-center justify-between">
+            <div class="opsset__row">
               <div>
-                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.ops.settings.ignoreNoAvailableAccounts') }}</label>
-                <p class="mt-1 text-xs text-gray-500">
+                <label class="opsset__row-label">{{ t('admin.ops.settings.ignoreNoAvailableAccounts') }}</label>
+                <p class="opsset__hint">
                   {{ t('admin.ops.settings.ignoreNoAvailableAccountsHint') }}
                 </p>
               </div>
               <Toggle v-model="advancedSettings.ignore_no_available_accounts" />
             </div>
 
-            <div class="flex items-center justify-between">
+            <div class="opsset__row">
               <div>
-                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.ops.settings.ignoreInsufficientBalanceErrors') }}</label>
-                <p class="mt-1 text-xs text-gray-500">
+                <label class="opsset__row-label">{{ t('admin.ops.settings.ignoreInsufficientBalanceErrors') }}</label>
+                <p class="opsset__hint">
                   {{ t('admin.ops.settings.ignoreInsufficientBalanceErrorsHint') }}
                 </p>
               </div>
@@ -585,12 +559,12 @@ async function saveAllSettings() {
 
           <!-- Auto Refresh -->
           <div class="space-y-3">
-            <h5 class="text-xs font-semibold text-gray-700 dark:text-gray-300">{{ t('admin.ops.settings.autoRefresh') }}</h5>
+            <h5 class="opsset__subtitle">{{ t('admin.ops.settings.autoRefresh') }}</h5>
 
-            <div class="flex items-center justify-between">
+            <div class="opsset__row">
               <div>
-                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.ops.settings.enableAutoRefresh') }}</label>
-                <p class="mt-1 text-xs text-gray-500">
+                <label class="opsset__row-label">{{ t('admin.ops.settings.enableAutoRefresh') }}</label>
+                <p class="opsset__hint">
                   {{ t('admin.ops.settings.enableAutoRefreshHint') }}
                 </p>
               </div>
@@ -598,7 +572,7 @@ async function saveAllSettings() {
             </div>
 
             <div v-if="advancedSettings.auto_refresh_enabled">
-              <label class="input-label">{{ t('admin.ops.settings.refreshInterval') }}</label>
+              <label class="opsset__label">{{ t('admin.ops.settings.refreshInterval') }}</label>
               <Select
                 v-model="advancedSettings.auto_refresh_interval_seconds"
                 :options="[
@@ -612,22 +586,22 @@ async function saveAllSettings() {
 
           <!-- Dashboard Cards -->
           <div class="space-y-3">
-            <h5 class="text-xs font-semibold text-gray-700 dark:text-gray-300">{{ t('admin.ops.settings.dashboardCards') }}</h5>
+            <h5 class="opsset__subtitle">{{ t('admin.ops.settings.dashboardCards') }}</h5>
 
-            <div class="flex items-center justify-between">
+            <div class="opsset__row">
               <div>
-                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.ops.settings.displayAlertEvents') }}</label>
-                <p class="mt-1 text-xs text-gray-500">
+                <label class="opsset__row-label">{{ t('admin.ops.settings.displayAlertEvents') }}</label>
+                <p class="opsset__hint">
                   {{ t('admin.ops.settings.displayAlertEventsHint') }}
                 </p>
               </div>
               <Toggle v-model="advancedSettings.display_alert_events" />
             </div>
 
-            <div class="flex items-center justify-between">
+            <div class="opsset__row">
               <div>
-                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.ops.settings.displayOpenAITokenStats') }}</label>
-                <p class="mt-1 text-xs text-gray-500">
+                <label class="opsset__row-label">{{ t('admin.ops.settings.displayOpenAITokenStats') }}</label>
+                <p class="opsset__hint">
                   {{ t('admin.ops.settings.displayOpenAITokenStatsHint') }}
                 </p>
               </div>
@@ -648,3 +622,188 @@ async function saveAllSettings() {
     </template>
   </BaseDialog>
 </template>
+
+<style scoped>
+.opsset__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.opsset__loading {
+  padding: 40px 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-md);
+  text-align: center;
+}
+
+/* --- section ----------------------------------------------------------- */
+
+/* --r-md, not the old rounded-2xl. A panel nested inside a dialog takes a
+   smaller radius than the dialog around it (concentric radii: the inner
+   corner is always tighter than the outer, or the gap between them pinches). */
+.opsset__section {
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+}
+
+.opsset__title {
+  margin: 0 0 10px;
+  color: var(--foreground);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+
+.opsset__subtitle {
+  margin: 0;
+  color: var(--body-copy);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.opsset__lead {
+  margin: -4px 0 12px;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.opsset__hint {
+  margin: 6px 0 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.opsset__label {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.opsset__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.opsset__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+/* --- a setting and its switch ------------------------------------------ */
+
+.opsset__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.opsset__row-label {
+  color: var(--foreground);
+  font-size: var(--fs-md);
+}
+
+/* --- recipient entry ---------------------------------------------------- */
+
+.opsset__inline {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.opsset__inline-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.opsset__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* Was bg-blue-100/text-blue-700. An address someone typed is not a state, and
+   blue is not in this palette. */
+.opsset__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px 2px 10px;
+  border-radius: var(--r-pill);
+  background: var(--card);
+  color: var(--body-copy);
+  font-size: var(--fs-sm);
+}
+
+.opsset__chip-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted-foreground);
+  font-size: var(--fs-md);
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--motion-hover);
+}
+
+.opsset__chip-remove:hover {
+  background: var(--muted);
+  color: var(--destructive);
+}
+
+/* --- validation --------------------------------------------------------- */
+
+/* Attention, not destructive: the form is not broken, it is telling you a
+   value will not be accepted yet. */
+.opsset__invalid {
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--s2a-attn-soft);
+  color: var(--s2a-attn);
+  font-size: var(--fs-sm);
+}
+
+.opsset__invalid-title {
+  margin: 0;
+  font-weight: var(--fw-medium);
+}
+
+.opsset__invalid-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  list-style: disc;
+}
+
+.opsset__invalid-list li + li {
+  margin-top: 2px;
+}
+
+/* --- advanced disclosure ------------------------------------------------ */
+
+.opsset__advanced {
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+}
+
+.opsset__advanced-summary {
+  padding: 12px 16px;
+  color: var(--foreground);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+}
+
+.opsset__advanced-summary::marker {
+  color: var(--muted-foreground);
+}
+</style>
