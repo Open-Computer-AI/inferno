@@ -13,7 +13,15 @@ export default {
         month: '本月',
         quarter: '本季',
         year: '本年',
-        toDate: '{period}至今'
+        toDate: '{period}至今',
+        thisPeriod: '本{period}',
+      },
+      modelMix: {
+        title: '各模型 Token',
+        cacheBadge: '{pct}% 缓存',
+        subDefault: '{period}用量前列的模型',
+        subModel: '{period} {model} 的用量',
+        subBand: '{period}{band} Token'
       },
       mix: {
         title: 'Token 构成',
