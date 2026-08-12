@@ -155,33 +155,22 @@ describe('admin DashboardView', () => {
     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
 
     /*
-     * Two calls now, not one. The second is the day-over-day comparison that
-     * feeds the delta chips, and it is deliberately a separate request rather
-     * than a reuse of the chart's: the chart's range follows the picker, while
-     * the chips must always mean "today vs yesterday" because the tiles they
-     * sit on are labelled Today. Sharing one call would let the picker
-     * silently retarget the comparison at a week ago under an unchanged label.
+     * NOT an exact call count. The dashboard's panels each own their fetch --
+     * the donut pulls a year of daily buckets, the model bars pull one range
+     * per period and prefetch the rest -- so a total would have to be edited
+     * every time a panel is added, and would be asserting "how many panels
+     * exist" rather than anything about the default range.
      *
-     * Both happen to want the same window on first mount, which is why this
-     * asserts the shape rather than the order.
+     * The invariant that actually matters is that the STATS payload is
+     * fetched exactly once. Every panel needs a snapshot; only the chart call
+     * should carry include_stats, because that is the one that populates the
+     * tiles. A second one would mean two sources of truth for the same
+     * numbers, racing.
      */
-    /*
-     * Three now: the chart snapshot, the day-over-day comparison, and
-     * TokenMixPanel's year of daily buckets. The third is deliberately a
-     * separate, wider, coarser request -- the donut slices it client side so
-     * a period switch is instant, and the morph IS the interaction. Putting a
-     * round trip between the click and the wedges moving would read as a bug
-     * rather than as an animation.
-     */
-    expect(getSnapshotV2).toHaveBeenCalledTimes(3)
-
-    // The donut snapshot: a year, daily, trend only.
-    expect(getSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({
-      granularity: 'day',
-      include_stats: false,
-      include_trend: true,
-      include_model_stats: false
-    }))
+    const statsCalls = getSnapshotV2.mock.calls.filter(
+      ([params]: [Record<string, unknown>]) => params?.include_stats === true
+    )
+    expect(statsCalls).toHaveLength(1)
 
     // The chart snapshot: carries the stats payload and the model breakdown.
     expect(getSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({
