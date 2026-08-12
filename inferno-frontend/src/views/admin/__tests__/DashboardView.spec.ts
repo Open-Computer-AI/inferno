@@ -165,7 +165,23 @@ describe('admin DashboardView', () => {
      * Both happen to want the same window on first mount, which is why this
      * asserts the shape rather than the order.
      */
-    expect(getSnapshotV2).toHaveBeenCalledTimes(2)
+    /*
+     * Three now: the chart snapshot, the day-over-day comparison, and
+     * TokenMixPanel's year of daily buckets. The third is deliberately a
+     * separate, wider, coarser request -- the donut slices it client side so
+     * a period switch is instant, and the morph IS the interaction. Putting a
+     * round trip between the click and the wedges moving would read as a bug
+     * rather than as an animation.
+     */
+    expect(getSnapshotV2).toHaveBeenCalledTimes(3)
+
+    // The donut snapshot: a year, daily, trend only.
+    expect(getSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({
+      granularity: 'day',
+      include_stats: false,
+      include_trend: true,
+      include_model_stats: false
+    }))
 
     // The chart snapshot: carries the stats payload and the model breakdown.
     expect(getSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({
