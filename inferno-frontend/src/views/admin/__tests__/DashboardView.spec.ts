@@ -27,11 +27,22 @@ vi.mock('@/stores/app', () => ({
   })
 }))
 
-vi.mock('vue-router', () => ({
-  useRouter: () => ({
-    push: vi.fn()
-  })
-}))
+/*
+ * Spread the real module rather than replacing it. StatTile renders RouterLink
+ * for its `to` prop, and a bare factory mock left that export undefined, so
+ * `<component :is="undefined">` threw during render -- while this spec kept
+ * passing, because it only asserts which API calls were made. A green test
+ * asserting against a component that never rendered is worse than a red one.
+ */
+vi.mock('vue-router', async () => {
+  const actual = await vi.importActual<typeof import('vue-router')>('vue-router')
+  return {
+    ...actual,
+    useRouter: () => ({
+      push: vi.fn()
+    })
+  }
+})
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
@@ -126,7 +137,14 @@ describe('admin DashboardView', () => {
           Select: true,
           ModelDistributionChart: true,
           TokenUsageTrend: true,
-          Line: true
+          Line: true,
+          /* Rendered as a real anchor rather than auto-stubbed, so the tiles
+             keep their structure. The real RouterLink calls useLink, which
+             needs an injected router this mount does not install. */
+          RouterLink: {
+            props: ['to'],
+            template: '<a :href="to"><slot /></a>'
+          }
         }
       }
     })
