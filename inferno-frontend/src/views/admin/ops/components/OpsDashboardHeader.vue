@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Select from '@/components/common/Select.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
+import OpsResourceMeters from './OpsResourceMeters.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { adminAPI } from '@/api'
@@ -645,164 +646,29 @@ function formatTimeShort(ts?: string | null): string {
   return d.toLocaleTimeString()
 }
 
-const cpuPercentValue = computed<number | null>(() => {
-  const v = systemMetrics.value?.cpu_usage_percent
-  return typeof v === 'number' && Number.isFinite(v) ? v : null
-})
 
-const cpuPercentClass = computed(() => {
-  const v = cpuPercentValue.value
-  if (v == null) return 'text-gray-900 dark:text-white'
-  if (v >= 95) return 'text-rose-600 dark:text-rose-400'
-  if (v >= 80) return 'text-yellow-600 dark:text-yellow-400'
-  return 'text-emerald-600 dark:text-emerald-400'
-})
 
-const memPercentValue = computed<number | null>(() => {
-  const v = systemMetrics.value?.memory_usage_percent
-  return typeof v === 'number' && Number.isFinite(v) ? v : null
-})
 
-const memPercentClass = computed(() => {
-  const v = memPercentValue.value
-  if (v == null) return 'text-gray-900 dark:text-white'
-  if (v >= 95) return 'text-rose-600 dark:text-rose-400'
-  if (v >= 85) return 'text-yellow-600 dark:text-yellow-400'
-  return 'text-emerald-600 dark:text-emerald-400'
-})
 
-const dbConnActiveValue = computed<number | null>(() => {
-  const v = systemMetrics.value?.db_conn_active
-  return typeof v === 'number' && Number.isFinite(v) ? v : null
-})
 
-const dbConnIdleValue = computed<number | null>(() => {
-  const v = systemMetrics.value?.db_conn_idle
-  return typeof v === 'number' && Number.isFinite(v) ? v : null
-})
 
-const dbConnWaitingValue = computed<number | null>(() => {
-  const v = systemMetrics.value?.db_conn_waiting
-  return typeof v === 'number' && Number.isFinite(v) ? v : null
-})
 
-const dbConnOpenValue = computed<number | null>(() => {
-  if (dbConnActiveValue.value == null || dbConnIdleValue.value == null) return null
-  return dbConnActiveValue.value + dbConnIdleValue.value
-})
 
-const dbMaxOpenConnsValue = computed<number | null>(() => {
-  const v = systemMetrics.value?.db_max_open_conns
-  return typeof v === 'number' && Number.isFinite(v) ? v : null
-})
 
-const dbUsagePercent = computed<number | null>(() => {
-  if (dbConnOpenValue.value == null || dbMaxOpenConnsValue.value == null || dbMaxOpenConnsValue.value <= 0) return null
-  return Math.min(100, Math.max(0, (dbConnOpenValue.value / dbMaxOpenConnsValue.value) * 100))
-})
 
-const dbMiddleLabel = computed(() => {
-  if (systemMetrics.value?.db_ok === false) return 'FAIL'
-  if (dbUsagePercent.value != null) return `${dbUsagePercent.value.toFixed(0)}%`
-  if (systemMetrics.value?.db_ok === true) return t('admin.ops.ok')
-  return t('admin.ops.noData')
-})
 
-const dbMiddleClass = computed(() => {
-  if (systemMetrics.value?.db_ok === false) return 'text-rose-600 dark:text-rose-400'
-  if (dbUsagePercent.value != null) {
-    if (dbUsagePercent.value >= 90) return 'text-rose-600 dark:text-rose-400'
-    if (dbUsagePercent.value >= 70) return 'text-yellow-600 dark:text-yellow-400'
-    return 'text-emerald-600 dark:text-emerald-400'
-  }
-  if (systemMetrics.value?.db_ok === true) return 'text-emerald-600 dark:text-emerald-400'
-  return 'text-gray-900 dark:text-white'
-})
 
-const redisConnTotalValue = computed<number | null>(() => {
-  const v = systemMetrics.value?.redis_conn_total
-  return typeof v === 'number' && Number.isFinite(v) ? v : null
-})
 
-const redisConnIdleValue = computed<number | null>(() => {
-  const v = systemMetrics.value?.redis_conn_idle
-  return typeof v === 'number' && Number.isFinite(v) ? v : null
-})
 
-const redisConnActiveValue = computed<number | null>(() => {
-  if (redisConnTotalValue.value == null || redisConnIdleValue.value == null) return null
-  return Math.max(redisConnTotalValue.value - redisConnIdleValue.value, 0)
-})
 
-const redisPoolSizeValue = computed<number | null>(() => {
-  const v = systemMetrics.value?.redis_pool_size
-  return typeof v === 'number' && Number.isFinite(v) ? v : null
-})
 
-const redisUsagePercent = computed<number | null>(() => {
-  if (redisConnTotalValue.value == null || redisPoolSizeValue.value == null || redisPoolSizeValue.value <= 0) return null
-  return Math.min(100, Math.max(0, (redisConnTotalValue.value / redisPoolSizeValue.value) * 100))
-})
 
-const redisMiddleLabel = computed(() => {
-  if (systemMetrics.value?.redis_ok === false) return 'FAIL'
-  if (redisUsagePercent.value != null) return `${redisUsagePercent.value.toFixed(0)}%`
-  if (systemMetrics.value?.redis_ok === true) return t('admin.ops.ok')
-  return t('admin.ops.noData')
-})
 
-const redisMiddleClass = computed(() => {
-  if (systemMetrics.value?.redis_ok === false) return 'text-rose-600 dark:text-rose-400'
-  if (redisUsagePercent.value != null) {
-    if (redisUsagePercent.value >= 90) return 'text-rose-600 dark:text-rose-400'
-    if (redisUsagePercent.value >= 70) return 'text-yellow-600 dark:text-yellow-400'
-    return 'text-emerald-600 dark:text-emerald-400'
-  }
-  if (systemMetrics.value?.redis_ok === true) return 'text-emerald-600 dark:text-emerald-400'
-  return 'text-gray-900 dark:text-white'
-})
 
-const goroutineCountValue = computed<number | null>(() => {
-  const v = systemMetrics.value?.goroutine_count
-  return typeof v === 'number' && Number.isFinite(v) ? v : null
-})
 
-const goroutinesWarnThreshold = 8_000
-const goroutinesCriticalThreshold = 15_000
 
-const goroutineStatus = computed<'ok' | 'warning' | 'critical' | 'unknown'>(() => {
-  const n = goroutineCountValue.value
-  if (n == null) return 'unknown'
-  if (n >= goroutinesCriticalThreshold) return 'critical'
-  if (n >= goroutinesWarnThreshold) return 'warning'
-  return 'ok'
-})
 
-const goroutineStatusLabel = computed(() => {
-  switch (goroutineStatus.value) {
-    case 'ok':
-      return t('admin.ops.ok')
-    case 'warning':
-      return t('common.warning')
-    case 'critical':
-      return t('common.critical')
-    default:
-      return t('admin.ops.noData')
-  }
-})
 
-const goroutineStatusClass = computed(() => {
-  switch (goroutineStatus.value) {
-    case 'ok':
-      return 'text-emerald-600 dark:text-emerald-400'
-    case 'warning':
-      return 'text-yellow-600 dark:text-yellow-400'
-    case 'critical':
-      return 'text-rose-600 dark:text-rose-400'
-    default:
-      return 'text-gray-900 dark:text-white'
-  }
-})
 
 const jobHeartbeats = computed(() => overview.value?.job_heartbeats ?? [])
 
@@ -836,16 +702,6 @@ const jobsStatusLabel = computed(() => {
   }
 })
 
-const jobsStatusClass = computed(() => {
-  switch (jobsStatus.value) {
-    case 'ok':
-      return 'text-emerald-600 dark:text-emerald-400'
-    case 'warn':
-      return 'text-yellow-600 dark:text-yellow-400'
-    default:
-      return 'text-gray-900 dark:text-white'
-  }
-})
 
 const showJobsDetails = ref(false)
 
@@ -1434,111 +1290,29 @@ function handleToolbarRefresh() {
 
     <!-- Integrated: System health (cards) -->
     <div v-if="overview" class="mt-2 border-t border-gray-100 pt-4 dark:border-dark-700">
-      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <!-- CPU -->
-        <div class="rounded-xl bg-gray-50 p-3 dark:bg-dark-900">
-          <div class="flex items-center gap-1">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400">CPU</div>
-            <HelpTooltip v-if="!props.fullscreen" :content="t('admin.ops.tooltips.cpu')" />
-          </div>
-          <div class="mt-1 text-lg font-black" :class="cpuPercentClass">
-            {{ cpuPercentValue == null ? '-' : `${cpuPercentValue.toFixed(1)}%` }}
-          </div>
-          <div v-if="!props.fullscreen" class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
-            {{ t('common.warning') }} 80% · {{ t('common.critical') }} 95%
-          </div>
-        </div>
+      <!--
+        Five of the six cards here were flat text -- "CPU 0.5%", "DB ok" --
+        each already knowing its ceiling and its thresholds. OpsResourceMeters
+        gives them the track that was missing. Jobs stays a card because it is
+        not a utilisation: it is a heartbeat roll-up with its own dialog.
+      -->
+      <div class="ops-resources">
+        <OpsResourceMeters :metrics="systemMetrics" />
 
-        <!-- MEM -->
-        <div class="rounded-xl bg-gray-50 p-3 dark:bg-dark-900">
-          <div class="flex items-center gap-1">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.memory') }}</div>
-            <HelpTooltip v-if="!props.fullscreen" :content="t('admin.ops.tooltips.memory')" />
-          </div>
-          <div class="mt-1 text-lg font-black" :class="memPercentClass">
-            {{ memPercentValue == null ? '-' : `${memPercentValue.toFixed(1)}%` }}
-          </div>
-          <div v-if="!props.fullscreen" class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
-            {{
-              systemMetrics?.memory_used_mb == null || systemMetrics?.memory_total_mb == null
-                ? '-'
-                : `${formatNumber(systemMetrics.memory_used_mb)} / ${formatNumber(systemMetrics.memory_total_mb)} MB`
-            }}
-          </div>
-        </div>
-
-        <!-- DB -->
-        <div class="rounded-xl bg-gray-50 p-3 dark:bg-dark-900">
-          <div class="flex items-center gap-1">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.db') }}</div>
-            <HelpTooltip v-if="!props.fullscreen" :content="t('admin.ops.tooltips.db')" />
-          </div>
-          <div class="mt-1 text-lg font-black" :class="dbMiddleClass">
-            {{ dbMiddleLabel }}
-          </div>
-          <div v-if="!props.fullscreen" class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
-            {{ t('admin.ops.conns') }} {{ dbConnOpenValue ?? '-' }} / {{ dbMaxOpenConnsValue ?? '-' }}
-            · {{ t('admin.ops.active') }} {{ dbConnActiveValue ?? '-' }}
-            · {{ t('admin.ops.idle') }} {{ dbConnIdleValue ?? '-' }}
-            <span v-if="dbConnWaitingValue != null"> · {{ t('admin.ops.waiting') }} {{ dbConnWaitingValue }} </span>
-          </div>
-        </div>
-
-        <!-- Redis -->
-        <div class="rounded-xl bg-gray-50 p-3 dark:bg-dark-900">
-          <div class="flex items-center gap-1">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400">Redis</div>
-            <HelpTooltip v-if="!props.fullscreen" :content="t('admin.ops.tooltips.redis')" />
-          </div>
-          <div class="mt-1 text-lg font-black" :class="redisMiddleClass">
-            {{ redisMiddleLabel }}
-          </div>
-          <div v-if="!props.fullscreen" class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
-            {{ t('admin.ops.conns') }} {{ redisConnTotalValue ?? '-' }} / {{ redisPoolSizeValue ?? '-' }}
-            <span v-if="redisConnActiveValue != null"> · {{ t('admin.ops.active') }} {{ redisConnActiveValue }} </span>
-            <span v-if="redisConnIdleValue != null"> · {{ t('admin.ops.idle') }} {{ redisConnIdleValue }} </span>
-          </div>
-        </div>
-
-        <!-- Goroutines -->
-        <div class="rounded-xl bg-gray-50 p-3 dark:bg-dark-900">
-          <div class="flex items-center gap-1">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.goroutines') }}</div>
-            <HelpTooltip v-if="!props.fullscreen" :content="t('admin.ops.tooltips.goroutines')" />
-          </div>
-          <div class="mt-1 text-lg font-black" :class="goroutineStatusClass">
-            {{ goroutineStatusLabel }}
-          </div>
-          <div v-if="!props.fullscreen" class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
-            {{ t('admin.ops.current') }} <span class="font-mono">{{ goroutineCountValue ?? '-' }}</span>
-            · {{ t('common.warning') }} <span class="font-mono">{{ goroutinesWarnThreshold }}</span>
-            · {{ t('common.critical') }} <span class="font-mono">{{ goroutinesCriticalThreshold }}</span>
-            <span v-if="systemMetrics?.concurrency_queue_depth != null">
-              · {{ t('admin.ops.queue') }} <span class="font-mono">{{ systemMetrics.concurrency_queue_depth }}</span>
-            </span>
-          </div>
-        </div>
-
-        <!-- Jobs -->
-        <div class="rounded-xl bg-gray-50 p-3 dark:bg-dark-900">
-          <div class="flex items-center justify-between gap-2">
-            <div class="flex items-center gap-1">
-              <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.jobs') }}</div>
+        <div class="ops-jobs">
+          <div class="ops-jobs__head">
+            <span class="ops-jobs__label">
+              {{ t('admin.ops.jobs') }}
               <HelpTooltip v-if="!props.fullscreen" :content="t('admin.ops.tooltips.jobs')" />
-            </div>
-            <button v-if="!props.fullscreen" class="text-[10px] font-bold text-blue-500 hover:underline" type="button" @click="openJobsDetails">
+            </span>
+            <button v-if="!props.fullscreen" class="ops-jobs__action" type="button" @click="openJobsDetails">
               {{ t('admin.ops.requestDetails.details') }}
             </button>
           </div>
-
-          <div class="mt-1 text-lg font-black" :class="jobsStatusClass">
-            {{ jobsStatusLabel }}
-          </div>
-
-          <div v-if="!props.fullscreen" class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
-            {{ t('common.total') }} <span class="font-mono">{{ jobHeartbeats.length }}</span>
-            · {{ t('common.warning') }} <span class="font-mono">{{ jobsWarnCount }}</span>
-          </div>
+          <p class="ops-jobs__value">{{ jobsStatusLabel }}</p>
+          <p v-if="!props.fullscreen" class="ops-jobs__meta">
+            {{ t('common.total') }} {{ jobHeartbeats.length }} · {{ t('common.warning') }} {{ jobsWarnCount }}
+          </p>
         </div>
       </div>
     </div>
@@ -1626,3 +1400,69 @@ function handleToolbarRefresh() {
     </BaseDialog>
   </div>
 </template>
+
+<style scoped>
+/* Meters take the width; jobs is a single status, so it sits beside them and
+   collapses under on narrow screens. */
+.ops-resources {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(200px, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 860px) {
+  .ops-resources {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.ops-jobs {
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--card);
+}
+
+.ops-jobs__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ops-jobs__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.ops-jobs__action {
+  border: 0;
+  background: none;
+  color: var(--brand);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.ops-jobs__action:hover {
+  text-decoration: underline;
+}
+
+.ops-jobs__value {
+  margin: 6px 0 0;
+  color: var(--foreground);
+  font-family: var(--font-serif);
+  font-size: var(--fs-2xl);
+  font-weight: 400;
+  line-height: 1.1;
+}
+
+.ops-jobs__meta {
+  margin: 2px 0 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+</style>
