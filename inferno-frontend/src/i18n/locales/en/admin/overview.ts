@@ -19,7 +19,15 @@ export default {
         month: 'Month',
         quarter: 'Quarter',
         year: 'Year',
-        toDate: '{period} to date'
+        toDate: '{period} to date',
+        thisPeriod: 'This {period}',
+      },
+      modelMix: {
+        title: 'Tokens by model',
+        cacheBadge: '{pct}% cache',
+        subDefault: 'top models this {period}',
+        subModel: 'at {model} this {period}',
+        subBand: '{band} tokens this {period}'
       },
       mix: {
         title: 'Token mix',

@@ -107,7 +107,10 @@
         <!-- The token mix, as a canvas donut. Part-of-whole by definition:
              input + output + cache write + cache read IS total tokens, and the
              split is what explains the cost tile above. -->
-        <TokenMixPanel class="mix-panel" />
+        <div class="panels">
+          <TokenMixPanel />
+          <ModelMixPanel />
+        </div>
 
         <!-- Below the fold: the other four numbers, then distribution and
              history. Part 14 puts distribution here because "which model is
@@ -256,6 +259,7 @@ import type {
 import AppLayout from '@/components/layout/AppLayout.vue'
 import StatTile from '@/components/common/StatTile.vue'
 import TokenMixPanel from '@/components/admin/TokenMixPanel.vue'
+import ModelMixPanel from '@/components/admin/ModelMixPanel.vue'
 import DashboardVerdict from '@/components/admin/DashboardVerdict.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -853,11 +857,14 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* The donut panel carries its own tray, so it is width-capped rather than
-   stretched: a 200px ring beside a four-row legend has a natural size, and
-   letting it span a 1600px content column would leave the ring marooned. */
-.mix-panel {
-  max-width: 520px;
+/* Both panels carry their own tray, so they sit side by side and each keeps a
+   natural width: a 200px ring beside a four-row legend, and a four-column plot,
+   both look marooned stretched across a 1600px content column. auto-fit drops
+   them to one per row before either gets too narrow to read. */
+.panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 16px;
 }
 
 /* The fold. auto-fit rather than a fixed 4 so the tiles reflow to 2x2 and
