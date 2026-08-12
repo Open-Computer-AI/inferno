@@ -25,11 +25,25 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useSpringValue } from '@/composables/useSpringValue'
 
-const props = defineProps<{
+export interface AreaSeries {
+  key: string
+  label: string
   values: number[]
-  labels: string[]
   /** Saturated tile colour, resolved to a literal by the parent. */
   color: string
+}
+
+const props = defineProps<{
+  /**
+   * Stacked, bottom-first. One entry is a plain area; several stack, which is
+   * only meaningful for series that ADD UP -- input + output + cache is a
+   * total, two metrics in different units are not. Overlaying instead of
+   * stacking was the alternative and it is worse here: two tile fields on top
+   * of each other read as one field of a third colour, because tiles do not
+   * occlude the way a filled path does.
+   */
+  series: AreaSeries[]
+  labels: string[]
   /** The faint always-on tile. */
   restColor: string
   markerColor: string
@@ -52,8 +66,8 @@ let time = 0
 /* The curve currently on screen, plus where it is heading. Interpolating both
    the values AND the max is what re-zooms the axis smoothly; blending values
    against a fixed max would make the shape reflow while the scale jumped. */
-let shown: number[] = []
-let fromValues: number[] = []
+let shownStacks: number[][] = []
+let fromStacks: number[][] = []
 let fromMax = 1
 let morphStart = 0
 let morphing = false
@@ -70,7 +84,17 @@ const reduced =
   typeof window.matchMedia === 'function' &&
   window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-const targetMax = computed(() => Math.max(1, ...props.values))
+/** Per-day sum across every series: the envelope of the stack. */
+const totals = computed(() => {
+  const len = Math.max(0, ...props.series.map((s) => s.values.length))
+  const out = new Array(len).fill(0)
+  for (const entry of props.series) {
+    for (let i = 0; i < len; i += 1) out[i] += Number(entry.values[i]) || 0
+  }
+  return out
+})
+
+const targetMax = computed(() => Math.max(1, ...totals.value))
 
 function smoothstep(edge0: number, edge1: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)))
@@ -104,22 +128,24 @@ const scrubLabel = computed(() =>
   scrubIndex.value != null ? props.labels[scrubIndex.value] ?? '' : ''
 )
 const scrubValue = computed(() =>
-  scrubIndex.value != null ? props.values[scrubIndex.value] ?? 0 : 0
+  scrubIndex.value != null ? totals.value[scrubIndex.value] ?? 0 : 0
 )
 
 function onScrub(event: PointerEvent) {
   const el = host.value
-  if (!el || props.values.length === 0) return
+  const stack = totals.value
+  if (!el || stack.length === 0) return
   const rect = el.getBoundingClientRect()
   const f = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width))
-  const n = props.values.length
+  const n = stack.length
   const idx = n > 1 ? Math.round(f * (n - 1)) : 0
   scrubIndex.value = idx
-  const max = Math.max(1, ...props.values)
+  const max = Math.max(1, ...stack)
   markerX.set(n > 1 ? (idx / (n - 1)) * 100 : 50)
-  /* Same TOP headroom the tiles use, so the marker sits on the drawn edge
-     rather than on a curve only the maths knows about. */
-  markerY.set((TOP + (1 - props.values[idx] / max) * (1 - TOP)) * 100)
+  /* Rides the TOP of the stack, using the same headroom the tiles use, so the
+     marker sits on the drawn edge rather than on a curve only the maths
+     knows about. */
+  markerY.set((TOP + (1 - stack[idx] / max) * (1 - TOP)) * 100)
 }
 
 function endScrub() {
@@ -131,7 +157,7 @@ function draw() {
   const c = ctx
   if (!c || width <= 0 || height <= 0) return
 
-  let series = props.values
+  let stacks = props.series.map((entry) => entry.values)
   let max = targetMax.value
 
   if (morphing) {
@@ -141,19 +167,29 @@ function draw() {
     } else {
       /* Blend by FRACTION, not index: the two ranges have different lengths,
          so pairing element 0 with element 0 would stretch 7 days onto 90 and
-         the shape would slide sideways instead of reflowing in place. */
-      const steps = Math.max(props.values.length, fromValues.length)
-      series = new Array(steps)
-      for (let i = 0; i < steps; i += 1) {
-        const f = steps > 1 ? i / (steps - 1) : 0
-        const a = sampleCurve(fromValues, f)
-        const b = sampleCurve(props.values, f)
-        series[i] = a + (b - a) * progress
-      }
+         the shape would slide sideways instead of reflowing in place.
+         Every series blends against its own previous values, so a stack
+         reflows band by band rather than the whole envelope sliding. */
+      const steps = Math.max(
+        ...props.series.map((e) => e.values.length),
+        ...fromStacks.map((e) => e.length),
+        1
+      )
+      stacks = props.series.map((entry, si) => {
+        const previous = fromStacks[si] ?? []
+        const blended = new Array(steps)
+        for (let i = 0; i < steps; i += 1) {
+          const f = steps > 1 ? i / (steps - 1) : 0
+          const a = sampleCurve(previous, f)
+          const b = sampleCurve(entry.values, f)
+          blended[i] = a + (b - a) * progress
+        }
+        return blended
+      })
       max = fromMax + (targetMax.value - fromMax) * progress
     }
   }
-  shown = series
+  shownStacks = stacks
   max = Math.max(1, max)
 
   c.clearRect(0, 0, width, height)
@@ -183,9 +219,22 @@ function draw() {
   for (let cx = 0; cx < cols; cx += 1) {
     const x = cx * cell + cell / 2
     const f = cols > 1 ? cx / (cols - 1) : 0
-    const value = sampleCurve(series, f)
-    const norm = Math.min(1, Math.max(0, value / max))
-    const curveY = height * (TOP + (1 - norm) * (1 - TOP))
+
+    /* Cumulative band edges for this column, bottom-first. A cell then belongs
+       to the FIRST band whose top it sits below, which is what makes the stack
+       read as bands rather than as one field: the boundary is decided per
+       cell, so it follows the curve exactly instead of being a drawn line. */
+    let running = 0
+    const edges: { top: number; color: string }[] = []
+    for (let si = 0; si < stacks.length; si += 1) {
+      running += Math.max(0, sampleCurve(stacks[si], f))
+      const norm = Math.min(1, Math.max(0, running / max))
+      edges.push({
+        top: height * (TOP + (1 - norm) * (1 - TOP)),
+        color: props.series[si]?.color ?? ''
+      })
+    }
+    const curveY = edges.length ? edges[edges.length - 1].top : height
 
     for (let cy = 0; cy < rows; cy += 1) {
       const y = cy * cell + cell / 2
@@ -222,7 +271,15 @@ function draw() {
       const size =
         cell * 0.7 * nearness * shimmer * (0.7 + 0.3 * jitterAmt) * (1 + 0.45 * lit)
 
-      c.fillStyle = props.color
+      let bandColor = edges.length ? edges[edges.length - 1].color : ''
+      for (const edge of edges) {
+        if (y >= edge.top) {
+          bandColor = edge.color
+          break
+        }
+      }
+
+      c.fillStyle = bandColor
       c.globalAlpha = Math.min(1, 0.55 + 0.45 * nearness) * (0.75 + 0.25 * lit)
       const half = Math.min(size, cell * 0.98) / 2
       c.fillRect(x - half, y - half, half * 2, half * 2)
@@ -286,16 +343,27 @@ function onPointerLeave() {
 }
 
 watch(
-  () => props.values,
+  () => props.series,
   (next, prev) => {
     if (reduced || !prev || prev.length === 0) {
       morphing = false
       return
     }
-    fromValues = shown.length ? shown.slice() : prev.slice()
-    fromMax = Math.max(1, ...(prev.length ? prev : next))
+    /* Whatever is on screen NOW, mid-morph included -- same reasoning as the
+       donut's `from` snapshot. */
+    fromStacks = shownStacks.length
+      ? shownStacks.map((a) => a.slice())
+      : prev.map((e) => e.values.slice())
+    const priorTotals: number[] = []
+    for (const entry of prev) {
+      entry.values.forEach((v, i) => {
+        priorTotals[i] = (priorTotals[i] ?? 0) + (Number(v) || 0)
+      })
+    }
+    fromMax = Math.max(1, ...priorTotals)
     morphStart = performance.now()
     morphing = true
+    void next
   },
   { deep: true }
 )
