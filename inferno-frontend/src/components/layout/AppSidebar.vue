@@ -744,6 +744,18 @@ onUnmounted(() => {
 /* --- switcher ------------------------------------------------------------ */
 
 /* --- nav rows -------------------------------------------------------- */
+/*
+ * Scrolls, but never shows a bar.
+ *
+ * The nav still overflows and still scrolls by wheel, trackpad, keyboard and
+ * scrollIntoView -- only the painted bar is suppressed. Hiding the track is
+ * safe here in a way it would not be in a data table: the rail is a short
+ * fixed list a reader already knows the extent of, and it sits against the
+ * shell chrome where a bar reads as grit rather than as an affordance.
+ *
+ * `scrollbar-width` covers Firefox and Chromium 121+; the ::-webkit rule
+ * covers older Chromium and Safari, which still need it. Both are required.
+ */
 .rail__nav {
   flex: 1 1 auto;
   min-height: 0;
@@ -752,6 +764,14 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.rail__nav::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 .rail__group {
   display: grid;
