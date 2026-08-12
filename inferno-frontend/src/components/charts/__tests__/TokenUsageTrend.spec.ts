@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 
 import TokenUsageTrend from '../TokenUsageTrend.vue'
+import DitherArea from '../DitherArea.vue'
 
 const messages: Record<string, string> = {
   'admin.dashboard.tokenUsageTrend': 'Token Usage Trend',
@@ -61,8 +62,29 @@ vi.mock('@/composables/useChartTokens', () => ({
   }),
 }))
 
-const readChart = (wrapper: ReturnType<typeof mount>, selector: string) =>
-  JSON.parse(wrapper.find(`${selector} .chart-data`).text())
+/*
+ * The component renders DitherArea, a canvas, which exposes nothing
+ * assertable. Rather than stub it, this reads the real child's PROPS: the
+ * contract under test is which series get built with which values, and props
+ * are exactly that contract. A stub would also have to compile a string
+ * template, which the runtime-only Vue build in this environment cannot do --
+ * it silently mounts the real component instead, which is how this was
+ * quietly passing nothing.
+ *
+ * The guarantees are unchanged from the Chart.js era: how the cache hit rate
+ * is computed, and that cache creation + read merge into one series.
+ */
+const readChart = (wrapper: ReturnType<typeof mount>, selector: string) => {
+  const host = wrapper.find(selector)
+  if (!host.exists()) return null
+  const chart = host.findComponent(DitherArea)
+  if (!chart.exists()) return null
+  const series = chart.props('series') as { label: string; values: number[] }[]
+  return {
+    datasets: series.map((s) => ({ label: s.label, data: s.values })),
+    labels: chart.props('labels') as string[]
+  }
+}
 
 describe('TokenUsageTrend', () => {
   it('calculates cache hit rate against all prompt tokens, on the dedicated rate-strip chart', () => {
@@ -157,14 +179,18 @@ describe('TokenUsageTrend', () => {
     expect(cacheSeries.data[0]).toBe(300 + 500)
   })
 
-  it('renders two independent Chart.js line instances sharing one x axis, each wired to its own ramp step', () => {
-    // The structural claim the redesign makes and the old test never
-    // covered (it only had one chart to check): "two Chart.js Line instances
-    // instead of one dual-axis chart... share x labels". Regression coverage
-    // for that split, plus proof each series reads its own ramp index
-    // (input ramp[0], output ramp[2], cache ramp[7], rate ramp[2]) rather
-    // than asserting any resolved colour (jsdom can't produce one -- see the
-    // composable stub above).
+  it('stacks the three volume series bottom-first and shares one x axis with the rate strip', () => {
+    /*
+     * Order is the assertion that matters. The series are now STACKED, so
+     * their order is their vertical order, and cache goes first because it is
+     * the floor of the stack and the largest band -- the deepest ramp step
+     * belongs at the bottom. Under Chart.js they were three overlaid lines and
+     * the order was arbitrary; here reordering them would silently reshape the
+     * chart.
+     *
+     * Both plots still share x labels, which is what lets the rate strip be
+     * read against the volume above it.
+     */
     const wrapper = mount(TokenUsageTrend, {
       props: {
         trendData: [
@@ -199,19 +225,25 @@ describe('TokenUsageTrend', () => {
     expect(mainChart.labels).toEqual(['2026-05-08', '2026-05-09'])
     expect(rateChart.labels).toEqual(mainChart.labels)
 
-    expect(mainChart.datasets.map((ds: { label: string }) => ds.label)).toEqual(['Input', 'Output', 'Cache'])
+    expect(mainChart.datasets.map((ds: { label: string }) => ds.label)).toEqual(['Cache', 'Input', 'Output'])
     expect(rateChart.datasets.map((ds: { label: string }) => ds.label)).toEqual(['Cache hit rate'])
 
-    expect(mainChart.datasets[0].borderColor).toBe('ramp-0') // Input
-    expect(mainChart.datasets[1].borderColor).toBe('ramp-2') // Output
-    expect(mainChart.datasets[2].borderColor).toBe('ramp-7') // Cache, dashed
-    expect(rateChart.datasets[0].borderColor).toBe('ramp-2') // shares Output's step
-
-    // Only the Input series carries the area fill (migration note: "Input
-    // alone carries the area fill").
-    expect(mainChart.datasets[0].fill).toBe(true)
-    expect(mainChart.datasets[1].fill).toBe(false)
-    expect(mainChart.datasets[2].fill).toBe(false)
+    /*
+     * The per-series colour assertions are gone with Chart.js. They pinned
+     * each series to an index of the CATEGORICAL ramp, which walks the hue so
+     * no two series look related -- correct for overlaid lines, wrong for a
+     * stack, where the bands are parts of one quantity and want a sequential
+     * deep-to-pale ramp instead. That ramp resolves through getComputedStyle,
+     * which jsdom returns empty for, so there is nothing meaningful left to
+     * assert about colour here; the browser is where that gets verified.
+     *
+     * `fill` is gone for the same reason: every band is filled now. It existed
+     * to say "input alone carries the area", which was a property of drawing
+     * three lines, not of the data.
+     */
+    expect(mainChart.datasets[0].data).toEqual([1500, 950]) // cache read + creation
+    expect(mainChart.datasets[1].data).toEqual([500, 400]) // input
+    expect(mainChart.datasets[2].data).toEqual([100, 120]) // output
   })
 
   it('shows the empty state and renders neither chart when there is no trend data', () => {
