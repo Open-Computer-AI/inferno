@@ -44,6 +44,42 @@ describe('StatTile nested-card geometry', () => {
   })
 })
 
+describe('StatTile delta sentiment', () => {
+  /* Mirrors the component's resolver. */
+  const sentiment = (
+    direction: 'up' | 'down',
+    polarity: 'higher-is-better' | 'lower-is-better' | 'neutral'
+  ) => {
+    if (polarity === 'neutral') return 'neutral'
+    const good = polarity === 'higher-is-better' ? direction === 'up' : direction === 'down'
+    return good ? 'good' : 'bad'
+  }
+
+  /*
+   * The pill is painted by SENTIMENT, not by direction. Colouring by direction
+   * would break ground rule 5 -- up and down are not states -- while good and
+   * bad are exactly what state means.
+   */
+  it('inverts for a metric where lower is better', () => {
+    expect(sentiment('up', 'higher-is-better')).toBe('good')
+    expect(sentiment('up', 'lower-is-better')).toBe('bad')
+    expect(sentiment('down', 'higher-is-better')).toBe('bad')
+    expect(sentiment('down', 'lower-is-better')).toBe('good')
+  })
+
+  it('stays toneless when neither direction is an outcome', () => {
+    expect(sentiment('up', 'neutral')).toBe('neutral')
+    expect(sentiment('down', 'neutral')).toBe('neutral')
+  })
+
+  it('paints the pill from the state tokens, mixed toward the surface', () => {
+    // Mixed rather than a fixed rgba so the fill tracks the surface in both
+    // themes instead of washing out on white or glaring on near-black.
+    expect(tileSource).toContain("color-mix(in oklch, var(--success) 12%, var(--card))")
+    expect(tileSource).toContain("color-mix(in oklch, var(--destructive) 12%, var(--card))")
+  })
+})
+
 describe('StatTile context-line emphasis', () => {
   /*
    * Mirrors the component's regex. Kept as a local copy on purpose: the point
