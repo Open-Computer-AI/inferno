@@ -1,25 +1,26 @@
 <script setup lang="ts">
+/**
+ * Average account switches per request, as a tile field.
+ *
+ * Was a single teal Chart.js line (#14b8a6) under a teal glyph -- the last of
+ * the page's borrowed palette. Single series, so DitherArea takes it as a
+ * one-entry stack.
+ *
+ * The headline is the WINDOW's rate rather than the latest bucket's. A
+ * per-minute switch rate is noisy enough that the last point is often an
+ * outlier, and the number people act on is "how much are we churning accounts
+ * right now", which is the aggregate.
+ */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  Filler,
-  Legend,
-  LineElement,
-  LinearScale,
-  PointElement,
-  Title,
-  Tooltip
-} from 'chart.js'
-import { Line } from 'vue-chartjs'
 import type { OpsThroughputTrendPoint } from '@/api/admin/ops'
 import type { ChartState } from '../types'
 import { formatHistoryLabel, sumNumbers } from '../utils/opsFormatters'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-
-ChartJS.register(Title, Tooltip, Legend, LineElement, LinearScale, PointElement, CategoryScale, Filler)
+import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import DitherArea from '@/components/charts/DitherArea.vue'
+import { useChartTokens } from '@/composables/useChartTokens'
 
 interface Props {
   points: OpsThroughputTrendPoint[]
@@ -30,121 +31,132 @@ interface Props {
 
 const props = defineProps<Props>()
 const { t } = useI18n()
-
-const isDarkMode = computed(() => document.documentElement.classList.contains('dark'))
-const colors = computed(() => ({
-  teal: '#14b8a6',
-  tealAlpha: '#14b8a620',
-  grid: isDarkMode.value ? '#374151' : '#f3f4f6',
-  text: isDarkMode.value ? '#9ca3af' : '#6b7280'
-}))
+const { tokens } = useChartTokens()
 
 const totalRequests = computed(() => sumNumbers(props.points.map((p) => p.request_count)))
-
-const chartData = computed(() => {
-  if (!props.points.length || totalRequests.value <= 0) return null
-  return {
-    labels: props.points.map((p) => formatHistoryLabel(p.bucket_start, props.timeRange)),
-    datasets: [
-      {
-        label: t('admin.ops.switchRate'),
-        data: props.points.map((p) => {
-          const requests = p.request_count ?? 0
-          const switches = p.switch_count ?? 0
-          if (requests <= 0) return 0
-          return switches / requests
-        }),
-        borderColor: colors.value.teal,
-        backgroundColor: colors.value.tealAlpha,
-        fill: true,
-        tension: 0.35,
-        pointRadius: 0,
-        pointHitRadius: 10
-      }
-    ]
-  }
-})
+const totalSwitches = computed(() => sumNumbers(props.points.map((p) => p.switch_count)))
 
 const state = computed<ChartState>(() => {
-  if (chartData.value) return 'ready'
+  if (props.points.length && totalRequests.value > 0) return 'ready'
   if (props.loading) return 'loading'
   return 'empty'
 })
 
-const options = computed(() => {
-  const c = colors.value
-  return {
-    responsive: true,
-    maintainAspectRatio: false,
-    interaction: { intersect: false, mode: 'index' as const },
-    plugins: {
-      legend: {
-        position: 'top' as const,
-        align: 'end' as const,
-        labels: { color: c.text, usePointStyle: true, boxWidth: 6, font: { size: 10 } }
-      },
-      tooltip: {
-        backgroundColor: isDarkMode.value ? '#1f2937' : '#ffffff',
-        titleColor: isDarkMode.value ? '#f3f4f6' : '#111827',
-        bodyColor: isDarkMode.value ? '#d1d5db' : '#4b5563',
-        borderColor: c.grid,
-        borderWidth: 1,
-        padding: 10,
-        displayColors: true,
-        callbacks: {
-          label: (context: any) => {
-            const value = typeof context?.parsed?.y === 'number' ? context.parsed.y : 0
-            return `${t('admin.ops.switchRate')}: ${value.toFixed(3)}`
-          }
-        }
-      }
-    },
-    scales: {
-      x: {
-        type: 'category' as const,
-        grid: { display: false },
-        ticks: {
-          color: c.text,
-          font: { size: 10 },
-          maxTicksLimit: 8,
-          autoSkip: true,
-          autoSkipPadding: 10
-        }
-      },
-      y: {
-        type: 'linear' as const,
-        display: true,
-        position: 'left' as const,
-        grid: { color: c.grid, borderDash: [4, 4] },
-        ticks: {
-          color: c.text,
-          font: { size: 10 },
-          callback: (value: any) => Number(value).toFixed(3)
-        }
-      }
-    }
+const labels = computed(() =>
+  props.points.map((p) => formatHistoryLabel(p.bucket_start, props.timeRange))
+)
+
+const series = computed(() => [
+  {
+    key: 'switchRate',
+    label: t('admin.ops.switchRate'),
+    values: props.points.map((p) => {
+      const requests = p.request_count ?? 0
+      const switches = p.switch_count ?? 0
+      return requests > 0 ? switches / requests : 0
+    }),
+    color: tokens.brand
   }
-})
+])
+
+const windowRate = computed(() =>
+  totalRequests.value > 0 ? totalSwitches.value / totalRequests.value : 0
+)
+
+const restColor = computed(
+  () => `color-mix(in oklch, ${tokens.mutedForeground} 26%, ${tokens.card})`
+)
 </script>
 
 <template>
-  <div class="flex h-full flex-col rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
-    <div class="mb-4 flex shrink-0 items-center justify-between">
-      <h3 class="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white">
-        <svg class="h-4 w-4 text-teal-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h10M7 12h6m-6 5h3" />
-        </svg>
+  <div class="opsswitch">
+    <div class="opsswitch__head">
+      <h3 class="opsswitch__title">
+        <i class="hgi-stroke hgi-exchange-01 opsswitch__title-icon" aria-hidden="true" />
         {{ t('admin.ops.switchRateTrend') }}
         <HelpTooltip v-if="!props.fullscreen" :content="t('admin.ops.tooltips.switchRateTrend')" />
       </h3>
     </div>
 
-    <div class="min-h-0 flex-1">
-      <Line v-if="state === 'ready' && chartData" :data="chartData" :options="options" />
-      <div v-else class="flex h-full items-center justify-center">
-        <div v-if="state === 'loading'" class="animate-pulse text-sm text-gray-400">{{ t('common.loading') }}</div>
-        <EmptyState v-else :title="t('common.noData')" :description="t('admin.ops.charts.emptyRequest')" />
+    <template v-if="state === 'ready'">
+      <p class="opsswitch__value">{{ windowRate.toFixed(2) }}</p>
+      <p class="opsswitch__sub">{{ t('admin.ops.switchRateCaption') }}</p>
+      <div class="opsswitch__plot">
+        <DitherArea
+          :series="series"
+          :labels="labels"
+          :rest-color="restColor"
+          :marker-color="tokens.brand"
+        />
       </div>
+    </template>
+
+    <div v-else class="opsswitch__state">
+      <LoadingSpinner v-if="state === 'loading'" size="md" />
+      <EmptyState v-else :title="t('common.noData')" :description="t('admin.ops.charts.emptyRequest')" />
     </div>
   </div>
 </template>
+
+<style scoped>
+.opsswitch {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--card);
+}
+
+.opsswitch__head {
+  margin-bottom: 8px;
+}
+
+.opsswitch__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
+}
+
+.opsswitch__title-icon {
+  font-size: 15px; /* june-lint-disable ground-rule-4: icon glyph, not text */
+  color: var(--muted-foreground);
+  line-height: 1;
+}
+
+.opsswitch__value {
+  margin: 0;
+  color: var(--foreground);
+  font-family: var(--font-serif);
+  font-size: var(--fs-2xl);
+  font-weight: 400;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.opsswitch__sub {
+  margin: 2px 0 12px;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.opsswitch__plot {
+  position: relative;
+  flex: 1;
+  min-height: 120px;
+  border-radius: 5px;
+  background-image: repeating-linear-gradient(-45deg, color-mix(in oklch, var(--foreground) 5%, transparent) 0 1px, transparent 1px 7px); /* june-lint-disable ground-rule-7: hard-stop hatch, not a colour ramp */
+}
+
+.opsswitch__state {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+}
+</style>
