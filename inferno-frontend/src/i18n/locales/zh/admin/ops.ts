@@ -821,6 +821,7 @@ export default {
         health: '系统健康评分（0-100），综合考虑 SLA、错误率和资源使用情况。'
       },
       charts: {
+          peak: '峰值',
         emptyRequest: '该时间窗口内暂无请求。',
         emptyError: '该时间窗口内暂无错误。',
         resetZoom: '重置',
