@@ -78,7 +78,7 @@ export default {
       requestsTotal: 'Requests (total)',
       slaScope: 'SLA scope:',
       tokens: 'Tokens',
-      tps: 'TPS:',
+      tps: 'TPS',
       current: 'current',
       peak: 'peak',
       average: 'average',
