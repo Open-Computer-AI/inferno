@@ -29,6 +29,7 @@
           <StatTile
             icon="database-01"
             tone="brand"
+            to="/admin/accounts"
             :label="t('admin.dashboard.accounts')"
             :value="`${stats.normal_accounts} / ${stats.total_accounts}`"
             :context="accountsContext.text"
@@ -39,8 +40,10 @@
             tone="info"
             :label="t('admin.dashboard.todayRequests')"
             :value="formatNumber(stats.today_requests)"
+            to="/admin/usage"
             :exact="String(stats.today_requests)"
             :delta="requestsDelta"
+            :series="requestsSeries"
             :context="t('admin.dashboard.tileRequestsRate', { rate: formatNumber(Math.round(stats.rpm)) })"
           />
           <StatTile
@@ -48,16 +51,20 @@
             tone="accent"
             :label="t('admin.dashboard.todayTokens')"
             :value="formatTokens(stats.today_tokens)"
+            to="/admin/usage"
             :exact="String(stats.today_tokens)"
             :delta="tokensDelta"
+            :series="tokensSeries"
             :context="todayCacheContext"
           />
           <StatTile
             icon="dollar-circle"
             tone="success"
             :label="t('admin.dashboard.todayCost')"
+            to="/admin/usage"
             :value="`$${formatCost(stats.today_actual_cost)}`"
             :delta="costDelta"
+            :series="costSeries"
             :context="costContext.text"
             :context-tone="costContext.tone"
           />
@@ -117,17 +124,20 @@
             :context="t('admin.dashboard.tileKeysActive', { count: formatNumber(stats.active_api_keys) })"
           />
           <StatTile
+            to="/admin/users"
             :label="t('admin.dashboard.users')"
             :value="formatNumber(stats.total_users)"
             :context="usersContext"
           />
           <StatTile
+            to="/admin/usage"
             :label="t('admin.dashboard.totalTokens')"
             :value="formatTokens(stats.total_tokens)"
             :exact="String(stats.total_tokens)"
             :context="totalCacheContext"
           />
           <StatTile
+            to="/admin/ops"
             :label="t('admin.dashboard.avgResponse')"
             :value="formatDuration(stats.average_duration_ms)"
             :context="t('admin.dashboard.tileAcrossRequests', { count: formatTokens(stats.total_requests) })"
@@ -589,6 +599,27 @@ const dayOverDay = computed(() => {
     )
   }
 })
+
+/*
+ * Today's hourly buckets, in order, for the sparklines. Reuses the fetch the
+ * deltas already make -- the shape costs no extra request, only rendering.
+ *
+ * Sorted explicitly rather than trusting arrival order: the query does ORDER
+ * BY today, but a sparkline silently draws whatever sequence it is handed, so
+ * an unordered response would produce a plausible-looking scribble rather than
+ * an obvious failure.
+ */
+function todaySeries(pick: (p: TrendDataPoint) => number): number[] {
+  const today = formatLocalDate(new Date())
+  return deltaTrend.value
+    .filter((p) => typeof p.date === 'string' && p.date.slice(0, 10) === today)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((p) => toFiniteNumber(pick(p)))
+}
+
+const requestsSeries = computed(() => todaySeries((p) => p.requests))
+const tokensSeries = computed(() => todaySeries((p) => p.total_tokens))
+const costSeries = computed(() => todaySeries((p) => p.actual_cost))
 
 const requestsDelta = computed(() =>
   dayOverDay.value ? toDelta(dayOverDay.value.today.requests, dayOverDay.value.yesterday.requests) : null
