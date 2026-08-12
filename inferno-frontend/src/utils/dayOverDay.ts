@@ -52,6 +52,70 @@ export function sumWindow(
 }
 
 /**
+ * The latest hour that actually has a bucket on `day`, or -1 if none does.
+ *
+ * WHY THE BROWSER CLOCK IS NOT ENOUGH. Buckets are stamped by TO_CHAR in the
+ * DATABASE's timezone, but `new Date().getHours()` is the browser's. A dev DB
+ * on Asia/Shanghai serving a browser on IST is 2.5 hours ahead, so bounding at
+ * the browser's hour silently discards the two most recent buckets -- the
+ * sparkline loses its right-hand end and the day-over-day sum undercounts,
+ * with no error anywhere.
+ *
+ * Callers should bound at max(browserHour, this). Max is the safe direction:
+ * over-including hours only appends zeros, while under-including drops real
+ * data. That self-corrects whichever way the two clocks are offset, and needs
+ * no timezone from the backend.
+ */
+export function latestHourOn(points: TrendDataPoint[], day: string): number {
+  let latest = -1
+  for (const point of points) {
+    const date = point?.date
+    if (typeof date !== 'string' || date.slice(0, 10) !== day) continue
+    const hour = Number(date.slice(11, 13))
+    if (Number.isFinite(hour) && hour > latest) latest = hour
+  }
+  return latest
+}
+
+/**
+ * One value per hour from 00:00 through `throughHour`, zero-filling gaps.
+ *
+ * THE ZERO-FILL IS NOT COSMETIC. `usage_dashboard_hourly` holds one row per
+ * bucket that saw traffic; an idle hour is an ABSENT row, not a zero one. A
+ * sparkline spaces its points evenly across the x-axis, so feeding it the raw
+ * rows makes index stand in for hour -- and if traffic runs 09:00-12:00, stops,
+ * then resumes at 17:00, the 12:00 and 17:00 points become adjacent. The five
+ * dead hours vanish and the line draws a gentle slope across what was actually
+ * a cliff.
+ *
+ * Summing is immune to this (a missing hour contributes 0 either way), which is
+ * why sumWindow needs no equivalent. Drawing is not.
+ *
+ * Ordering falls out of the loop, so the caller does not have to trust the
+ * order rows arrived in.
+ */
+export function densifyHours(
+  points: TrendDataPoint[],
+  day: string,
+  throughHour: number,
+  pick: (point: TrendDataPoint) => number
+): number[] {
+  const byHour = new Map<number, number>()
+  for (const point of points) {
+    const date = point?.date
+    if (typeof date !== 'string' || date.slice(0, 10) !== day) continue
+    const hour = Number(date.slice(11, 13))
+    if (!Number.isFinite(hour) || hour < 0 || hour > throughHour) continue
+    byHour.set(hour, (byHour.get(hour) ?? 0) + finite(pick(point)))
+  }
+  const series: number[] = []
+  for (let hour = 0; hour <= throughHour; hour += 1) {
+    series.push(byHour.get(hour) ?? 0)
+  }
+  return series
+}
+
+/**
  * Percentage change against a baseline, or null when there is no honest one.
  *
  * Returns null rather than a number in two cases, both deliberate:
