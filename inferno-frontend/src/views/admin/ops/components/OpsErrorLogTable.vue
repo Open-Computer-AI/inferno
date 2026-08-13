@@ -1,6 +1,6 @@
 <template>
-  <div class="flex h-full min-h-0 flex-col">
-    <div class="flex min-h-0 flex-1 flex-col overflow-hidden" :class="flat ? '' : 'card'">
+  <div class="errlog">
+    <div class="errlog__frame" :class="flat ? '' : 'card'">
       <IpGeoBatchToolbar :ips="rows.map((r) => r.client_ip)" @failed="emit('ipGeoBatchFailed')" />
 
       <DataTable
@@ -15,149 +15,142 @@
         @rowClick="(row) => emit('openErrorDetail', row.id)"
       >
         <template #cell-created_at="{ row }">
-          <span
-            class="text-sm text-gray-600 dark:text-gray-400"
-            :title="row.request_id || row.client_request_id"
-          >{{ formatDateTime(row.created_at) }}</span>
-        </template>
-
-        <template #cell-type="{ row }">
-          <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" :class="getTypeBadge(row).className">
-            {{ getTypeBadge(row).label }}
+          <span class="errlog__muted" :title="row.request_id || row.client_request_id">
+            {{ formatDateTime(row.created_at) }}
           </span>
         </template>
 
+        <!-- Type is a classification, not a severity. It used to ramp through six
+             hues (red / amber / blue / orange / purple / grey) while the Category
+             column right beside it -- the same kind of information -- was plain
+             text. Both are neutral now; status carries the tone. -->
+        <template #cell-type="{ row }">
+          <span class="errlog__chip">{{ getTypeBadge(row).label }}</span>
+        </template>
+
         <template #cell-endpoint="{ row }">
-          <div class="max-w-[320px] space-y-1 text-xs">
-            <div class="break-all text-gray-700 dark:text-gray-300">
-              <span class="font-medium text-gray-500 dark:text-gray-400">{{ t('usage.inbound') }}:</span>
-              <span class="ml-1">{{ row.inbound_endpoint?.trim() || '-' }}</span>
-            </div>
-            <div v-if="row.upstream_endpoint" class="break-all text-gray-700 dark:text-gray-300">
-              <span class="font-medium text-gray-500 dark:text-gray-400">{{ t('usage.upstream') }}:</span>
-              <span class="ml-1">{{ row.upstream_endpoint?.trim() || '-' }}</span>
-            </div>
+          <div class="errlog__endpoints">
+            <p class="errlog__endpoint">
+              <span class="errlog__endpoint-key">{{ t('usage.inbound') }}</span>
+              <span class="errlog__endpoint-value">{{ row.inbound_endpoint?.trim() || '-' }}</span>
+            </p>
+            <p v-if="row.upstream_endpoint" class="errlog__endpoint">
+              <span class="errlog__endpoint-key">{{ t('usage.upstream') }}</span>
+              <span class="errlog__endpoint-value">{{ row.upstream_endpoint?.trim() || '-' }}</span>
+            </p>
           </div>
         </template>
 
         <template #cell-platform="{ row }">
-          <span class="text-sm text-gray-900 dark:text-white">{{ row.platform || '-' }}</span>
+          <span class="errlog__text">{{ row.platform || '-' }}</span>
         </template>
 
         <template #cell-model="{ row }">
-          <div v-if="hasModelMapping(row)" class="space-y-0.5 text-xs">
-            <div class="break-all font-medium text-gray-900 dark:text-white">{{ row.requested_model }}</div>
-            <div class="break-all text-gray-500 dark:text-gray-400"><span class="mr-0.5">↳</span>{{ row.upstream_model }}</div>
+          <div v-if="hasModelMapping(row)" class="errlog__map">
+            <span class="errlog__map-from">{{ row.requested_model }}</span>
+            <span class="errlog__map-to">
+              <span class="errlog__map-arrow" aria-hidden="true">&rarr;</span>{{ row.upstream_model }}
+            </span>
           </div>
-          <span v-else-if="displayModel(row)" class="text-sm font-medium text-gray-900 dark:text-white">{{ displayModel(row) }}</span>
-          <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+          <span v-else-if="displayModel(row)" class="errlog__text">{{ displayModel(row) }}</span>
+          <span v-else class="errlog__absent">-</span>
         </template>
 
+        <!-- A group name is an identity, not a state. It was an indigo pill. -->
         <template #cell-group="{ row }">
           <span
             v-if="row.group_id"
-            class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200"
+            class="errlog__chip"
             :title="t('admin.ops.errorLog.id') + ' ' + row.group_id"
-          >
-            {{ row.group_name || '#' + row.group_id }}
-          </span>
-          <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+          >{{ row.group_name || '#' + row.group_id }}</span>
+          <span v-else class="errlog__absent">-</span>
         </template>
 
         <template #cell-user="{ row }">
-          <div v-if="row.user_id" class="text-sm">
+          <div v-if="row.user_id" class="errlog__user">
             <button
               v-if="userClickable && row.user_email"
-              class="font-medium text-primary-600 underline decoration-dashed underline-offset-2 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+              type="button"
+              class="errlog__link"
               :title="t('admin.usage.clickToViewBalance')"
               @click.stop="emit('userClick', row.user_id, row.user_email)"
-            >
-              {{ row.user_email }}
-            </button>
-            <span v-else class="font-medium text-gray-900 dark:text-white">{{ row.user_email || '-' }}</span>
-            <span class="ml-1 text-gray-500 dark:text-gray-400">#{{ row.user_id }}</span>
+            >{{ row.user_email }}</button>
+            <span v-else class="errlog__text">{{ row.user_email || '-' }}</span>
+            <span class="errlog__muted">#{{ row.user_id }}</span>
           </div>
-          <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+          <span v-else class="errlog__absent">-</span>
         </template>
 
         <template #cell-api_key="{ row }">
-          <div v-if="row.api_key_id || row.api_key_name" class="text-sm">
-            <span class="text-gray-900 dark:text-white">{{ row.api_key_name || '#' + row.api_key_id }}</span>
-            <span
-              v-if="row.api_key_deleted"
-              class="ml-1 inline-flex items-center rounded px-1 py-px text-[10px] font-medium leading-tight bg-rose-100 text-rose-600 ring-1 ring-inset ring-rose-200 dark:bg-rose-500/20 dark:text-rose-400 dark:ring-rose-500/30"
-            >{{ t('admin.ops.errorLog.keyDeletedBadge') }}</span>
+          <div v-if="row.api_key_id || row.api_key_name" class="errlog__user">
+            <span class="errlog__text">{{ row.api_key_name || '#' + row.api_key_id }}</span>
+            <!-- A deleted key IS a state, and one that explains why a request
+                 failed, so this keeps a tone where the identity chips lost theirs. -->
+            <span v-if="row.api_key_deleted" class="errlog__chip" data-tone="warn">
+              {{ t('admin.ops.errorLog.keyDeletedBadge') }}
+            </span>
           </div>
-          <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+          <span v-else class="errlog__absent">-</span>
         </template>
 
         <template #cell-account="{ row }">
           <span
             v-if="row.account_id"
-            class="text-sm text-gray-900 dark:text-white"
+            class="errlog__text"
             :title="t('admin.ops.errorLog.accountId') + ' ' + row.account_id"
           >{{ row.account_name || '#' + row.account_id }}</span>
-          <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+          <span v-else class="errlog__absent">-</span>
         </template>
 
         <template #cell-category="{ row }">
-          <span class="text-sm text-gray-900 dark:text-white">
+          <span class="errlog__text">
             {{ t('usage.errors.categories.' + mapErrorCategory(row.phase, row.type)) }}
           </span>
         </template>
 
         <template #cell-status="{ row }">
-          <div class="flex items-center gap-1.5">
-            <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" :class="getStatusClass(row.status_code)">
-              {{ row.status_code }}
+          <div class="errlog__status-cell">
+            <span class="errlog__status" :data-tone="statusTone(row.status_code)">{{ row.status_code }}</span>
+            <!-- Neutral. These are historical rows, not open alerts; the alert
+                 events card is where the P0..P3 ramp earns its colour. -->
+            <span v-if="row.severity" class="errlog__sev">{{ row.severity }}</span>
+            <span v-if="row.request_type != null && row.request_type > 0" class="errlog__chip">
+              {{ formatRequestType(row.request_type) }}
             </span>
-            <span
-              v-if="row.severity"
-              :class="['rounded px-1.5 py-0.5 text-[10px] font-medium', getSeverityClass(row.severity)]"
-            >{{ row.severity }}</span>
-            <span
-              v-if="row.request_type != null && row.request_type > 0"
-              class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-800 dark:bg-dark-700 dark:text-gray-200"
-            >{{ formatRequestType(row.request_type) }}</span>
           </div>
         </template>
 
         <template #cell-message="{ row }">
-          <span
-            v-if="row.message"
-            class="block max-w-[280px] truncate text-sm text-gray-600 dark:text-gray-400"
-            :title="row.message"
-          >{{ formatSmartMessage(row.message) || '-' }}</span>
-          <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+          <span v-if="row.message" class="errlog__message" :title="row.message">
+            {{ formatSmartMessage(row.message) || '-' }}
+          </span>
+          <span v-else class="errlog__absent">-</span>
         </template>
 
         <template #cell-user_agent="{ row }">
-          <span
-            v-if="row.user_agent"
-            class="block max-w-[320px] truncate text-sm text-gray-600 dark:text-gray-400"
-            :title="row.user_agent"
-          >{{ row.user_agent }}</span>
-          <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+          <span v-if="row.user_agent" class="errlog__ua" :title="row.user_agent">{{ row.user_agent }}</span>
+          <span v-else class="errlog__absent">-</span>
         </template>
 
         <template #cell-client_ip="{ row }">
           <div @click.stop>
             <div v-if="row.client_ip">
-              <span class="text-sm font-mono text-gray-600 dark:text-gray-400">{{ row.client_ip }}</span>
+              <span class="errlog__ip">{{ row.client_ip }}</span>
               <IpGeoCell :ip="row.client_ip" />
             </div>
-            <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+            <span v-else class="errlog__absent">-</span>
           </div>
         </template>
 
         <template #cell-actions="{ row }">
           <button
             type="button"
-            class="rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-600 dark:hover:text-primary-400"
+            class="errlog__action"
             :title="t('admin.ops.errorLog.details')"
+            :aria-label="t('admin.ops.errorLog.details')"
             @click.stop="emit('openErrorDetail', row.id)"
           >
-            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            <Icon name="document" size="sm" :stroke-width="2" />
           </button>
         </template>
 
@@ -165,7 +158,7 @@
       </DataTable>
     </div>
 
-    <div class="flex-shrink-0">
+    <div class="errlog__foot">
       <Pagination
         v-if="total > 0"
         :total="total"
@@ -186,11 +179,12 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import IpGeoCell from '@/components/common/IpGeoCell.vue'
 import IpGeoBatchToolbar from '@/components/common/IpGeoBatchToolbar.vue'
+import Icon from '@/components/icons/Icon.vue'
 import type { OpsErrorLog } from '@/api/admin/ops'
 import type { Column } from '@/components/common/types'
-import { getSeverityClass, formatDateTime } from '../utils/opsFormatters'
+import { formatDateTime } from '../utils/opsFormatters'
 import { mapErrorCategory } from '@/utils/errorCategory'
-import { mapErrorSortKey, statusCodeBadgeClass } from '@/utils/errorBadges'
+import { mapErrorSortKey } from '@/utils/errorBadges'
 
 const { t } = useI18n()
 
@@ -250,32 +244,26 @@ function formatRequestType(type: number | null | undefined): string {
   }
 }
 
-// 徽章配色对齐用量明细(UsageTable)的 bg-X-100/text-X-800 体系
-function getTypeBadge(log: OpsErrorLog): { label: string; className: string } {
+/*
+ * Label only. This used to return a `className` too, ramping through six hues
+ * -- red for upstream, amber for request, blue for auth, orange for account
+ * auth, purple for routing, grey for internal -- which is a categorical
+ * rainbow, and it sat next to a Category column carrying the same class of
+ * information as plain text. Colour on this table now means severity and
+ * nothing else.
+ */
+function getTypeBadge(log: OpsErrorLog): { label: string } {
   const phase = String(log.phase || '').toLowerCase()
   const owner = String(log.error_owner || '').toLowerCase()
 
-  if (isUpstreamRow(log)) {
-    return { label: t('admin.ops.errorLog.typeUpstream'), className: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' }
-  }
-  if (phase === 'request' && owner === 'client') {
-    return { label: t('admin.ops.errorLog.typeRequest'), className: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200' }
-  }
-  if (phase === 'auth' && owner === 'client') {
-    return { label: t('admin.ops.errorLog.typeAuth'), className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' }
-  }
-  if (phase === 'account_auth') {
-    return { label: t('admin.ops.errorLog.typeAccountAuth'), className: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200' }
-  }
-  if (phase === 'routing' && owner === 'platform') {
-    return { label: t('admin.ops.errorLog.typeRouting'), className: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' }
-  }
-  if (phase === 'internal' && owner === 'platform') {
-    return { label: t('admin.ops.errorLog.typeInternal'), className: 'bg-gray-100 text-gray-800 dark:bg-dark-700 dark:text-gray-200' }
-  }
+  if (isUpstreamRow(log)) return { label: t('admin.ops.errorLog.typeUpstream') }
+  if (phase === 'request' && owner === 'client') return { label: t('admin.ops.errorLog.typeRequest') }
+  if (phase === 'auth' && owner === 'client') return { label: t('admin.ops.errorLog.typeAuth') }
+  if (phase === 'account_auth') return { label: t('admin.ops.errorLog.typeAccountAuth') }
+  if (phase === 'routing' && owner === 'platform') return { label: t('admin.ops.errorLog.typeRouting') }
+  if (phase === 'internal' && owner === 'platform') return { label: t('admin.ops.errorLog.typeInternal') }
 
-  const fallback = phase || owner || t('common.unknown')
-  return { label: fallback, className: 'bg-gray-100 text-gray-800 dark:bg-dark-700 dark:text-gray-200' }
+  return { label: phase || owner || t('common.unknown') }
 }
 
 interface Props {
@@ -308,7 +296,17 @@ function onSort(key: string, order: 'asc' | 'desc') {
   emit('sort', mapErrorSortKey(key), order)
 }
 
-const getStatusClass = statusCodeBadgeClass
+/* Local rather than the shared `statusCodeBadgeClass`, which is still on the
+   old bg-X-100 palette and still used by the unconverted UserErrorRequestsTable.
+   Same ladder as OpsErrorDetailModal and OpsRequestDetailsModal: >=500 is
+   destructive because the provider or we broke, any other 4xx is attention
+   because it is expected traffic being refused. */
+function statusTone(code: number | null | undefined) {
+  const n = code ?? 0
+  if (n >= 500) return 'error'
+  if (n >= 400) return 'warn'
+  return undefined
+}
 
 function formatSmartMessage(msg: string): string {
   if (!msg) return ''
@@ -332,3 +330,236 @@ function formatSmartMessage(msg: string): string {
   return msg.length > 200 ? msg.substring(0, 200) + '...' : msg
 }
 </script>
+
+<style scoped>
+/* DataTable owns cell padding, borders and the header row. Everything here
+   styles cell CONTENT only, which is why there is no table geometry below. */
+.errlog {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.errlog__frame {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.errlog__foot {
+  flex: none;
+}
+
+/* --- shared cell text --------------------------------------------------- */
+
+.errlog__text {
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+}
+
+.errlog__muted {
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.errlog__absent {
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+/* --- neutral chip: type, group, request type ---------------------------- */
+
+.errlog__chip {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: var(--r-xs);
+  background: var(--surface-subtle);
+  color: var(--body-copy);
+  font-size: var(--fs-2xs);
+  white-space: nowrap;
+}
+
+.errlog__chip[data-tone='warn'] {
+  background: var(--s2a-attn-soft);
+  color: var(--s2a-attn);
+}
+
+/* --- status ------------------------------------------------------------- */
+
+.errlog__status-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.errlog__status {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: var(--r-xs);
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.errlog__status[data-tone='error'] {
+  background: color-mix(in oklch, var(--destructive) 15%, var(--card));
+  color: var(--destructive);
+}
+
+.errlog__status[data-tone='warn'] {
+  background: var(--s2a-attn-soft);
+  color: var(--s2a-attn);
+}
+
+.errlog__sev {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: var(--r-xs);
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+}
+
+/* --- endpoints ---------------------------------------------------------- */
+
+.errlog__endpoints {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 320px;
+}
+
+.errlog__endpoint {
+  margin: 0;
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+
+.errlog__endpoint-key {
+  margin-right: 5px;
+  color: var(--muted-foreground);
+}
+
+.errlog__endpoint-value {
+  color: var(--body-copy);
+  font-family: var(--font-mono);
+}
+
+/* --- model mapping ------------------------------------------------------ */
+
+.errlog__map {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: var(--fs-xs);
+}
+
+.errlog__map-from {
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+
+.errlog__map-to {
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+
+.errlog__map-arrow {
+  margin-right: 4px;
+}
+
+/* --- user / key --------------------------------------------------------- */
+
+.errlog__user {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px;
+  font-size: var(--fs-sm);
+}
+
+/* A link that reads as a link without borrowing a colour the palette does not
+   have. It was text-primary-600 with a dashed underline. */
+.errlog__link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+  text-decoration: underline;
+  text-decoration-color: var(--border-subtle);
+  text-underline-offset: 2px;
+  cursor: pointer;
+  transition: text-decoration-color var(--motion-hover);
+}
+
+.errlog__link:hover {
+  text-decoration-color: var(--muted-foreground);
+}
+
+.errlog__link:focus-visible {
+  outline: none;
+  border-radius: var(--r-xs);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* --- message / ua / ip -------------------------------------------------- */
+
+.errlog__message {
+  display: block;
+  max-width: 280px;
+  overflow: hidden;
+  color: var(--body-copy);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.errlog__ua {
+  display: block;
+  max-width: 320px;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.errlog__ip {
+  color: var(--body-copy);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+/* --- row action --------------------------------------------------------- */
+
+.errlog__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: none;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.errlog__action:hover {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+
+.errlog__action:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+</style>
