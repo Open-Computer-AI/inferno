@@ -90,22 +90,27 @@ flex chain pinned to `100dvh` now.
 Everything on the ops page that renders on load is converted. What is left only
 appears once you open something:
 
-| file | legacy utils | status |
-|------|--------------|--------|
-| `OpsSettingsDialog.vue` | 93 | done `4e716ec0` |
-| `OpsErrorDetailModal.vue` | 95 | |
-| `OpsRequestDetailsModal.vue` | 87 | |
-| `OpsAlertRulesCard.vue` | 86 | |
-| `OpsErrorLogTable.vue` | 66 | |
-| `OpsOpenAITokenStatsCard.vue` | 50 | |
-| `OpsErrorDetailsModal.vue` | 21 | |
-| `OpsDashboard.vue` | 6 | |
+### ✅ COMPLETE — every mounted file under `src/views/admin/ops/` is converted.
 
-- **Done when:** `conversion-status.mjs` reports 0 for every **mounted** file
-  under `src/views/admin/ops/` — see the dead-code note below for the two that
-  are excluded and why.
-- Each must be **opened in the browser** and verified, not just typechecked.
-  A modal that typechecks and renders blank is the failure mode here.
+| file | legacy utils | commit |
+|------|--------------|--------|
+| `OpsSettingsDialog.vue` | 93 | `4e716ec0` |
+| `OpsErrorDetailModal.vue` | 95 | `2bff989f` |
+| `OpsRequestDetailsModal.vue` | 87 | `755828bc` |
+| `OpsAlertRulesCard.vue` | 86 | `6fcea767` |
+| `OpsErrorLogTable.vue` | 66 | `263ff0b5` |
+| `OpsOpenAITokenStatsCard.vue` | 50 | see below |
+| `OpsErrorDetailsModal.vue` | 21 | see below |
+| `OpsDashboard.vue` | 6 | see below |
+
+`conversion-status.mjs` now reports only the two dead cards under
+`src/views/admin/ops/`. Every one of these was opened in a browser against
+seeded data and measured, not just typechecked.
+
+**To see the OpenAI token stats card at all:** it is hidden by default. Ops
+page → Settings → Advanced settings → "Display OpenAI token request stats".
+The flag lives in `getAdvancedSettings`, not in the `settings` table, so there
+is no row to flip directly.
 
 #### ⚠️ OWNER DECISION NEEDED — two ops cards are dead code
 
