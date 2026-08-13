@@ -1,4 +1,18 @@
 <script setup lang="ts">
+/**
+ * Per-model OpenAI throughput.
+ *
+ * SIX NUMERIC COLUMNS, ALL LEFT ALIGNED WITH PROPORTIONAL FIGURES
+ * The point of this table is comparing magnitudes down a column, and that only
+ * works when the digits line up: right alignment plus tabular-nums. Without
+ * both, "1,234" and "987" start at the same x and the eye cannot rank them.
+ *
+ * TWO MILLISECOND COLUMNS, FORMATTED TWO WAYS
+ * `avg_duration_ms` went through formatInt and `avg_first_token_ms` through
+ * formatRate, so adjacent columns of the same unit read "245" and "245.00".
+ * Two decimals on a millisecond measure is false precision. Both are integers
+ * now; formatRate is kept for tokens/sec, where the fraction is real.
+ */
 import { computed, ref, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
@@ -70,6 +84,7 @@ const pageSizeOptions = computed(() => [
   { value: 100, label: '100' }
 ])
 
+/* Two decimals, for a rate where the fraction carries information. */
 function formatRate(v?: number | null): string {
   if (typeof v !== 'number' || !Number.isFinite(v)) return '-'
   return v.toFixed(2)
@@ -158,53 +173,39 @@ function onNextPage() {
 </script>
 
 <template>
-  <section class="card p-4 md:p-5">
-    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <h3 class="text-sm font-bold text-gray-900 dark:text-white">
-        {{ t('admin.ops.openaiTokenStats.title') }}
-      </h3>
-      <div class="flex flex-wrap items-center gap-2">
-        <div class="w-36">
+  <section class="oaits">
+    <div class="oaits__bar">
+      <h3 class="oaits__title">{{ t('admin.ops.openaiTokenStats.title') }}</h3>
+      <div class="oaits__controls">
+        <div class="oaits__control oaits__control--wide">
           <Select v-model="timeRange" :options="timeRangeOptions" />
         </div>
-        <div class="w-36">
+        <div class="oaits__control oaits__control--wide">
           <Select v-model="viewMode" :options="viewModeOptions" />
         </div>
-        <div v-if="viewMode === 'topn'" class="w-28">
+        <div v-if="viewMode === 'topn'" class="oaits__control">
           <Select v-model="topN" :options="topNOptions" />
         </div>
         <template v-else>
-          <div class="w-24">
+          <div class="oaits__control oaits__control--narrow">
             <Select v-model="pageSize" :options="pageSizeOptions" />
           </div>
-          <button
-            class="btn btn-secondary btn-sm"
-            :disabled="loading || page <= 1"
-            @click="onPrevPage"
-          >
+          <button class="btn btn-secondary btn-sm" :disabled="loading || page <= 1" @click="onPrevPage">
             {{ t('admin.ops.openaiTokenStats.prevPage') }}
           </button>
-          <button
-            class="btn btn-secondary btn-sm"
-            :disabled="loading || page >= totalPages"
-            @click="onNextPage"
-          >
+          <button class="btn btn-secondary btn-sm" :disabled="loading || page >= totalPages" @click="onNextPage">
             {{ t('admin.ops.openaiTokenStats.nextPage') }}
           </button>
-          <span class="text-xs text-gray-500 dark:text-gray-400">
+          <span class="oaits__page-info">
             {{ t('admin.ops.openaiTokenStats.pageInfo', { page, total: totalPages }) }}
           </span>
         </template>
       </div>
     </div>
 
-    <div v-if="errorMessage" class="mb-4 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-900/20 dark:text-red-400">
-      {{ errorMessage }}
-    </div>
+    <p v-if="errorMessage" class="oaits__error">{{ errorMessage }}</p>
 
-    <div v-if="loading" class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-      {{ t('admin.ops.loadingText') }}
-    </div>
+    <p v-if="loading" class="oaits__state">{{ t('admin.ops.loadingText') }}</p>
 
     <EmptyState
       v-else-if="items.length === 0"
@@ -212,73 +213,276 @@ function onNextPage() {
       :description="t('admin.ops.openaiTokenStats.empty')"
     />
 
-    <div v-else class="space-y-3">
-      <div class="overflow-hidden rounded-xl border border-gray-200 dark:border-dark-700">
-        <div class="max-h-[420px] overflow-auto">
-          <div v-if="!isDesktopViewport" class="divide-y divide-gray-100 dark:divide-dark-800">
-            <div v-for="row in items" :key="row.model" class="space-y-2 p-3">
-              <div class="break-all text-xs font-medium text-gray-900 dark:text-gray-100">{{ row.model }}</div>
-              <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                <div class="flex items-baseline justify-between gap-2">
-                  <span class="text-gray-500 dark:text-gray-400">{{ t('admin.ops.openaiTokenStats.table.requestCount') }}</span>
-                  <span class="text-gray-700 dark:text-gray-200">{{ formatInt(row.request_count) }}</span>
+    <div v-else class="oaits__body">
+      <div class="oaits__frame">
+        <div class="oaits__scroll">
+          <!-- Card view below 768px: a seven column table truncates badly there. -->
+          <div v-if="!isDesktopViewport" class="oaits__cards">
+            <article v-for="row in items" :key="row.model" class="oaits__card">
+              <p class="oaits__model">{{ row.model }}</p>
+              <dl class="oaits__facts">
+                <div class="oaits__fact">
+                  <dt>{{ t('admin.ops.openaiTokenStats.table.requestCount') }}</dt>
+                  <dd>{{ formatInt(row.request_count) }}</dd>
                 </div>
-                <div class="flex items-baseline justify-between gap-2">
-                  <span class="text-gray-500 dark:text-gray-400">{{ t('admin.ops.openaiTokenStats.table.avgTokensPerSec') }}</span>
-                  <span class="text-gray-700 dark:text-gray-200">{{ formatRate(row.avg_tokens_per_sec) }}</span>
+                <div class="oaits__fact">
+                  <dt>{{ t('admin.ops.openaiTokenStats.table.avgTokensPerSec') }}</dt>
+                  <dd>{{ formatRate(row.avg_tokens_per_sec) }}</dd>
                 </div>
-                <div class="flex items-baseline justify-between gap-2">
-                  <span class="text-gray-500 dark:text-gray-400">{{ t('admin.ops.openaiTokenStats.table.avgFirstTokenMs') }}</span>
-                  <span class="text-gray-700 dark:text-gray-200">{{ formatRate(row.avg_first_token_ms) }}</span>
+                <div class="oaits__fact">
+                  <dt>{{ t('admin.ops.openaiTokenStats.table.avgFirstTokenMs') }}</dt>
+                  <dd>{{ formatInt(row.avg_first_token_ms) }}</dd>
                 </div>
-                <div class="flex items-baseline justify-between gap-2">
-                  <span class="text-gray-500 dark:text-gray-400">{{ t('admin.ops.openaiTokenStats.table.totalOutputTokens') }}</span>
-                  <span class="text-gray-700 dark:text-gray-200">{{ formatInt(row.total_output_tokens) }}</span>
+                <div class="oaits__fact">
+                  <dt>{{ t('admin.ops.openaiTokenStats.table.totalOutputTokens') }}</dt>
+                  <dd>{{ formatInt(row.total_output_tokens) }}</dd>
                 </div>
-                <div class="flex items-baseline justify-between gap-2">
-                  <span class="text-gray-500 dark:text-gray-400">{{ t('admin.ops.openaiTokenStats.table.avgDurationMs') }}</span>
-                  <span class="text-gray-700 dark:text-gray-200">{{ formatInt(row.avg_duration_ms) }}</span>
+                <div class="oaits__fact">
+                  <dt>{{ t('admin.ops.openaiTokenStats.table.avgDurationMs') }}</dt>
+                  <dd>{{ formatInt(row.avg_duration_ms) }}</dd>
                 </div>
-                <div class="flex items-baseline justify-between gap-2">
-                  <span class="text-gray-500 dark:text-gray-400">{{ t('admin.ops.openaiTokenStats.table.requestsWithFirstToken') }}</span>
-                  <span class="text-gray-700 dark:text-gray-200">{{ formatInt(row.requests_with_first_token) }}</span>
+                <div class="oaits__fact">
+                  <dt>{{ t('admin.ops.openaiTokenStats.table.requestsWithFirstToken') }}</dt>
+                  <dd>{{ formatInt(row.requests_with_first_token) }}</dd>
                 </div>
-              </div>
-            </div>
+              </dl>
+            </article>
           </div>
-          <table v-else class="min-w-full text-left text-xs md:text-sm">
-            <thead class="sticky top-0 z-10 bg-white dark:bg-dark-800">
-              <tr class="border-b border-gray-200 text-gray-500 dark:border-dark-700 dark:text-gray-400">
-                <th class="px-2 py-2 font-semibold">{{ t('admin.ops.openaiTokenStats.table.model') }}</th>
-                <th class="px-2 py-2 font-semibold">{{ t('admin.ops.openaiTokenStats.table.requestCount') }}</th>
-                <th class="px-2 py-2 font-semibold">{{ t('admin.ops.openaiTokenStats.table.avgTokensPerSec') }}</th>
-                <th class="px-2 py-2 font-semibold">{{ t('admin.ops.openaiTokenStats.table.avgFirstTokenMs') }}</th>
-                <th class="px-2 py-2 font-semibold">{{ t('admin.ops.openaiTokenStats.table.totalOutputTokens') }}</th>
-                <th class="px-2 py-2 font-semibold">{{ t('admin.ops.openaiTokenStats.table.avgDurationMs') }}</th>
-                <th class="px-2 py-2 font-semibold">{{ t('admin.ops.openaiTokenStats.table.requestsWithFirstToken') }}</th>
+
+          <table v-else class="oaits__table">
+            <thead>
+              <tr>
+                <th scope="col">{{ t('admin.ops.openaiTokenStats.table.model') }}</th>
+                <th scope="col" class="oaits__th--num">{{ t('admin.ops.openaiTokenStats.table.requestCount') }}</th>
+                <th scope="col" class="oaits__th--num">{{ t('admin.ops.openaiTokenStats.table.avgTokensPerSec') }}</th>
+                <th scope="col" class="oaits__th--num">{{ t('admin.ops.openaiTokenStats.table.avgFirstTokenMs') }}</th>
+                <th scope="col" class="oaits__th--num">{{ t('admin.ops.openaiTokenStats.table.totalOutputTokens') }}</th>
+                <th scope="col" class="oaits__th--num">{{ t('admin.ops.openaiTokenStats.table.avgDurationMs') }}</th>
+                <th scope="col" class="oaits__th--num">{{ t('admin.ops.openaiTokenStats.table.requestsWithFirstToken') }}</th>
               </tr>
             </thead>
             <tbody>
-              <tr
-                v-for="row in items"
-                :key="row.model"
-                class="border-b border-gray-100 text-gray-700 last:border-b-0 dark:border-dark-800 dark:text-gray-200"
-              >
-                <td class="px-2 py-2 font-medium">{{ row.model }}</td>
-                <td class="px-2 py-2">{{ formatInt(row.request_count) }}</td>
-                <td class="px-2 py-2">{{ formatRate(row.avg_tokens_per_sec) }}</td>
-                <td class="px-2 py-2">{{ formatRate(row.avg_first_token_ms) }}</td>
-                <td class="px-2 py-2">{{ formatInt(row.total_output_tokens) }}</td>
-                <td class="px-2 py-2">{{ formatInt(row.avg_duration_ms) }}</td>
-                <td class="px-2 py-2">{{ formatInt(row.requests_with_first_token) }}</td>
+              <tr v-for="row in items" :key="row.model">
+                <td class="oaits__td--model">{{ row.model }}</td>
+                <td class="oaits__td--num">{{ formatInt(row.request_count) }}</td>
+                <td class="oaits__td--num">{{ formatRate(row.avg_tokens_per_sec) }}</td>
+                <td class="oaits__td--num">{{ formatInt(row.avg_first_token_ms) }}</td>
+                <td class="oaits__td--num">{{ formatInt(row.total_output_tokens) }}</td>
+                <td class="oaits__td--num">{{ formatInt(row.avg_duration_ms) }}</td>
+                <td class="oaits__td--num">{{ formatInt(row.requests_with_first_token) }}</td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
-      <div v-if="viewMode === 'topn'" class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+
+      <p v-if="viewMode === 'topn'" class="oaits__total">
         {{ t('admin.ops.openaiTokenStats.totalModels', { total }) }}
-      </div>
+      </p>
     </div>
   </section>
 </template>
+
+<style scoped>
+.oaits {
+  padding: 16px;
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--card);
+}
+
+.oaits__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.oaits__title {
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
+}
+
+.oaits__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.oaits__control {
+  width: 112px;
+}
+
+.oaits__control--wide {
+  width: 144px;
+}
+
+.oaits__control--narrow {
+  width: 96px;
+}
+
+.oaits__page-info {
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- states ------------------------------------------------------------- */
+
+/* Destructive: the fetch actually failed, which is the case this tone is for. */
+.oaits__error {
+  margin: 0 0 14px;
+  padding: 8px 12px;
+  border-radius: var(--r-md);
+  background: color-mix(in oklch, var(--destructive) 12%, var(--card));
+  color: var(--destructive);
+  font-size: var(--fs-sm);
+}
+
+.oaits__state {
+  margin: 0;
+  padding: 32px 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-md);
+  text-align: center;
+}
+
+.oaits__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.oaits__frame {
+  overflow: hidden;
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--r-md);
+}
+
+.oaits__scroll {
+  max-height: 420px;
+  overflow: auto;
+}
+
+.oaits__total {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+/* --- table -------------------------------------------------------------- */
+
+.oaits__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.oaits__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 12px;
+  border-bottom: var(--border-width) solid var(--border-subtle);
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-align: left;
+  white-space: nowrap;
+}
+
+/* Qualified with the element selector deliberately: the base rule above is
+   `.oaits__table thead th`, which is (0,1,2), so a bare `.oaits__th--num` at
+   (0,1,0) loses and the numeric headers stay left aligned over right aligned
+   data. Right aligned so the label sits over its own digits. */
+.oaits__table thead th.oaits__th--num {
+  text-align: right;
+}
+
+.oaits__table tbody td {
+  padding: 8px 12px;
+  border-top: var(--border-width) solid var(--border-subtle);
+  color: var(--body-copy);
+  font-size: var(--fs-sm);
+}
+
+.oaits__table tbody tr:first-child td {
+  border-top: none;
+}
+
+.oaits__table tbody tr:hover td {
+  background: var(--surface-hover);
+}
+
+.oaits__td--model {
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+
+/* tabular-nums is the other half of the alignment fix: right alignment only
+   helps if every digit is the same width. */
+.oaits__td--num {
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* --- card view (below 768px) -------------------------------------------- */
+
+.oaits__cards {
+  display: flex;
+  flex-direction: column;
+}
+
+.oaits__card {
+  padding: 12px;
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.oaits__card:first-child {
+  border-top: none;
+}
+
+.oaits__model {
+  margin: 0 0 8px;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+
+.oaits__facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px 14px;
+  margin: 0;
+}
+
+.oaits__fact {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.oaits__fact dt {
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+
+.oaits__fact dd {
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+</style>
