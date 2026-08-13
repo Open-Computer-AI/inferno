@@ -96,13 +96,9 @@ const arrowIcon = computed(() => (props.changeType === 'up' ? 'hgi-arrow-up-01' 
 /*
  * Class is `statcell`, NOT `stat-card`.
  *
- * `style.css` defines a legacy global `.stat-card { @apply card p-5; flex
- * items-start gap-4 }`. This component used the same name, so every converted
- * stat card silently inherited that card's border and radius AND its flex row
- * -- which is why the title and value sat side by side instead of stacked, and
- * why four of them in a StatStrip rendered as four separate cards rather than
- * one strip with dividers. A scoped attribute wins on the properties it
- * declares; it cannot un-declare the ones it does not.
+ * This component deliberately uses `statcell`, not a card utility. Keeping the
+ * cell chrome local prevents a global surface class from changing the strip's
+ * stacked title/value rhythm or adding an extra border around each cell.
  */
 .statcell {
   padding: 13px 15px;
