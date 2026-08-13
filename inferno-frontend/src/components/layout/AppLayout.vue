@@ -144,6 +144,7 @@ defineExpose({ replayTour })
  */
 .shell__card {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   margin: 7px 7px 7px 0;
   border-radius: var(--r-window);
