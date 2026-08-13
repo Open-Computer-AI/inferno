@@ -99,16 +99,17 @@ flex chain pinned to `100dvh` now.
 | `OpsErrorDetailsModal.vue` | 21 | `11d9fc7f` |
 | `OpsDashboard.vue` | 6 | `11d9fc7f` |
 
-`conversion-status.mjs` now reports only the two dead cards under
-`src/views/admin/ops/`. Every one of these was opened in a browser against
-seeded data and measured, not just typechecked.
+`conversion-status.mjs` now reports 129/324 converted files; the two dead ops
+cards below have been removed rather than counted as converted. Every mounted
+ops surface listed above was opened in a browser against seeded data and
+measured, not just typechecked.
 
 **To see the OpenAI token stats card at all:** it is hidden by default. Ops
 page → Settings → Advanced settings → "Display OpenAI token request stats".
 The flag lives in `getAdvancedSettings`, not in the `settings` table, so there
 is no row to flip directly.
 
-#### ⚠️ OWNER DECISION NEEDED — two ops cards are dead code
+#### ✅ Two dead ops cards removed; controls consolidated
 
 `OpsRuntimeSettingsCard.vue` (118 utils, 537L) and
 `OpsEmailNotificationCard.vue` (121 utils, 442L) have **zero references
@@ -120,29 +121,14 @@ They are superseded by `OpsSettingsDialog.vue`, which calls the same two API
 pairs (`get/updateAlertRuntimeSettings`, `get/updateEmailNotificationConfig`)
 and renders the same fields.
 
-**Not converted deliberately.** 239 utilities of markup that nothing renders
-would move the metric without moving the product, and would then read as
-"converted" forever. **Not deleted either** — reducing scope is the owner's
-call (rule 3), and there is one live consequence to weigh first:
+**Resolution:** the alert-silencing and distributed-lock controls from the dead
+runtime card are now editable in `OpsSettingsDialog.vue`, and both dead cards
+are deleted. The dialog still sends the complete runtime object to the existing
+single PUT endpoint, so fields outside the form continue to round-trip intact.
 
-> `OpsRuntimeSettingsCard` was the only UI in the product for **alert
-> silencing** (`silencing.global_until_rfc3339`, per-rule silence entries) and
-> for the **distributed lock** settings. `OpsSettingsDialog` does not render
-> either — `grep -c 'silencing\|distributed_lock' OpsSettingsDialog.vue` is 0.
-> Those fields are not lost on save (the dialog PUTs back the whole runtime
-> object it loaded, so they round-trip untouched), but they are **only
-> editable via the API**, not the dashboard.
-
-Three ways forward, owner picks:
-1. **Delete both** — accept that silencing stays API-only. One command:
-   `git rm src/views/admin/ops/components/OpsRuntimeSettingsCard.vue src/views/admin/ops/components/OpsEmailNotificationCard.vue`
-2. **Port silencing into `OpsSettingsDialog`** as a new section, then delete
-   both. Silencing becomes reachable for the first time.
-3. **Mount `OpsRuntimeSettingsCard`** somewhere and convert it — most work,
-   and re-introduces two editors for the same settings.
-
-Recommendation: **2**, then 1. Silencing an alert during a known incident is a
-real operator need, and it is currently a curl away rather than a click.
+Silencing is validated before save using the existing RFC3339, positive rule ID,
+`P0..P3` severity, and lock-key/TTL rules. Focused coverage lives in
+`OpsSettingsDialog.spec.ts`.
 
 ### 3. `SettingsView` — the elephant, 12,923 lines / 1,742 utilities
 ### ⚠️ DEFERRED — needs an owner decision before it can start. Item 4 went first.
