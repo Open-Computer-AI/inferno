@@ -418,21 +418,21 @@ export default {
         keyDeletedBadge: 'Key deleted'
       },
       requestDetails: {
-        title: 'Request Details',
+        title: 'Request details',
         details: 'Details',
         rangeLabel: 'Window: {range}',
-        rangeMinutes: '{n} minutes',
-        rangeHours: '{n} hours',
+        rangeMinutes: '{n} minute | {n} minutes',
+        rangeHours: '{n} hour | {n} hours',
         empty: 'No requests in this window.',
         emptyHint: 'Try a different time range or remove filters.',
         failedToLoad: 'Failed to load request details',
         requestIdCopied: 'Request ID copied',
         copyFailed: 'Copy failed',
         copy: 'Copy',
-        viewError: 'View Error',
+        viewError: 'View error',
         kind: {
-          success: 'SUCCESS',
-          error: 'ERROR'
+          success: 'Success',
+          error: 'Error'
         },
         table: {
           time: 'Time',
