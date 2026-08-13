@@ -28,12 +28,6 @@ vi.mock('vue-i18n', async () => {
   }
 })
 
-vi.mock('vue-chartjs', () => ({
-  Line: {
-    props: ['data', 'options'],
-    template: '<div class="chart-data">{{ JSON.stringify(data) }}</div>',
-  },
-}))
 
 // jsdom cannot resolve color-mix()/oklch(), so the real useChartTokens()
 // resolves every token to '' under test -- structurally valid, but useless

@@ -66,6 +66,12 @@ const TOUCHED_NOT_CONVERTED = [
   // utilities are part 13's job; changing them here would be a visual change to
   // an unconverted screen made blind.
   /src\/components\/modelPlaza\/PlazaNavBar\.vue$/,
+  // AccountStatsModal: its usage-trend chart was taken off Chart.js so the
+  // dependency could be dropped, which meant adding a scoped <style> block --
+  // and that is what makes june-lint treat a file as converted. The other ~650
+  // lines (summary tiles, gradients, the primary/dark palettes) are a separate
+  // job that lands with the account modals in part 14; remove this line then.
+  /src\/components\/admin\/account\/AccountStatsModal\.vue$/,
   // EmailVerifyView and LegalDocumentView: touched only for PRODUCT_NAME (and,
   // in the first, to narrow a `transition: all` that was a genuine
   // ground-rule-6 break). Their remaining weights and sizes are phase-4 work on
