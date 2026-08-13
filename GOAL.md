@@ -177,19 +177,22 @@ Once unblocked, either way:
 - It is on the june-lint `TOUCHED_NOT_CONVERTED` waiver — **remove that entry**
   when the last section lands, and confirm lint still passes with it gone.
 
-### 4. Remaining Chart.js — 4 consumers left
-`grep -rln "chart\.js" src/` should reach zero, then drop the dependency.
+### 4. Remaining Chart.js — ✅ COMPLETE
 
-- `src/components/admin/payment/DailyRevenueChart.vue` — needs `payment_enabled`
-  and order data to verify; seed before starting.
-- `src/features/channel-monitor-v2/MonitorTrendChart.vue`
-- `src/components/account/AccountStatsModal.vue` **and**
-  `src/components/admin/account/AccountStatsModal.vue` — ⚠️ these are two copies
-  of the same component (749L and 713L, different hashes, both import Chart.js).
-  **Reconcile them into one before converting**, or the work is done twice into
-  two files that keep diverging.
-- **Done when:** `grep -rln "chart\.js" src/` is empty and `chart.js` +
-  `vue-chartjs` are out of `package.json`.
+Commit `6db5fef1` removes the final runtime Chart.js consumers:
+
+- `DailyRevenueChart.vue` uses independent Dither strips per currency and for
+  order count; it was completed in `b594a5dd` with payment seed data.
+- `MonitorTrendChart.vue` uses three Dither strips while preserving zoom,
+  localization, gap handling, and the existing metric semantics.
+- The live admin `AccountStatsModal.vue` usage trend uses Dither strips. The
+  duplicate unmounted `components/account/AccountStatsModal.vue` was reconciled
+  and removed in `b594a5dd` before conversion.
+- `chart.js` and `vue-chartjs` are removed from `package.json` and the lockfile.
+
+The remaining textual references are migration comments/tests only; no runtime
+imports remain. The account modal stays on the `TOUCHED_NOT_CONVERTED` waiver
+because its other legacy sections still need the later account-modal pass.
 
 ### 5. The rest, by weight
 `node scripts/conversion-status.mjs --top 30`. Largest first, except that the
@@ -242,7 +245,7 @@ Local dev login: `admin@sub2api.local` / `36232e0cd5be929e4004e4ca025b100e`.
 
 ## Status log — append one line per landed commit
 
-| date | commit | what | files remaining |
+| date | commit | what | files converted |
 |------|--------|------|-----------------|
 | 2026-08-13 | `0ae68c16` | ops skeleton matched to the real page | 119 |
 | 2026-08-13 | `31a75e07` | shell: card scrolls, not the document | 119 |
@@ -255,3 +258,5 @@ Local dev login: `admin@sub2api.local` / `36232e0cd5be929e4004e4ca025b100e`.
 | 2026-08-13 | `6fcea767` | ops alert rules; list stops showing enum names | 123 |
 | 2026-08-13 | `263ff0b5` | ops error log table; 6 hues for a category to 0 | 124 |
 | 2026-08-13 | `11d9fc7f` | last 3 ops surfaces — **item 2 complete** | 127 |
+| 2026-08-13 | `b594a5dd` | payment revenue chart off Chart.js; duplicate account modal reconciled | 127 |
+| 2026-08-13 | `6db5fef1` | remaining Chart.js consumers removed; item 4 complete | 129 |
