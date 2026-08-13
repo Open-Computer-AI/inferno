@@ -328,23 +328,10 @@ textarea.input {
 }
 
 /*
- * Nothing in June lifts on hover. `hover:-translate-y-0.5` plus a bigger shadow
- * is the pattern the redesign exists to remove -- movement implies the surface
- * is a control, and a card is not one.
- */
-.card-hover:hover {
-  transform: none;
-  box-shadow: none;
-  border-color: var(--border-subtle);
-  background-color: var(--sidebar-accent);
-}
-
-/*
  * Ground rule 7 bans glass outright. `backdrop-blur-xl` over a translucent fill
  * is exactly what it names. These become ordinary surfaces.
  */
-.glass,
-.card-glass {
+.glass {
   border: 1px solid var(--border-subtle);
   background-color: var(--card);
   backdrop-filter: none;
