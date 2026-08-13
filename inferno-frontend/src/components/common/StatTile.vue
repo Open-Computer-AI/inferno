@@ -178,17 +178,22 @@ const contextParts = computed(() => {
       </div>
     </div>
     <p class="tile__foot" :data-tone="contextTone">
-      <i
-        v-if="contextTone !== 'muted'"
-        class="hgi-stroke tile__foot-icon"
-        :class="contextTone === 'attention' ? 'hgi-alert-circle' : 'hgi-checkmark-circle-02'"
-        aria-hidden="true"
-      />
-      <span class="tile__foot-text"
-        >{{ contextParts.before
-        }}<b v-if="contextParts.value" class="tile__foot-value">{{ contextParts.value }}</b
-        >{{ contextParts.after }}</span
-      >
+      <template v-if="$slots.context">
+        <slot name="context" />
+      </template>
+      <template v-else>
+        <i
+          v-if="contextTone !== 'muted'"
+          class="hgi-stroke tile__foot-icon"
+          :class="contextTone === 'attention' ? 'hgi-alert-circle' : 'hgi-checkmark-circle-02'"
+          aria-hidden="true"
+        />
+        <span class="tile__foot-text"
+          >{{ contextParts.before
+          }}<b v-if="contextParts.value" class="tile__foot-value">{{ contextParts.value }}</b
+          >{{ contextParts.after }}</span
+        >
+      </template>
     </p>
   </component>
 </template>
