@@ -1,5 +1,5 @@
 <template>
-  <div :class="props.embedded ? 'space-y-4' : 'card overflow-hidden'">
+  <div :class="props.embedded ? 'space-y-4' : 'surface-card overflow-hidden'">
     <div
       v-if="!props.embedded"
       class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
