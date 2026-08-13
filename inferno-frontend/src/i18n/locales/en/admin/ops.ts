@@ -96,7 +96,7 @@ export default {
       avgLatency: 'Avg Request Duration',
       avgTtft: 'Avg TTFT',
       exceptions: 'Exceptions',
-      requestErrors: 'Request Errors',
+      requestErrors: 'Request errors',
       errorCount: 'Error Count',
       upstreamErrors: 'Upstream errors',
       errorCountExcl429529: 'Error Count (excl 429/529)',
@@ -187,8 +187,8 @@ export default {
         endBeforeStart: 'End time must be after the start time.'
       },
       openaiTokenStats: {
-        title: 'OpenAI Token Request Stats',
-        viewModeTopN: 'TopN',
+        title: 'OpenAI token request stats',
+        viewModeTopN: 'Top N',
         viewModePagination: 'Pagination',
         prevPage: 'Previous',
         nextPage: 'Next',
@@ -199,18 +199,18 @@ export default {
         table: {
           model: 'Model',
           requestCount: 'Requests',
-          avgTokensPerSec: 'Avg Tokens/sec',
-          avgFirstTokenMs: 'Avg First Token Latency (ms)',
-          totalOutputTokens: 'Total Output Tokens',
-          avgDurationMs: 'Avg Duration (ms)',
-          requestsWithFirstToken: 'Requests With First Token'
+          avgTokensPerSec: 'Avg tokens/sec',
+          avgFirstTokenMs: 'Avg first token latency (ms)',
+          totalOutputTokens: 'Total output tokens',
+          avgDurationMs: 'Avg duration (ms)',
+          requestsWithFirstToken: 'Requests with first token'
         }
       },
       fullscreen: {
-        enter: 'Enter Fullscreen'
+        enter: 'Enter fullscreen'
       },
       diagnosis: {
-        title: 'Smart Diagnosis',
+        title: 'Smart diagnosis',
         footer: 'Automated diagnostic suggestions based on current metrics',
         idle: 'System is currently idle',
         idleImpact: 'No active traffic',
@@ -312,7 +312,7 @@ export default {
       // Error Details Modal
       errorDetails: {
         upstreamErrors: 'Upstream errors',
-        requestErrors: 'Request Errors',
+        requestErrors: 'Request errors',
         unresolved: 'Unresolved',
         resolved: 'Resolved',
         viewErrors: 'Errors',
