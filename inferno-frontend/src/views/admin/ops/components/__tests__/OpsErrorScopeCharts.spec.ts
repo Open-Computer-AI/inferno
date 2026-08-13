@@ -5,41 +5,9 @@ import OpsErrorDistributionChart from '../OpsErrorDistributionChart.vue'
 import DitherDonut from '@/components/charts/DitherDonut.vue'
 import OpsErrorTrendChart from '../OpsErrorTrendChart.vue'
 
-vi.mock('chart.js', () => ({
-  Chart: { register: vi.fn() },
-  ArcElement: {},
-  CategoryScale: {},
-  Filler: {},
-  Legend: {},
-  LineElement: {},
-  LinearScale: {},
-  PointElement: {},
-  Title: {},
-  Tooltip: {},
-}))
-
-vi.mock('vue-chartjs', async () => {
-  const { defineComponent } = await import('vue')
-
-  return {
-    Doughnut: defineComponent({
-      name: 'Doughnut',
-      props: {
-        data: { type: Object, required: true },
-        options: { type: Object, default: () => ({}) },
-      },
-      template: '<div class="doughnut-stub" />',
-    }),
-    Line: defineComponent({
-      name: 'LineChartStub',
-      props: {
-        data: { type: Object, required: true },
-        options: { type: Object, default: () => ({}) },
-      },
-      template: '<div class="line-stub" />',
-    }),
-  }
-})
+/* The chart.js and vue-chartjs mocks are gone: neither component imports
+   them any more, and mocking a package that is no longer a dependency
+   fails to resolve. DitherDonut/DitherArea render for real here. */
 
 vi.mock('../../utils/opsFormatters', () => ({
   formatHistoryLabel: (date: string | undefined) => date ?? '',
