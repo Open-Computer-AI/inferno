@@ -1,6 +1,6 @@
 <template>
   <div class="errlog">
-    <div class="errlog__frame" :class="flat ? '' : 'card'">
+    <div class="errlog__frame" :class="flat ? '' : 'surface-card'">
       <IpGeoBatchToolbar :ips="rows.map((r) => r.client_ip)" @failed="emit('ipGeoBatchFailed')" />
 
       <DataTable
