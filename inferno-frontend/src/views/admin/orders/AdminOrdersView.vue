@@ -2,7 +2,7 @@
   <AppLayout>
     <div class="space-y-4">
       <!-- Filters -->
-      <div class="card p-4">
+      <div class="surface-card p-4">
         <div class="flex flex-wrap items-center gap-3">
           <div class="flex-1 sm:max-w-64">
             <input v-model="orderSearch" type="text" :placeholder="t('payment.admin.searchOrders')" class="input" @input="debounceLoadOrders" />

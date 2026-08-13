@@ -3,7 +3,7 @@
     <TablePageLayout>
       <!-- Filters -->
       <template #filters>
-        <div class="card p-4 sm:p-6">
+        <div class="surface-card p-4 sm:p-6">
           <div class="flex flex-wrap items-end justify-between gap-4">
             <!-- Left: filter fields -->
             <div class="flex flex-1 flex-wrap items-end gap-4">

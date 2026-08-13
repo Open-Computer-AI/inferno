@@ -2,7 +2,7 @@
   <AppLayout>
     <div class="space-y-4">
       <!-- Filters -->
-      <div class="card p-4">
+      <div class="surface-card p-4">
         <div class="flex flex-wrap items-center gap-3">
           <Select v-model="currentFilter" :options="statusFilters" class="w-36" @change="fetchOrders" />
           <div class="flex flex-1 items-center justify-end gap-2">

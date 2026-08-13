@@ -13,12 +13,12 @@ function read(rel: string) {
 }
 
 describe('channel-monitor-v2 design system structure', () => {
-  it('user ChannelStatus V2 shell uses page-header, card, btn, tabs utilities', () => {
+  it('user ChannelStatus V2 shell uses page-header, surface-card, btn, tabs utilities', () => {
     // Route wrapper may switch V1/V2; design chrome lives on the V2 implementation.
     const src = read('views/user/ChannelStatusV2View.vue')
     expect(src).toContain('page-header')
     expect(src).toContain('page-title')
-    expect(src).toContain('class="card')
+    expect(src).toContain('class="surface-card')
     expect(src).toContain('btn btn-secondary')
     expect(src).toContain('class="tab')
     expect(src).toContain('tab-active')
