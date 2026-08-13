@@ -107,19 +107,32 @@ are comments or tests describing the migration.
 
 ## Verification performed after Claude stopped
 
-These commands were run against the current working tree:
+Implementation branch: `feat/ops-silencing-settings`
+Worktree: `/Users/saksham/OpenComputerV2/inferno-ops-silencing`
+Commit: `feat(ops): consolidate runtime alert controls` (current branch HEAD)
+
+These commands were run against the current working tree before that commit:
 
 | Check | Result |
 |---|---|
 | `npm run typecheck` | Pass, exit 0 |
 | `node scripts/june-lint.mjs` | Pass: clean across 142 converted files |
-| `npm run test:run` | Pass: 224 test files, 1,588 tests |
-| `npm run build` | Pass: built in 22.09s; existing large-chunk warnings only |
+| `npm run test:run` | Pass: 225 test files, 1,591 tests |
+| `npm run build` | Pass: built in 20.64s; existing large-chunk warnings only |
 | thin-fork gate | Pass: no `backend`, `frontend`, `deploy`, or `docs` diff against `upstream/main` |
-| conversion status | 129/326 files, 39.6%; 13,967 legacy utilities remaining |
+| conversion status | 129/324 files, 39.8%; 13,728 legacy utilities remaining |
 
 The test suite emits expected stderr from tests that deliberately exercise error
 paths, plus existing Vue/i18n warnings. They did not fail the run.
+
+`npm run lint:check` still reports the documented pre-existing
+`scripts/june-lint.mjs:145` `no-misleading-character-class` error. ESLint passes
+on the changed dialog and its focused spec; `node scripts/june-lint.mjs` is clean.
+
+The isolated Vite server started successfully for a visual check, but the
+Playwright connector could not attach because its shared Chrome instance was
+already in use by another session. The new Ops dialog therefore still needs a
+live browser pass when that instance is available.
 
 The final Chart.js changes are verified by the gates and focused code review. The
 local `/monitor` route currently has no configured channels, so a real-data browser
@@ -128,20 +141,12 @@ until channel data is seeded or a configured monitor is available.
 
 ## Remaining backlog and owner decisions
 
-### 1. Dead ops cards
+### 1. Dead ops cards — resolved
 
-`OpsRuntimeSettingsCard.vue` and `OpsEmailNotificationCard.vue` have zero references
-under `src/` and are also unmounted upstream. They are not converted or deleted.
-
-The runtime settings card contains the only UI for alert silencing and distributed
-lock settings. The live `OpsSettingsDialog` round-trips those fields but does not
-make them editable. The recommended path is:
-
-1. Port silencing controls into `OpsSettingsDialog`.
-2. Delete the two dead cards.
-3. Run all gates and record the decision in `GOAL.md`.
-
-Do not delete them silently; this is an owner/product decision.
+The two unmounted cards were removed after their alert-silencing and distributed-
+lock controls were ported into `OpsSettingsDialog.vue`. The consolidated dialog
+preserves the complete runtime payload, validates the existing RFC3339/rule/
+severity/lock constraints, and is covered by `OpsSettingsDialog.spec.ts`.
 
 ### 2. `SettingsView.vue`
 
@@ -169,12 +174,12 @@ account modals (`CreateAccountModal`, `EditAccountModal`, `BulkEditAccountModal`
 ## Exact next-session procedure
 
 1. Read `/Users/saksham/OpenComputerV2/AGENTS.md` and this handoff.
-2. Confirm `6db5fef1` and the `GOAL.md` status update are present.
+2. Confirm the Chart.js commit `6db5fef1` and the ops-consolidation commit
+   recorded below are present.
 3. If visual proof is required, seed/configure monitor data and render the monitor
    chart at both themes and at least two widths.
 4. Before any further work, rerun all six gates from `GOAL.md`.
-5. Resolve the dead-ops-card and `SettingsView` owner decisions before starting
-   either backlog item.
+5. Resolve the `SettingsView` routing decision before starting that backlog item.
 
 Useful commands:
 
