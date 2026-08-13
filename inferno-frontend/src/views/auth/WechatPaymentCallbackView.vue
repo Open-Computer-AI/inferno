@@ -1,7 +1,7 @@
 <template>
   <div class="cb-page">
     <div class="mx-auto max-w-2xl">
-      <div class="card p-6">
+      <div class="surface-card p-6">
         <h1 class="auth-title">
           {{ callbackTitleText }}
         </h1>

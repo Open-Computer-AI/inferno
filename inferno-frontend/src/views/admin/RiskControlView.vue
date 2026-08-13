@@ -58,7 +58,7 @@
           data-test="pre-block-runtime-cards"
           class="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,520px)_minmax(0,1fr)]"
         >
-          <div data-test="pre-block-sync-card" class="card">
+          <div data-test="pre-block-sync-card" class="surface-card">
             <div class="flex flex-col gap-4 border-b border-gray-100 px-6 py-4 dark:border-dark-700 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.preBlockSyncStatus') }}</h2>
@@ -85,7 +85,7 @@
             </div>
           </div>
 
-          <div data-test="pre-block-api-key-load-card" class="card">
+          <div data-test="pre-block-api-key-load-card" class="surface-card">
             <div class="flex flex-col gap-4 border-b border-gray-100 px-6 py-4 dark:border-dark-700 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.preBlockAPIKeyLoad') }}</h2>
@@ -151,7 +151,7 @@
           </div>
         </div>
 
-        <div v-if="showWorkerRuntimeCard" class="card">
+        <div v-if="showWorkerRuntimeCard" class="surface-card">
           <div class="flex flex-col gap-4 border-b border-gray-100 px-6 py-4 dark:border-dark-700 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.workerStatus') }}</h2>
@@ -230,7 +230,7 @@
           </div>
         </div>
 
-        <div class="card">
+        <div class="surface-card">
           <div class="flex flex-col gap-4 border-b border-gray-100 px-6 py-4 dark:border-dark-700">
             <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>

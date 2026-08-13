@@ -1,7 +1,7 @@
 <template>
   <div class="space-y-6">
     <!-- Date Range Filter -->
-    <div class="card p-4">
+    <div class="surface-card p-4">
       <div class="flex flex-wrap items-center gap-4">
         <div class="flex items-center gap-2">
           <span class="text-sm text-gray-700 dark:text-gray-300">{{ t('dashboard.timeRange') }}:</span>
@@ -22,7 +22,7 @@
     <!-- Charts Grid -->
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <!-- Model Distribution Chart -->
-      <div class="card relative overflow-hidden p-4">
+      <div class="surface-card relative overflow-hidden p-4">
         <div v-if="loading" class="chart-veil">
           <LoadingSpinner size="md" />
         </div>

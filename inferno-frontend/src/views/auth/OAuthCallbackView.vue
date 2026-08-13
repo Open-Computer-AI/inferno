@@ -1,7 +1,7 @@
 <template>
   <div class="cb-page">
     <div class="mx-auto max-w-2xl">
-      <div v-if="isProcessing" class="card p-6 text-center">
+      <div v-if="isProcessing" class="surface-card p-6 text-center">
         <span class="auth-spinner" aria-hidden="true"></span>
         <h1 class="mt-4 text-lg font-semibold text-gray-900 dark:text-white">
           {{ t('auth.oauth.callbackTitle') }}
@@ -11,7 +11,7 @@
         </p>
       </div>
 
-      <div v-else-if="needsRegistrationCompletion" class="card p-6">
+      <div v-else-if="needsRegistrationCompletion" class="surface-card p-6">
         <h1 class="auth-title">
           {{ t('auth.oidc.callbackTitle', { providerName }) }}
         </h1>
@@ -79,7 +79,7 @@
         </div>
       </div>
 
-      <div v-else-if="invalidCallback" class="card p-6 text-center">
+      <div v-else-if="invalidCallback" class="surface-card p-6 text-center">
         <h1 class="auth-title">
           {{ t('auth.oauth.invalidCallbackTitle') }}
         </h1>
@@ -91,7 +91,7 @@
         </button>
       </div>
 
-      <div v-else class="card p-6">
+      <div v-else class="surface-card p-6">
         <h1 class="auth-title">
           {{ t('auth.oauth.callbackTitle') }}
         </h1>
