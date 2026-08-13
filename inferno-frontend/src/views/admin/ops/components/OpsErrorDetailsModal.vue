@@ -1,8 +1,19 @@
 <script setup lang="ts">
+/**
+ * The filtered error list, which opens the single-error detail modal.
+ *
+ * ITS STYLE BLOCK WAS NOT SCOPED
+ * `.compact-select .select-trigger { @apply ... }` was injected globally the
+ * moment this component loaded, so it restyled any `.compact-select` on any
+ * route -- a modal reaching outside itself. Nothing else in src/ uses that
+ * class, so the reach was unused, but it was still there. Scoped now, with
+ * :deep() to cross into Select, which says the same thing without the reach.
+ */
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
+import Icon from '@/components/icons/Icon.vue'
 import OpsErrorLogTable from './OpsErrorLogTable.vue'
 import { opsAPI, type OpsErrorLog } from '@/api/admin/ops'
 import { buildOpsErrorTimeParams } from '../utils/opsErrorParams'
@@ -204,84 +215,174 @@ watch(
 
 <template>
   <BaseDialog :show="show" :title="modalTitle" width="full" @close="close">
-    <div class="flex h-full min-h-0 flex-col">
+    <div class="errdet">
       <!-- Filters -->
-      <div class="mb-4 flex-shrink-0 border-b border-gray-200 pb-4 dark:border-dark-700">
-        <div class="grid grid-cols-2 gap-2 md:grid-cols-8">
-          <div class="col-span-2 compact-select">
-            <div class="relative group">
-              <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                <svg
-                  class="h-3.5 w-3.5 text-gray-400 transition-colors group-focus-within:text-blue-500"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </div>
-              <input
-                v-model="q"
-                type="text"
-                class="w-full rounded-lg border-gray-200 bg-gray-50/50 py-1.5 pl-9 pr-3 text-xs font-medium text-gray-700 transition-all focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/10 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:focus:bg-dark-800"
-                :placeholder="t('admin.ops.errorDetails.searchPlaceholder')"
-              />
-            </div>
-          </div>
-
-          <div class="compact-select">
-            <Select :model-value="statusCode" :options="statusCodeSelectOptions" @update:model-value="statusCode = $event as any" />
-          </div>
-
-          <div class="compact-select">
-            <Select :model-value="phase" :options="phaseSelectOptions" @update:model-value="phase = String($event ?? '')" />
-          </div>
-
-          <div class="compact-select">
-            <Select :model-value="errorOwner" :options="ownerSelectOptions" @update:model-value="errorOwner = String($event ?? '')" />
-          </div>
-
-
-
-          <div class="compact-select">
-            <Select :model-value="viewMode" :options="viewModeSelectOptions" @update:model-value="viewMode = $event as any" />
-          </div>
-
-          <div class="flex items-center justify-end">
-            <button type="button" class="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-200 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600" @click="resetFilters">
-              {{ t('common.reset') }}
-            </button>
-          </div>
+      <div class="errdet__filters">
+        <div class="errdet__search">
+          <Icon name="search" size="xs" :stroke-width="2" class="errdet__search-icon" aria-hidden="true" />
+          <input
+            v-model="q"
+            type="search"
+            class="errdet__search-input"
+            :placeholder="t('admin.ops.errorDetails.searchPlaceholder')"
+          />
         </div>
+
+        <div class="errdet__select">
+          <Select :model-value="statusCode" :options="statusCodeSelectOptions" @update:model-value="statusCode = $event as any" />
+        </div>
+
+        <div class="errdet__select">
+          <Select :model-value="phase" :options="phaseSelectOptions" @update:model-value="phase = String($event ?? '')" />
+        </div>
+
+        <div class="errdet__select">
+          <Select :model-value="errorOwner" :options="ownerSelectOptions" @update:model-value="errorOwner = String($event ?? '')" />
+        </div>
+
+        <div class="errdet__select">
+          <Select :model-value="viewMode" :options="viewModeSelectOptions" @update:model-value="viewMode = $event as any" />
+        </div>
+
+        <button type="button" class="errdet__reset" @click="resetFilters">
+          {{ t('common.reset') }}
+        </button>
       </div>
 
       <!-- Body -->
-      <div class="flex min-h-0 flex-1 flex-col">
-        <div class="mb-2 flex-shrink-0 text-xs text-gray-500 dark:text-gray-400">
-          {{ t('admin.ops.errorDetails.total') }} {{ total }}
-        </div>
+      <div class="errdet__body">
+        <p class="errdet__count">{{ t('admin.ops.errorDetails.total') }} {{ total }}</p>
 
-          <OpsErrorLogTable
-            class="min-h-0 flex-1"
-            :rows="rows"
-            :total="total"
-            :loading="loading"
-            :page="page"
-            :page-size="pageSize"
-            @openErrorDetail="emit('openErrorDetail', $event)"
-            @sort="onSort"
-
-            @update:page="page = $event"
-            @update:pageSize="pageSize = $event"
-          />
-
+        <OpsErrorLogTable
+          class="errdet__table"
+          :rows="rows"
+          :total="total"
+          :loading="loading"
+          :page="page"
+          :page-size="pageSize"
+          @openErrorDetail="emit('openErrorDetail', $event)"
+          @sort="onSort"
+          @update:page="page = $event"
+          @update:pageSize="pageSize = $event"
+        />
       </div>
     </div>
   </BaseDialog>
 </template>
 
-<style>
-.compact-select .select-trigger {
-  @apply py-1.5 px-3 text-xs rounded-lg;
+<style scoped>
+.errdet {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.errdet__filters {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+
+/* --- search ------------------------------------------------------------- */
+
+.errdet__search {
+  position: relative;
+  flex: 1 1 240px;
+  min-width: 200px;
+}
+
+.errdet__search-icon {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  transform: translateY(-50%);
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+
+.errdet__search-input {
+  width: 100%;
+  padding: 6px 12px 6px 30px;
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  background: var(--surface-subtle);
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+  transition: background var(--motion-hover), box-shadow var(--motion-hover);
+}
+
+.errdet__search-input::placeholder {
+  color: var(--muted-foreground);
+}
+
+/* Focus was focus:border-blue-500 with a blue ring; the focus ring token is
+   the same one every other control in the product uses. */
+.errdet__search-input:focus {
+  outline: none;
+  background: var(--card);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.errdet__select {
+  flex: 0 1 140px;
+  min-width: 110px;
+}
+
+/* Was a GLOBAL rule using @apply. :deep() reaches into Select from a scoped
+   block, so the height match stays local to this modal. */
+.errdet__select :deep(.select-trigger) {
+  padding: 6px 12px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+}
+
+.errdet__reset {
+  margin-left: auto;
+  padding: 6px 12px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.errdet__reset:hover {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+
+.errdet__reset:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* --- body --------------------------------------------------------------- */
+
+.errdet__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.errdet__count {
+  flex: none;
+  margin: 0 0 8px;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.errdet__table {
+  flex: 1;
+  min-height: 0;
 }
 </style>
