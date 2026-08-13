@@ -40,6 +40,38 @@ const metricThresholds = ref<OpsMetricThresholds>({
   upstream_error_rate_percent_max: 5
 })
 
+const defaultDistributedLock = {
+  enabled: true,
+  key: 'ops:alert:evaluator:leader',
+  ttl_seconds: 30
+}
+
+const defaultSilencing = {
+  enabled: false,
+  global_until_rfc3339: '',
+  global_reason: '',
+  entries: []
+}
+
+function normalizeRuntimeSettings(runtime: OpsAlertRuntimeSettings): OpsAlertRuntimeSettings {
+  const lock = runtime.distributed_lock
+  const silencing = runtime.silencing
+  return {
+    ...runtime,
+    distributed_lock: {
+      enabled: lock?.enabled ?? defaultDistributedLock.enabled,
+      key: lock?.key ?? defaultDistributedLock.key,
+      ttl_seconds: lock?.ttl_seconds ?? defaultDistributedLock.ttl_seconds
+    },
+    silencing: {
+      enabled: silencing?.enabled ?? defaultSilencing.enabled,
+      global_until_rfc3339: silencing?.global_until_rfc3339 ?? defaultSilencing.global_until_rfc3339,
+      global_reason: silencing?.global_reason ?? defaultSilencing.global_reason,
+      entries: Array.isArray(silencing?.entries) ? silencing.entries : []
+    }
+  }
+}
+
 // 加载所有配置
 async function loadAllSettings() {
   loading.value = true
@@ -50,7 +82,7 @@ async function loadAllSettings() {
       opsAPI.getAdvancedSettings(),
       opsAPI.getMetricThresholds()
     ])
-    runtimeSettings.value = runtime
+    runtimeSettings.value = normalizeRuntimeSettings(runtime)
     emailConfig.value = email
     advancedSettings.value = advanced
     // 兼容旧 payload：后端未返回该字段时补默认值，保证表单可绑定
@@ -126,6 +158,44 @@ function removeRecipient(target: 'alert' | 'report', email: string) {
   if (idx >= 0) list.splice(idx, 1)
 }
 
+function addSilenceEntry() {
+  if (!runtimeSettings.value) return
+  runtimeSettings.value.silencing.enabled = true
+  runtimeSettings.value.silencing.entries ??= []
+  runtimeSettings.value.silencing.entries.push({
+    until_rfc3339: '',
+    reason: '',
+    severities: []
+  })
+}
+
+function removeSilenceEntry(index: number) {
+  runtimeSettings.value?.silencing.entries?.splice(index, 1)
+}
+
+function updateSilenceEntryRuleId(index: number, raw: string) {
+  const entry = runtimeSettings.value?.silencing.entries?.[index]
+  if (!entry) return
+  const trimmed = raw.trim()
+  if (!trimmed) {
+    delete entry.rule_id
+    return
+  }
+  const parsed = Number.parseInt(trimmed, 10)
+  entry.rule_id = Number.isFinite(parsed) ? parsed : undefined
+}
+
+function normalizeSilenceSeverities(input: string): string[] {
+  const allowed = new Set(['P0', 'P1', 'P2', 'P3'])
+  return [...new Set(input.split(',').map((severity) => severity.trim().toUpperCase()).filter((severity) => severity && allowed.has(severity)))]
+}
+
+function updateSilenceEntrySeverities(index: number, raw: string) {
+  const entry = runtimeSettings.value?.silencing.entries?.[index]
+  if (!entry) return
+  entry.severities = normalizeSilenceSeverities(raw)
+}
+
 // OpenAI 账号配额自动暂停：后端按 0~1 分数存储，UI 按百分比(0~100)展示
 const quotaAutoPause5hPercent = computed<number | null>({
   get() {
@@ -157,6 +227,45 @@ const validation = computed(() => {
     const evalSeconds = runtimeSettings.value.evaluation_interval_seconds
     if (!Number.isFinite(evalSeconds) || evalSeconds < 1 || evalSeconds > 86400) {
       errors.push(t('admin.ops.runtime.validation.evalIntervalRange'))
+    }
+
+    const lock = runtimeSettings.value.distributed_lock
+    if (lock.enabled) {
+      if (!lock.key || lock.key.trim().length < 3) {
+        errors.push(t('admin.ops.runtime.validation.lockKeyRequired'))
+      } else if (!lock.key.startsWith('ops:')) {
+        errors.push(t('admin.ops.runtime.validation.lockKeyPrefix', { prefix: 'ops:' }))
+      }
+      if (!Number.isFinite(lock.ttl_seconds) || lock.ttl_seconds < 1 || lock.ttl_seconds > 86400) {
+        errors.push(t('admin.ops.runtime.validation.lockTtlRange'))
+      }
+    }
+
+    const silencing = runtimeSettings.value.silencing
+    if (silencing.enabled) {
+      const globalUntil = silencing.global_until_rfc3339.trim()
+      if (globalUntil && !Number.isFinite(Date.parse(globalUntil))) {
+        errors.push(t('admin.ops.runtime.silencing.validation.timeFormat'))
+      }
+
+      for (const entry of silencing.entries ?? []) {
+        if (!entry.until_rfc3339.trim()) {
+          errors.push(t('admin.ops.runtime.silencing.entries.validation.untilRequired'))
+          break
+        }
+        if (!Number.isFinite(Date.parse(entry.until_rfc3339))) {
+          errors.push(t('admin.ops.runtime.silencing.entries.validation.untilFormat'))
+          break
+        }
+        if (entry.rule_id != null && (!Number.isInteger(entry.rule_id) || entry.rule_id <= 0)) {
+          errors.push(t('admin.ops.runtime.silencing.entries.validation.ruleIdPositive'))
+          break
+        }
+        if (entry.severities?.some((severity) => !['P0', 'P1', 'P2', 'P3'].includes(String(severity).toUpperCase()))) {
+          errors.push(t('admin.ops.runtime.silencing.entries.validation.severitiesFormat'))
+          break
+        }
+      }
     }
   }
 
@@ -260,6 +369,119 @@ async function saveAllSettings() {
               :max="86400"
               :hint="t('admin.ops.settings.evaluationIntervalHint')"
             />
+        </div>
+      </div>
+
+      <!-- Alert silencing and evaluator coordination -->
+      <div class="opsset__section" data-testid="ops-runtime-controls">
+        <h4 class="opsset__title">{{ t('admin.ops.runtime.silencing.title') }}</h4>
+
+        <div class="opsset__stack">
+          <div class="opsset__row">
+            <div>
+              <label class="opsset__row-label">{{ t('admin.ops.runtime.silencing.enabled') }}</label>
+              <p class="opsset__hint">{{ t('admin.ops.runtime.silencing.untilHint') }}</p>
+            </div>
+            <Toggle v-model="runtimeSettings.silencing.enabled" data-testid="ops-silencing-enabled" />
+          </div>
+
+          <div v-if="runtimeSettings.silencing.enabled" class="opsset__stack">
+            <div class="opsset__grid">
+              <Input
+                v-model="runtimeSettings.silencing.global_until_rfc3339"
+                :label="t('admin.ops.runtime.silencing.globalUntil')"
+                placeholder="2026-01-05T00:00:00Z"
+                data-testid="ops-silencing-global-until"
+              />
+              <Input
+                v-model="runtimeSettings.silencing.global_reason"
+                :label="t('admin.ops.runtime.silencing.reason')"
+                :placeholder="t('admin.ops.runtime.silencing.reasonPlaceholder')"
+              />
+            </div>
+
+            <div class="opsset__nested">
+              <div class="opsset__nested-header">
+                <div>
+                  <h5 class="opsset__subtitle">{{ t('admin.ops.runtime.silencing.entries.title') }}</h5>
+                  <p class="opsset__hint">{{ t('admin.ops.runtime.silencing.entries.hint') }}</p>
+                </div>
+                <Button size="sm" variant="secondary" @click="addSilenceEntry">
+                  {{ t('admin.ops.runtime.silencing.entries.add') }}
+                </Button>
+              </div>
+
+              <p v-if="!runtimeSettings.silencing.entries?.length" class="opsset__empty">
+                {{ t('admin.ops.runtime.silencing.entries.empty') }}
+              </p>
+
+              <div v-else class="opsset__stack">
+                <div v-for="(entry, index) in runtimeSettings.silencing.entries" :key="index" class="opsset__entry">
+                  <div class="opsset__nested-header">
+                    <h5 class="opsset__subtitle">
+                      {{ t('admin.ops.runtime.silencing.entries.entryTitle', { n: index + 1 }) }}
+                    </h5>
+                    <Button size="xs" variant="danger" @click="removeSilenceEntry(index)">
+                      {{ t('common.delete') }}
+                    </Button>
+                  </div>
+                  <div class="opsset__grid">
+                    <Input
+                      :model-value="entry.rule_id == null ? '' : String(entry.rule_id)"
+                      :label="t('admin.ops.runtime.silencing.entries.ruleId')"
+                      type="text"
+                      :placeholder="t('admin.ops.runtime.silencing.entries.ruleIdPlaceholder')"
+                      @update:model-value="updateSilenceEntryRuleId(index, $event)"
+                    />
+                    <Input
+                      :model-value="entry.severities?.join(', ') ?? ''"
+                      :label="t('admin.ops.runtime.silencing.entries.severities')"
+                      type="text"
+                      :placeholder="t('admin.ops.runtime.silencing.entries.severitiesPlaceholder')"
+                      @update:model-value="updateSilenceEntrySeverities(index, $event)"
+                    />
+                    <Input
+                      v-model="entry.until_rfc3339"
+                      :label="t('admin.ops.runtime.silencing.entries.until')"
+                      placeholder="2026-01-05T00:00:00Z"
+                      data-testid="ops-silencing-entry-until"
+                    />
+                    <Input
+                      v-model="entry.reason"
+                      :label="t('admin.ops.runtime.silencing.entries.reason')"
+                      :placeholder="t('admin.ops.runtime.silencing.reasonPlaceholder')"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <details class="opsset__nested">
+            <summary class="opsset__advanced-summary">{{ t('admin.ops.runtime.advancedSettingsSummary') }}</summary>
+            <div class="opsset__stack opsset__nested-content">
+              <div class="opsset__row">
+                <div>
+                  <label class="opsset__row-label">{{ t('admin.ops.runtime.lockEnabled') }}</label>
+                  <p class="opsset__hint">{{ t('admin.ops.runtime.validation.lockKeyHint', { prefix: 'ops:' }) }}</p>
+                </div>
+                <Toggle v-model="runtimeSettings.distributed_lock.enabled" data-testid="ops-lock-enabled" />
+              </div>
+              <Input
+                v-model="runtimeSettings.distributed_lock.key"
+                :label="t('admin.ops.runtime.lockKey')"
+                data-testid="ops-lock-key"
+              />
+              <NumberField
+                v-model="runtimeSettings.distributed_lock.ttl_seconds"
+                :label="t('admin.ops.runtime.lockTTLSeconds')"
+                :min="1"
+                :max="86400"
+                :integer="true"
+                data-testid="ops-lock-ttl"
+              />
+            </div>
+          </details>
         </div>
       </div>
 
@@ -692,6 +914,43 @@ async function saveAllSettings() {
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 12px;
   align-items: end;
+}
+
+.opsset__nested {
+  padding: 12px;
+  border-radius: var(--r-md);
+  background: var(--card);
+}
+
+.opsset__nested-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.opsset__nested-content {
+  padding-top: 12px;
+}
+
+.opsset__empty {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.opsset__entry {
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+}
+
+.opsset__entry .opsset__grid {
+  margin-top: 12px;
 }
 
 /* --- a setting and its switch ------------------------------------------ */
