@@ -34,6 +34,9 @@ export default {
     none: 'None',
     selectAll: 'Select all',
     noData: 'No data',
+    /* For a metadata field the pipeline never captured. Distinct from "None",
+       which means a value was recorded and it was empty. */
+    notRecorded: 'Not recorded',
     expand: 'Expand',
     collapse: 'Collapse',
     success: 'Success',

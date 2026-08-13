@@ -90,21 +90,58 @@ flex chain pinned to `100dvh` now.
 Everything on the ops page that renders on load is converted. What is left only
 appears once you open something:
 
-| file | legacy utils |
-|------|--------------|
-| `OpsEmailNotificationCard.vue` | 121 |
-| `OpsRuntimeSettingsCard.vue` | 118 |
-| `OpsSettingsDialog.vue` | 93 |
-| `OpsErrorDetailModal.vue` | 89 |
-| `OpsRequestDetailsModal.vue` | 87 |
-| `OpsAlertRulesCard.vue` | 82 |
-| `OpsErrorLogTable.vue` | 54 |
-| `OpsOpenAITokenStatsCard.vue` | 50 |
+| file | legacy utils | status |
+|------|--------------|--------|
+| `OpsSettingsDialog.vue` | 93 | done `4e716ec0` |
+| `OpsErrorDetailModal.vue` | 95 | |
+| `OpsRequestDetailsModal.vue` | 87 | |
+| `OpsAlertRulesCard.vue` | 86 | |
+| `OpsErrorLogTable.vue` | 66 | |
+| `OpsOpenAITokenStatsCard.vue` | 50 | |
+| `OpsErrorDetailsModal.vue` | 21 | |
+| `OpsDashboard.vue` | 6 | |
 
-- **Done when:** `conversion-status.mjs` reports 0 for every file under
-  `src/views/admin/ops/`.
+- **Done when:** `conversion-status.mjs` reports 0 for every **mounted** file
+  under `src/views/admin/ops/` — see the dead-code note below for the two that
+  are excluded and why.
 - Each must be **opened in the browser** and verified, not just typechecked.
   A modal that typechecks and renders blank is the failure mode here.
+
+#### ⚠️ OWNER DECISION NEEDED — two ops cards are dead code
+
+`OpsRuntimeSettingsCard.vue` (118 utils, 537L) and
+`OpsEmailNotificationCard.vue` (121 utils, 442L) have **zero references
+anywhere in `src/`** — no import, no `defineAsyncComponent`, no `<component
+:is>`. They are also unmounted in `upstream/main`; they arrived dead in
+`d464c0f0` when the upstream frontend was vendored wholesale.
+
+They are superseded by `OpsSettingsDialog.vue`, which calls the same two API
+pairs (`get/updateAlertRuntimeSettings`, `get/updateEmailNotificationConfig`)
+and renders the same fields.
+
+**Not converted deliberately.** 239 utilities of markup that nothing renders
+would move the metric without moving the product, and would then read as
+"converted" forever. **Not deleted either** — reducing scope is the owner's
+call (rule 3), and there is one live consequence to weigh first:
+
+> `OpsRuntimeSettingsCard` was the only UI in the product for **alert
+> silencing** (`silencing.global_until_rfc3339`, per-rule silence entries) and
+> for the **distributed lock** settings. `OpsSettingsDialog` does not render
+> either — `grep -c 'silencing\|distributed_lock' OpsSettingsDialog.vue` is 0.
+> Those fields are not lost on save (the dialog PUTs back the whole runtime
+> object it loaded, so they round-trip untouched), but they are **only
+> editable via the API**, not the dashboard.
+
+Three ways forward, owner picks:
+1. **Delete both** — accept that silencing stays API-only. One command:
+   `git rm src/views/admin/ops/components/OpsRuntimeSettingsCard.vue src/views/admin/ops/components/OpsEmailNotificationCard.vue`
+2. **Port silencing into `OpsSettingsDialog`** as a new section, then delete
+   both. Silencing becomes reachable for the first time.
+3. **Mount `OpsRuntimeSettingsCard`** somewhere and convert it — most work,
+   and re-introduces two editors for the same settings.
+
+Recommendation: **2**, then 1. Silencing an alert during a known incident is a
+real operator need, and it is currently a curl away rather than a click.
 
 ### 3. `SettingsView` — the elephant, 12,923 lines / 1,742 utilities
 `INFERNO-BUILD.md` archetype C says it splits into **seven routes**. Do not
