@@ -1,205 +1,40 @@
-<template>
-  <BaseDialog :show="show" :title="title" width="full" :close-on-click-outside="true" @close="close">
-    <div v-if="loading" class="flex items-center justify-center py-16">
-      <div class="flex flex-col items-center gap-3">
-        <div class="h-8 w-8 animate-spin rounded-full border-b-2 border-primary-600"></div>
-        <div class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ t('admin.ops.errorDetail.loading') }}</div>
-      </div>
-    </div>
-
-    <div v-else-if="!detail" class="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
-      {{ emptyText }}
-    </div>
-
-    <div v-else class="space-y-6 p-6">
-      <!-- Summary -->
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
-          <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.errorDetail.requestId') }}</div>
-          <div class="mt-1 break-all font-mono text-sm font-medium text-gray-900 dark:text-white">
-            {{ requestId || '—' }}
-          </div>
-        </div>
-
-        <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
-          <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.errorDetail.time') }}</div>
-          <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-            {{ formatDateTime(detail.created_at) }}
-          </div>
-        </div>
-
-        <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
-          <div class="text-xs font-bold uppercase tracking-wider text-gray-400">
-            {{ isUpstreamError(detail) ? t('admin.ops.errorDetail.account') : t('admin.ops.errorDetail.user') }}
-          </div>
-          <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-            <template v-if="isUpstreamError(detail)">
-              {{ detail.account_name || (detail.account_id != null ? String(detail.account_id) : '—') }}
-            </template>
-            <template v-else>
-              {{ detail.user_email || (detail.user_id != null ? String(detail.user_id) : '—') }}
-            </template>
-          </div>
-        </div>
-
-        <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
-          <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.errorDetail.platform') }}</div>
-          <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-            {{ detail.platform || '—' }}
-          </div>
-        </div>
-
-        <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
-          <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.errorDetail.group') }}</div>
-          <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-            {{ detail.group_name || (detail.group_id != null ? String(detail.group_id) : '—') }}
-          </div>
-        </div>
-
-        <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
-          <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.errorDetail.model') }}</div>
-          <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-            <template v-if="hasModelMapping(detail)">
-              <span class="font-mono">{{ detail.requested_model }}</span>
-              <span class="mx-1 text-gray-400">→</span>
-              <span class="font-mono text-primary-600 dark:text-primary-400">{{ detail.upstream_model }}</span>
-            </template>
-            <template v-else>
-              {{ displayModel(detail) || '—' }}
-            </template>
-          </div>
-        </div>
-
-        <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
-          <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.errorDetail.inboundEndpoint') }}</div>
-          <div class="mt-1 break-all font-mono text-sm font-medium text-gray-900 dark:text-white">
-            {{ detail.inbound_endpoint || '—' }}
-          </div>
-        </div>
-
-        <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
-          <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.errorDetail.upstreamEndpoint') }}</div>
-          <div class="mt-1 break-all font-mono text-sm font-medium text-gray-900 dark:text-white">
-            {{ detail.upstream_endpoint || '—' }}
-          </div>
-        </div>
-
-        <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
-          <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.errorDetail.status') }}</div>
-          <div class="mt-1">
-            <span :class="['inline-flex items-center rounded-lg px-2 py-1 text-xs font-black ring-1 ring-inset shadow-sm', statusClass]">
-              {{ detail.status_code }}
-            </span>
-          </div>
-        </div>
-
-        <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
-          <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.errorDetail.requestType') }}</div>
-          <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-            {{ formatRequestTypeLabel(detail.request_type) }}
-          </div>
-        </div>
-
-        <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
-          <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.errorDetail.message') }}</div>
-          <div class="mt-1 truncate text-sm font-medium text-gray-900 dark:text-white" :title="detail.message">
-            {{ detail.message || '—' }}
-          </div>
-        </div>
-
-        <div v-if="detail.api_key_prefix" class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
-          <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.errorDetail.apiKeyPrefix') }}</div>
-          <div class="mt-1 font-mono text-sm font-medium text-gray-900 dark:text-white">
-            {{ detail.api_key_prefix }}
-          </div>
-        </div>
-
-      </div>
-
-      <!-- Response content (client request -> error_body; upstream -> upstream_error_detail/message) -->
-      <div class="rounded-xl bg-gray-50 p-6 dark:bg-dark-900">
-        <h3 class="text-sm font-black uppercase tracking-wider text-gray-900 dark:text-white">{{ t('admin.ops.errorDetail.responseBody') }}</h3>
-        <pre class="mt-4 max-h-[520px] overflow-auto rounded-xl border border-gray-200 bg-white p-4 text-xs text-gray-800 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-100"><code>{{ prettyJSON(primaryResponseBody || '') }}</code></pre>
-      </div>
-
-      <!-- Upstream errors list (only for request errors) -->
-      <div v-if="showUpstreamList" class="rounded-xl bg-gray-50 p-6 dark:bg-dark-900">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <h3 class="text-sm font-black uppercase tracking-wider text-gray-900 dark:text-white">{{ t('admin.ops.errorDetails.upstreamErrors') }}</h3>
-          <div class="text-xs text-gray-500 dark:text-gray-400" v-if="correlatedUpstreamLoading">{{ t('common.loading') }}</div>
-        </div>
-
-        <div v-if="!correlatedUpstreamLoading && !correlatedUpstreamErrors.length" class="mt-3 text-sm text-gray-500 dark:text-gray-400">
-          {{ t('common.noData') }}
-        </div>
-
-        <div v-else class="mt-4 space-y-3">
-          <div
-            v-for="(ev, idx) in correlatedUpstreamErrors"
-            :key="ev.id"
-            class="rounded-xl border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800"
-          >
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <div class="text-xs font-black text-gray-900 dark:text-white">
-                #{{ idx + 1 }}
-                <span v-if="ev.type" class="ml-2 rounded-md bg-gray-100 px-2 py-0.5 font-mono text-[10px] font-bold text-gray-700 dark:bg-dark-700 dark:text-gray-200">{{ ev.type }}</span>
-              </div>
-              <div class="flex items-center gap-2">
-                <div class="font-mono text-xs text-gray-500 dark:text-gray-400">
-                  {{ ev.status_code ?? '—' }}
-                </div>
-                <button
-                  type="button"
-                  class="inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[10px] font-bold text-primary-700 hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-primary-200 dark:hover:bg-dark-700"
-                  :disabled="!getUpstreamResponsePreview(ev)"
-                  :title="getUpstreamResponsePreview(ev) ? '' : t('common.noData')"
-                  @click="toggleUpstreamDetail(ev.id)"
-                >
-                  <Icon
-                    :name="expandedUpstreamDetailIds.has(ev.id) ? 'chevronDown' : 'chevronRight'"
-                    size="xs"
-                    :stroke-width="2"
-                  />
-                  <span>
-                    {{
-                      expandedUpstreamDetailIds.has(ev.id)
-                        ? t('admin.ops.errorDetail.responsePreview.collapse')
-                        : t('admin.ops.errorDetail.responsePreview.expand')
-                    }}
-                  </span>
-                </button>
-              </div>
-            </div>
-
-            <div class="mt-3 grid grid-cols-1 gap-2 text-xs text-gray-600 dark:text-gray-300 sm:grid-cols-2">
-              <div>
-                <span class="text-gray-400">{{ t('admin.ops.errorDetail.upstreamEvent.status') }}:</span>
-                <span class="ml-1 font-mono">{{ ev.status_code ?? '—' }}</span>
-              </div>
-              <div>
-                <span class="text-gray-400">{{ t('admin.ops.errorDetail.upstreamEvent.requestId') }}:</span>
-                <span class="ml-1 font-mono">{{ ev.request_id || ev.client_request_id || '—' }}</span>
-              </div>
-            </div>
-
-            <div v-if="ev.message" class="mt-3 break-words text-sm font-medium text-gray-900 dark:text-white">{{ ev.message }}</div>
-
-            <pre
-              v-if="expandedUpstreamDetailIds.has(ev.id)"
-              class="mt-3 max-h-[240px] overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-800 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-100"
-            ><code>{{ prettyJSON(getUpstreamResponsePreview(ev)) }}</code></pre>
-          </div>
-        </div>
-      </div>
-    </div>
-  </BaseDialog>
-</template>
-
 <script setup lang="ts">
+/**
+ * One failed request, in full.
+ *
+ * TWELVE CARDS BECOME A DEFINITION LIST
+ * Every field here -- request id, platform, group, model, both endpoints --
+ * used to be its own `rounded-xl bg-gray-50 p-4` tile in a four-column grid.
+ * Card weight is a signal: it says "this is a distinct thing that deserves its
+ * own surface". Spent on all twelve key/value pairs at once it signals nothing
+ * and costs about 48px of chrome per fact. These are metadata, so they are a
+ * `<dl>` now, which says the same thing in roughly a third of the height.
+ *
+ * THE MESSAGE WAS THE LEAST PROMINENT THING ON THE SCREEN
+ * `detail.message` -- the actual error text, the reason anyone opens this
+ * modal -- sat in a quarter-width tile under `truncate`, so the full text was
+ * reachable only as a native `title` tooltip. `platform` got equal billing.
+ * Message and status code are the header now; everything else is reference
+ * material below them.
+ *
+ * EMPTY FIELDS KEEP THEIR ROW
+ * A blank where a correlation id should be is itself a finding: it means the
+ * request never got one and cannot be traced. So a missing value renders as
+ * "not recorded" rather than dropping the row. (It also cannot render as an
+ * em dash any more -- ground rule 2.)
+ *
+ * 429 WAS PURPLE
+ * The status chip ramped red / purple / amber. Purple carries no meaning in
+ * this palette. It follows the same convention as the system log now: 5xx is
+ * destructive because the provider or we broke, any other 4xx including 429 is
+ * attention because it is expected traffic being refused, and anything else is
+ * neutral.
+ */
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
+import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import { useAppStore } from '@/stores'
 import { opsAPI, type OpsErrorDetail } from '@/api/admin/ops'
 import { formatDateTime } from '@/utils/format'
@@ -231,9 +66,6 @@ const requestId = computed(() => detail.value?.request_id || detail.value?.clien
 const primaryResponseBody = computed(() => {
   return resolvePrimaryResponseBody(detail.value, props.errorType)
 })
-
-
-
 
 const title = computed(() => {
   if (!props.errorId) return t('admin.ops.errorDetail.title')
@@ -273,6 +105,85 @@ function displayModel(d: OpsErrorDetail | null): string {
   if (requested) return requested
   return String(d.model || '').trim()
 }
+
+/**
+ * `from`/`to` is set only for the model row, which is the one field that is a
+ * mapping rather than a value -- "you asked for X, we sent Y". Everything else
+ * is a plain string.
+ */
+type MetaField = {
+  key: string
+  label: string
+  value: string
+  mono?: boolean
+  from?: string
+  to?: string
+}
+
+const metaFields = computed<MetaField[]>(() => {
+  const d = detail.value
+  if (!d) return []
+
+  const upstream = isUpstreamError(d)
+
+  const fields: MetaField[] = [
+    { key: 'requestId', label: t('admin.ops.errorDetail.requestId'), value: requestId.value, mono: true },
+    { key: 'time', label: t('admin.ops.errorDetail.time'), value: formatDateTime(d.created_at) },
+    {
+      key: 'principal',
+      label: upstream ? t('admin.ops.errorDetail.account') : t('admin.ops.errorDetail.user'),
+      value: upstream
+        ? d.account_name || (d.account_id != null ? String(d.account_id) : '')
+        : d.user_email || (d.user_id != null ? String(d.user_id) : '')
+    },
+    { key: 'platform', label: t('admin.ops.errorDetail.platform'), value: d.platform || '' },
+    {
+      key: 'group',
+      label: t('admin.ops.errorDetail.group'),
+      value: d.group_name || (d.group_id != null ? String(d.group_id) : '')
+    },
+    hasModelMapping(d)
+      ? {
+          key: 'model',
+          label: t('admin.ops.errorDetail.model'),
+          value: '',
+          mono: true,
+          from: String(d.requested_model || '').trim(),
+          to: String(d.upstream_model || '').trim()
+        }
+      : { key: 'model', label: t('admin.ops.errorDetail.model'), value: displayModel(d), mono: true },
+    {
+      key: 'inbound',
+      label: t('admin.ops.errorDetail.inboundEndpoint'),
+      value: d.inbound_endpoint || '',
+      mono: true
+    },
+    {
+      key: 'upstreamEndpoint',
+      label: t('admin.ops.errorDetail.upstreamEndpoint'),
+      value: d.upstream_endpoint || '',
+      mono: true
+    },
+    {
+      key: 'requestType',
+      label: t('admin.ops.errorDetail.requestType'),
+      value: formatRequestTypeLabel(d.request_type)
+    }
+  ]
+
+  /* Only present when the request carried a key at all, so an absent row here
+     is not "not recorded", it is "not applicable". Stays conditional. */
+  if (d.api_key_prefix) {
+    fields.push({
+      key: 'apiKeyPrefix',
+      label: t('admin.ops.errorDetail.apiKeyPrefix'),
+      value: d.api_key_prefix,
+      mono: true
+    })
+  }
+
+  return fields
+})
 
 const correlatedUpstream = ref<OpsErrorDetail[]>([])
 const correlatedUpstreamLoading = ref(false)
@@ -358,12 +269,419 @@ watch(
   { immediate: true }
 )
 
-const statusClass = computed(() => {
+/* Same convention as the system log's level badge: destructive only when the
+   thing that failed was the provider or us. A 4xx is the caller being told no,
+   which is worth seeing but is not an alarm. */
+const statusTone = computed(() => {
   const code = detail.value?.status_code ?? 0
-  if (code >= 500) return 'bg-red-50 text-red-700 ring-red-600/20 dark:bg-red-900/30 dark:text-red-400 dark:ring-red-500/30'
-  if (code === 429) return 'bg-purple-50 text-purple-700 ring-purple-600/20 dark:bg-purple-900/30 dark:text-purple-400 dark:ring-purple-500/30'
-  if (code >= 400) return 'bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-900/30 dark:text-amber-400 dark:ring-amber-500/30'
-  return 'bg-gray-50 text-gray-700 ring-gray-600/20 dark:bg-gray-900/30 dark:text-gray-400 dark:ring-gray-500/30'
+  if (code >= 500) return 'error'
+  if (code >= 400) return 'warn'
+  return undefined
 })
 
+function upstreamStatusTone(code: number | null | undefined) {
+  const n = code ?? 0
+  if (n >= 500) return 'error'
+  if (n >= 400) return 'warn'
+  return undefined
+}
 </script>
+
+<template>
+  <BaseDialog :show="show" :title="title" width="full" :close-on-click-outside="true" @close="close">
+    <div v-if="loading" class="errd__state">
+      <LoadingSpinner size="md" />
+      <p class="errd__state-text">{{ t('admin.ops.errorDetail.loading') }}</p>
+    </div>
+
+    <div v-else-if="!detail" class="errd__state errd__state--empty">
+      {{ emptyText }}
+    </div>
+
+    <div v-else class="errd">
+      <!-- The two things you opened this modal for. -->
+      <div class="errd__head">
+        <span class="errd__status" :data-tone="statusTone">{{ detail.status_code }}</span>
+        <p class="errd__message" :data-empty="detail.message ? undefined : true">
+          {{ detail.message || t('common.notRecorded') }}
+        </p>
+      </div>
+
+      <dl class="errd__meta">
+        <div v-for="f in metaFields" :key="f.key" class="errd__field">
+          <dt class="errd__label">{{ f.label }}</dt>
+          <dd class="errd__value" :class="{ 'errd__value--mono': f.mono }">
+            <template v-if="f.from">
+              <span>{{ f.from }}</span>
+              <span class="errd__arrow" aria-hidden="true">&rarr;</span>
+              <span>{{ f.to }}</span>
+            </template>
+            <template v-else-if="f.value">{{ f.value }}</template>
+            <span v-else class="errd__absent">{{ t('common.notRecorded') }}</span>
+          </dd>
+        </div>
+      </dl>
+
+      <!-- Response content (client request -> error_body; upstream -> upstream_error_detail/message) -->
+      <section class="errd__section">
+        <h3 class="errd__section-title">{{ t('admin.ops.errorDetail.responseBody') }}</h3>
+        <pre class="errd__code"><code>{{ prettyJSON(primaryResponseBody || '') }}</code></pre>
+      </section>
+
+      <!-- Upstream errors list (only for request errors) -->
+      <section v-if="showUpstreamList" class="errd__section">
+        <div class="errd__section-head">
+          <h3 class="errd__section-title">{{ t('admin.ops.errorDetails.upstreamErrors') }}</h3>
+          <span v-if="correlatedUpstreamLoading" class="errd__section-note">{{ t('common.loading') }}</span>
+        </div>
+
+        <p v-if="!correlatedUpstreamLoading && !correlatedUpstreamErrors.length" class="errd__section-note">
+          {{ t('common.noData') }}
+        </p>
+
+        <div v-else class="errd__events">
+          <article v-for="(ev, idx) in correlatedUpstreamErrors" :key="ev.id" class="errd__event">
+            <div class="errd__event-head">
+              <div class="errd__event-id">
+                <span class="errd__event-index">#{{ idx + 1 }}</span>
+                <span v-if="ev.type" class="errd__event-type">{{ ev.type }}</span>
+              </div>
+              <div class="errd__event-actions">
+                <span class="errd__event-status" :data-tone="upstreamStatusTone(ev.status_code)">
+                  <template v-if="ev.status_code != null">{{ ev.status_code }}</template>
+                  <template v-else>{{ t('common.notRecorded') }}</template>
+                </span>
+                <button
+                  type="button"
+                  class="errd__toggle"
+                  :disabled="!getUpstreamResponsePreview(ev)"
+                  :title="getUpstreamResponsePreview(ev) ? '' : t('common.noData')"
+                  :aria-expanded="expandedUpstreamDetailIds.has(ev.id)"
+                  @click="toggleUpstreamDetail(ev.id)"
+                >
+                  <Icon
+                    :name="expandedUpstreamDetailIds.has(ev.id) ? 'chevronDown' : 'chevronRight'"
+                    size="xs"
+                    :stroke-width="2"
+                  />
+                  <span>
+                    {{
+                      expandedUpstreamDetailIds.has(ev.id)
+                        ? t('admin.ops.errorDetail.responsePreview.collapse')
+                        : t('admin.ops.errorDetail.responsePreview.expand')
+                    }}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <p v-if="ev.message" class="errd__event-message">{{ ev.message }}</p>
+
+            <dl class="errd__event-meta">
+              <div class="errd__field">
+                <dt class="errd__label">{{ t('admin.ops.errorDetail.upstreamEvent.requestId') }}</dt>
+                <dd class="errd__value errd__value--mono">
+                  <template v-if="ev.request_id || ev.client_request_id">
+                    {{ ev.request_id || ev.client_request_id }}
+                  </template>
+                  <span v-else class="errd__absent">{{ t('common.notRecorded') }}</span>
+                </dd>
+              </div>
+            </dl>
+
+            <pre
+              v-if="expandedUpstreamDetailIds.has(ev.id)"
+              class="errd__code errd__code--nested"
+            ><code>{{ prettyJSON(getUpstreamResponsePreview(ev)) }}</code></pre>
+          </article>
+        </div>
+      </section>
+    </div>
+  </BaseDialog>
+</template>
+
+<style scoped>
+.errd {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* --- states ------------------------------------------------------------- */
+
+.errd__state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 56px 0;
+}
+
+.errd__state-text,
+.errd__state--empty {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-md);
+}
+
+/* --- head: status + message --------------------------------------------- */
+
+.errd__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.errd__status {
+  flex: none;
+  padding: 3px 9px;
+  border-radius: var(--r-sm);
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+
+.errd__status[data-tone='error'] {
+  background: color-mix(in oklch, var(--destructive) 15%, var(--card));
+  color: var(--destructive);
+}
+
+.errd__status[data-tone='warn'] {
+  background: var(--s2a-attn-soft);
+  color: var(--s2a-attn);
+}
+
+/* No truncation. An error message that does not fit is still the most useful
+   text on the screen, and `anywhere` keeps an unbroken stack trace from
+   pushing the dialog sideways. */
+.errd__message {
+  margin: 0;
+  color: var(--foreground);
+  /* --fs-xl against the meta list's --fs-sm. --fs-lg was only 14px to their
+     12px, which is not enough separation to read as the headline it is. */
+  font-size: var(--fs-xl);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.errd__message[data-empty] {
+  color: var(--muted-foreground);
+}
+
+/* --- metadata ----------------------------------------------------------- */
+
+.errd__meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 0 28px;
+  margin: 0;
+  padding-top: 14px;
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.errd__field {
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.errd__label {
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.errd__value {
+  min-width: 0;
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.errd__value--mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.errd__arrow {
+  margin: 0 5px;
+  color: var(--muted-foreground);
+}
+
+.errd__absent {
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+}
+
+/* --- sections ----------------------------------------------------------- */
+
+.errd__section {
+  padding-top: 14px;
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.errd__section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.errd__section-title {
+  margin: 0 0 10px;
+  color: var(--foreground);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+
+.errd__section-head .errd__section-title {
+  margin-bottom: 10px;
+}
+
+.errd__section-note {
+  margin: 0 0 10px;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.errd__code {
+  max-height: 460px;
+  margin: 0;
+  overflow: auto;
+  padding: 12px 14px;
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+  color: var(--body-copy);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+}
+
+.errd__code--nested {
+  max-height: 240px;
+  margin-top: 10px;
+  background: var(--card);
+}
+
+/* --- correlated upstream events ----------------------------------------- */
+
+.errd__events {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.errd__event {
+  padding: 12px 14px;
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--r-md);
+}
+
+.errd__event-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.errd__event-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.errd__event-index {
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.errd__event-type {
+  padding: 2px 7px;
+  border-radius: var(--r-xs);
+  background: var(--surface-subtle);
+  color: var(--body-copy);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+}
+
+.errd__event-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.errd__event-status {
+  padding: 2px 7px;
+  border-radius: var(--r-xs);
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.errd__event-status[data-tone='error'] {
+  background: color-mix(in oklch, var(--destructive) 15%, var(--card));
+  color: var(--destructive);
+}
+
+.errd__event-status[data-tone='warn'] {
+  background: var(--s2a-attn-soft);
+  color: var(--s2a-attn);
+}
+
+.errd__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  border: none;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: var(--fs-2xs);
+  cursor: pointer;
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.errd__toggle:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+
+.errd__toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.errd__toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.errd__event-message {
+  margin: 10px 0 0;
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.errd__event-meta {
+  margin: 6px 0 0;
+}
+</style>
