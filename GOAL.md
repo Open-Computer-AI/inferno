@@ -86,11 +86,7 @@ flex chain pinned to `100dvh` now.
 - **Risk:** touches every admin table page. Measure `.tpl` on at least
   `/admin/users`, `/admin/accounts`, `/admin/audit-logs` before and after.
 
-### 2. Finish ops — the modal-only surfaces
-Everything on the ops page that renders on load is converted. What is left only
-appears once you open something:
-
-### ✅ COMPLETE — every mounted file under `src/views/admin/ops/` is converted.
+### 2. Finish ops — the modal-only surfaces — ✅ COMPLETE — every mounted file under `src/views/admin/ops/` is converted.
 
 | file | legacy utils | commit |
 |------|--------------|--------|
@@ -99,9 +95,9 @@ appears once you open something:
 | `OpsRequestDetailsModal.vue` | 87 | `755828bc` |
 | `OpsAlertRulesCard.vue` | 86 | `6fcea767` |
 | `OpsErrorLogTable.vue` | 66 | `263ff0b5` |
-| `OpsOpenAITokenStatsCard.vue` | 50 | see below |
-| `OpsErrorDetailsModal.vue` | 21 | see below |
-| `OpsDashboard.vue` | 6 | see below |
+| `OpsOpenAITokenStatsCard.vue` | 50 | `11d9fc7f` |
+| `OpsErrorDetailsModal.vue` | 21 | `11d9fc7f` |
+| `OpsDashboard.vue` | 6 | `11d9fc7f` |
 
 `conversion-status.mjs` now reports only the two dead cards under
 `src/views/admin/ops/`. Every one of these was opened in a browser against
@@ -149,15 +145,37 @@ Recommendation: **2**, then 1. Silencing an alert during a known incident is a
 real operator need, and it is currently a curl away rather than a click.
 
 ### 3. `SettingsView` — the elephant, 12,923 lines / 1,742 utilities
-`INFERNO-BUILD.md` archetype C says it splits into **seven routes**. Do not
-attempt it as one pass.
+### ⚠️ DEFERRED — needs an owner decision before it can start. Item 4 went first.
 
-- Read the archetype C section of `INFERNO-BUILD.md` first.
-- Split the routes **before** restyling. A 12,923-line file cannot be reviewed;
-  seven files can.
-- One route per commit, each passing all six gates.
+**Correction:** this file previously said "seven routes". `INFERNO-BUILD.md`
+line 1434 says **nine**. That line is the source of truth.
+
+**Why it is blocked and not merely large.** The same line states: *"part 14
+wants a redirect from the old URL and a release note, since admin bookmarks
+break."* Splitting `/admin/settings` into nine routes is a user-facing
+navigation change that invalidates every bookmark and deep link an operator
+has. That is a product decision, not a styling one, and it is not something to
+land silently overnight.
+
+Owner picks one:
+1. **Nine real routes** (`/admin/settings/general`, `/security`, …) with a
+   redirect from `/admin/settings` to the first tab, plus a release note.
+   Matches archetype C. Bookmarks to the bare URL survive via the redirect;
+   nothing else does, because nothing else exists today.
+2. **Nine components, one route**, selected by a tab or a `?tab=` query. Zero
+   URL breakage, the 12,923-line file still becomes nine reviewable files, and
+   the review problem is solved. Loses the clean per-section URL.
+3. **Restyle in place** without splitting. Cheapest, but a 12,923-line SFC
+   cannot be meaningfully reviewed, which is the reason the split was proposed.
+
+Recommendation: **2**. It captures the entire reviewability win, which is the
+actual blocker, at zero cost to anyone's bookmarks, and 1 stays available later
+as a pure routing change once the components already exist.
+
+Once unblocked, either way:
+- Split **before** restyling. One section per commit, all six gates each.
 - It is on the june-lint `TOUCHED_NOT_CONVERTED` waiver — **remove that entry**
-  when the last route lands, and confirm the lint still passes with it gone.
+  when the last section lands, and confirm lint still passes with it gone.
 
 ### 4. Remaining Chart.js — 4 consumers left
 `grep -rln "chart\.js" src/` should reach zero, then drop the dependency.
@@ -229,4 +247,11 @@ Local dev login: `admin@sub2api.local` / `36232e0cd5be929e4004e4ca025b100e`.
 | 2026-08-13 | `0ae68c16` | ops skeleton matched to the real page | 119 |
 | 2026-08-13 | `31a75e07` | shell: card scrolls, not the document | 119 |
 | 2026-08-13 | `384cd7d0` | card scrollbar hidden, padding squared | 119 |
-| 2026-08-13 | _this_ | dashboard user-trend chart off Chart.js | 118 |
+| 2026-08-13 | `35aab418` | dashboard user-trend chart off Chart.js | 118 |
+| 2026-08-13 | `caeb742f` | TablePageLayout derives its height (item 1) | 118 |
+| 2026-08-13 | `4e716ec0` | ops settings dialog + NumberField primitive | 120 |
+| 2026-08-13 | `2bff989f` | ops error detail modal; 12 cards to a `<dl>` | 121 |
+| 2026-08-13 | `755828bc` | ops request details; colour off the default state | 122 |
+| 2026-08-13 | `6fcea767` | ops alert rules; list stops showing enum names | 123 |
+| 2026-08-13 | `263ff0b5` | ops error log table; 6 hues for a category to 0 | 124 |
+| 2026-08-13 | `11d9fc7f` | last 3 ops surfaces — **item 2 complete** | 127 |
