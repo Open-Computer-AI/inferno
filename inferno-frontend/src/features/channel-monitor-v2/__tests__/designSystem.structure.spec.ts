@@ -47,9 +47,9 @@ describe('channel-monitor-v2 design system structure', () => {
 
   it('RelayPulseMatrix uses card chrome, matrix scroll, and hover tooltips (no click modal)', () => {
     const src = read('features/channel-monitor-v2/RelayPulseMatrix.vue')
-    expect(src).toContain('class="card')
-    expect(src).toContain('card-header')
-    expect(src).toContain('card-body')
+    expect(src).toContain('class="surface-card')
+    expect(src).toContain('surface-card-header')
+    expect(src).toContain('surface-card-body')
     expect(src).toContain('matrix-scroll')
     expect(src).toMatch(/max-h-\[min\(42vh/)
     expect(src).toContain('overflow-auto')
@@ -60,12 +60,12 @@ describe('channel-monitor-v2 design system structure', () => {
     expect(src).not.toContain('modal-content')
   })
 
-  it('MetricCell uses stat-card utility', () => {
+  it('MetricCell uses surface-card utility', () => {
     const src = read('features/channel-monitor-v2/MetricCell.vue')
-    expect(src).toContain('stat-card')
+    expect(src).toContain('surface-card')
     expect(src).toContain('stat-label')
     expect(src).toContain('stat-value')
-    expect(src).toContain('rounded-3xl')
+    expect(src).toContain('min-h-[6.5rem]')
   })
 
   it('MonitorTrendChart uses Ops chart shell tokens', () => {
@@ -94,11 +94,11 @@ describe('channel-monitor-v2 design system structure', () => {
     expect(src).toContain('dropdown-item')
   })
 
-  it('MonitorSettingsPanel uses page-header, card, btn-primary, tabs', () => {
+  it('MonitorSettingsPanel uses page-header, surface-card, btn-primary, tabs', () => {
     const src = read('features/channel-monitor-v2/MonitorSettingsPanel.vue')
     expect(src).toContain('page-header')
     expect(src).toContain('btn btn-primary')
-    expect(src).toContain('class="card')
+    expect(src).toContain('class="surface-card')
     expect(src).toContain('tab-active')
     expect(src).toMatch(/max-h-\[min\(40vh/)
   })
