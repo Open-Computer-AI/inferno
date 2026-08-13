@@ -140,7 +140,7 @@ onMounted(async () => {
 
 <template>
   <div class="trend">
-    <div class="trend__card trend__head">
+    <div class="surface-card trend__head">
       <span class="trend__title">
         <i class="hgi-stroke hgi-chart-line-data-01 trend__title-icon" aria-hidden="true" />
         {{ t('admin.dashboard.tokenTrend.title') }}
@@ -157,7 +157,7 @@ onMounted(async () => {
       </p>
     </div>
 
-    <div class="trend__card trend__body">
+    <div class="surface-card trend__body">
       <div v-if="!loading && !values.length" class="trend__empty">
         {{ t('admin.dashboard.noDataAvailable') }}
       </div>
@@ -203,20 +203,11 @@ onMounted(async () => {
 .trend {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 6px;
-  border-radius: 14px;
-  background: color-mix(in oklch, var(--card) 96%, var(--foreground));
-  box-shadow: 0 24px 50px -34px rgb(15 23 42 / 0.3);
-}
-
-.trend__card {
-  border-radius: 10px;
-  background: var(--card);
-  box-shadow:
-    0 0 1.76px rgb(0 0 0 / 0.08),
-    0 1px 1.76px rgb(25 28 33 / 0.06),
-    0 0 0 1px rgb(25 28 33 / 0.04);
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-xl);
+  background: var(--surface-subtle);
 }
 
 .trend__head {
