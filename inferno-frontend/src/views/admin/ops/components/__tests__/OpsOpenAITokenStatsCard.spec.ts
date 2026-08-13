@@ -210,7 +210,18 @@ describe('OpsOpenAITokenStatsCard', () => {
     })
     await flushPromises()
 
-    expect(wrapper.find('.max-h-\\[420px\\]').exists()).toBe(true)
+    /*
+     * Was `.max-h-[420px]`, a Tailwind class this component no longer carries --
+     * the bound moved into scoped CSS (`.oaits__scroll { max-height: 420px }`).
+     * jsdom does not apply SFC scoped styles, so neither this assertion nor the
+     * old one can observe the computed height; both are proxies for "the
+     * designated scroll region is present". Same strength, current name, plus a
+     * containment check the old assertion did not make: the bound is worthless
+     * if the table is not actually inside it.
+     */
+    const scroll = wrapper.find('.oaits__scroll')
+    expect(scroll.exists()).toBe(true)
+    expect(scroll.find('table').exists()).toBe(true)
   })
 
   it('接口异常时显示错误提示', async () => {
