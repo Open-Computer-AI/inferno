@@ -262,7 +262,7 @@ onMounted(async () => {
 
 <template>
   <div class="mmix">
-    <div class="mmix__card mmix__head">
+    <div class="surface-card mmix__head">
       <div class="mmix__head-row">
         <span class="mmix__title">
           <i class="hgi-stroke hgi-chart-bar-big mmix__title-icon" aria-hidden="true" />
@@ -281,7 +281,7 @@ onMounted(async () => {
       <p class="mmix__sub">{{ subline }}</p>
     </div>
 
-    <div class="mmix__card mmix__body">
+    <div class="surface-card mmix__body">
       <ul class="mmix__legend">
         <li
           v-for="(item, i) in legend"
@@ -346,20 +346,11 @@ onMounted(async () => {
 .mmix {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 6px;
-  border-radius: 14px;
-  background: color-mix(in oklch, var(--card) 96%, var(--foreground));
-  box-shadow: 0 24px 50px -34px rgb(15 23 42 / 0.3);
-}
-
-.mmix__card {
-  border-radius: 10px;
-  background: var(--card);
-  box-shadow:
-    0 0 1.76px rgb(0 0 0 / 0.08),
-    0 1px 1.76px rgb(25 28 33 / 0.06),
-    0 0 0 1px rgb(25 28 33 / 0.04);
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-xl);
+  background: var(--surface-subtle);
 }
 
 .mmix__head {
