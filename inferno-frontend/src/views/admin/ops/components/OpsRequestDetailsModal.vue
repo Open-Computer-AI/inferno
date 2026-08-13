@@ -1,9 +1,35 @@
 <script setup lang="ts">
+/**
+ * The requests behind a chart click, as a paged table.
+ *
+ * COLOUR WAS ON THE DEFAULT STATE, AND ON THE WRONG COLUMN
+ * `kindBadgeClass` returned a green pill for anything that was not an error,
+ * so a table that is mostly successful requests rendered a column of green.
+ * Colour spent on the common case is not a signal, it is texture, and it stops
+ * the rare case from standing out -- the same defect the system log had when
+ * `info` painted a blue pill on 7,724 of its 7,739 rows.
+ *
+ * Worse, the tone was on the column that needed it least. `kind` and
+ * `status_code` say nearly the same thing, but `kind` got the colour while the
+ * status code -- where 503 and 429 and 400 genuinely differ -- was plain grey
+ * text. The tone moved to the status code, which follows the same convention
+ * as the error detail modal and the system log: >=500 destructive, >=400
+ * attention, otherwise nothing.
+ *
+ * The kind column stays. It is not redundant in every case (a network failure
+ * is `error` with no status code at all), and dropping a column to tidy a
+ * layout is not this pass's call to make. It just no longer shouts on success.
+ *
+ * PLATFORM WAS SHOUTING
+ * `(row.platform || 'unknown').toUpperCase()` rendered ANTHROPIC, OPENAI. An
+ * all-caps transform is both harder to read and against ground rule 1.
+ */
 import { computed, ref, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Pagination from '@/components/common/Pagination.vue'
+import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { useAppStore } from '@/stores'
 import { opsAPI, type OpsRequestDetailsParams, type OpsRequestDetail } from '@/api/admin/ops'
@@ -46,10 +72,15 @@ const pageSize = ref(10)
 
 const close = () => emit('update:modelValue', false)
 
+/* Pluralised: a 60 minute window read "Window: 1 hours". Chinese carries a
+   single form, which vue-i18n returns unchanged for any count. */
 const rangeLabel = computed(() => {
   const minutes = parseTimeRangeMinutes(props.timeRange)
-  if (minutes >= 60) return t('admin.ops.requestDetails.rangeHours', { n: Math.round(minutes / 60) })
-  return t('admin.ops.requestDetails.rangeMinutes', { n: minutes })
+  if (minutes >= 60) {
+    const hours = Math.round(minutes / 60)
+    return t('admin.ops.requestDetails.rangeHours', hours, { named: { n: hours } })
+  }
+  return t('admin.ops.requestDetails.rangeMinutes', minutes, { named: { n: minutes } })
 })
 
 function buildTimeParams(): Pick<OpsRequestDetailsParams, 'start_time' | 'end_time'> {
@@ -146,165 +177,152 @@ function openErrorDetail(errorId: number | null | undefined) {
   emit('openErrorDetail', errorId)
 }
 
-const kindBadgeClass = (kind: string) => {
-  if (kind === 'error') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
-  return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+/* A real identifier beats the array index: paging replaces the whole array, and
+   keying on position makes Vue patch row 1's DOM into row 1 of the next page. */
+function rowKey(row: OpsRequestDetail, idx: number) {
+  return row.request_id || (row.error_id != null ? `e${row.error_id}` : `i${idx}`)
+}
+
+/* Same ladder as OpsErrorDetailModal and the system log's level badge. A 4xx is
+   the caller being refused, which is worth seeing but is not an alarm. */
+function statusTone(code: number | null | undefined) {
+  const n = code ?? 0
+  if (n >= 500) return 'error'
+  if (n >= 400) return 'warn'
+  return undefined
+}
+
+function kindLabel(kind: string) {
+  return kind === 'error'
+    ? t('admin.ops.requestDetails.kind.error')
+    : t('admin.ops.requestDetails.kind.success')
+}
+
+function durationLabel(ms: number | null | undefined) {
+  return typeof ms === 'number' ? `${ms} ms` : '-'
 }
 </script>
 
 <template>
   <BaseDialog :show="modelValue" :title="props.preset.title || t('admin.ops.requestDetails.title')" width="full" @close="close">
     <template #default>
-      <div class="flex h-full min-h-0 flex-col">
-        <div class="mb-4 flex flex-shrink-0 items-center justify-between">
-          <div class="text-xs text-gray-500 dark:text-gray-400">
-            {{ t('admin.ops.requestDetails.rangeLabel', { range: rangeLabel }) }}
-          </div>
-          <button
-            type="button"
-            class="btn btn-secondary btn-sm"
-            @click="fetchData"
-          >
+      <div class="reqd">
+        <div class="reqd__bar">
+          <p class="reqd__range">{{ t('admin.ops.requestDetails.rangeLabel', { range: rangeLabel }) }}</p>
+          <button type="button" class="btn btn-secondary btn-sm" @click="fetchData">
             {{ t('common.refresh') }}
           </button>
         </div>
 
         <!-- Loading -->
-        <div v-if="loading" class="flex flex-1 items-center justify-center py-16">
-          <div class="flex flex-col items-center gap-3">
-            <svg class="h-8 w-8 animate-spin text-blue-500" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path
-                class="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
-            <span class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ t('common.loading') }}</span>
-          </div>
+        <div v-if="loading" class="reqd__state">
+          <LoadingSpinner size="md" />
+          <p class="reqd__state-text">{{ t('common.loading') }}</p>
         </div>
 
         <!-- Table -->
-        <div v-else class="flex min-h-0 flex-1 flex-col">
-          <div v-if="items.length === 0" class="rounded-xl border border-dashed border-gray-200 p-10 text-center dark:border-dark-700">
-            <div class="text-sm font-medium text-gray-600 dark:text-gray-300">{{ t('admin.ops.requestDetails.empty') }}</div>
-            <div class="mt-1 text-xs text-gray-400">{{ t('admin.ops.requestDetails.emptyHint') }}</div>
+        <div v-else class="reqd__body">
+          <div v-if="items.length === 0" class="reqd__empty">
+            <p class="reqd__empty-title">{{ t('admin.ops.requestDetails.empty') }}</p>
+            <p class="reqd__empty-hint">{{ t('admin.ops.requestDetails.emptyHint') }}</p>
           </div>
 
-          <div v-else class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-200 dark:border-dark-700">
-            <div class="min-h-0 flex-1 overflow-auto">
-              <div v-if="!isDesktopViewport" class="divide-y divide-gray-100 dark:divide-dark-800">
-                <div v-for="(row, idx) in items" :key="idx" class="space-y-2 p-4">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <span class="rounded-full px-2 py-1 text-[10px] font-bold" :class="kindBadgeClass(row.kind)">
-                      {{ row.kind === 'error' ? t('admin.ops.requestDetails.kind.error') : t('admin.ops.requestDetails.kind.success') }}
-                    </span>
-                    <span class="text-xs font-medium text-gray-700 dark:text-gray-200">{{ (row.platform || 'unknown').toUpperCase() }}</span>
-                    <span class="ml-auto text-[11px] text-gray-500 dark:text-gray-400">{{ formatDateTime(row.created_at) }}</span>
+          <div v-else class="reqd__frame">
+            <div class="reqd__scroll">
+              <!-- Card view below 768px: a wide table truncates badly there. -->
+              <div v-if="!isDesktopViewport" class="reqd__cards">
+                <article v-for="(row, idx) in items" :key="rowKey(row, idx)" class="reqd__card">
+                  <div class="reqd__card-top">
+                    <span v-if="row.kind === 'error'" class="reqd__kind" data-tone="error">{{ kindLabel(row.kind) }}</span>
+                    <span v-else class="reqd__kind">{{ kindLabel(row.kind) }}</span>
+                    <span class="reqd__platform">{{ row.platform || 'unknown' }}</span>
+                    <span class="reqd__time">{{ formatDateTime(row.created_at) }}</span>
                   </div>
-                  <div class="break-all text-xs text-gray-600 dark:text-gray-300">{{ row.model || '-' }}</div>
-                  <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">
-                    <span>{{ typeof row.duration_ms === 'number' ? `${row.duration_ms} ms` : '-' }}</span>
-                    <span>{{ row.status_code ?? '-' }}</span>
-                  </div>
-                  <div v-if="row.request_id" class="flex items-center gap-2">
-                    <span class="min-w-0 flex-1 truncate font-mono text-[11px] text-gray-700 dark:text-gray-200" :title="row.request_id">
-                      {{ row.request_id }}
+
+                  <p class="reqd__model">{{ row.model || '-' }}</p>
+
+                  <div class="reqd__facts">
+                    <span class="reqd__fact">{{ durationLabel(row.duration_ms) }}</span>
+                    <span v-if="row.status_code != null" class="reqd__status" :data-tone="statusTone(row.status_code)">
+                      {{ row.status_code }}
                     </span>
-                    <button
-                      class="shrink-0 rounded-md bg-gray-100 px-2 py-1 text-[10px] font-bold text-gray-600 hover:bg-gray-200 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600"
-                      @click="handleCopyRequestId(row.request_id)"
-                    >
+                    <span v-else class="reqd__absent">-</span>
+                  </div>
+
+                  <div v-if="row.request_id" class="reqd__rid">
+                    <span class="reqd__rid-value" :title="row.request_id">{{ row.request_id }}</span>
+                    <button type="button" class="reqd__copy" @click="handleCopyRequestId(row.request_id)">
                       {{ t('admin.ops.requestDetails.copy') }}
                     </button>
                   </div>
+
                   <button
                     v-if="row.kind === 'error' && row.error_id"
-                    class="w-full rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-300 dark:hover:bg-red-900/30"
+                    type="button"
+                    class="reqd__view reqd__view--block"
                     @click="openErrorDetail(row.error_id)"
                   >
                     {{ t('admin.ops.requestDetails.viewError') }}
                   </button>
-                </div>
+                </article>
               </div>
-              <table v-else class="min-w-full divide-y divide-gray-200 dark:divide-dark-700">
-                <thead class="sticky top-0 z-10 bg-gray-50 dark:bg-dark-900">
-                <tr>
-                  <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    {{ t('admin.ops.requestDetails.table.time') }}
-                  </th>
-                  <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    {{ t('admin.ops.requestDetails.table.kind') }}
-                  </th>
-                  <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    {{ t('admin.ops.requestDetails.table.platform') }}
-                  </th>
-                  <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    {{ t('admin.ops.requestDetails.table.model') }}
-                  </th>
-                  <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    {{ t('admin.ops.requestDetails.table.duration') }}
-                  </th>
-                  <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    {{ t('admin.ops.requestDetails.table.status') }}
-                  </th>
-                  <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    {{ t('admin.ops.requestDetails.table.requestId') }}
-                  </th>
-                  <th class="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    {{ t('admin.ops.requestDetails.table.actions') }}
-                  </th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-gray-200 bg-white dark:divide-dark-700 dark:bg-dark-800">
-                <tr v-for="(row, idx) in items" :key="idx" class="hover:bg-gray-50 dark:hover:bg-dark-700/50">
-                  <td class="whitespace-nowrap px-4 py-3 text-xs text-gray-600 dark:text-gray-300">
-                    {{ formatDateTime(row.created_at) }}
-                  </td>
-                  <td class="whitespace-nowrap px-4 py-3">
-                    <span class="rounded-full px-2 py-1 text-[10px] font-bold" :class="kindBadgeClass(row.kind)">
-                      {{ row.kind === 'error' ? t('admin.ops.requestDetails.kind.error') : t('admin.ops.requestDetails.kind.success') }}
-                    </span>
-                  </td>
-                  <td class="whitespace-nowrap px-4 py-3 text-xs font-medium text-gray-700 dark:text-gray-200">
-                    {{ (row.platform || 'unknown').toUpperCase() }}
-                  </td>
-                  <td class="max-w-[240px] truncate px-4 py-3 text-xs text-gray-600 dark:text-gray-300" :title="row.model || ''">
-                    {{ row.model || '-' }}
-                  </td>
-                  <td class="whitespace-nowrap px-4 py-3 text-xs text-gray-600 dark:text-gray-300">
-                    {{ typeof row.duration_ms === 'number' ? `${row.duration_ms} ms` : '-' }}
-                  </td>
-                  <td class="whitespace-nowrap px-4 py-3 text-xs text-gray-600 dark:text-gray-300">
-                    {{ row.status_code ?? '-' }}
-                  </td>
-                  <td class="px-4 py-3">
-                    <div v-if="row.request_id" class="flex items-center gap-2">
-                      <span class="max-w-[220px] truncate font-mono text-[11px] text-gray-700 dark:text-gray-200" :title="row.request_id">
-                        {{ row.request_id }}
+
+              <table v-else class="reqd__table">
+                <thead>
+                  <tr>
+                    <th scope="col">{{ t('admin.ops.requestDetails.table.time') }}</th>
+                    <th scope="col">{{ t('admin.ops.requestDetails.table.kind') }}</th>
+                    <th scope="col">{{ t('admin.ops.requestDetails.table.platform') }}</th>
+                    <th scope="col">{{ t('admin.ops.requestDetails.table.model') }}</th>
+                    <th scope="col">{{ t('admin.ops.requestDetails.table.duration') }}</th>
+                    <th scope="col">{{ t('admin.ops.requestDetails.table.status') }}</th>
+                    <th scope="col">{{ t('admin.ops.requestDetails.table.requestId') }}</th>
+                    <th scope="col" class="reqd__th--right">{{ t('admin.ops.requestDetails.table.actions') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, idx) in items" :key="rowKey(row, idx)">
+                    <td class="reqd__td--nowrap">{{ formatDateTime(row.created_at) }}</td>
+                    <td class="reqd__td--nowrap">
+                      <span v-if="row.kind === 'error'" class="reqd__kind" data-tone="error">{{ kindLabel(row.kind) }}</span>
+                      <span v-else class="reqd__kind">{{ kindLabel(row.kind) }}</span>
+                    </td>
+                    <td class="reqd__td--nowrap">
+                      <span class="reqd__platform">{{ row.platform || 'unknown' }}</span>
+                    </td>
+                    <td class="reqd__td--model" :title="row.model || ''">{{ row.model || '-' }}</td>
+                    <td class="reqd__td--nowrap reqd__td--num">{{ durationLabel(row.duration_ms) }}</td>
+                    <td class="reqd__td--nowrap">
+                      <!-- A chip implies a recorded value. A null status gets plain
+                           text instead, or every success row shows an empty pill. -->
+                      <span v-if="row.status_code != null" class="reqd__status" :data-tone="statusTone(row.status_code)">
+                        {{ row.status_code }}
                       </span>
+                      <span v-else class="reqd__absent">-</span>
+                    </td>
+                    <td>
+                      <div v-if="row.request_id" class="reqd__rid">
+                        <span class="reqd__rid-value" :title="row.request_id">{{ row.request_id }}</span>
+                        <button type="button" class="reqd__copy" @click="handleCopyRequestId(row.request_id)">
+                          {{ t('admin.ops.requestDetails.copy') }}
+                        </button>
+                      </div>
+                      <span v-else class="reqd__absent">-</span>
+                    </td>
+                    <td class="reqd__td--nowrap reqd__td--right">
                       <button
-                        class="rounded-md bg-gray-100 px-2 py-1 text-[10px] font-bold text-gray-600 hover:bg-gray-200 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600"
-                        @click="handleCopyRequestId(row.request_id)"
+                        v-if="row.kind === 'error' && row.error_id"
+                        type="button"
+                        class="reqd__view"
+                        @click="openErrorDetail(row.error_id)"
                       >
-                        {{ t('admin.ops.requestDetails.copy') }}
+                        {{ t('admin.ops.requestDetails.viewError') }}
                       </button>
-                    </div>
-                    <span v-else class="text-xs text-gray-400">-</span>
-                  </td>
-                  <td class="whitespace-nowrap px-4 py-3 text-right">
-                    <button
-                      v-if="row.kind === 'error' && row.error_id"
-                      class="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-300 dark:hover:bg-red-900/30"
-                      @click="openErrorDetail(row.error_id)"
-                    >
-                      {{ t('admin.ops.requestDetails.viewError') }}
-                    </button>
-                    <span v-else class="text-xs text-gray-400">-</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                      <span v-else class="reqd__absent">-</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
 
             <Pagination
@@ -320,3 +338,321 @@ const kindBadgeClass = (kind: string) => {
     </template>
   </BaseDialog>
 </template>
+
+<style scoped>
+.reqd {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.reqd__bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.reqd__range {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+/* --- states ------------------------------------------------------------- */
+
+.reqd__state {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 56px 0;
+}
+
+.reqd__state-text {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-md);
+}
+
+.reqd__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.reqd__empty {
+  padding: 40px 24px;
+  border: var(--border-width) dashed var(--border-subtle);
+  border-radius: var(--r-md);
+  text-align: center;
+}
+
+.reqd__empty-title {
+  margin: 0;
+  color: var(--body-copy);
+  font-size: var(--fs-md);
+}
+
+.reqd__empty-hint {
+  margin: 4px 0 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+/* --- frame -------------------------------------------------------------- */
+
+.reqd__frame {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--r-md);
+}
+
+.reqd__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* --- table -------------------------------------------------------------- */
+
+.reqd__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.reqd__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 9px 14px;
+  border-bottom: var(--border-width) solid var(--border-subtle);
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.reqd__th--right {
+  text-align: right;
+}
+
+.reqd__table tbody td {
+  padding: 9px 14px;
+  border-top: var(--border-width) solid var(--border-subtle);
+  color: var(--body-copy);
+  font-size: var(--fs-sm);
+  vertical-align: middle;
+}
+
+.reqd__table tbody tr:first-child td {
+  border-top: none;
+}
+
+.reqd__table tbody tr:hover td {
+  background: var(--surface-hover);
+}
+
+.reqd__td--nowrap {
+  white-space: nowrap;
+}
+
+.reqd__td--right {
+  text-align: right;
+}
+
+.reqd__td--num {
+  font-variant-numeric: tabular-nums;
+}
+
+.reqd__td--model {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- cells -------------------------------------------------------------- */
+
+/* Untoned by default. Success is the common case here and does not earn a
+   colour; only `data-tone` paints one. */
+.reqd__kind {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+  font-size: var(--fs-2xs);
+  white-space: nowrap;
+}
+
+.reqd__kind[data-tone='error'] {
+  background: color-mix(in oklch, var(--destructive) 15%, var(--card));
+  color: var(--destructive);
+}
+
+.reqd__platform {
+  color: var(--body-copy);
+  font-size: var(--fs-sm);
+}
+
+.reqd__status {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: var(--r-xs);
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.reqd__status[data-tone='error'] {
+  background: color-mix(in oklch, var(--destructive) 15%, var(--card));
+  color: var(--destructive);
+}
+
+.reqd__status[data-tone='warn'] {
+  background: var(--s2a-attn-soft);
+  color: var(--s2a-attn);
+}
+
+.reqd__rid {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.reqd__rid-value {
+  flex: 1;
+  min-width: 0;
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--body-copy);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reqd__copy {
+  flex: none;
+  padding: 3px 8px;
+  border: none;
+  border-radius: var(--r-xs);
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+  font-size: var(--fs-2xs);
+  cursor: pointer;
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.reqd__copy:hover {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+
+.reqd__copy:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* A quiet control, not a filled red button on every error row. The status
+   chip beside it already carries the severity. */
+.reqd__view {
+  padding: 3px 9px;
+  border: none;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--destructive);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: background var(--motion-hover);
+}
+
+.reqd__view:hover {
+  background: color-mix(in oklch, var(--destructive) 10%, var(--card));
+}
+
+.reqd__view:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.reqd__view--block {
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 9px;
+  background: color-mix(in oklch, var(--destructive) 8%, var(--card));
+}
+
+.reqd__absent {
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+/* --- card view (below 768px) -------------------------------------------- */
+
+.reqd__cards {
+  display: flex;
+  flex-direction: column;
+}
+
+.reqd__card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 14px;
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.reqd__card:first-child {
+  border-top: none;
+}
+
+.reqd__card-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.reqd__time {
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+
+.reqd__model {
+  margin: 0;
+  color: var(--body-copy);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.reqd__facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.reqd__fact {
+  color: var(--body-copy);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+</style>
