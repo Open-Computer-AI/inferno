@@ -136,7 +136,7 @@ onMounted(load)
 <template>
   <div class="mix">
     <!-- Header card: label, period pill, hero total. -->
-    <div class="mix__card mix__head">
+    <div class="surface-card mix__head">
       <div class="mix__head-row">
         <span class="mix__title">
           <i class="hgi-stroke hgi-database-02 mix__title-icon" aria-hidden="true" />
@@ -155,7 +155,7 @@ onMounted(load)
     </div>
 
     <!-- Chart card: ring plus legend. -->
-    <div class="mix__card mix__body">
+    <div class="surface-card mix__body">
       <DitherDonut :slices="slices" :hovered="hovered" @update:hovered="hovered = $event" />
       <ul class="mix__legend">
         <li
@@ -185,28 +185,17 @@ onMounted(load)
 
 <style scoped>
 /*
- * The tray and its cards follow the reference deck's own spec rather than the
- * StatTile treatment: 14px tray, 10px cards, 6px padding and gap, with the
- * three stacked shadows. This is the one surface where the fork is deliberately
- * literal -- owner call, and the panel reads as its own object because of it.
+ * The panel uses the shared June surface treatment. The tray separates the
+ * header, chart, and period control without introducing a second shadow system.
  */
 .mix {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 6px;
-  border-radius: 14px;
-  background: color-mix(in oklch, var(--card) 96%, var(--foreground));
-  box-shadow: 0 24px 50px -34px rgb(15 23 42 / 0.3);
-}
-
-.mix__card {
-  border-radius: 10px;
-  background: var(--card);
-  box-shadow:
-    0 0 1.76px rgb(0 0 0 / 0.08),
-    0 1px 1.76px rgb(25 28 33 / 0.06),
-    0 0 0 1px rgb(25 28 33 / 0.04);
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-xl);
+  background: var(--surface-subtle);
 }
 
 .mix__head {
