@@ -392,20 +392,35 @@
           </div>
         </div>
 
-        <!-- Usage Trend Chart -->
-        <div class="card p-4">
-          <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
-            {{ t('admin.accounts.stats.usageTrend') }}
-          </h3>
-          <div class="h-64">
-            <Line v-if="trendChartData" :data="trendChartData" :options="lineChartOptions" />
-            <div
-              v-else
-              class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400"
-            >
-              {{ t('admin.dashboard.noDataAvailable') }}
+        <!-- Usage trend: three strips, not three overlaid lines on two axes.
+             Account cost and user cost share a unit but do not sum (they are
+             two sides of one transaction), and requests is a count. Each
+             strip's peak is printed in its head so the two USD series stay
+             numerically comparable despite independent scales. -->
+        <div class="astat__trend">
+          <h3 class="astat__trend-title">{{ t('admin.accounts.stats.usageTrend') }}</h3>
+
+          <template v-if="trendModel">
+            <div v-for="strip in trendModel.strips" :key="strip.key" class="astat__strip">
+              <div class="astat__strip-head">
+                <span class="astat__legend">
+                  <span class="astat__swatch" :style="{ background: strip.color }" aria-hidden="true" />
+                  {{ strip.label }}
+                </span>
+                <span class="astat__peak">{{ strip.peak }}</span>
+              </div>
+              <div class="astat__plot">
+                <DitherArea
+                  :series="strip.series"
+                  :labels="trendModel.labels"
+                  :rest-color="trendRestColor"
+                  :marker-color="trendTokens.brand"
+                />
+              </div>
             </div>
-          </div>
+          </template>
+
+          <p v-else class="astat__trend-empty">{{ t('admin.dashboard.noDataAvailable') }}</p>
         </div>
 
         <!-- Model Distribution -->
@@ -450,36 +465,16 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler
-} from 'chart.js'
-import { Line } from 'vue-chartjs'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import DitherArea, { type AreaSeries } from '@/components/charts/DitherArea.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 import EndpointDistributionChart from '@/components/charts/EndpointDistributionChart.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { adminAPI } from '@/api/admin'
+import { useChartTokens } from '@/composables/useChartTokens'
 import type { Account, AccountUsageStatsResponse } from '@/types'
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler
-)
 
 const { t } = useI18n()
 
@@ -496,151 +491,56 @@ const loading = ref(false)
 const stats = ref<AccountUsageStatsResponse | null>(null)
 
 // Dark mode detection
-const isDarkMode = computed(() => {
-  return document.documentElement.classList.contains('dark')
-})
-
-// Chart colors
-const chartColors = computed(() => ({
-  text: isDarkMode.value ? '#e5e7eb' : '#374151',
-  grid: isDarkMode.value ? '#374151' : '#e5e7eb'
-}))
 
 // Line chart data
-const trendChartData = computed(() => {
-  if (!stats.value?.history?.length) return null
+const { tokens: trendTokens } = useChartTokens()
+
+const trendRestColor = computed(
+  () => `color-mix(in oklch, ${trendTokens.mutedForeground} 26%, ${trendTokens.card})`
+)
+
+/*
+ * Was three <Line> datasets on a dual y-axis: account cost and user cost in USD
+ * on the left, request count on the right. Neither pairing can share a scale
+ * honestly -- the two costs are two sides of one transaction and do not sum to
+ * anything, and a count shares no unit with a dollar amount. A second y-axis
+ * also implies a correlation the data does not carry: where the cost line meets
+ * the request line depends only on how the ranges happened to be scaled.
+ *
+ * Three strips, each with its own scale. The tradeoff is that comparing account
+ * cost against user cost is no longer a matter of reading which line sits
+ * higher, so each strip prints its peak -- the numbers stay comparable even
+ * though the heights are scaled independently.
+ */
+const trendModel = computed(() => {
+  const history = stats.value?.history
+  if (!history?.length) return null
+
+  const labels = history.map((h) => h.label)
+  const accountCost = history.map((h) => h.actual_cost ?? 0)
+  const userCost = history.map((h) => h.user_cost ?? 0)
+  const requests = history.map((h) => h.requests ?? 0)
+  const peak = (xs: number[]) => (xs.length ? Math.max(...xs) : 0)
+
+  const strip = (key: string, label: string, values: number[], i: number, peakLabel: string) => ({
+    key,
+    label,
+    color: trendTokens.ramp[i] ?? trendTokens.brand,
+    peak: peakLabel,
+    series: [
+      { key, label, values, color: trendTokens.ramp[i] ?? trendTokens.brand }
+    ] satisfies AreaSeries[]
+  })
 
   return {
-    labels: stats.value.history.map((h) => h.label),
-    datasets: [
-      {
-        label: t('usage.accountBilled') + ' (USD)',
-        data: stats.value.history.map((h) => h.actual_cost),
-        borderColor: '#3b82f6',
-        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-        fill: true,
-        tension: 0.3,
-        yAxisID: 'y'
-      },
-      {
-        label: t('usage.userBilled') + ' (USD)',
-        data: stats.value.history.map((h) => h.user_cost),
-        borderColor: '#10b981',
-        backgroundColor: 'rgba(16, 185, 129, 0.08)',
-        fill: false,
-        tension: 0.3,
-        borderDash: [5, 5],
-        yAxisID: 'y'
-      },
-      {
-        label: t('admin.accounts.stats.requests'),
-        data: stats.value.history.map((h) => h.requests),
-        borderColor: '#f97316',
-        backgroundColor: 'rgba(249, 115, 22, 0.1)',
-        fill: false,
-        tension: 0.3,
-        yAxisID: 'y1'
-      }
+    labels,
+    strips: [
+      strip('accountCost', `${t('usage.accountBilled')} (USD)`, accountCost, 0, `$${formatCost(peak(accountCost))}`),
+      strip('userCost', `${t('usage.userBilled')} (USD)`, userCost, 1, `$${formatCost(peak(userCost))}`),
+      strip('requests', t('admin.accounts.stats.requests'), requests, 2, formatNumber(peak(requests)))
     ]
   }
 })
-
-// Line chart options with dual Y-axis
-const lineChartOptions = computed(() => ({
-  responsive: true,
-  maintainAspectRatio: false,
-  interaction: {
-    intersect: false,
-    mode: 'index' as const
-  },
-  plugins: {
-    legend: {
-      position: 'top' as const,
-      labels: {
-        color: chartColors.value.text,
-        usePointStyle: true,
-        pointStyle: 'circle',
-        padding: 15,
-        font: {
-          size: 11
-        }
-      }
-    },
-    tooltip: {
-      callbacks: {
-        label: (context: any) => {
-          const label = context.dataset.label || ''
-          const value = context.raw
-          if (label.includes('USD')) {
-            return `${label}: $${formatCost(value)}`
-          }
-          return `${label}: ${formatNumber(value)}`
-        }
-      }
-    }
-  },
-  scales: {
-    x: {
-      grid: {
-        color: chartColors.value.grid
-      },
-      ticks: {
-        color: chartColors.value.text,
-        font: {
-          size: 10
-        },
-        maxRotation: 45,
-        minRotation: 0
-      }
-    },
-    y: {
-      type: 'linear' as const,
-      display: true,
-      position: 'left' as const,
-      grid: {
-        color: chartColors.value.grid
-      },
-      ticks: {
-        color: '#3b82f6',
-        font: {
-          size: 10
-        },
-        callback: (value: string | number) => '$' + formatCost(Number(value))
-      },
-      title: {
-        display: true,
-        text: t('usage.accountBilled') + ' (USD)',
-        color: '#3b82f6',
-        font: {
-          size: 11
-        }
-      }
-    },
-    y1: {
-      type: 'linear' as const,
-      display: true,
-      position: 'right' as const,
-      grid: {
-        drawOnChartArea: false
-      },
-      ticks: {
-        color: '#f97316',
-        font: {
-          size: 10
-        },
-        callback: (value: string | number) => formatNumber(Number(value))
-      },
-      title: {
-        display: true,
-        text: t('admin.accounts.stats.requests'),
-        color: '#f97316',
-        font: {
-          size: 11
-        }
-      }
-    }
-  }
-}))
 
 // Load stats when modal opens
 watch(
@@ -711,3 +611,77 @@ const formatDuration = (ms: number): string => {
   return `${Math.round(ms)}ms`
 }
 </script>
+
+<style scoped>
+/* Only the usage-trend block is converted here; the rest of this modal is
+   still on the legacy palette and is counted as unconverted by
+   conversion-status.mjs, which is honest -- it is not done yet. */
+.astat__trend {
+  padding: 16px;
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--card);
+}
+
+.astat__trend-title {
+  margin: 0 0 12px;
+  color: var(--foreground);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
+}
+
+.astat__trend-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 160px;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-md);
+}
+
+.astat__strip + .astat__strip {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.astat__strip-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.astat__legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.astat__swatch {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+
+/* The peak is what keeps the two USD strips comparable once each one scales
+   independently. */
+.astat__peak {
+  color: var(--foreground);
+  font-family: var(--font-serif);
+  font-size: var(--fs-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+.astat__plot {
+  position: relative;
+  height: 92px;
+  border-radius: 5px;
+}
+</style>

@@ -70,11 +70,21 @@ describe('channel-monitor-v2 design system structure', () => {
 
   it('MonitorTrendChart uses Ops chart shell tokens', () => {
     const src = read('features/channel-monitor-v2/MonitorTrendChart.vue')
-    expect(src).toContain('class="card')
-    expect(src).toContain('rounded-3xl')
-    expect(src).toContain('ring-1 ring-gray-900/5')
+    /*
+     * Was asserting the pre-June chrome by string: `class="card`, `rounded-3xl`,
+     * `ring-1 ring-gray-900/5`, `min-h-[360px]`. The intent -- this chart keeps
+     * the ops chart card shell and its minimum height -- is unchanged; only the
+     * idiom is, so the assertions moved to the tokens that now express it.
+     * Same count, plus one the old set could not make: that the chart is off
+     * Chart.js, which is the whole point of the change.
+     */
+    expect(src).toContain('background: var(--card)')
+    expect(src).toContain('border-radius: var(--r-lg)')
+    expect(src).toContain('border: var(--border-width) solid var(--border-subtle)')
+    expect(src).toContain('min-height: 360px')
     expect(src).toContain('EmptyState')
-    expect(src).toContain('min-h-[360px]')
+    expect(src).toContain('DitherArea')
+    expect(src).not.toContain('vue-chartjs')
   })
 
   it('FilterMultiSelect uses rounded-xl input chrome and dropdown utility', () => {
