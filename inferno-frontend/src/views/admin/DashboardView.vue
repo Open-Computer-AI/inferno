@@ -71,7 +71,7 @@
         <!-- Charts Section -->
         <div class="space-y-6">
           <!-- Date Range Filter -->
-          <div class="card p-4">
+          <div class="surface-card p-4">
             <div class="flex flex-wrap items-center gap-4">
               <div class="flex items-center gap-2">
                 <span class="text-sm text-gray-700 dark:text-gray-300"
@@ -173,7 +173,7 @@
           <!-- User Usage Trend (Full Width) -->
           <UserUsageTrendChart :points="userTrend" :loading="userTrendLoading" />
         <!-- Quick Actions -->
-        <div class="card p-4">
+        <div class="surface-card p-4">
           <div class="mb-3 flex items-center justify-between">
             <h2 class="text-sm font-semibold text-gray-900 dark:text-white">
               {{ t('admin.dashboard.quickActions') }}

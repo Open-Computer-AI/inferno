@@ -46,7 +46,7 @@
         <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <!-- 30-Day Total Cost -->
           <div
-            class="card border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 dark:border-emerald-800/30 dark:from-emerald-900/10 dark:to-dark-700"
+            class="surface-card border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 dark:border-emerald-800/30 dark:from-emerald-900/10 dark:to-dark-700"
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{
@@ -72,7 +72,7 @@
 
           <!-- 30-Day Total Requests -->
           <div
-            class="card border-blue-200 bg-gradient-to-br from-blue-50 to-white p-4 dark:border-blue-800/30 dark:from-blue-900/10 dark:to-dark-700"
+            class="surface-card border-blue-200 bg-gradient-to-br from-blue-50 to-white p-4 dark:border-blue-800/30 dark:from-blue-900/10 dark:to-dark-700"
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{
@@ -92,7 +92,7 @@
 
           <!-- Daily Average Cost -->
           <div
-            class="card border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4 dark:border-amber-800/30 dark:from-amber-900/10 dark:to-dark-700"
+            class="surface-card border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4 dark:border-amber-800/30 dark:from-amber-900/10 dark:to-dark-700"
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{
@@ -123,7 +123,7 @@
 
           <!-- Daily Average Requests -->
           <div
-            class="card border-purple-200 bg-gradient-to-br from-purple-50 to-white p-4 dark:border-purple-800/30 dark:from-purple-900/10 dark:to-dark-700"
+            class="surface-card border-purple-200 bg-gradient-to-br from-purple-50 to-white p-4 dark:border-purple-800/30 dark:from-purple-900/10 dark:to-dark-700"
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{
@@ -157,7 +157,7 @@
         <!-- Row 2: Today, Highest Cost, Highest Requests -->
         <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <!-- Today Overview -->
-          <div class="card p-4">
+          <div class="surface-card p-4">
             <div class="mb-3 flex items-center gap-2">
               <div class="rounded-lg bg-cyan-100 p-1.5 dark:bg-cyan-900/30">
                 <Icon name="clock" size="sm" class="text-cyan-600 dark:text-cyan-400" />
@@ -199,7 +199,7 @@
           </div>
 
           <!-- Highest Cost Day -->
-          <div class="card p-4">
+          <div class="surface-card p-4">
             <div class="mb-3 flex items-center gap-2">
               <div class="rounded-lg bg-orange-100 p-1.5 dark:bg-orange-900/30">
                 <Icon name="fire" size="sm" class="text-orange-600 dark:text-orange-400" />
@@ -241,7 +241,7 @@
           </div>
 
           <!-- Highest Request Day -->
-          <div class="card p-4">
+          <div class="surface-card p-4">
             <div class="mb-3 flex items-center gap-2">
               <div class="rounded-lg bg-indigo-100 p-1.5 dark:bg-indigo-900/30">
                 <Icon
@@ -290,7 +290,7 @@
         <!-- Row 3: Token Stats -->
         <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <!-- Accumulated Tokens -->
-          <div class="card p-4">
+          <div class="surface-card p-4">
             <div class="mb-3 flex items-center gap-2">
               <div class="rounded-lg bg-teal-100 p-1.5 dark:bg-teal-900/30">
                 <Icon name="cube" size="sm" class="text-teal-600 dark:text-teal-400" />
@@ -320,7 +320,7 @@
           </div>
 
           <!-- Performance -->
-          <div class="card p-4">
+          <div class="surface-card p-4">
             <div class="mb-3 flex items-center gap-2">
               <div class="rounded-lg bg-rose-100 p-1.5 dark:bg-rose-900/30">
                 <Icon name="bolt" size="sm" class="text-rose-600 dark:text-rose-400" />
@@ -350,7 +350,7 @@
           </div>
 
           <!-- Recent Activity -->
-          <div class="card p-4">
+          <div class="surface-card p-4">
             <div class="mb-3 flex items-center gap-2">
               <div class="rounded-lg bg-lime-100 p-1.5 dark:bg-lime-900/30">
                 <Icon
