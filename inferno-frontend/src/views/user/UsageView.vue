@@ -24,43 +24,28 @@
         </div>
 
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <ModelDistributionChart
+          <UsageDistributionChart
+            :title="t('admin.dashboard.modelDistribution')"
+            :rows="modelDistributionRows"
             v-model:metric="modelDistributionMetric"
-            :model-stats="requestedModelStats"
             :loading="modelStatsLoading"
-            :show-source-toggle="false"
-            :show-metric-toggle="true"
-            :enable-breakdown="false"
-            :show-account-cost="false"
-            :start-date="startDate"
-            :end-date="endDate"
           />
-          <GroupDistributionChart
+          <UsageDistributionChart
+            :title="t('admin.dashboard.groupDistribution')"
+            :entity-label="t('dashboard.group')"
+            :rows="groupDistributionRows"
             v-model:metric="groupDistributionMetric"
-            :group-stats="groupStats"
             :loading="chartsLoading"
-            :show-metric-toggle="true"
-            :enable-breakdown="false"
-            :show-account-cost="false"
-            :start-date="startDate"
-            :end-date="endDate"
           />
         </div>
 
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <EndpointDistributionChart
-            v-model:source="endpointDistributionSource"
-            v-model:metric="endpointDistributionMetric"
-            :endpoint-stats="inboundEndpointStats"
-            :upstream-endpoint-stats="upstreamEndpointStats"
-            :endpoint-path-stats="endpointPathStats"
-            :loading="endpointStatsLoading"
-            :show-source-toggle="false"
-            :show-metric-toggle="true"
-            :enable-breakdown="false"
+          <UsageDistributionChart
             :title="t('usage.endpointDistribution')"
-            :start-date="startDate"
-            :end-date="endDate"
+            :entity-label="t('usage.endpoint')"
+            :rows="endpointDistributionRows"
+            v-model:metric="endpointDistributionMetric"
+            :loading="endpointStatsLoading"
           />
           <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" />
         </div>
@@ -223,10 +208,8 @@ import Select, { type SelectOption } from '@/components/common/Select.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import UsageStatsCards from '@/components/admin/usage/UsageStatsCards.vue'
 import UsageTable from '@/components/admin/usage/UsageTable.vue'
-import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
-import GroupDistributionChart from '@/components/charts/GroupDistributionChart.vue'
-import EndpointDistributionChart from '@/components/charts/EndpointDistributionChart.vue'
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
+import UsageDistributionChart, { type UsageDistributionRow } from '@/components/user/UsageDistributionChart.vue'
 import Icon from '@/components/icons/Icon.vue'
 import UserErrorRequestsTable from '@/components/user/UserErrorRequestsTable.vue'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
@@ -348,6 +331,46 @@ const modelDistributionMetric = ref<DistributionMetric>('tokens')
 const groupDistributionMetric = ref<DistributionMetric>('tokens')
 const endpointDistributionMetric = ref<DistributionMetric>('tokens')
 const endpointDistributionSource = ref<EndpointSource>('inbound')
+
+const modelDistributionRows = computed<UsageDistributionRow[]>(() =>
+  requestedModelStats.value.map((row) => ({
+    key: row.model,
+    label: row.model,
+    requests: row.requests,
+    tokens: row.total_tokens,
+    actualCost: row.actual_cost,
+    standardCost: row.cost,
+  }))
+)
+
+const groupDistributionRows = computed<UsageDistributionRow[]>(() =>
+  groupStats.value.map((row) => ({
+    key: String(row.group_id),
+    label: row.group_name || t('admin.dashboard.noGroup'),
+    requests: row.requests,
+    tokens: row.total_tokens,
+    actualCost: row.actual_cost,
+    standardCost: row.cost,
+  }))
+)
+
+const endpointDistributionRows = computed<UsageDistributionRow[]>(() => {
+  const rows = endpointDistributionSource.value === 'upstream'
+    ? upstreamEndpointStats.value
+    : endpointDistributionSource.value === 'path'
+      ? endpointPathStats.value
+      : inboundEndpointStats.value
+
+  return rows.map((row) => ({
+    key: row.endpoint,
+    label: row.endpoint,
+    requests: row.requests,
+    tokens: row.total_tokens,
+    actualCost: row.actual_cost,
+    standardCost: row.cost,
+  }))
+})
+
 const activeTab = ref<'usage' | 'errors'>('usage')
 const errorViewEnabled = computed(() => appStore.cachedPublicSettings?.allow_user_view_error_requests ?? false)
 
