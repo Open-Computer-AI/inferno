@@ -115,11 +115,6 @@ func Notes(v string) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldNotes, v))
 }
 
-// AvatarSeed applies equality check predicate on the "avatar_seed" field. It's identical to AvatarSeedEQ.
-func AvatarSeed(v string) predicate.User {
-	return predicate.User(sql.FieldEQ(FieldAvatarSeed, v))
-}
-
 // TotpSecretEncrypted applies equality check predicate on the "totp_secret_encrypted" field. It's identical to TotpSecretEncryptedEQ.
 func TotpSecretEncrypted(v string) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldTotpSecretEncrypted, v))
@@ -818,71 +813,6 @@ func NotesEqualFold(v string) predicate.User {
 // NotesContainsFold applies the ContainsFold predicate on the "notes" field.
 func NotesContainsFold(v string) predicate.User {
 	return predicate.User(sql.FieldContainsFold(FieldNotes, v))
-}
-
-// AvatarSeedEQ applies the EQ predicate on the "avatar_seed" field.
-func AvatarSeedEQ(v string) predicate.User {
-	return predicate.User(sql.FieldEQ(FieldAvatarSeed, v))
-}
-
-// AvatarSeedNEQ applies the NEQ predicate on the "avatar_seed" field.
-func AvatarSeedNEQ(v string) predicate.User {
-	return predicate.User(sql.FieldNEQ(FieldAvatarSeed, v))
-}
-
-// AvatarSeedIn applies the In predicate on the "avatar_seed" field.
-func AvatarSeedIn(vs ...string) predicate.User {
-	return predicate.User(sql.FieldIn(FieldAvatarSeed, vs...))
-}
-
-// AvatarSeedNotIn applies the NotIn predicate on the "avatar_seed" field.
-func AvatarSeedNotIn(vs ...string) predicate.User {
-	return predicate.User(sql.FieldNotIn(FieldAvatarSeed, vs...))
-}
-
-// AvatarSeedGT applies the GT predicate on the "avatar_seed" field.
-func AvatarSeedGT(v string) predicate.User {
-	return predicate.User(sql.FieldGT(FieldAvatarSeed, v))
-}
-
-// AvatarSeedGTE applies the GTE predicate on the "avatar_seed" field.
-func AvatarSeedGTE(v string) predicate.User {
-	return predicate.User(sql.FieldGTE(FieldAvatarSeed, v))
-}
-
-// AvatarSeedLT applies the LT predicate on the "avatar_seed" field.
-func AvatarSeedLT(v string) predicate.User {
-	return predicate.User(sql.FieldLT(FieldAvatarSeed, v))
-}
-
-// AvatarSeedLTE applies the LTE predicate on the "avatar_seed" field.
-func AvatarSeedLTE(v string) predicate.User {
-	return predicate.User(sql.FieldLTE(FieldAvatarSeed, v))
-}
-
-// AvatarSeedContains applies the Contains predicate on the "avatar_seed" field.
-func AvatarSeedContains(v string) predicate.User {
-	return predicate.User(sql.FieldContains(FieldAvatarSeed, v))
-}
-
-// AvatarSeedHasPrefix applies the HasPrefix predicate on the "avatar_seed" field.
-func AvatarSeedHasPrefix(v string) predicate.User {
-	return predicate.User(sql.FieldHasPrefix(FieldAvatarSeed, v))
-}
-
-// AvatarSeedHasSuffix applies the HasSuffix predicate on the "avatar_seed" field.
-func AvatarSeedHasSuffix(v string) predicate.User {
-	return predicate.User(sql.FieldHasSuffix(FieldAvatarSeed, v))
-}
-
-// AvatarSeedEqualFold applies the EqualFold predicate on the "avatar_seed" field.
-func AvatarSeedEqualFold(v string) predicate.User {
-	return predicate.User(sql.FieldEqualFold(FieldAvatarSeed, v))
-}
-
-// AvatarSeedContainsFold applies the ContainsFold predicate on the "avatar_seed" field.
-func AvatarSeedContainsFold(v string) predicate.User {
-	return predicate.User(sql.FieldContainsFold(FieldAvatarSeed, v))
 }
 
 // TotpSecretEncryptedEQ applies the EQ predicate on the "totp_secret_encrypted" field.
