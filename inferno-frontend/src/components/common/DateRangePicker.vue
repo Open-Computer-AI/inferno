@@ -37,16 +37,18 @@
                set a range; the migration note: "Presets move from a row above the
                calendar to a rail beside it, and the trigger starts naming the preset." -->
           <div class="dr-pop__rail">
-            <button
+            <Button
               v-for="preset in presets"
               :key="preset.value"
+              variant="ghost"
+              size="sm"
               type="button"
               class="dr-pop__preset date-picker-preset"
               :data-active="draftPreset === preset.value || undefined"
               @click="selectPreset(preset)"
             >
               {{ t(preset.labelKey) }}
-            </button>
+            </Button>
           </div>
 
           <div class="dr-pop__body">
@@ -91,12 +93,12 @@
             <div class="dr-pop__footer">
               <span class="dr-pop__span">{{ spanLabel }}</span>
               <span class="dr-pop__actions">
-                <button type="button" class="dr-pop__cancel" @click="close">
+                <Button variant="ghost" size="sm" type="button" class="dr-pop__cancel" @click="close">
                   {{ t('common.cancel') }}
-                </button>
-                <button type="button" class="dr-pop__apply date-picker-apply" @click="apply">
+                </Button>
+                <Button variant="solid" size="sm" type="button" class="dr-pop__apply date-picker-apply" @click="apply">
                   {{ t('dates.apply') }}
-                </button>
+                </Button>
               </span>
             </div>
           </div>
@@ -137,6 +139,7 @@
  */
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Button from './Button.vue'
 
 const { t } = useI18n()
 

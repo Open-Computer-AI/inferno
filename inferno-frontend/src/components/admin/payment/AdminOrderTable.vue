@@ -1,13 +1,13 @@
 <template>
   <div class="space-y-4">
-    <div class="surface-card p-4">
+    <div class="admin-order-table-filters">
       <div class="flex flex-wrap items-center gap-3">
         <div class="flex-1 sm:max-w-64">
           <input
             v-model="searchQuery"
             type="text"
             :placeholder="t('payment.admin.searchOrders')"
-            class="input"
+            class="field-control"
             @input="handleSearch"
           />
         </div>
@@ -30,14 +30,15 @@
           @change="emitFiltersChanged"
         />
         <div class="flex flex-1 flex-wrap items-center justify-end gap-2">
-          <button
+          <AppButton
             @click="emit('refresh')"
             :disabled="loading"
-            class="btn btn-secondary"
+            variant="secondary"
+            :loading="loading"
             :title="t('common.refresh')"
           >
-            <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
-          </button>
+            <Icon v-if="!loading" name="refresh" size="md" />
+          </AppButton>
         </div>
       </div>
     </div>
@@ -48,23 +49,23 @@
       </template>
 
       <template #cell-user_id="{ value }">
-        <span class="text-sm text-gray-600 dark:text-gray-400">#{{ value }}</span>
+        <span class="text-sm text-[var(--muted-foreground)] text-[var(--muted-foreground)]">#{{ value }}</span>
       </template>
 
       <template #cell-pay_amount="{ value, row }">
         <div class="text-sm">
-          <span class="font-medium text-gray-900 dark:text-white">{{ paymentAmountSymbol(row) }}{{ value.toFixed(2) }}</span>
-          <span v-if="row.fee_rate > 0" class="ml-1 text-xs text-gray-400" :title="t('payment.orders.fee') + ': ' + row.fee_rate + '%'">
+          <span class="font-[var(--fw-medium)] text-[var(--foreground)] dark:text-white">{{ paymentAmountSymbol(row) }}{{ value.toFixed(2) }}</span>
+          <span v-if="row.fee_rate > 0" class="ml-1 text-xs text-[var(--muted-foreground)]" :title="t('payment.orders.fee') + ': ' + row.fee_rate + '%'">
             ({{ row.fee_rate }}%)
           </span>
-          <div v-if="row.amount !== row.pay_amount" class="text-xs text-gray-500">
+          <div v-if="row.amount !== row.pay_amount" class="text-xs text-[var(--muted-foreground)]">
             {{ t('payment.orders.creditedAmount') }}: {{ creditedAmountSymbol }}{{ row.amount.toFixed(2) }}
           </div>
         </div>
       </template>
 
       <template #cell-payment_type="{ value }">
-        <span class="text-sm text-gray-700 dark:text-gray-300">
+        <span class="text-sm text-[var(--body-copy)] text-[var(--muted-foreground)]">
           {{ t('payment.methods.' + value, value) }}
         </span>
       </template>
@@ -76,48 +77,42 @@
       </template>
 
       <template #cell-order_type="{ value }">
-        <span class="text-sm text-gray-700 dark:text-gray-300">
+        <span class="text-sm text-[var(--body-copy)] text-[var(--muted-foreground)]">
           {{ t('payment.admin.' + value + 'Order', value) }}
         </span>
       </template>
 
       <template #cell-created_at="{ value }">
-        <span class="text-xs text-gray-500 dark:text-gray-400">{{ formatDateTime(value) }}</span>
+        <span class="text-xs text-[var(--muted-foreground)] text-[var(--muted-foreground)]">{{ formatDateTime(value) }}</span>
       </template>
 
       <template #cell-actions="{ row }">
         <div class="flex items-center gap-2">
-          <button
+          <IconButton
+            icon="hgi-eye"
+            :label="t('common.view')"
             @click="emit('detail', row)"
-            class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 dark:hover:bg-gray-800/50 dark:hover:text-gray-300"
-          >
-            <Icon name="eye" size="sm" />
-            <span class="text-xs">{{ t('common.view') }}</span>
-          </button>
-          <button
+          />
+          <IconButton
             v-if="row.status === 'PENDING'"
+            icon="hgi-cancel-01"
+            :label="t('payment.orders.cancel')"
+            tone="neutral"
             @click="emit('cancel', row)"
-            class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-yellow-50 hover:text-yellow-600 dark:hover:bg-yellow-900/20 dark:hover:text-yellow-400"
-          >
-            <Icon name="x" size="sm" />
-            <span class="text-xs">{{ t('payment.orders.cancel') }}</span>
-          </button>
-          <button
+          />
+          <IconButton
             v-if="row.status === 'FAILED'"
+            icon="hgi-refresh"
+            :label="t('payment.admin.retry')"
             @click="emit('retry', row)"
-            class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400"
-          >
-            <Icon name="refresh" size="sm" />
-            <span class="text-xs">{{ t('payment.admin.retry') }}</span>
-          </button>
-          <button
+          />
+          <IconButton
             v-if="canRefundRow(row)"
+            icon="hgi-dollar-circle"
+            :label="t('payment.admin.refund')"
+            tone="danger"
             @click="emit('refund', row)"
-            class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
-          >
-            <Icon name="dollar" size="sm" />
-            <span class="text-xs">{{ t('payment.admin.refund') }}</span>
-          </button>
+          />
         </div>
       </template>
     </DataTable>
@@ -139,6 +134,8 @@ import { useI18n } from 'vue-i18n'
 import type { PaymentOrder } from '@/types/payment'
 import type { Column } from '@/components/common/types'
 import DataTable from '@/components/common/DataTable.vue'
+import AppButton from '@/components/common/Button.vue'
+import IconButton from '@/components/common/IconButton.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -236,3 +233,12 @@ function formatDateTime(dateStr: string): string {
   return formatOrderDateTime(dateStr)
 }
 </script>
+
+<style scoped>
+.admin-order-table-filters {
+  padding: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-xl);
+  background: var(--card);
+}
+</style>

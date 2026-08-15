@@ -82,6 +82,7 @@
       'actions-expanded': actionsExpanded,
       'is-scrollable': isScrollable
     }"
+    :data-sticky-dividers="stickyColumnDividers ? 'true' : 'false'"
   >
     <table class="dt-table" :style="{ '--dt-cell-px': adaptivePaddingPx + 'px' }">
       <thead class="dt-thead">
@@ -449,6 +450,8 @@ interface Props {
    * status with its reason). The only prop this part of the redesign adds.
    */
   density?: 'compact' | 'default' | 'twoLine'
+  /** Keep sticky columns pinned while allowing underfilled pages to hide dividers. */
+  stickyColumnDividers?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -460,7 +463,8 @@ const props = withDefaults(defineProps<Props>(), {
   serverSideSort: false,
   selectable: false,
   selectedKeys: () => [],
-  density: 'default'
+  density: 'default',
+  stickyColumnDividers: true
 })
 
 const sortKey = ref<string>('')
@@ -1132,6 +1136,15 @@ defineExpose({
 .sticky-col-right {
   right: 0;
   border-left: 1px solid var(--border);
+}
+
+.table-wrapper[data-sticky-dividers='false'] .sticky-col-left,
+.table-wrapper[data-sticky-dividers='false'] .sticky-col-left-second {
+  border-right-color: transparent;
+}
+
+.table-wrapper[data-sticky-dividers='false'] .sticky-col-right {
+  border-left-color: transparent;
 }
 
 .dt-th.sticky-col {

@@ -16,7 +16,7 @@
       <!-- Row 2: description with top spacing -->
       <span
         v-if="description"
-        class="mt-1.5 w-full whitespace-pre-line [overflow-wrap:anywhere] text-left text-xs leading-relaxed text-gray-500 dark:text-gray-400 line-clamp-3"
+        class="mt-1.5 w-full whitespace-pre-line [overflow-wrap:anywhere] text-left text-xs leading-relaxed text-[var(--muted-foreground)] text-[var(--muted-foreground)] line-clamp-3"
       >
         {{ description }}
       </span>
@@ -26,10 +26,10 @@
     <div class="flex shrink-0 items-center gap-2 pt-0.5">
       <div class="flex shrink-0 flex-col items-end gap-1">
         <!-- Rate pill (platform color) -->
-        <span v-if="rateMultiplier !== undefined" :class="['inline-flex items-center whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold', ratePillClass]">
+        <span v-if="rateMultiplier !== undefined" :class="['inline-flex items-center whitespace-nowrap rounded-full px-3 py-1 text-xs font-[var(--fw-medium)]', ratePillClass]">
           <template v-if="hasCustomRate">
             <span class="mr-1 line-through opacity-50">{{ rateMultiplier }}x</span>
-            <span class="font-bold">{{ userRateMultiplier }}x</span>
+            <span class="font-[var(--fw-medium)]">{{ userRateMultiplier }}x</span>
           </template>
           <template v-else>
             {{ rateMultiplier }}x {{ t('admin.groups.rateLabel') }}
@@ -37,7 +37,7 @@
         </span>
         <span
           v-if="hasPeakRate"
-          class="inline-flex items-center whitespace-nowrap rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+          class="inline-flex items-center whitespace-nowrap rounded-full bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] px-3 py-1 text-xs font-[var(--fw-medium)] text-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/20] text-[var(--warning)]"
           :title="peakRateTitle"
         >
           {{ peakRateText }}
@@ -46,7 +46,7 @@
       <!-- Checkmark -->
       <svg
         v-if="showCheckmark && selected"
-        class="h-4 w-4 shrink-0 text-primary-600 dark:text-primary-400"
+        class="h-4 w-4 shrink-0 text-[var(--brand)] text-[var(--brand)]"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"
@@ -127,13 +127,13 @@ const peakRateTitle = computed(() => {
 const ratePillClass = computed(() => {
   switch (props.platform) {
     case 'anthropic':
-      return 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400'
+      return 'bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] text-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/20] text-[var(--warning)]'
     case 'openai':
-      return 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
+      return 'bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] text-[var(--success)] bg-[color-mix(in_oklch,var(--success)_14%,var(--card))/20] text-[var(--success)]'
     case 'gemini':
-      return 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-400'
+      return 'bg-[var(--brand-tint)] text-[var(--brand)] bg-[var(--brand-tint)/20] text-[var(--brand)]'
     default: // antigravity and others
-      return 'bg-violet-50 text-violet-700 dark:bg-violet-900/20 dark:text-violet-400'
+      return 'bg-[var(--brand-tint)] text-[var(--brand)] bg-[var(--brand-tint)/20] text-[var(--brand)]'
   }
 })
 </script>

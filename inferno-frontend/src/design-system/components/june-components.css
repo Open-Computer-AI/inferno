@@ -4,6 +4,15 @@
  * chrome. Shadows are elevation; rings are composed separately. */
 
 /* Buttons ----------------------------------------------------------- */
+.dashboard-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.dashboard-panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px}
+.dashboard-panel{border:1px solid var(--border-subtle);border-radius:var(--r-lg);background:var(--card);padding:16px;color:var(--foreground)}
+.dashboard-panel__header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border-subtle)}
+.dashboard-panel__title{margin:0;color:var(--foreground);font-size:var(--fs-lg);font-weight:var(--fw-medium)}
+.dashboard-panel__description{margin:4px 0 0;color:var(--muted-foreground);font-size:var(--fs-sm);line-height:1.45}
+@media (max-width:640px){.dashboard-panels{grid-template-columns:1fr}.dashboard-tiles{grid-template-columns:1fr 1fr}}
+@media (max-width:420px){.dashboard-tiles{grid-template-columns:1fr}}
+
 .primary-action{display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);width:max-content;min-height:var(--control-lg);padding:0 var(--sp-5);border:1px solid var(--border);border-radius:var(--r-md);background:var(--card);color:var(--foreground);font-size:var(--fs-md);font-weight:400;cursor:pointer;transition:background-color var(--t-fast) var(--ease-out),border-color var(--t-fast) var(--ease-out)}
 .primary-action:hover{background:var(--muted);border-color:var(--ring)}
 .primary-action:disabled{opacity:.55;cursor:not-allowed}

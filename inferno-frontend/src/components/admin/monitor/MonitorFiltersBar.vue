@@ -6,13 +6,13 @@
         <Icon
           name="search"
           size="md"
-          class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500"
+          class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)] text-[var(--muted-foreground)]"
         />
         <input
           v-model="search"
           type="text"
           :placeholder="t('admin.channelMonitor.searchPlaceholder')"
-          class="input pl-10"
+          class="field-control pl-10"
           @input="$emit('search-input')"
         />
       </div>
@@ -36,26 +36,30 @@
 
     <!-- Right: Actions -->
     <div class="flex w-full flex-shrink-0 flex-wrap items-center justify-end gap-3 lg:w-auto">
-      <button
-        @click="$emit('reload')"
+      <Button
+        :loading="loading"
         :disabled="loading"
-        class="btn btn-secondary"
+        variant="secondary"
+        size="sm"
         :title="t('common.refresh')"
+        :aria-label="t('common.refresh')"
+        @click="$emit('reload')"
       >
-        <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
-      </button>
-      <button
+        <Icon v-if="!loading" name="refresh" size="md" />
+      </Button>
+      <Button
+        variant="secondary"
+        size="sm"
         @click="$emit('manage-templates')"
-        class="btn btn-secondary"
         :title="t('admin.channelMonitor.template.manageButton')"
       >
-        <Icon name="cog" size="md" class="mr-2" />
+        <Icon name="cog" size="md" />
         {{ t('admin.channelMonitor.template.manageButton') }}
-      </button>
-      <button @click="$emit('create')" class="btn btn-primary">
-        <Icon name="plus" size="md" class="mr-2" />
+      </Button>
+      <Button variant="solid" size="sm" @click="$emit('create')">
+        <Icon name="plus" size="md" />
         {{ t('admin.channelMonitor.createButton') }}
-      </button>
+      </Button>
     </div>
   </div>
 </template>
@@ -65,6 +69,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { Provider } from '@/api/admin/channelMonitor'
 import Select from '@/components/common/Select.vue'
+import Button from '@/components/common/Button.vue'
 import Icon from '@/components/icons/Icon.vue'
 import {
   PROVIDER_OPENAI,
