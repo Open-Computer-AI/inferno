@@ -3,13 +3,9 @@
     class="rail"
     :class="{ 'rail--collapsed': sidebarCollapsed, 'rail--mobile-open': mobileOpen }"
   >
-    <!-- Brand row: mark, name, collapse toggle. The toggle lives here (not the
-         footer) per part 07 v2's anatomy: "brand row with a collapse toggle". -->
+    <!-- Brand row: name and collapse toggle. The toggle remains available in
+         the collapsed rail so the navigation is always reversible. -->
     <div class="rail__brand">
-      <router-link :to="homePath" class="rail__mark" @click="handleMenuItemClick(homePath)">
-        <img v-if="settingsLoaded && siteLogo" :src="siteLogo" alt="" class="rail__mark-img" />
-        <span v-else class="rail__mark-fallback" aria-hidden="true">{{ markInitial }}</span>
-      </router-link>
       <router-link
         :to="homePath"
         class="rail__brand-name"
@@ -23,7 +19,11 @@
         :aria-expanded="!sidebarCollapsed"
         @click="toggleSidebar"
       >
-        <i class="hgi-stroke hgi-sidebar-left" aria-hidden="true" />
+        <i
+          class="hgi-stroke"
+          :class="sidebarCollapsed ? 'hgi-sidebar-right' : 'hgi-sidebar-left'"
+          aria-hidden="true"
+        />
       </button>
     </div>
 
@@ -112,7 +112,7 @@
       >
         <span class="rail__avatar">
           <img v-if="avatarUrl" :src="avatarUrl" :alt="displayName" class="rail__avatar-img" />
-          <span v-else aria-hidden="true">{{ userInitials }}</span>
+          <AccountPatternAvatar v-else :seed="accountSeed" :size="22" />
         </span>
         <span class="rail__identity-text">
           <span class="rail__identity-name">{{ displayName }}</span>
@@ -191,10 +191,10 @@ import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
 import { sanitizeSvg } from '@/utils/sanitize'
-import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
+import AccountPatternAvatar from '@/components/admin/settings/AccountPatternAvatar.vue'
 
 interface NavRow {
   path: string
@@ -263,17 +263,11 @@ const isDark = ref(document.documentElement.classList.contains('dark'))
 
 const homePath = computed(() => (isAdmin.value ? '/admin/dashboard' : '/dashboard'))
 const siteName = computed(() => appStore.siteName)
-const siteLogo = computed(() => sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
-const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
-const markInitial = computed(() => (siteName.value || 'S').trim().charAt(0).toUpperCase() || 'S')
 
 const user = computed(() => authStore.user)
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
 const displayName = computed(() => user.value?.username || user.value?.email?.split('@')[0] || '')
-const userInitials = computed(() => {
-  const name = user.value?.username || user.value?.email?.split('@')[0] || ''
-  return name.slice(0, 2).toUpperCase()
-})
+const accountSeed = computed(() => String(user.value?.id || user.value?.email || displayName.value || 'inferno-account'))
 const roleLabel = computed(() => (isAdmin.value ? t('shell.roleAdministrator') : t('shell.roleMember')))
 
 // ---- feature flags -------------------------------------------------------
@@ -702,8 +696,17 @@ onUnmounted(() => {
 .rail--collapsed .rail__brand-name {
   display: none;
 }
+.rail--collapsed .rail__brand {
+  justify-content: center;
+  padding-inline: 0;
+}
 .rail--collapsed .rail__collapse {
-  display: none;
+  display: grid;
+  width: 40px;
+  height: 30px;
+  border-radius: var(--r-md);
+  background: var(--sidebar-accent);
+  color: var(--foreground);
 }
 
 /* --- shared icon button, popover row, group heading ---------------------- */
@@ -831,9 +834,13 @@ onUnmounted(() => {
 .rail--collapsed :deep(.rail__row) {
   grid-template-columns: 18px;
   padding: 0 8px;
+  justify-content: center;
 }
 .rail--collapsed :deep(.rail__row-label) {
   display: none;
+}
+.rail--collapsed :deep(.rail__row-icon) {
+  transform: translateX(2px);
 }
 
 /* Custom uploaded SVG icon: sized without repainting the uploader's own fill

@@ -46,8 +46,8 @@ describe('PlatformTypeBadge Grok plans', () => {
     expect(wrapper.text()).toContain('SuperGrok Heavy')
     expect(wrapper.find('[data-testid="grok-plan-icon"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="grok-free-plan-icon"]').exists()).toBe(false)
-    // Heavy uses purple plan chip
-    expect(wrapper.html()).toContain('bg-purple-100')
+    // Heavy uses the stronger brand plan token.
+    expect(wrapper.html()).toContain('bg-[var(--brand-tint-strong)]')
 
     await wrapper.setProps({ platform: 'openai', planType: 'free' })
     expect(wrapper.text()).toContain('Free')
@@ -59,22 +59,22 @@ describe('PlatformTypeBadge Grok plans', () => {
     const free = mount(PlatformTypeBadge, {
       props: { platform: 'grok', type: 'oauth', planType: 'free' },
     })
-    expect(free.html()).toContain('bg-gray-100')
-    expect(free.html()).not.toContain('bg-purple-100')
-    expect(free.html()).not.toContain('bg-cyan-100')
+    expect(free.html()).toContain('bg-[var(--muted)]')
+    expect(free.html()).not.toContain('bg-[var(--brand-tint-strong)]')
+    expect(free.html()).not.toContain('bg-[color-mix(in_oklch,var(--success)_14%,var(--card))]')
 
     const superGrok = mount(PlatformTypeBadge, {
       props: { platform: 'grok', type: 'oauth', planType: 'supergrok' },
     })
     expect(superGrok.text()).toContain('SuperGrok')
-    expect(superGrok.html()).toContain('bg-cyan-100')
+    expect(superGrok.html()).toContain('bg-[color-mix(in_oklch,var(--success)_14%,var(--card))]')
     expect(superGrok.find('[data-testid="grok-plan-icon"]').exists()).toBe(true)
 
     const heavy = mount(PlatformTypeBadge, {
       props: { platform: 'grok', type: 'oauth', planType: 'Heavy' },
     })
     expect(heavy.text()).toContain('Heavy')
-    expect(heavy.html()).toContain('bg-purple-100')
+    expect(heavy.html()).toContain('bg-[var(--brand-tint-strong)]')
     expect(heavy.find('[data-testid="grok-plan-icon"]').exists()).toBe(true)
   })
 

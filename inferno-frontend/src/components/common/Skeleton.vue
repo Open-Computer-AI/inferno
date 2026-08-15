@@ -1,10 +1,11 @@
 <template>
   <div
     :class="[
-      'animate-pulse bg-gray-200 dark:bg-dark-700',
+      'skel bg-[var(--brand-tint)]',
       variant === 'circle' ? 'rounded-full' : 'rounded-lg',
       customClass
     ]"
+    :data-shimmer="shimmer || undefined"
     :style="style"
   ></div>
 </template>
@@ -14,6 +15,7 @@ import { computed } from 'vue'
 
 interface Props {
   variant?: 'rect' | 'circle' | 'text'
+  shimmer?: boolean
   width?: string | number
   height?: string | number
   class?: string
@@ -21,6 +23,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   variant: 'rect',
+  shimmer: false,
   width: '100%'
 })
 
@@ -44,3 +47,25 @@ const style = computed(() => {
   return s
 })
 </script>
+
+<style scoped>
+.skel {
+  display: block;
+}
+
+.skel[data-shimmer] {
+  background: var(--surface-subtle);
+  opacity: 0.72;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .skel[data-shimmer] {
+    animation: skel-pulse 1.8s ease-in-out infinite;
+  }
+
+  @keyframes skel-pulse {
+    0%, 100% { opacity: 0.58; }
+    50% { opacity: 0.92; }
+  }
+}
+</style>

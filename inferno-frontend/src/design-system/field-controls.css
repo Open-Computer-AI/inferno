@@ -1,0 +1,86 @@
+/* Inferno field-control primitive.
+ *
+ * This is the shared class counterpart to Input.vue for composed inputs,
+ * textareas, read-only fields, and controls that need utility layout classes.
+ * It uses the same June tokens and focus contract as the component primitive.
+ */
+.field-control {
+  width: 100%;
+  box-sizing: border-box;
+  height: var(--s2a-h-md);
+  border: 1px solid var(--input);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--fs-md);
+  transition: background var(--motion-hover);
+}
+
+.field-control:not([class*='pl-']):not([class*='px-']) {
+  padding-left: 10px;
+}
+
+.field-control:not([class*='pr-']):not([class*='px-']) {
+  padding-right: 10px;
+}
+
+.field-control::placeholder {
+  color: var(--muted-foreground);
+}
+
+.dark .field-control[type='date'],
+.dark .field-control[type='time'],
+.dark .field-control[type='datetime-local'],
+.dark .field-control[type='month'],
+.dark .field-control[type='week'] {
+  color-scheme: dark;
+}
+
+.field-control:focus {
+  outline: none;
+  border-color: var(--ring-focus);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.field-control:disabled {
+  background: var(--card);
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.field-error,
+.field-error:focus {
+  border-color: var(--destructive);
+}
+
+.field-error:focus {
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--destructive) 18%, transparent);
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--foreground);
+  font-size: var(--fs-md);
+  font-weight: 400;
+}
+
+.field-hint {
+  margin-top: 6px;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+
+.field-error-text {
+  margin-top: 6px;
+  color: var(--destructive);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+
+textarea.field-control {
+  height: auto;
+  padding: 8px 10px;
+  line-height: 1.5;
+}

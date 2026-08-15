@@ -19,25 +19,18 @@
     </div>
 
     <div class="grpsel__list" role="group" :aria-label="t('admin.users.groups')">
-      <label
+      <div
         v-for="group in filteredGroups"
         :key="group.id"
         class="grpsel__row"
         :data-selected="modelValue.includes(group.id) || undefined"
         :title="t('admin.groups.rateAndAccounts', { rate: group.rate_multiplier, count: group.account_count || 0 })"
       >
-        <!-- Real, focusable, visually hidden input; the label is the click
-             target. Listens on `click` not `change`: see Checkbox.vue's
-             comment, `.checked` is already settled by the time click fires. -->
-        <input
-          type="checkbox"
-          class="grpsel__input"
-          :checked="modelValue.includes(group.id)"
-          @click="handleChange(group.id, ($event.target as HTMLInputElement).checked)"
+        <Checkbox
+          :model-value="modelValue.includes(group.id)"
+          :aria-label="group.name"
+          @update:model-value="handleChange(group.id, $event)"
         />
-        <span class="grpsel__box" :data-checked="modelValue.includes(group.id) || undefined" aria-hidden="true">
-          <i v-if="modelValue.includes(group.id)" class="hgi-stroke hgi-tick-01 grpsel__tick" aria-hidden="true" />
-        </span>
 
         <span class="grpsel__meta">
           <span class="grpsel__name">{{ group.name }}</span>
@@ -56,7 +49,7 @@
           </span>
           <span class="grpsel__cap-label">{{ capacityLabel(group) }}</span>
         </span>
-      </label>
+      </div>
 
       <div v-if="filteredGroups.length === 0" class="grpsel__empty">
         {{ t('common.noGroupsAvailable') }}
@@ -91,6 +84,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { platformLabel } from '@/utils/platformColors'
 import type { AdminGroup, GroupPlatform } from '@/types'
+import Checkbox from '@/components/common/Checkbox.vue'
 
 const { t } = useI18n()
 
