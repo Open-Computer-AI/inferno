@@ -64,6 +64,41 @@
 }
 
 @layer components {
+  .settings-surface {
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    background: var(--card);
+    box-shadow: none;
+    overflow: hidden;
+  }
+
+  .settings-surface > .border-b {
+    border-bottom-color: var(--border-subtle) !important;
+    background: transparent;
+  }
+
+  .settings-surface .border-gray-100,
+  .settings-surface .border-gray-200 {
+    border-color: var(--border-subtle) !important;
+  }
+
+  .settings-surface .bg-gray-50,
+  .settings-surface .bg-gray-100 {
+    background: var(--surface-subtle) !important;
+  }
+
+  .settings-surface .field-control {
+    border-color: var(--input);
+    border-radius: var(--r-md);
+    background: var(--card);
+    color: var(--foreground);
+  }
+
+  .settings-surface .field-control:focus {
+    border-color: var(--ring-focus);
+    box-shadow: 0 0 0 3px var(--focus-ring);
+  }
+
   /* ============ 按钮样式 ============ */
   .btn {
     @apply inline-flex items-center justify-center gap-2;

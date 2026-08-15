@@ -23,7 +23,7 @@ import {
   STATUS_ERROR,
 } from '@/constants/channelMonitor'
 
-const NEUTRAL_BADGE = 'bg-gray-100 text-gray-800 dark:bg-dark-700 dark:text-gray-300'
+const NEUTRAL_BADGE = 'bg-[var(--surface-subtle)] text-[var(--body-copy)]'
 
 /** Availability HSL hue multiplier: 0%=red(0) / 50%=yellow(60) / 100%=green(120). */
 const HSL_HUE_PER_PERCENT = 1.2
@@ -46,11 +46,11 @@ export function useChannelMonitorFormat() {
   function statusBadgeClass(s: MonitorStatus | ''): string {
     switch (s) {
       case STATUS_OPERATIONAL:
-        return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
+        return 'bg-[var(--success-soft)] text-[var(--success)]'
       case STATUS_DEGRADED:
-        return 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
+        return 'bg-[var(--s2a-attn-soft)] text-[var(--s2a-attn)]'
       case STATUS_FAILED:
-        return 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300'
+        return 'bg-[var(--destructive-soft)] text-[var(--destructive)]'
       case STATUS_ERROR:
       default:
         return NEUTRAL_BADGE
@@ -72,13 +72,13 @@ export function useChannelMonitorFormat() {
   function providerBadgeClass(p: Provider | string): string {
     switch (p) {
       case PROVIDER_OPENAI:
-        return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
+        return 'bg-[var(--brand-tint)] text-[var(--brand)]'
       case PROVIDER_ANTHROPIC:
-        return 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300'
+        return 'bg-[var(--brand-tint)] text-[var(--brand)]'
       case PROVIDER_GEMINI:
-        return 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300'
+        return 'bg-[var(--brand-tint)] text-[var(--brand)]'
       case PROVIDER_GROK:
-        return 'bg-zinc-100 text-zinc-700 dark:bg-zinc-500/15 dark:text-zinc-300'
+        return 'bg-[var(--surface-subtle)] text-[var(--body-copy)]'
       default:
         return NEUTRAL_BADGE
     }
@@ -93,24 +93,24 @@ export function useChannelMonitorFormat() {
     switch (p) {
       case PROVIDER_OPENAI:
         return active
-          ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-400'
-          : 'border-gray-200 bg-white text-gray-600 hover:border-emerald-300 hover:text-emerald-700 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-400 dark:hover:border-emerald-500/50'
+          ? 'border-[var(--brand-line)] bg-[var(--brand-tint)] text-[var(--brand)]'
+          : 'border-[var(--border)] bg-[var(--card)] text-[var(--body-copy)] hover:bg-[var(--sidebar-accent)]'
       case PROVIDER_ANTHROPIC:
         return active
-          ? 'border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300 dark:border-orange-400'
-          : 'border-gray-200 bg-white text-gray-600 hover:border-orange-300 hover:text-orange-700 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-400 dark:hover:border-orange-500/50'
+          ? 'border-[var(--brand-line)] bg-[var(--brand-tint)] text-[var(--brand)]'
+          : 'border-[var(--border)] bg-[var(--card)] text-[var(--body-copy)] hover:bg-[var(--sidebar-accent)]'
       case PROVIDER_GEMINI:
         return active
-          ? 'border-sky-500 bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300 dark:border-sky-400'
-          : 'border-gray-200 bg-white text-gray-600 hover:border-sky-300 hover:text-sky-700 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-400 dark:hover:border-sky-500/50'
+          ? 'border-[var(--brand-line)] bg-[var(--brand-tint)] text-[var(--brand)]'
+          : 'border-[var(--border)] bg-[var(--card)] text-[var(--body-copy)] hover:bg-[var(--sidebar-accent)]'
       case PROVIDER_GROK:
         return active
-          ? 'border-zinc-500 bg-zinc-50 text-zinc-800 dark:bg-zinc-500/15 dark:text-zinc-200 dark:border-zinc-400'
-          : 'border-gray-200 bg-white text-gray-600 hover:border-zinc-400 hover:text-zinc-800 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-400 dark:hover:border-zinc-500/50'
+          ? 'border-[var(--brand-line)] bg-[var(--brand-tint)] text-[var(--brand)]'
+          : 'border-[var(--border)] bg-[var(--card)] text-[var(--body-copy)] hover:bg-[var(--sidebar-accent)]'
       default:
         return active
-          ? 'border-gray-400 bg-gray-50 text-gray-700 dark:border-dark-500 dark:bg-dark-700 dark:text-gray-200'
-          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-400'
+          ? 'border-[var(--border)] bg-[var(--surface-subtle)] text-[var(--body-copy)]'
+          : 'border-[var(--border)] bg-[var(--card)] text-[var(--body-copy)] hover:bg-[var(--sidebar-accent)]'
     }
   }
 
@@ -173,14 +173,14 @@ export function hslForPct(pct: number | null | undefined): string | undefined {
 export function providerGradient(provider: string): string {
   switch (provider) {
     case PROVIDER_OPENAI:
-      return 'bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-500/10 dark:to-emerald-500/20'
+      return 'bg-[var(--brand-tint)]'
     case PROVIDER_ANTHROPIC:
-      return 'bg-gradient-to-br from-orange-50 to-amber-100 dark:from-orange-500/10 dark:to-amber-500/20'
+      return 'bg-[var(--brand-tint)]'
     case PROVIDER_GEMINI:
-      return 'bg-gradient-to-br from-sky-50 to-indigo-100 dark:from-sky-500/10 dark:to-indigo-500/20'
+      return 'bg-[var(--brand-tint)]'
     case PROVIDER_GROK:
-      return 'bg-gradient-to-br from-zinc-50 to-neutral-200 dark:from-zinc-500/10 dark:to-neutral-500/20'
+      return 'bg-[var(--surface-subtle)]'
     default:
-      return 'bg-gradient-to-br from-gray-100 to-gray-200 dark:from-dark-700 dark:to-dark-600'
+      return 'bg-[var(--surface-subtle)]'
   }
 }
