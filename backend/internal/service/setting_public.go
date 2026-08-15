@@ -27,22 +27,22 @@ func defaultLoginAgreementDocuments() []LoginAgreementDocument {
 	return []LoginAgreementDocument{
 		{
 			ID:        "terms",
-			Title:     "服务条款",
+			Title:     "Terms of Service",
 			ContentMD: "",
 		},
 		{
 			ID:        "usage-policy",
-			Title:     "使用政策",
+			Title:     "Usage Policy",
 			ContentMD: "",
 		},
 		{
 			ID:        "supported-regions",
-			Title:     "支持的国家和地区",
+			Title:     "Supported Countries and Regions",
 			ContentMD: "",
 		},
 		{
 			ID:        "service-specific-terms",
-			Title:     "服务特定条款",
+			Title:     "Service-Specific Terms",
 			ContentMD: "",
 		},
 	}
