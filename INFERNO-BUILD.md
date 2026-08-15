@@ -506,6 +506,177 @@ the next run; this entry advanced the mirror but did not complete the port.
 7. Port only what converted components depend on. Record ports AND skips here,
    then advance the last reviewed SHA.
 
+### 2026-08-15 — third sync, following the derived runbook
+
+**115 commits behind.** Range `48eb3766d` (2026-08-09, the previous sync's
+endpoint, found via `git merge-base pre-sync-backup upstream/main` since no
+concrete SHA from a later run ever landed on this branch) .. `c204d33b0`
+(2026-08-15, new last-reviewed SHA).
+
+**Two prior automated sync PRs (#1 `sync/reconcile-2026-08-10`, #2
+`sync/reconcile-2026-08-11`) were still open and unreviewed at the start of
+this run, and both are now stale/conflicting against this branch.** Their
+analysis was read for precedent (see the backup.ts and channel.ts decisions
+below) but their code was not merged or reused — this run redid the diff
+against current `HEAD` from scratch, since nothing they ported ever landed.
+A human should close or rebase #1 and #2 rather than merge them as-is.
+
+**Rebase: clean.** All 54 of our commits replayed with zero conflicts.
+**Invariant asserted, twice** (immediately after rebase and again after
+porting): 0 files changed under `backend/`, `frontend/`, `deploy/`, `docs/`.
+
+## Ported (5 files wholesale, 1 hand-merged)
+
+Wholesale copy (mirror differed, we had never touched these):
+
+1. `inferno-frontend/src/constants/channel.ts` -- upstream added
+   `BILLING_MODE_VIDEO` and `BILLING_MODEL_SOURCE_RESPONSE` to their
+   respective unions (additive only). Matches a new
+   `oneof=...response_model` value on `BillingModelSource` in
+   `channel_handler.go`. Consumers include several unconverted components;
+   none broke under `vue-tsc` since both additions are new union members,
+   not removals.
+2. `inferno-frontend/src/composables/useModelWhitelist.ts` (+ its spec) --
+   upstream added the `grok-4.6` model to the whitelist/rename tables. Pure
+   data addition, no shape change. Consumers
+   (`CreateAccountModal.vue`, `EditAccountModal.vue`,
+   `BulkEditAccountModal.vue`, `ModelWhitelistSelector.vue`) are all
+   unconverted or partially-touched, but the file itself was never ours to
+   diverge from, so upstream's version is simply correct.
+3. `inferno-frontend/src/utils/accountUsageRefresh.ts` (+ its spec) --
+   upstream added `buildGrokUsageRefreshKey` (a Grok analogue of the
+   existing `buildOpenAIUsageRefreshKey`, used to detect when a Grok
+   quota/billing snapshot changed and a row needs to re-render). Ported the
+   utility; **did not wire it into `AccountsView.vue`** (that file is under
+   the ignored `views/` bucket, and wiring it in is real feature work, not a
+   port). Recorded under "owed cross-file work" below so this doesn't read
+   as done -- Grok quota cells in the admin accounts table do not yet get
+   the same reactive refresh that OpenAI/Codex cells already have.
+4. `inferno-frontend/src/views/admin/groupsImagePricing.ts` (+ its spec) --
+   lives under `views/admin/` by path but is inert exported config (a
+   platform-name `Set`), not a Vue view -- same call as the 2026-08-10 log
+   entry made for this exact file. Upstream added `"composite"` to
+   `imagePricingPlatforms`, enabling image-pricing for Composite groups.
+   Sole consumer is the unconverted `GroupsView.vue`.
+
+Hand-merged (file is in our own touched history, so this was a targeted
+insertion, not a copy):
+
+5. `inferno-frontend/src/types/index.ts` -- upstream added two fields to the
+   `Group`/`AdminGroup`/`CreateGroupRequest`/`UpdateGroupRequest` family:
+   `long_context_pricing_enabled: boolean` and
+   `model_pricing: ChannelModelPricing[]` (the latter required on
+   `AdminGroup`, optional on the two request types). Verified against
+   `backend/internal/handler/dto/types.go`, `dto/mappers.go`, and
+   `group_handler.go` -- all three matched exactly, no surprises. This is a
+   real, live backend contract (not inert): `dto/mappers.go` now populates
+   `ModelPricing` on every `AdminGroup` response. Diffed the merged result
+   against the mirror afterward -- byte-identical, confirming nothing else
+   in the file had drifted.
+   **One fallout, fixed:** `src/views/dev/SpecimenView.vue`'s `makeGroup()`
+   fixture factory built an `AdminGroup` without the new required
+   `model_pricing` field, which `vue-tsc` correctly rejected once the type
+   became non-optional. Added `long_context_pricing_enabled: false,
+   model_pricing: [],` to the factory's inert defaults. `SpecimenView.vue`
+   is nominally orchestrator-only per `SWARM-REGISTRY.md`'s no-worker-touch
+   list, but that rule guards against parallel workers colliding on it, not
+   against fixing contract fallout during reconciliation -- flagging the
+   edit here rather than doing it silently.
+
+## Skipped, with reasons
+
+1. **`inferno-frontend/src/api/admin/backup.ts`** -- upstream changed
+   `getDownloadURL()`'s response from `{ url: string }` to
+   `{ url?: string; parts?: BackupDownloadPart[] }` for large-file
+   multi-part backup downloads (verified live in
+   `backup_handler.go`: `response.Success(c, download)` now returns the
+   full struct instead of `gin.H{"url": url}`). Sole consumer,
+   `BackupView.vue`, is unconverted and unconditionally does
+   `link.href = result.url`. Porting the type alone would make `.url`
+   optional under `vue-tsc` without adding any handling for `.parts`, so it
+   would compile clean and still break downloads of large backups. Left
+   both files at their pre-sync shape. (The two abandoned PRs disagreed with
+   each other here -- #1 ported `backup.ts` + `BackupView.vue` together as a
+   matched-pair exception to the views-ignore rule, #2 skipped both. This
+   run follows #2's read: the views-ignore rule exists precisely so a
+   redesign candidate isn't invested in twice, and the type-only port helps
+   nobody without the view change alongside it.)
+2. **`inferno-frontend/src/api/admin/groups.ts`** (`getUsageSummary`) --
+   upstream dropped the `timezone` query param (backend now computes "today"
+   server-side via `service.GroupUsageTodayStart(time.Now())`, confirmed in
+   `group_handler.go`) and added a `yesterday_cost` field to the response.
+   Sole consumer is unconverted `GroupsView.vue`, which still passes a
+   `timezone` arg -- harmless (the backend simply ignores unbound query
+   params) but the extra field is invisible to it. Deferred to that view's
+   conversion.
+3. **`inferno-frontend/src/views/admin/ops/utils/opsFormatters.ts`** (+
+   `OpsDashboardHeader.vue`, which is the only consumer) -- upstream added
+   `formatMemorySizeMB()` for nicer memory-size display on the ops
+   dashboard. Both files are under the ignored ops-views bucket and neither
+   is touched by us; porting the formatter alone would add a function with
+   zero callers in our tree, since wiring it in means editing
+   `OpsDashboardHeader.vue`. Skipped as a matched pair.
+4. **`BackupView.vue`, `ChannelsView.vue`, `GroupsView.vue`, `UsageView.vue`**
+   and their component/spec siblings (`BulkEditAccountModal.vue`,
+   `PricingEntryCard.vue`, `UsageTable.vue` + spec, `PlatformTypeBadge.vue` +
+   spec, `AccountsView.sparkShadow.spec.ts`, `GroupsView.columnSettings.spec.ts`,
+   `UsageView.spec.ts`) -- all under the explicit `components/`/`views/`
+   ignore rule.
+5. **New upstream test files not ported**: `admin.groups.usage-summary.spec.ts`,
+   `BackupView.spec.ts`, `opsFormatters.spec.ts` -- each tests one of the
+   three skips above; porting the test without the code it tests would just
+   fail.
+6. **`pnpm-lock.yaml`** differs only in a transitive `nanoid` patch version
+   (3.3.17 vs 3.3.18); `package.json` is byte-identical to the mirror. Not a
+   port target -- a fresh `pnpm install` against the same `package.json`
+   naturally resolves to whichever patch is current: not a real drift.
+7. **`components/common/ProxyAdBanner.vue`, `components/layout/AppHeader.vue`**
+   (present in the mirror, absent from ours) -- both are standing,
+   deliberate June deletions from before this run (monetisation banner and
+   the old shell header), not new upstream churn. No action.
+8. Backend-only changes verified but not ported (no client-visible contract
+   change): `api_key_handler.go` (+47 lines, server-side validation only),
+   `failover_loop.go`, `grok_audio.go`, `openai_gateway_handler.go`,
+   `openai_x_search.go` (new file), `gateway_web_search.go`,
+   `security_audit_helper.go` -- all gateway/proxy-path logic (the actual AI
+   request path external clients hit), not admin/user SPA-facing endpoints,
+   so nothing under `frontend/src/api` reads them.
+
+## Gate output (real, not carried forward)
+
+Before port: `june-lint` clean across 99 converted file(s) · `vue-tsc
+--noEmit` 0 errors · `vitest run` 220/220 files, 1536/1536 tests (one
+pre-existing, non-blocking `useRoute` mock unhandled-rejection warning in
+`DashboardView.spec.ts`, unrelated to this sync, present before and after).
+
+After port: `june-lint` clean across 98 converted file(s) (the drop by one
+reflects `types/index.ts` -- see note below, not a scope regression) ·
+`vue-tsc --noEmit` 0 errors (after the `SpecimenView.vue` fixture fix) ·
+`vitest run` 220/220 files, 1542/1542 tests (the +6 came from the two ported
+spec files) · `vite build` succeeded (pre-existing >500kB chunk-size
+warnings only).
+
+## Owed cross-file work, added to the PENDING checklist
+
+- `AccountsView.vue` does not call the newly-ported
+  `buildGrokUsageRefreshKey`, so Grok quota/billing cells in the admin
+  accounts table lack the reactive refresh-on-snapshot-change that OpenAI
+  cells already have. Wiring this in means editing `AccountsView.vue`
+  itself, which is out of scope for a port.
+
+## Unsure about / flagging for review
+
+- The `backup.ts` skip (item 1 above) reverses the prior (abandoned) run's
+  call. Flagging explicitly since it is a real product gap (multi-part
+  backup downloads render a plain URL link, which will 404 or download a
+  partial file, for any backup large enough to need splitting) that will
+  stay open until either `BackupView.vue` converts or someone makes a
+  deliberate call to invest in the unconverted view early.
+- Two stale, unreviewed sync PRs (#1, #2) are sitting on this repo from
+  2026-08-10 and 2026-08-11. Neither was merged, both are now marked
+  "dirty" against the current branch tip. Recommend closing both rather than
+  attempting to land them -- their content is superseded by this entry.
+
 ## Modal archetype map (part 05 sections `archetypes` and `map`)
 
 Documentation, not components. 44 modals resolve to six shapes; once a modal is
@@ -1419,6 +1590,8 @@ Fixed by unioning `git ls-files --others --exclude-standard` into the scope.
 - [ ] Opt-in Grok probe column (must state "one billable request per visible row")
 - [ ] Column-header window picker (`pinnedWindowKey` already accepted)
 - [ ] ~40 raw checkboxes -> `Checkbox.vue` / `Radio.vue` (every `.setValue()` test breaks)
+- [ ] `AccountsView.vue` wire up `buildGrokUsageRefreshKey` (ported 2026-08-15,
+      unused) so Grok quota/billing cells refresh reactively like OpenAI's do
 
 ### Known gaps, not blocking
 
