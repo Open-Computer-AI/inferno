@@ -160,6 +160,8 @@ function makeGroup(overrides: Partial<AdminGroup> & { id: number; name: string; 
     daily_limit_usd: null,
     weekly_limit_usd: null,
     monthly_limit_usd: null,
+    long_context_pricing_enabled: false,
+    model_pricing: [],
     allow_image_generation: false,
     allow_batch_image_generation: false,
     image_rate_independent: false,
