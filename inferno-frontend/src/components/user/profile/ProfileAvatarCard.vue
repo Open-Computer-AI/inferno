@@ -15,8 +15,8 @@
     <div :class="props.embedded ? 'space-y-3' : 'flex flex-col gap-5 px-6 py-6 sm:flex-row sm:items-start'">
       <div
         :class="props.embedded
-          ? 'flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 text-xl font-bold text-white shadow-lg shadow-primary-500/20'
-          : 'flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 text-3xl font-bold text-white shadow-lg shadow-primary-500/20'"
+          ? 'flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full'
+          : 'flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-full'"
       >
         <img
           v-if="avatarPreviewUrl"
@@ -25,7 +25,12 @@
           :alt="displayName"
           class="h-full w-full object-cover"
         >
-        <span v-else>{{ avatarInitial }}</span>
+        <AccountPatternAvatar
+          v-else
+          data-testid="profile-generated-avatar"
+          :seed="generatedSeed"
+          :size="props.embedded ? 64 : 96"
+        />
       </div>
 
       <div :class="props.embedded ? 'space-y-3' : 'min-w-0 flex-1 space-y-4'">
@@ -39,9 +44,24 @@
           <p class="text-sm text-gray-500 dark:text-gray-400">
             {{ t('profile.avatar.uploadHint') }}
           </p>
+          <p v-if="!avatarPreviewUrl" class="text-xs text-gray-500 dark:text-gray-400">
+            {{ t('profile.avatar.generatedHint') }}
+          </p>
         </div>
 
         <div class="flex flex-wrap items-center gap-3">
+          <button
+            v-if="!avatarPreviewUrl"
+            data-testid="profile-avatar-refresh"
+            type="button"
+            class="btn btn-secondary btn-sm"
+            :disabled="avatarSaving"
+            @click="handleGeneratedRefresh"
+          >
+            <Icon name="refresh" size="sm" />
+            {{ t('profile.avatar.refreshAction') }}
+          </button>
+
           <label class="btn btn-secondary btn-sm cursor-pointer">
             <input
               data-testid="profile-avatar-file-input"
@@ -86,6 +106,8 @@ import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import type { User } from '@/types'
 import { extractApiErrorMessage } from '@/utils/apiError'
+import AccountPatternAvatar from '@/components/admin/settings/AccountPatternAvatar.vue'
+import { Icon } from '@/components/icons'
 
 const props = withDefaults(defineProps<{
   user: User | null
@@ -103,10 +125,18 @@ const avatarScaleSteps = [1, 0.92, 0.84, 0.76, 0.68, 0.6, 0.52, 0.44, 0.36]
 const avatarQualitySteps = [0.92, 0.84, 0.76, 0.68, 0.6, 0.52, 0.44, 0.36]
 const avatarDraft = ref('')
 const avatarSaving = ref(false)
+const generatedSeed = ref('')
 
 const displayName = computed(() => props.user?.username?.trim() || props.user?.email?.trim() || t('profile.user'))
-const avatarInitial = computed(() => displayName.value.charAt(0).toUpperCase() || 'U')
 const avatarPreviewUrl = computed(() => avatarDraft.value.trim() || props.user?.avatar_url?.trim() || '')
+
+const defaultSeed = computed(() => props.user?.avatar_seed || String(props.user?.id || props.user?.email || displayName.value))
+
+function resetGeneratedSeed(): void {
+  generatedSeed.value = defaultSeed.value
+}
+
+resetGeneratedSeed()
 
 watch(
   () => props.user?.avatar_url,
@@ -114,6 +144,8 @@ watch(
     avatarDraft.value = ''
   }
 )
+
+watch(defaultSeed, resetGeneratedSeed)
 
 function normalizeUploadedAvatar(value: string): string | null {
   const normalized = value.trim()
@@ -261,6 +293,25 @@ async function handleAvatarDelete() {
     authStore.user = updated
     avatarDraft.value = ''
     appStore.showSuccess(t('profile.avatar.deleteSuccess'))
+  } catch (error: unknown) {
+    appStore.showError(extractApiErrorMessage(error, t('common.error')))
+  } finally {
+    avatarSaving.value = false
+  }
+}
+
+async function handleGeneratedRefresh() {
+  if (avatarSaving.value || avatarPreviewUrl.value) {
+    return
+  }
+
+  avatarSaving.value = true
+  try {
+    const nextSeed = `${defaultSeed.value}:${Date.now()}`
+    const updated = await userAPI.updateProfile({ avatar_seed: nextSeed, avatar_url: '' })
+    authStore.user = updated
+    generatedSeed.value = updated.avatar_seed || nextSeed
+    appStore.showSuccess(t('profile.avatar.refreshSuccess'))
   } catch (error: unknown) {
     appStore.showError(extractApiErrorMessage(error, t('common.error')))
   } finally {
