@@ -186,6 +186,20 @@ func (_c *UserCreate) SetNillableNotes(v *string) *UserCreate {
 	return _c
 }
 
+// SetAvatarSeed sets the "avatar_seed" field.
+func (_c *UserCreate) SetAvatarSeed(v string) *UserCreate {
+	_c.mutation.SetAvatarSeed(v)
+	return _c
+}
+
+// SetNillableAvatarSeed sets the "avatar_seed" field if the given value is not nil.
+func (_c *UserCreate) SetNillableAvatarSeed(v *string) *UserCreate {
+	if v != nil {
+		_c.SetAvatarSeed(*v)
+	}
+	return _c
+}
+
 // SetTotpSecretEncrypted sets the "totp_secret_encrypted" field.
 func (_c *UserCreate) SetTotpSecretEncrypted(v string) *UserCreate {
 	_c.mutation.SetTotpSecretEncrypted(v)
@@ -628,6 +642,10 @@ func (_c *UserCreate) defaults() error {
 		v := user.DefaultNotes
 		_c.mutation.SetNotes(v)
 	}
+	if _, ok := _c.mutation.AvatarSeed(); !ok {
+		v := user.DefaultAvatarSeed
+		_c.mutation.SetAvatarSeed(v)
+	}
 	if _, ok := _c.mutation.TotpEnabled(); !ok {
 		v := user.DefaultTotpEnabled
 		_c.mutation.SetTotpEnabled(v)
@@ -718,6 +736,14 @@ func (_c *UserCreate) check() error {
 	}
 	if _, ok := _c.mutation.Notes(); !ok {
 		return &ValidationError{Name: "notes", err: errors.New(`ent: missing required field "User.notes"`)}
+	}
+	if _, ok := _c.mutation.AvatarSeed(); !ok {
+		return &ValidationError{Name: "avatar_seed", err: errors.New(`ent: missing required field "User.avatar_seed"`)}
+	}
+	if v, ok := _c.mutation.AvatarSeed(); ok {
+		if err := user.AvatarSeedValidator(v); err != nil {
+			return &ValidationError{Name: "avatar_seed", err: fmt.Errorf(`ent: validator failed for field "User.avatar_seed": %w`, err)}
+		}
 	}
 	if _, ok := _c.mutation.TotpEnabled(); !ok {
 		return &ValidationError{Name: "totp_enabled", err: errors.New(`ent: missing required field "User.totp_enabled"`)}
@@ -819,6 +845,10 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Notes(); ok {
 		_spec.SetField(user.FieldNotes, field.TypeString, value)
 		_node.Notes = value
+	}
+	if value, ok := _c.mutation.AvatarSeed(); ok {
+		_spec.SetField(user.FieldAvatarSeed, field.TypeString, value)
+		_node.AvatarSeed = value
 	}
 	if value, ok := _c.mutation.TotpSecretEncrypted(); ok {
 		_spec.SetField(user.FieldTotpSecretEncrypted, field.TypeString, value)
@@ -1288,6 +1318,18 @@ func (u *UserUpsert) UpdateNotes() *UserUpsert {
 	return u
 }
 
+// SetAvatarSeed sets the "avatar_seed" field.
+func (u *UserUpsert) SetAvatarSeed(v string) *UserUpsert {
+	u.Set(user.FieldAvatarSeed, v)
+	return u
+}
+
+// UpdateAvatarSeed sets the "avatar_seed" field to the value that was provided on create.
+func (u *UserUpsert) UpdateAvatarSeed() *UserUpsert {
+	u.SetExcluded(user.FieldAvatarSeed)
+	return u
+}
+
 // SetTotpSecretEncrypted sets the "totp_secret_encrypted" field.
 func (u *UserUpsert) SetTotpSecretEncrypted(v string) *UserUpsert {
 	u.Set(user.FieldTotpSecretEncrypted, v)
@@ -1704,6 +1746,20 @@ func (u *UserUpsertOne) SetNotes(v string) *UserUpsertOne {
 func (u *UserUpsertOne) UpdateNotes() *UserUpsertOne {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateNotes()
+	})
+}
+
+// SetAvatarSeed sets the "avatar_seed" field.
+func (u *UserUpsertOne) SetAvatarSeed(v string) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetAvatarSeed(v)
+	})
+}
+
+// UpdateAvatarSeed sets the "avatar_seed" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateAvatarSeed() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateAvatarSeed()
 	})
 }
 
@@ -2321,6 +2377,20 @@ func (u *UserUpsertBulk) SetNotes(v string) *UserUpsertBulk {
 func (u *UserUpsertBulk) UpdateNotes() *UserUpsertBulk {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateNotes()
+	})
+}
+
+// SetAvatarSeed sets the "avatar_seed" field.
+func (u *UserUpsertBulk) SetAvatarSeed(v string) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetAvatarSeed(v)
+	})
+}
+
+// UpdateAvatarSeed sets the "avatar_seed" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateAvatarSeed() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateAvatarSeed()
 	})
 }
 

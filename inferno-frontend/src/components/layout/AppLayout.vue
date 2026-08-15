@@ -1,6 +1,7 @@
 <template>
-  <div class="shell" :class="{ 'shell--collapsed': sidebarCollapsed }">
-    <AppSidebar />
+  <div class="shell" :class="{ 'shell--collapsed': sidebarCollapsed, 'shell--settings': variant === 'settings' }">
+    <AppSidebar v-if="variant === 'default'" />
+    <slot v-else name="sidebar" />
 
     <div class="shell__content">
       <!-- The header's hamburger needed a new home once the header was
@@ -50,6 +51,9 @@ import AppSidebar from './AppSidebar.vue'
 const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
+const { variant = 'default' } = defineProps<{
+  variant?: 'default' | 'settings'
+}>()
 const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)
 const isAdmin = computed(() => authStore.user?.role === 'admin')
 
@@ -150,7 +154,8 @@ defineExpose({ replayTour })
   border-radius: var(--r-window);
   background: var(--card);
   box-shadow: var(--shadow-sm), var(--shadow-inset);
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 16px;
   /* Scrolls, never shows a bar -- and that is a padding fix as much as a
      cosmetic one. A classic scrollbar is laid out INSIDE the content box, so
@@ -160,6 +165,10 @@ defineExpose({ replayTour })
      untouched. */
   scrollbar-width: none;
   -ms-overflow-style: none;
+}
+
+.shell--settings .shell__card {
+  padding: 0;
 }
 
 .shell__card::-webkit-scrollbar {
@@ -188,6 +197,20 @@ defineExpose({ replayTour })
   }
   .shell__card {
     margin: 7px;
+  }
+
+  .shell--settings {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .shell--settings .shell__card {
+    margin: 0 7px 7px;
+  }
+
+  /* Settings keeps its own visible horizontal navigation rail on mobile, so
+     the global off-canvas menu button would only cover the page heading. */
+  .shell--settings .shell__mobile-toggle {
+    display: none;
   }
 }
 

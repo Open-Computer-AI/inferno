@@ -13,6 +13,7 @@ import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { getSetupStatus } from '@/api/setup'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
 import { resolveRouteDocumentTitle } from './title'
+import { isSettingsSectionKey } from '@/components/admin/settings/settingsRegistry'
 
 /**
  * Route definitions with lazy loading
@@ -595,9 +596,12 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
-    path: '/admin/settings',
+    path: '/admin/settings/:section?',
     name: 'AdminSettings',
     component: () => import('@/views/admin/SettingsView.vue'),
+    beforeEnter: (to) => isSettingsSectionKey(to.params.section)
+      ? true
+      : { name: 'AdminSettings', params: { section: 'general' } },
     meta: {
       requiresAuth: true,
       requiresAdmin: true,

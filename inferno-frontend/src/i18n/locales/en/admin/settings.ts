@@ -4,6 +4,7 @@ export default {
       description: 'Manage registration, email verification, default values, and SMTP settings',
       tabs: {
         general: 'General',
+        appearance: 'Appearance',
         agreement: 'Agreement',
         features: 'Feature Switches',
         security: 'Security',
@@ -12,6 +13,39 @@ export default {
         email: 'Email',
         backup: 'Backup',
         payment: 'Payment',
+      },
+      backToApp: 'Back to app',
+      account: {
+        avatarDescription: 'A generated pattern synced with your Inferno account.',
+        refreshAvatar: 'Refresh avatar pattern',
+        refreshingAvatar: 'Refreshing avatar pattern',
+      },
+      groups: {
+        workspace: 'Workspace',
+        access: 'Access',
+        platform: 'Platform',
+        revenue: 'Revenue',
+        communication: 'Communication',
+        data: 'Data',
+      },
+      pageDescriptions: {
+        general: 'Configure the site identity, navigation, and administrator-facing defaults.',
+        appearance: 'Choose how Inferno looks and responds across your workspace.',
+        agreement: 'Control the agreements shown during sign-in and registration.',
+        features: 'Choose which product capabilities are available to your users.',
+        security: 'Protect access to the admin surface and sensitive operations.',
+        users: 'Set the defaults applied to new users and their accounts.',
+        gateway: 'Configure upstream routing, scheduling, and provider behavior.',
+        payment: 'Configure billing, payment providers, and order behavior.',
+        email: 'Configure SMTP delivery and account notification behavior.',
+        backup: 'Create, restore, and manage application data backups.',
+      },
+      appearance: {
+        theme: 'Theme',
+        themeHint: 'Match the system preference or choose light or dark mode for Inferno.',
+        system: 'System',
+        light: 'Light',
+        dark: 'Dark',
       },
       features: {
         channelMonitor: {
@@ -634,7 +668,7 @@ export default {
         homeContent: 'Home Page Content',
         homeContentPlaceholder: 'Enter custom content for the home page. Supports Markdown & HTML. If a URL is entered, it will be displayed as an iframe.',
         homeContentHint: 'Customize the home page content. Supports Markdown/HTML. If you enter a URL (starting with http:// or https://), it will be used as an iframe src to embed an external page. When set, the default status information will no longer be displayed.',
-        homeContentIframeWarning: '⚠️ iframe mode note: Some websites have X-Frame-Options or CSP security policies that prevent embedding in iframes. If the page appears blank or shows an error, please verify the target website allows embedding, or consider using HTML mode to build your own content.',
+        homeContentIframeWarning: 'Warning: iframe mode note: Some websites have X-Frame-Options or CSP security policies that prevent embedding in iframes. If the page appears blank or shows an error, please verify the target website allows embedding, or consider using HTML mode to build your own content.',
         compactHome: 'Compact Home Page',
         compactHomeHint: 'Show a restrained site identity page when no custom home page content is set.',
         hideCcsImportButton: 'Hide CCS Import Button',
@@ -649,7 +683,7 @@ export default {
         urlPlaceholder: 'https://example.com/purchase',
         urlHint: 'Must be an absolute http(s) URL',
         iframeWarning:
-          '⚠️ iframe note: Some websites block embedding via X-Frame-Options or CSP (frame-ancestors). If the page is blank, provide an "Open in new tab" alternative.',
+          'Warning: iframe note: Some websites block embedding via X-Frame-Options or CSP (frame-ancestors). If the page is blank, provide an "Open in new tab" alternative.',
         integrationDoc: 'Payment Integration Docs',
         integrationDocHint: 'Covers endpoint specs, idempotency semantics, and code samples'
       },

@@ -6,7 +6,7 @@
     @close="$emit('close')"
   >
     <div class="space-y-3">
-      <p class="text-xs text-gray-500 dark:text-gray-400">
+      <p class="text-xs text-[var(--muted-foreground)] text-[var(--muted-foreground)]">
         {{ t('admin.channelMonitor.form.selectKeyHint') }}
       </p>
 
@@ -14,38 +14,38 @@
         <input
           v-model="search"
           type="text"
-          class="input pl-9"
+          class="field-control pl-9"
           :placeholder="t('keys.searchPlaceholder')"
         />
-        <svg class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted-foreground)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
         </svg>
       </div>
 
-      <div v-if="loading" class="py-6 text-center text-sm text-gray-500">
+      <div v-if="loading" class="py-6 text-center text-sm text-[var(--muted-foreground)]">
         {{ t('common.loading') }}
       </div>
-      <div v-else-if="filteredKeys.length === 0" class="py-6 text-center text-sm text-gray-500">
+      <div v-else-if="filteredKeys.length === 0" class="py-6 text-center text-sm text-[var(--muted-foreground)]">
         {{ t('admin.channelMonitor.form.noActiveKey') }}
       </div>
-      <div v-else class="max-h-96 overflow-auto rounded-lg border border-gray-200 dark:border-dark-600">
+      <div v-else class="max-h-96 overflow-auto rounded-lg border border-[var(--brand-line)] border-[var(--brand-line)]">
         <table class="w-full text-sm">
-          <thead class="bg-gray-50 dark:bg-dark-800 sticky top-0 z-10">
-            <tr class="text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+          <thead class="bg-[var(--brand-tint)] bg-[var(--brand-tint)] sticky top-0 z-10">
+            <tr class="text-left text-xs font-[var(--fw-medium)]  tracking-wider text-[var(--muted-foreground)] text-[var(--muted-foreground)]">
               <th class="px-3 py-2">{{ t('common.name') }}</th>
               <th class="px-3 py-2">{{ t('keys.apiKey') }}</th>
               <th class="px-3 py-2">{{ t('keys.group') }}</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-200 dark:divide-dark-700">
+          <tbody class="divide-y divide-[var(--brand-line)] divide-[var(--brand-line)]">
             <tr
               v-for="k in filteredKeys"
               :key="k.id"
-              class="cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-700"
+              class="cursor-pointer hover:bg-[var(--brand-tint)] dark:hover:bg-[var(--card)]"
               @click="$emit('pick', k)"
             >
-              <td class="px-3 py-2 font-medium text-gray-900 dark:text-white">{{ k.name }}</td>
-              <td class="px-3 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">{{ maskApiKey(k.key) }}</td>
+              <td class="px-3 py-2 font-[var(--fw-medium)] text-[var(--foreground)] dark:text-white">{{ k.name }}</td>
+              <td class="px-3 py-2 font-mono text-xs text-[var(--muted-foreground)] text-[var(--muted-foreground)]">{{ maskApiKey(k.key) }}</td>
               <td class="px-3 py-2">
                 <GroupBadge
                   v-if="k.group"
@@ -55,7 +55,7 @@
                   :rate-multiplier="k.group.rate_multiplier"
                   :user-rate-multiplier="userGroupRates[k.group.id]"
                 />
-                <span v-else class="text-xs text-gray-400">—</span>
+                <span v-else class="text-xs text-[var(--muted-foreground)]">-</span>
               </td>
             </tr>
           </tbody>
@@ -64,9 +64,9 @@
     </div>
     <template #footer>
       <div class="flex justify-end">
-        <button @click="$emit('close')" class="btn btn-secondary">
+        <Button variant="secondary" size="sm" @click="$emit('close')">
           {{ t('common.cancel') }}
-        </button>
+        </Button>
       </div>
     </template>
   </BaseDialog>
@@ -78,6 +78,7 @@ import { useI18n } from 'vue-i18n'
 import type { ApiKey } from '@/types'
 import type { Provider } from '@/api/admin/channelMonitor'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import Button from '@/components/common/Button.vue'
 import GroupBadge from '@/components/common/GroupBadge.vue'
 import { maskApiKey } from '@/utils/maskApiKey'
 

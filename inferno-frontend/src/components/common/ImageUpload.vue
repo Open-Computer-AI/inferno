@@ -3,13 +3,13 @@
     <!-- Preview Box -->
     <div class="flex-shrink-0">
       <div
-        class="flex items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 dark:border-dark-600 dark:bg-dark-800"
+        class="flex items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-[var(--brand-line)] bg-[var(--brand-tint)] border-[var(--brand-line)] bg-[var(--brand-tint)]"
         :class="[previewSizeClass, { 'border-solid': !!modelValue }]"
       >
         <!-- SVG mode: render inline -->
         <span
           v-if="mode === 'svg' && modelValue"
-          class="text-gray-600 dark:text-gray-300 [&>svg]:h-full [&>svg]:w-full"
+          class="text-[var(--muted-foreground)] text-[var(--muted-foreground)] [&>svg]:h-full [&>svg]:w-full"
           :class="innerSizeClass"
           v-html="sanitizedValue"
         ></span>
@@ -23,7 +23,7 @@
         <!-- Empty placeholder -->
         <svg
           v-else
-          class="text-gray-400 dark:text-dark-500"
+          class="text-[var(--muted-foreground)] text-[var(--muted-foreground)]"
           :class="placeholderSizeClass"
           fill="none"
           viewBox="0 0 24 24"
@@ -42,7 +42,7 @@
     <!-- Controls -->
     <div class="flex-1 space-y-2">
       <div class="flex items-center gap-2">
-        <label class="btn btn-secondary btn-sm cursor-pointer">
+        <label class="img-upload__trigger">
           <input
             type="file"
             :accept="acceptTypes"
@@ -52,18 +52,20 @@
           <Icon name="upload" size="sm" class="mr-1.5" :stroke-width="2" />
           {{ resolvedUploadLabel }}
         </label>
-        <button
+        <AppButton
           v-if="modelValue"
           type="button"
-          class="btn btn-secondary btn-sm text-red-600 hover:text-red-700 dark:text-red-400"
+          variant="secondary"
+          size="sm"
+          class="text-[var(--destructive)]"
           @click="$emit('update:modelValue', '')"
         >
           <Icon name="trash" size="sm" class="mr-1.5" :stroke-width="2" />
           {{ resolvedRemoveLabel }}
-        </button>
+        </AppButton>
       </div>
-      <p v-if="hint" class="text-xs text-gray-500 dark:text-gray-400">{{ hint }}</p>
-      <p v-if="error" class="text-xs text-red-500">{{ error }}</p>
+      <p v-if="hint" class="text-xs text-[var(--muted-foreground)] text-[var(--muted-foreground)]">{{ hint }}</p>
+      <p v-if="error" class="text-xs text-[var(--destructive)]">{{ error }}</p>
     </div>
   </div>
 </template>
@@ -72,6 +74,7 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
+import AppButton from '@/components/common/Button.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
 
 const { t } = useI18n()
@@ -153,3 +156,30 @@ function handleUpload(event: Event) {
   input.value = ''
 }
 </script>
+
+<style scoped>
+.img-upload__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--s2a-h-sm);
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: var(--fs-md);
+  cursor: pointer;
+  transition: background var(--motion-hover);
+}
+
+.img-upload__trigger:hover {
+  background: var(--sidebar-accent);
+}
+
+.img-upload__trigger:focus-within {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+</style>

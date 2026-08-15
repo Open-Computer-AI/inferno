@@ -4,6 +4,7 @@ export default {
       description: '管理注册、邮箱验证、默认值和 SMTP 设置',
       tabs: {
         general: '通用设置',
+        appearance: '外观',
         agreement: '登录条款',
         features: '功能开关',
         security: '安全与认证',
@@ -12,6 +13,39 @@ export default {
         email: '邮件设置',
         backup: '数据备份',
         payment: '支付设置',
+      },
+      backToApp: '返回应用',
+      account: {
+        avatarDescription: '与 Inferno 账户同步的生成式图案。',
+        refreshAvatar: '刷新头像图案',
+        refreshingAvatar: '正在刷新头像图案',
+      },
+      groups: {
+        workspace: '工作区',
+        access: '访问控制',
+        platform: '平台',
+        revenue: '收入',
+        communication: '通信',
+        data: '数据',
+      },
+      pageDescriptions: {
+        general: '配置站点身份、导航和管理员默认设置。',
+        appearance: '选择 Inferno 在整个工作区中的外观和显示方式。',
+        agreement: '控制登录和注册时显示的协议。',
+        features: '选择向用户开放哪些产品功能。',
+        security: '保护管理界面和敏感操作的访问安全。',
+        users: '设置新用户及其账户使用的默认值。',
+        gateway: '配置上游路由、调度和供应商行为。',
+        payment: '配置计费、支付供应商和订单行为。',
+        email: '配置 SMTP 投递和账户通知行为。',
+        backup: '创建、恢复和管理应用数据备份。',
+      },
+      appearance: {
+        theme: '主题',
+        themeHint: '跟随系统偏好，或为 Inferno 选择浅色/深色模式。',
+        system: '跟随系统',
+        light: '浅色',
+        dark: '深色',
       },
       features: {
         channelMonitor: {
@@ -629,7 +663,7 @@ export default {
         homeContentHint:
           '自定义首页内容，支持 Markdown/HTML。如果输入的是链接（以 http:// 或 https:// 开头），则会使用该链接作为 iframe 的 src 属性，这允许你设置任意网页作为首页。设置后首页的状态信息将不再显示。',
         homeContentIframeWarning:
-          '⚠️ iframe 模式提示：部分网站设置了 X-Frame-Options 或 CSP 安全策略，禁止被嵌入到 iframe 中。如果页面显示空白或报错，请确认目标网站允许被嵌入，或考虑使用 HTML 模式自行构建页面内容。',
+          '提示：iframe 模式提示：部分网站设置了 X-Frame-Options 或 CSP 安全策略，禁止被嵌入到 iframe 中。如果页面显示空白或报错，请确认目标网站允许被嵌入，或考虑使用 HTML 模式自行构建页面内容。',
         compactHome: '简洁首页',
         compactHomeHint: '未设置自定义首页内容时，展示简洁的站点信息页面。',
         hideCcsImportButton: '隐藏 CCS 导入按钮',
@@ -644,7 +678,7 @@ export default {
         urlPlaceholder: 'https://example.com/purchase',
         urlHint: '必须是完整的 http(s) 链接',
         iframeWarning:
-          '⚠️ iframe 提示：部分网站会通过 X-Frame-Options 或 CSP（frame-ancestors）禁止被 iframe 嵌入，出现空白时可引导用户使用”新窗口打开”。',
+          '提示：iframe 提示：部分网站会通过 X-Frame-Options 或 CSP（frame-ancestors）禁止被 iframe 嵌入，出现空白时可引导用户使用”新窗口打开”。',
         integrationDoc: '支付集成文档',
         integrationDocHint: '包含接口说明、幂等语义及示例代码'
       },

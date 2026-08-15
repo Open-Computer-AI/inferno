@@ -3,11 +3,11 @@
     <form id="plan-form" @submit.prevent="handleSavePlan" class="space-y-4">
       <div class="grid grid-cols-2 gap-4">
         <div>
-          <label class="input-label">{{ t('payment.admin.planName') }} <span class="text-red-500">*</span></label>
-          <input v-model="planForm.name" type="text" class="input" required />
+          <label class="field-label">{{ t('payment.admin.planName') }} <span class="text-[var(--destructive)]">*</span></label>
+          <input v-model="planForm.name" type="text" class="field-control" required />
         </div>
         <div>
-          <label class="input-label">{{ t('payment.admin.group') }} <span class="text-red-500">*</span></label>
+          <label class="field-label">{{ t('payment.admin.group') }} <span class="text-[var(--destructive)]">*</span></label>
           <Select v-model="planForm.group_id" :options="groupOptions" :placeholder="t('payment.admin.selectGroup')" class="w-full">
             <template #selected="{ option }">
               <span v-if="option?.platform" :class="platformTextClass(String(option.platform))">{{ option.label }}</span>
@@ -15,62 +15,62 @@
             </template>
             <template #option="{ option, selected }">
               <span class="flex-1 truncate text-left" :class="option.platform ? platformTextClass(String(option.platform)) : ''">{{ option.label }}</span>
-              <Icon v-if="selected" name="check" size="sm" class="text-primary-500" :stroke-width="2" />
+              <Icon v-if="selected" name="check" size="sm" class="text-[var(--brand)]" :stroke-width="2" />
             </template>
           </Select>
         </div>
       </div>
 
       <!-- Group Info Preview -->
-      <div v-if="selectedGroupInfo" class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-600 dark:bg-dark-800">
+      <div v-if="selectedGroupInfo" class="rounded-lg border border-[var(--brand-line)] bg-[var(--brand-tint)] p-3 border-[var(--brand-line)] bg-[var(--brand-tint)]">
         <div class="mb-2 flex items-center gap-2">
           <GroupBadge :name="selectedGroupInfo.name" :platform="selectedGroupInfo.platform" :rate-multiplier="selectedGroupInfo.rate_multiplier" />
         </div>
         <div class="grid grid-cols-2 gap-2 text-xs">
-          <div><span class="text-gray-500">{{ t('payment.admin.dailyLimit') }}:</span> <span class="ml-1 font-medium text-gray-700 dark:text-gray-300">{{ selectedGroupInfo.daily_limit_usd != null ? '$' + selectedGroupInfo.daily_limit_usd : t('payment.admin.unlimited') }}</span></div>
-          <div><span class="text-gray-500">{{ t('payment.admin.weeklyLimit') }}:</span> <span class="ml-1 font-medium text-gray-700 dark:text-gray-300">{{ selectedGroupInfo.weekly_limit_usd != null ? '$' + selectedGroupInfo.weekly_limit_usd : t('payment.admin.unlimited') }}</span></div>
-          <div><span class="text-gray-500">{{ t('payment.admin.monthlyLimit') }}:</span> <span class="ml-1 font-medium text-gray-700 dark:text-gray-300">{{ selectedGroupInfo.monthly_limit_usd != null ? '$' + selectedGroupInfo.monthly_limit_usd : t('payment.admin.unlimited') }}</span></div>
+          <div><span class="text-[var(--muted-foreground)]">{{ t('payment.admin.dailyLimit') }}:</span> <span class="ml-1 font-[var(--fw-medium)] text-[var(--body-copy)] text-[var(--muted-foreground)]">{{ selectedGroupInfo.daily_limit_usd != null ? '$' + selectedGroupInfo.daily_limit_usd : t('payment.admin.unlimited') }}</span></div>
+          <div><span class="text-[var(--muted-foreground)]">{{ t('payment.admin.weeklyLimit') }}:</span> <span class="ml-1 font-[var(--fw-medium)] text-[var(--body-copy)] text-[var(--muted-foreground)]">{{ selectedGroupInfo.weekly_limit_usd != null ? '$' + selectedGroupInfo.weekly_limit_usd : t('payment.admin.unlimited') }}</span></div>
+          <div><span class="text-[var(--muted-foreground)]">{{ t('payment.admin.monthlyLimit') }}:</span> <span class="ml-1 font-[var(--fw-medium)] text-[var(--body-copy)] text-[var(--muted-foreground)]">{{ selectedGroupInfo.monthly_limit_usd != null ? '$' + selectedGroupInfo.monthly_limit_usd : t('payment.admin.unlimited') }}</span></div>
         </div>
       </div>
 
-      <div><label class="input-label">{{ t('payment.admin.planDescription') }} <span class="text-red-500">*</span></label><textarea v-model="planForm.description" rows="2" class="input" required></textarea></div>
+      <div><label class="field-label">{{ t('payment.admin.planDescription') }} <span class="text-[var(--destructive)]">*</span></label><textarea v-model="planForm.description" rows="2" class="field-control" required></textarea></div>
       <div class="grid grid-cols-2 gap-4">
         <div>
-          <label class="input-label">{{ t('payment.admin.price') }} <span class="text-red-500">*</span></label>
-          <input v-model.number="planForm.price" type="number" step="0.01" min="0.01" class="input" required />
-          <p v-if="subscriptionCnyPreview" class="mt-1 text-xs font-medium text-primary-600 dark:text-primary-400">
+          <label class="field-label">{{ t('payment.admin.price') }} <span class="text-[var(--destructive)]">*</span></label>
+          <input v-model.number="planForm.price" type="number" step="0.01" min="0.01" class="field-control" required />
+          <p v-if="subscriptionCnyPreview" class="mt-1 text-xs font-[var(--fw-medium)] text-[var(--brand)] text-[var(--brand)]">
             {{ t('payment.admin.subscriptionCnyPayPreview', { amount: subscriptionCnyPreview.amount }) }}
             <span v-if="subscriptionCnyPreview.feeRate > 0">
               {{ t('payment.admin.subscriptionCnyPayPreviewWithFee', { feeRate: subscriptionCnyPreview.feeRate, total: subscriptionCnyPreview.total }) }}
             </span>
           </p>
         </div>
-        <div><label class="input-label">{{ t('payment.admin.originalPrice') }}</label><input v-model.number="planForm.original_price" type="number" step="0.01" min="0" class="input" /></div>
+        <div><label class="field-label">{{ t('payment.admin.originalPrice') }}</label><input v-model.number="planForm.original_price" type="number" step="0.01" min="0" class="field-control" /></div>
       </div>
       <div class="grid grid-cols-2 gap-4">
-        <div><label class="input-label">{{ t('payment.admin.validity') }} <span class="text-red-500">*</span></label><input v-model.number="planForm.validity_days" type="number" min="1" class="input" required /></div>
-        <div><label class="input-label">{{ t('payment.admin.validityUnit') }} <span class="text-red-500">*</span></label><Select v-model="planForm.validity_unit" :options="validityUnitOptions" /></div>
+        <div><label class="field-label">{{ t('payment.admin.validity') }} <span class="text-[var(--destructive)]">*</span></label><input v-model.number="planForm.validity_days" type="number" min="1" class="field-control" required /></div>
+        <div><label class="field-label">{{ t('payment.admin.validityUnit') }} <span class="text-[var(--destructive)]">*</span></label><Select v-model="planForm.validity_unit" :options="validityUnitOptions" /></div>
       </div>
       <div class="grid grid-cols-2 gap-4">
-        <div><label class="input-label">{{ t('payment.admin.sortOrder') }}</label><input v-model.number="planForm.sort_order" type="number" min="0" class="input" /></div>
+        <div><label class="field-label">{{ t('payment.admin.sortOrder') }}</label><input v-model.number="planForm.sort_order" type="number" min="0" class="field-control" /></div>
         <div>
-          <label class="input-label">{{ t('payment.admin.currency') }}</label>
-          <input v-model="planForm.currency" type="text" maxlength="3" class="input uppercase" :placeholder="t('payment.admin.currencyPlaceholder')" />
-          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.currencyHint') }}</p>
+          <label class="field-label">{{ t('payment.admin.currency') }}</label>
+          <input v-model="planForm.currency" type="text" maxlength="3" class="field-control " :placeholder="t('payment.admin.currencyPlaceholder')" />
+          <p class="mt-1 text-xs text-[var(--muted-foreground)] text-[var(--muted-foreground)]">{{ t('payment.admin.currencyHint') }}</p>
         </div>
       </div>
       <div>
-        <label class="input-label">{{ t('payment.admin.features') }}</label>
-        <textarea v-model="planFeaturesText" rows="3" class="input" :placeholder="t('payment.admin.featuresPlaceholder')"></textarea>
-        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.featuresHint') }}</p>
+        <label class="field-label">{{ t('payment.admin.features') }}</label>
+        <textarea v-model="planFeaturesText" rows="3" class="field-control" :placeholder="t('payment.admin.featuresPlaceholder')"></textarea>
+        <p class="mt-1 text-xs text-[var(--muted-foreground)] text-[var(--muted-foreground)]">{{ t('payment.admin.featuresHint') }}</p>
       </div>
       <div class="flex items-center gap-3">
-        <label class="text-sm text-gray-700 dark:text-gray-300">{{ t('payment.admin.forSale') }}</label>
+        <label class="text-sm text-[var(--body-copy)] text-[var(--muted-foreground)]">{{ t('payment.admin.forSale') }}</label>
         <button
           type="button"
           :class="[
-            'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-            planForm.for_sale ? 'bg-primary-500' : 'bg-gray-300 dark:bg-dark-600'
+            'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[var(--brand-line)] focus:ring-offset-2',
+            planForm.for_sale ? 'bg-[var(--brand-tint)]' : 'bg-[var(--brand-tint)] bg-[var(--brand-tint)]'
           ]"
           @click="planForm.for_sale = !planForm.for_sale"
         >
@@ -83,8 +83,8 @@
     </form>
     <template #footer>
       <div class="flex justify-end gap-3">
-        <button type="button" @click="emit('close')" class="btn btn-secondary">{{ t('common.cancel') }}</button>
-        <button type="submit" form="plan-form" :disabled="saving" class="btn btn-primary">{{ saving ? t('common.saving') : t('common.save') }}</button>
+        <AppButton type="button" variant="secondary" @click="emit('close')">{{ t('common.cancel') }}</AppButton>
+        <AppButton type="submit" form="plan-form" :disabled="saving" :loading="saving" variant="solid">{{ saving ? t('common.saving') : t('common.save') }}</AppButton>
       </div>
     </template>
   </BaseDialog>
@@ -101,6 +101,7 @@ import { formatPaymentAmount } from '@/components/payment/currency'
 import type { SubscriptionPlan } from '@/types/payment'
 import type { AdminGroup } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import AppButton from '@/components/common/Button.vue'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
 import GroupBadge from '@/components/common/GroupBadge.vue'
@@ -136,7 +137,7 @@ const groupOptions = computed(() =>
     .filter(g => g.subscription_type === 'subscription')
     .map(g => ({
       value: g.id,
-      label: `${g.name} — ${g.platform} (${g.rate_multiplier}x)`,
+      label: `${g.name} - ${g.platform} (${g.rate_multiplier}x)`,
       platform: g.platform,
     })),
 )
