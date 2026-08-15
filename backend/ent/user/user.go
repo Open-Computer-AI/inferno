@@ -39,6 +39,8 @@ const (
 	FieldUsername = "username"
 	// FieldNotes holds the string denoting the notes field in the database.
 	FieldNotes = "notes"
+	// FieldAvatarSeed holds the string denoting the avatar_seed field in the database.
+	FieldAvatarSeed = "avatar_seed"
 	// FieldTotpSecretEncrypted holds the string denoting the totp_secret_encrypted field in the database.
 	FieldTotpSecretEncrypted = "totp_secret_encrypted"
 	// FieldTotpEnabled holds the string denoting the totp_enabled field in the database.
@@ -206,6 +208,7 @@ var Columns = []string{
 	FieldStatus,
 	FieldUsername,
 	FieldNotes,
+	FieldAvatarSeed,
 	FieldTotpSecretEncrypted,
 	FieldTotpEnabled,
 	FieldTotpEnabledAt,
@@ -274,6 +277,10 @@ var (
 	UsernameValidator func(string) error
 	// DefaultNotes holds the default value on creation for the "notes" field.
 	DefaultNotes string
+	// DefaultAvatarSeed holds the default value on creation for the "avatar_seed" field.
+	DefaultAvatarSeed string
+	// AvatarSeedValidator is a validator for the "avatar_seed" field. It is called by the builders before save.
+	AvatarSeedValidator func(string) error
 	// DefaultTotpEnabled holds the default value on creation for the "totp_enabled" field.
 	DefaultTotpEnabled bool
 	// DefaultSignupSource holds the default value on creation for the "signup_source" field.
@@ -358,6 +365,11 @@ func ByUsername(opts ...sql.OrderTermOption) OrderOption {
 // ByNotes orders the results by the notes field.
 func ByNotes(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldNotes, opts...).ToFunc()
+}
+
+// ByAvatarSeed orders the results by the avatar_seed field.
+func ByAvatarSeed(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAvatarSeed, opts...).ToFunc()
 }
 
 // ByTotpSecretEncrypted orders the results by the totp_secret_encrypted field.
