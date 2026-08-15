@@ -246,3 +246,34 @@ Local dev login: `admin@sub2api.local` / `36232e0cd5be929e4004e4ca025b100e`.
 | 2026-08-13 | `11d9fc7f` | last 3 ops surfaces — **item 2 complete** | 127 |
 | 2026-08-13 | `b594a5dd` | payment revenue chart off Chart.js; duplicate account modal reconciled | 127 |
 | 2026-08-13 | `6db5fef1` | remaining Chart.js consumers removed; item 4 complete | 129 |
+| 2026-08-15 | `bdba323b` | landed PR #3's upstream reconcile by cherry-pick; sync PR queue emptied | 208 |
+| 2026-08-15 | `8bc560dc` | restored the site logo + its sanitiser, dropped by the sidebar rewrite | 208 |
+| 2026-08-15 | `3e6888ab` | confirm-dialog helper retargeted at the Button primitive | 208 |
+
+### Open, needs an owner decision — read before the next sync run
+
+1. **Gate 5 is breached locally.** `84a3c4ac` put 19 files under `backend/`: an
+   `avatar_seed` user field with full ent regeneration, migration
+   `161_add_user_avatar_seed.sql` (a duplicate of the existing 161), and CN→EN
+   default legal-doc titles in `setting_public.go`. Not pushed, which is the
+   only reason the reconcile routine has not tripped. Rule 1 says revert; the
+   uncommitted profile-avatar work depends on the field, so the two decisions
+   are one decision.
+2. **`inferno-redesign` on the remote is 61 commits behind local.** Every
+   reconcile the routine has produced was computed against that stale base,
+   which is why all three PRs read as massively conflicting. Pushing fixes the
+   routine's view and trips Gate 5 in the same move — see 1.
+3. **Local is 124 commits behind `upstream/main`.** Gate 5 only means what it
+   claims *after* a rebase; against a stale ref it under-reports (19 files),
+   against a fresh one it over-reports (246, of which 227 are just upstream
+   moving on). Run it post-rebase or not at all.
+4. **june-lint: 845 violations across 273 files**, none from the commits above.
+   The denominator grew when the restore commits pulled ~140 half-migrated
+   files into scope; a file counts as converted the moment it has a scoped
+   `<style>` block. `dead-teal-palette` 476 and `ground-rule-3-two-weights` 271
+   are the bulk, concentrated in `UsageTable.vue` / `UsageFilters.vue`.
+5. **`AppSidebar.vue:114`** binds `user.avatar_url` to `:src` through a bare
+   `.trim()` with no sanitiser — same hole as the site logo, different field.
+6. Two gaps PR #3 flagged and left open: `backup.ts` multi-part downloads will
+   404 until `BackupView.vue` converts, and `accountUsageRefresh.ts` is ported
+   but unwired, so Grok quota cells lack the refresh OpenAI/Codex cells have.
