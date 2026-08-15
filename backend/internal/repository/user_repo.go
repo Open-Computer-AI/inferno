@@ -298,9 +298,6 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User, field
 	if fields.Username {
 		updateOp = updateOp.SetUsername(userIn.Username)
 	}
-	if fields.AvatarSeed {
-		updateOp = updateOp.SetAvatarSeed(userIn.AvatarSeed)
-	}
 	if fields.Notes {
 		updateOp = updateOp.SetNotes(userIn.Notes)
 	}
