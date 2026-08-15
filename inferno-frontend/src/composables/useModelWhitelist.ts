@@ -136,6 +136,7 @@ const metaModels = [
 
 // xAI Grok
 const xaiModels = [
+  'grok-4.6',
   'grok-4.5',
   'grok-4.3',
   'grok-build-0.1',
@@ -147,6 +148,7 @@ const xaiModels = [
   'grok-4.20-multi-agent-latest',
   'grok-4.3-latest',
   'grok-latest',
+  'grok-4.6-latest',
   'grok-4.5-latest',
   'grok-build-latest',
   'composer-2.5',
@@ -303,6 +305,7 @@ const geminiPresetMappings = [
 ]
 
 const grokPresetMappings = [
+  { label: 'Grok 4.6', from: 'grok-4.6', to: 'grok-4.6', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Grok 4.5', from: 'grok-4.5', to: 'grok-4.5', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Grok 4.3', from: 'grok-4.3', to: 'grok-4.3', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Grok Latest', from: 'grok-latest', to: 'grok-4.5', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
