@@ -34,10 +34,49 @@ Run from `inferno-frontend/`. A red gate means stop and fix, never commit past i
 | 2 | `node scripts/june-lint.mjs` | `clean across N files` |
 | 3 | `npm run test:run` | all green, **and the test count never drops** |
 | 4 | `npm run build` | `built in …`, no new errors |
-| 5 | `cd .. && git diff --name-only upstream/main..HEAD -- backend frontend deploy docs` | **empty** — thin-fork discipline, backend is read-only |
+| 5 | `./scripts/check-divergence.sh` | every changed file appears in the divergence ledger below |
 | 6 | `node scripts/conversion-status.mjs` | remaining count strictly lower than the line above |
 
-Gate 5 is the one that ends the project if broken. Check it every time.
+Gate 5 changed meaning on 2026-08-15. It used to require the diff be **empty**.
+That was right while Inferno was a pure restyle and wrong the moment it started
+becoming its own product: upstream is not going to grow the features we want,
+so backend divergence is the goal, not a defect. Requiring zero forbade the
+product from existing.
+
+It now requires that divergence be **declared**. The failure it still catches is
+the one that actually happened: `84a3c4ac`, a commit whose subject said
+`feat(ui):`, quietly regenerated ent and added a migration. Accidental drift is
+still fatal. Deliberate drift is legal, listed, and survives reconciles.
+
+**Measure against the base HEAD sits on, never against a freshly fetched
+`upstream/main`.** Against a stale ref it under-reports; against a fresh one it
+counts upstream's own movement as our drift. On 2026-08-15 the same tree read
+19 files against the base and 246 against fresh upstream, of which 227 were
+upstream moving on. `check-divergence.sh` uses `git merge-base`, which is the
+only ref that answers "what have *we* changed". The daily reconcile gets this
+right by rebasing (step 3) *before* asserting (step 4).
+
+### The divergence ledger
+
+Anything under `backend/`, `frontend/`, `deploy/` or `docs/` must appear here
+**and** in `DECLARED` inside `scripts/check-divergence.sh`. A file that differs
+and is not listed is a bug, not a feature.
+
+| # | area | files | why | re-apply after rebase |
+|---|------|-------|-----|-----------------------|
+| D1 | `avatar_seed` on `users` | `ent/schema/user.go` (3 lines) + `ent/` regeneration (8 files, 286 lines) + `dto/{types,mappers}.go`, `user_handler.go`, `api_key_repo.go`, `user_repo.go`, `service/user.go`, `user_service.go` (15 lines) + `migrations/221_add_user_avatar_seed.sql` | Persists a regenerated identicon server-side so it survives reload and syncs across devices. Upstream stores avatars in a separate table and has no seed concept. | **Do not hand-merge the `ent/` files.** Re-run `go generate ./ent` and let codegen rebuild from the 3-line schema. Only `ent/mutation.go` realistically conflicts — it is shared across every entity, so any upstream schema change touches it. |
+| D2 | English legal-document defaults | `service/setting_public.go` (4 strings) + `server/api_contract_test.go` (golden fixture) | Chinese defaults on the legal documents of a rebranded English product. Applies only when no `login_agreement_documents` settings row exists — i.e. a fresh install, which is exactly when it matters. | Trivial. Zero upstream commits to this file in the 124 we were behind. |
+| D3 | `.gitignore` | one appended negation | Lets `inferno-frontend/` be tracked. Outside the four gated dirs, so the script does not see it; listed for completeness. | Trivial. |
+
+**Better mechanism for D2 when someone has time:** seed the four titles as a
+`login_agreement_documents` settings row instead. Admin-editable, and it touches
+no Go at all, which retires this ledger entry.
+
+**Before adding an entry:** prefer frontend-only, then an existing backend field,
+then upstreaming it as a PR to `Wei-Shaw/sub2api`, and only then a new entry
+here. Each entry is a permanent tax on every future reconcile. `avatar_seed` was
+checked against riding on the existing `avatar_url` field first — it cannot,
+because `SetAvatar` runs `normalizeUserAvatarInput`, which rejects a bare seed.
 
 ### Known-good exceptions, do not "fix" these
 - `npm run lint:check` reports one pre-existing eslint error in
