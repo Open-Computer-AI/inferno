@@ -213,6 +213,20 @@ func (_u *UserUpdate) SetNillableNotes(v *string) *UserUpdate {
 	return _u
 }
 
+// SetAvatarSeed sets the "avatar_seed" field.
+func (_u *UserUpdate) SetAvatarSeed(v string) *UserUpdate {
+	_u.mutation.SetAvatarSeed(v)
+	return _u
+}
+
+// SetNillableAvatarSeed sets the "avatar_seed" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableAvatarSeed(v *string) *UserUpdate {
+	if v != nil {
+		_u.SetAvatarSeed(*v)
+	}
+	return _u
+}
+
 // SetTotpSecretEncrypted sets the "totp_secret_encrypted" field.
 func (_u *UserUpdate) SetTotpSecretEncrypted(v string) *UserUpdate {
 	_u.mutation.SetTotpSecretEncrypted(v)
@@ -974,6 +988,11 @@ func (_u *UserUpdate) check() error {
 			return &ValidationError{Name: "username", err: fmt.Errorf(`ent: validator failed for field "User.username": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.AvatarSeed(); ok {
+		if err := user.AvatarSeedValidator(v); err != nil {
+			return &ValidationError{Name: "avatar_seed", err: fmt.Errorf(`ent: validator failed for field "User.avatar_seed": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.SignupSource(); ok {
 		if err := user.SignupSourceValidator(v); err != nil {
 			return &ValidationError{Name: "signup_source", err: fmt.Errorf(`ent: validator failed for field "User.signup_source": %w`, err)}
@@ -1038,6 +1057,9 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Notes(); ok {
 		_spec.SetField(user.FieldNotes, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.AvatarSeed(); ok {
+		_spec.SetField(user.FieldAvatarSeed, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.TotpSecretEncrypted(); ok {
 		_spec.SetField(user.FieldTotpSecretEncrypted, field.TypeString, value)
@@ -1889,6 +1911,20 @@ func (_u *UserUpdateOne) SetNillableNotes(v *string) *UserUpdateOne {
 	return _u
 }
 
+// SetAvatarSeed sets the "avatar_seed" field.
+func (_u *UserUpdateOne) SetAvatarSeed(v string) *UserUpdateOne {
+	_u.mutation.SetAvatarSeed(v)
+	return _u
+}
+
+// SetNillableAvatarSeed sets the "avatar_seed" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableAvatarSeed(v *string) *UserUpdateOne {
+	if v != nil {
+		_u.SetAvatarSeed(*v)
+	}
+	return _u
+}
+
 // SetTotpSecretEncrypted sets the "totp_secret_encrypted" field.
 func (_u *UserUpdateOne) SetTotpSecretEncrypted(v string) *UserUpdateOne {
 	_u.mutation.SetTotpSecretEncrypted(v)
@@ -2663,6 +2699,11 @@ func (_u *UserUpdateOne) check() error {
 			return &ValidationError{Name: "username", err: fmt.Errorf(`ent: validator failed for field "User.username": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.AvatarSeed(); ok {
+		if err := user.AvatarSeedValidator(v); err != nil {
+			return &ValidationError{Name: "avatar_seed", err: fmt.Errorf(`ent: validator failed for field "User.avatar_seed": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.SignupSource(); ok {
 		if err := user.SignupSourceValidator(v); err != nil {
 			return &ValidationError{Name: "signup_source", err: fmt.Errorf(`ent: validator failed for field "User.signup_source": %w`, err)}
@@ -2744,6 +2785,9 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 	}
 	if value, ok := _u.mutation.Notes(); ok {
 		_spec.SetField(user.FieldNotes, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.AvatarSeed(); ok {
+		_spec.SetField(user.FieldAvatarSeed, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.TotpSecretEncrypted(); ok {
 		_spec.SetField(user.FieldTotpSecretEncrypted, field.TypeString, value)
