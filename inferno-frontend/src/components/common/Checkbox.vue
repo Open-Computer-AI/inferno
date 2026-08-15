@@ -18,7 +18,7 @@
  * has no HTML attribute, only a DOM property, so it has to be set
  * imperatively on the element via a ref.
  */
-import { onMounted, ref, watch } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 
 defineOptions({ inheritAttrs: false })
 
@@ -38,6 +38,7 @@ const props = withDefaults(
 const emit = defineEmits<{ 'update:modelValue': [boolean] }>()
 
 const inputRef = ref<HTMLInputElement | null>(null)
+let skipNextChange = false
 
 const syncIndeterminate = () => {
   if (inputRef.value) inputRef.value.indeterminate = props.indeterminate
@@ -45,12 +46,29 @@ const syncIndeterminate = () => {
 onMounted(syncIndeterminate)
 watch(() => props.indeterminate, syncIndeterminate)
 
-/* Listens on `click`, not `change`: `.checked` is already settled by the
- * time the click event fires (see Toggle.vue's comment for why), and this
- * keeps `wrapper.find(...).trigger('click')` working in jsdom, which does
- * not reliably synthesize `change` for a programmatically dispatched click. */
+/* Click handles real activation and keeps wrapper.trigger('click') working in
+ * jsdom. Change also handles programmatic setValue(), but ignores the native
+ * follow-up event after a click because the controlled model already received
+ * the same value. */
 const onClick = (event: Event) => {
-  emit('update:modelValue', (event.target as HTMLInputElement).checked)
+  skipNextChange = true
+  emitChecked((event.target as HTMLInputElement).checked)
+}
+
+const onChange = (event: Event) => {
+  const checked = (event.target as HTMLInputElement).checked
+  if (skipNextChange) {
+    skipNextChange = false
+    return
+  }
+  if (checked !== props.modelValue) emitChecked(checked)
+}
+
+const emitChecked = (checked: boolean) => {
+  emit('update:modelValue', checked)
+  void nextTick(() => {
+    if (inputRef.value) inputRef.value.checked = props.modelValue
+  })
 }
 </script>
 
@@ -65,6 +83,7 @@ const onClick = (event: Event) => {
       :disabled="disabled"
       v-bind="$attrs"
       @click="onClick"
+      @change="onChange"
     />
     <span class="chk__box" :data-checked="modelValue || indeterminate || undefined" aria-hidden="true">
       <span v-if="indeterminate" class="chk__dash" />

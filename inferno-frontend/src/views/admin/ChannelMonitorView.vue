@@ -1,51 +1,30 @@
 <template>
   <AppLayout>
     <div class="w-full min-w-0 space-y-6 pb-8">
-      <header
-        class="page-header mb-0 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700 sm:p-6"
-      >
-        <h1 class="page-title flex items-center gap-2 text-xl font-black text-gray-900 dark:text-white">
-          <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-blue-500 dark:bg-blue-900/30 dark:text-blue-400">
+      <section class="monitor-mode-panel" aria-labelledby="channel-monitor-mode-title">
+        <div class="monitor-mode-panel__copy">
+          <span class="monitor-mode-panel__icon" aria-hidden="true">
             <Icon name="chart" size="sm" />
           </span>
-          {{ t('admin.channelMonitor.title') }}
-        </h1>
-        <p class="page-description mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-          {{
-            isV1Mode
-              ? t('channelMonitorV2.admin.descriptionV1')
-              : t('channelMonitorV2.admin.descriptionV2')
-          }}
-        </p>
-        <div class="mt-4 border-t border-gray-100 pt-4 dark:border-dark-700">
-          <div
-            class="tabs inline-flex w-full max-w-xl flex-wrap sm:w-auto"
-            role="tablist"
-            :aria-label="t('channelMonitorV2.admin.tabAria')"
-          >
-            <button
-              type="button"
-              role="tab"
-              class="tab flex-1 sm:flex-none"
-              :class="adminMonitorTab === 'v2' ? 'tab-active' : ''"
-              :aria-selected="adminMonitorTab === 'v2'"
-              @click="adminMonitorTab = 'v2'"
-            >
-              {{ t('channelMonitorV2.admin.tabV2') }}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              class="tab flex-1 sm:flex-none"
-              :class="adminMonitorTab === 'legacy' ? 'tab-active' : ''"
-              :aria-selected="adminMonitorTab === 'legacy'"
-              @click="adminMonitorTab = 'legacy'"
-            >
-              {{ isV1Mode ? t('channelMonitorV2.admin.tabV1Active') : t('channelMonitorV2.admin.tabV1History') }}
-            </button>
+          <div class="min-w-0">
+            <h1 id="channel-monitor-mode-title" class="monitor-mode-panel__title">
+              {{ t('channelMonitorV2.admin.modeLabel') }}
+            </h1>
+            <p class="monitor-mode-panel__description">
+              {{
+                isV1Mode
+                  ? t('channelMonitorV2.admin.descriptionV1')
+                  : t('channelMonitorV2.admin.descriptionV2')
+              }}
+            </p>
           </div>
         </div>
-      </header>
+        <Segmented
+          v-model="adminMonitorTab"
+          :items="monitorModeItems"
+          :aria-label="t('channelMonitorV2.admin.tabAria')"
+        />
+      </section>
 
       <MonitorSettingsPanel v-if="adminMonitorTab === 'v2'" />
 
@@ -67,15 +46,15 @@
         <DataTable :columns="columns" :data="monitors" :loading="loading">
           <template #cell-name="{ row, value }">
             <div class="flex items-center gap-1.5">
-              <span class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
+              <span class="font-[var(--fw-medium)] text-[var(--foreground)] dark:text-white">{{ value }}</span>
               <HelpTooltip v-if="row.api_key_decrypt_failed" :content="t('admin.channelMonitor.apiKeyDecryptFailed')">
-                <Icon name="exclamationTriangle" size="sm" class="text-red-500" />
+                <Icon name="exclamationTriangle" size="sm" class="text-[var(--destructive)]" />
               </HelpTooltip>
             </div>
           </template>
 
           <template #cell-provider="{ row }">
-            <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" :class="providerBadgeClass(row.provider)">
+            <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-[var(--fw-medium)]" :class="providerBadgeClass(row.provider)">
               {{ providerLabel(row.provider) }}
             </span>
           </template>
@@ -85,11 +64,11 @@
           </template>
 
           <template #cell-availability_7d="{ row }">
-            <span class="text-sm text-gray-900 dark:text-gray-100">{{ formatAvailability(row) }}</span>
+            <span class="text-sm text-[var(--foreground)] text-[var(--muted-foreground)]">{{ formatAvailability(row) }}</span>
           </template>
 
           <template #cell-latency="{ row }">
-            <span class="text-sm text-gray-900 dark:text-gray-100">{{ formatLatency(row.primary_latency_ms) }}</span>
+            <span class="text-sm text-[var(--foreground)] text-[var(--muted-foreground)]">{{ formatLatency(row.primary_latency_ms) }}</span>
           </template>
 
           <template #cell-enabled="{ row }">
@@ -185,6 +164,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Icon from '@/components/icons/Icon.vue'
+import Segmented from '@/components/common/Segmented.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import MonitorFiltersBar from '@/components/admin/monitor/MonitorFiltersBar.vue'
 import MonitorFormDialog from '@/components/admin/monitor/MonitorFormDialog.vue'
@@ -201,6 +181,15 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const isV1Mode = computed(() => isChannelMonitorV1Mode())
 const adminMonitorTab = ref<'v2' | 'legacy'>(isChannelMonitorV1Mode() ? 'legacy' : 'v2')
+const monitorModeItems = computed(() => [
+  { value: 'v2', label: t('channelMonitorV2.admin.tabV2') },
+  {
+    value: 'legacy',
+    label: isV1Mode.value
+      ? t('channelMonitorV2.admin.tabV1Active')
+      : t('channelMonitorV2.admin.tabV1History'),
+  },
+])
 const {
   providerLabel,
   providerBadgeClass,
@@ -387,3 +376,75 @@ onUnmounted(() => {
   abortController?.abort()
 })
 </script>
+
+<style scoped>
+.monitor-mode-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 76px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--card);
+  color: var(--foreground);
+}
+
+.monitor-mode-panel__copy {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.monitor-mode-panel__icon {
+  display: inline-grid;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: var(--r-md);
+  background: var(--brand-tint);
+  color: var(--brand);
+}
+
+.monitor-mode-panel__title {
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+
+.monitor-mode-panel__description {
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+  .monitor-mode-panel {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .monitor-mode-panel__description {
+    white-space: normal;
+  }
+
+  .monitor-mode-panel :deep(.seg2) {
+    align-self: flex-start;
+  }
+}
+
+@media (max-width: 1100px) {
+  .monitor-mode-panel__description {
+    white-space: normal;
+  }
+}
+</style>

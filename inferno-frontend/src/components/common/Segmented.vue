@@ -34,6 +34,7 @@ interface SegmentedItem {
   value: string
   label: string
   disabled?: boolean
+  testId?: string
 }
 
 const props = withDefaults(
@@ -180,9 +181,12 @@ watch(
       :aria-disabled="item.disabled || undefined"
       :tabindex="item.value === modelValue ? 0 : -1"
       :data-active="item.value === modelValue ? '' : undefined"
+      :data-test="item.testId"
       @click="select(item)"
       @keydown="onKeydown($event, i)"
-    >{{ item.label }}</button>
+    >
+      <slot name="item" :item="item">{{ item.label }}</slot>
+    </button>
   </div>
 
   <!-- Tabs: panel switcher, rule baseline, scrolls with a fade when it overflows. -->
@@ -206,10 +210,11 @@ watch(
         :aria-disabled="item.disabled || undefined"
         :tabindex="item.value === modelValue ? 0 : -1"
         :data-active="item.value === modelValue ? '' : undefined"
+        :data-test="item.testId"
         @click="select(item)"
         @keydown="onKeydown($event, i)"
       >
-        {{ item.label }}
+        <slot name="item" :item="item">{{ item.label }}</slot>
         <span class="seg2__rule" aria-hidden="true" />
       </button>
     </div>

@@ -85,6 +85,7 @@
           :columns="columns"
           :data="apiKeys"
           :loading="loading"
+          :sticky-column-dividers="apiKeys.length >= pagination.page_size"
           :server-side-sort="true"
           default-sort-key="created_at"
           default-sort-order="desc"

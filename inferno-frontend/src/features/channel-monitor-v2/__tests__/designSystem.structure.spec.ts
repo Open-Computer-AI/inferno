@@ -13,15 +13,17 @@ function read(rel: string) {
 }
 
 describe('channel-monitor-v2 design system structure', () => {
-  it('user ChannelStatus V2 shell uses page-header, surface-card, btn, tabs utilities', () => {
+  it('user ChannelStatus V2 shell uses page-header, surface-card, shared actions, and tabs utilities', () => {
     // Route wrapper may switch V1/V2; design chrome lives on the V2 implementation.
     const src = read('views/user/ChannelStatusV2View.vue')
     expect(src).toContain('page-header')
     expect(src).toContain('page-title')
     expect(src).toContain('class="surface-card')
-    expect(src).toContain('btn btn-secondary')
-    expect(src).toContain('class="tab')
-    expect(src).toContain('tab-active')
+    expect(src).toContain('<AppButton')
+    expect(src).toContain('variant="secondary"')
+    expect(src).toContain('<Segmented')
+    expect(src).toContain('variant="segmented"')
+    expect(src).toContain('variant="tabs"')
     expect(src).toContain('badge badge-warning')
     // Compact single-row toolbar
     expect(src).toContain('monitor-toolbar')
@@ -30,7 +32,7 @@ describe('channel-monitor-v2 design system structure', () => {
     expect(src).toContain("'cache'")
     // Ops elevation: rounded-3xl + ring surfaces
     expect(src).toContain('rounded-3xl')
-    expect(src).toContain('ring-1 ring-gray-900/5')
+    expect(src).toContain('ring-1 ring-[var(--brand-line)/5]')
     // Overview-first KPI strip before primary viz
     expect(src.indexOf('summaryAria')).toBeLessThan(src.indexOf('MonitorTrendChart'))
     // No page-level fixed min-width that forces viewport horizontal scroll
@@ -55,7 +57,7 @@ describe('channel-monitor-v2 design system structure', () => {
     expect(src).toContain('overflow-auto')
     expect(src).toContain('pulse-tooltip')
     expect(src).toContain('rounded-3xl')
-    expect(src).toContain('ring-1 ring-gray-900/5')
+    expect(src).toContain('ring-1 ring-[var(--brand-line)/5]')
     expect(src).not.toContain('modal-overlay')
     expect(src).not.toContain('modal-content')
   })
@@ -87,28 +89,30 @@ describe('channel-monitor-v2 design system structure', () => {
     expect(src).not.toContain('vue-chartjs')
   })
 
-  it('FilterMultiSelect uses rounded-xl input chrome and dropdown utility', () => {
+  it('FilterMultiSelect uses rounded-xl input chrome and owned option utility', () => {
     const src = read('features/channel-monitor-v2/FilterMultiSelect.vue')
     expect(src).toContain('rounded-xl')
-    expect(src).toContain('dropdown')
-    expect(src).toContain('dropdown-item')
+    expect(src).toContain('filter-dropdown')
+    expect(src).toContain('select-option')
+    expect(src).not.toContain('dropdown-item')
   })
 
-  it('MonitorSettingsPanel uses page-header, surface-card, btn-primary, tabs', () => {
+  it('MonitorSettingsPanel uses page-header, surface-card, shared primary action, and tabs', () => {
     const src = read('features/channel-monitor-v2/MonitorSettingsPanel.vue')
     expect(src).toContain('page-header')
-    expect(src).toContain('btn btn-primary')
+    expect(src).toContain('<AppButton')
+    expect(src).toContain('variant="solid"')
     expect(src).toContain('class="surface-card')
-    expect(src).toContain('tab-active')
+    expect(src).toContain('<Segmented')
+    expect(src).toContain('variant="segmented"')
+    expect(src).not.toContain('tab-active')
     expect(src).toMatch(/max-h-\[min\(40vh/)
   })
 
-  it('admin ChannelMonitorView V2 tab chrome uses project tabs', () => {
+  it('admin ChannelMonitorView V2 mode chrome uses the project segmented control', () => {
     const src = read('views/admin/ChannelMonitorView.vue')
-    expect(src).toContain('page-header')
-    expect(src).toContain('page-title')
-    expect(src).toContain('class="tabs')
-    expect(src).toContain('tab-active')
+    expect(src).toContain('monitor-mode-panel')
+    expect(src).toContain('<Segmented')
     expect(src).toContain('MonitorSettingsPanel')
   })
 })

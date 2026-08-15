@@ -91,7 +91,13 @@ function formatAmount(v: number): string {
 
 <template>
   <section class="rev">
-    <h3 class="rev__title">{{ t('payment.admin.dailyRevenue') }}</h3>
+    <header class="rev__header">
+      <div>
+        <p class="rev__eyebrow">{{ t('payment.admin.revenue') }}</p>
+        <h3 class="rev__title">{{ t('payment.admin.dailyRevenue') }}</h3>
+      </div>
+      <span class="rev__summary">{{ t('payment.admin.nativeCurrenciesSeparate') }}</span>
+    </header>
 
     <div v-if="loading" class="rev__state">
       <LoadingSpinner size="md" />
@@ -156,10 +162,33 @@ function formatAmount(v: number): string {
 }
 
 .rev__title {
-  margin: 0 0 12px;
+  margin: 0;
   color: var(--foreground);
   font-size: var(--fs-lg);
   font-weight: var(--fw-medium);
+}
+
+.rev__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding-bottom: var(--sp-4);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+
+.rev__eyebrow {
+  margin: 0 0 var(--sp-1);
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+}
+
+.rev__summary {
+  flex: none;
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+  text-align: right;
 }
 
 .rev__state {
@@ -188,6 +217,16 @@ function formatAmount(v: number): string {
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 8px;
+}
+
+@media (max-width: 640px) {
+  .rev__header {
+    flex-direction: column;
+  }
+
+  .rev__summary {
+    text-align: left;
+  }
 }
 
 .rev__legend {

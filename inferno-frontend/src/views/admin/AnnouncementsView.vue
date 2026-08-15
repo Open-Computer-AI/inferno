@@ -2,9 +2,9 @@
   <AppLayout>
     <TablePageLayout>
       <template #filters>
-        <div class="flex flex-wrap items-center gap-3">
+        <div class="flex flex-wrap items-center gap-3 xl:flex-nowrap">
           <!-- Left: Search + Filters -->
-          <div class="flex-1 sm:max-w-64">
+          <div class="min-w-0 flex-1 sm:max-w-64">
             <input
               v-model="searchQuery"
               type="text"
@@ -21,7 +21,7 @@
           />
 
           <!-- Right: Action buttons -->
-          <div class="flex flex-1 flex-wrap items-center justify-end gap-2">
+          <div class="flex shrink-0 items-center gap-2">
             <button
               @click="loadAnnouncements"
               :disabled="loading"

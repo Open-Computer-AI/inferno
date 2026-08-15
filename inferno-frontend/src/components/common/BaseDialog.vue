@@ -17,18 +17,17 @@
       >
         <!-- Dialog panel. Width is a data attribute per house style (see
              Button.vue, Select.vue), not a class: a size is one decision. -->
-        <div ref="dialogRef" class="dlg-panel" :data-width="width" @click.stop>
+        <div ref="dialogRef" class="dlg-panel" :data-width="width" tabindex="-1" @click.stop>
           <div class="dlg-header">
             <h3 :id="dialogId" class="dlg-title">{{ title }}</h3>
-            <button
+            <IconButton
               v-if="showCloseButton"
-              type="button"
-              class="dlg-close"
-              :aria-label="t('common.close')"
+              class="dlg-close-button"
+              icon="hgi-cancel-01"
+              :label="t('common.close')"
+              size="xs"
               @click="emit('close')"
-            >
-              <i class="hgi-stroke hgi-cancel-01" aria-hidden="true" />
-            </button>
+            />
           </div>
 
           <!-- `modal-body` is kept as a literal class alongside the new BEM
@@ -95,12 +94,15 @@
  */
 import { computed, watch, onMounted, onUnmounted, ref, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { openDialogTokens } from './dialogState'
+import IconButton from './IconButton.vue'
 
 const { t } = useI18n()
 
-// 生成唯一ID以避免多个对话框时ID冲突
-let dialogIdCounter = 0
-const dialogId = `modal-title-${++dialogIdCounter}`
+// Generate a per-instance ID so multiple dialogs keep distinct aria labels.
+const dialogId = `modal-title-${Math.random().toString(36).slice(2)}`
+const instanceToken = {}
+const focusableSelector = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 // 焦点管理
 const dialogRef = ref<HTMLElement | null>(null)
@@ -144,10 +146,35 @@ const handleClose = () => {
   }
 }
 
-const handleEscape = (event: KeyboardEvent) => {
-  if (props.show && props.closeOnEscape && event.key === 'Escape') {
+const handleKeydown = (event: KeyboardEvent) => {
+  if (!props.show || !dialogRef.value?.contains(document.activeElement)) return
+
+  if (props.closeOnEscape && event.key === 'Escape') {
     emit('close')
+    return
   }
+
+  if (event.key !== 'Tab') return
+  const focusable = Array.from(dialogRef.value.querySelectorAll<HTMLElement>(focusableSelector))
+  if (focusable.length === 0) {
+    event.preventDefault()
+    dialogRef.value.focus()
+    return
+  }
+
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
+const syncBodyScrollLock = () => {
+  document.body.classList.toggle('modal-open', openDialogTokens.size > 0)
 }
 
 // Prevent body scroll when modal is open and manage focus
@@ -158,7 +185,8 @@ watch(
       // 保存当前焦点元素
       previousActiveElement = document.activeElement as HTMLElement
       // 使用CSS类而不是直接操作style,更易于管理多个对话框
-      document.body.classList.add('modal-open')
+      openDialogTokens.add(instanceToken)
+      syncBodyScrollLock()
 
       // 等待DOM更新后设置焦点到对话框
       await nextTick()
@@ -166,13 +194,12 @@ watch(
         modalBodyRef.value.scrollTop = 0
       }
       if (dialogRef.value) {
-        const firstFocusable = dialogRef.value.querySelector<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        )
-        firstFocusable?.focus()
+        const firstFocusable = dialogRef.value.querySelector<HTMLElement>(focusableSelector)
+        ;(firstFocusable ?? dialogRef.value).focus()
       }
     } else {
-      document.body.classList.remove('modal-open')
+      openDialogTokens.delete(instanceToken)
+      syncBodyScrollLock()
       // 恢复之前的焦点
       if (previousActiveElement && typeof previousActiveElement.focus === 'function') {
         previousActiveElement.focus()
@@ -184,13 +211,13 @@ watch(
 )
 
 onMounted(() => {
-  document.addEventListener('keydown', handleEscape)
+  document.addEventListener('keydown', handleKeydown)
 })
 
 onUnmounted(() => {
-  document.removeEventListener('keydown', handleEscape)
-  // 确保组件卸载时移除滚动锁定
-  document.body.classList.remove('modal-open')
+  document.removeEventListener('keydown', handleKeydown)
+  openDialogTokens.delete(instanceToken)
+  syncBodyScrollLock()
 })
 </script>
 
@@ -270,30 +297,8 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-.dlg-close {
-  display: grid;
-  flex-shrink: 0;
-  place-items: center;
-  width: 28px;
-  height: 28px;
+.dlg-close-button {
   margin-right: -6px;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--muted-foreground);
-  cursor: pointer;
-  transition: background var(--motion-hover);
-}
-.dlg-close:hover {
-  background: var(--sidebar-accent);
-  color: var(--foreground);
-}
-.dlg-close:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--focus-ring);
-}
-.dlg-close i {
-  font-size: 14px; /* june-lint-disable ground-rule-4: icon glyph */
 }
 
 /* The only scroll container. A dialog taller than the viewport scrolls its
