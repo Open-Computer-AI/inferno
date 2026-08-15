@@ -2,64 +2,60 @@
   <div class="relative">
     <!-- Admin: Full version badge with dropdown -->
     <template v-if="isAdmin">
-      <button
+      <Button
         @click="toggleDropdown"
-        class="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs transition-colors"
+        size="xs"
+        variant="ghost"
+        class="version-badge-trigger"
         :class="[
           hasUpdate
-            ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50'
-            : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-800 dark:text-dark-400 dark:hover:bg-dark-700'
+            ? 'bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] text-[var(--warning)] hover:bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/30] text-[var(--warning)] dark:hover:bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/50]'
+            : 'bg-[var(--brand-tint)] text-[var(--muted-foreground)] hover:bg-[var(--brand-tint)] bg-[var(--brand-tint)] text-[var(--muted-foreground)] dark:hover:bg-[var(--card)]'
         ]"
         :title="hasUpdate ? t('version.updateAvailable') : t('version.upToDate')"
       >
-        <span v-if="currentVersion" class="font-medium">v{{ currentVersion }}</span>
+        <span v-if="currentVersion" class="font-[var(--fw-medium)]">v{{ currentVersion }}</span>
         <span
           v-else
-          class="h-3 w-12 animate-pulse rounded bg-gray-200 font-medium dark:bg-dark-600"
+          class="h-3 w-12 animate-pulse rounded bg-[var(--brand-tint)] font-[var(--fw-medium)] bg-[var(--brand-tint)]"
         ></span>
         <!-- Update indicator -->
         <span v-if="hasUpdate" class="relative flex h-2 w-2">
           <span
-            class="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"
+            class="absolute inline-flex h-full w-full animate-ping rounded-full bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] opacity-75"
           ></span>
-          <span class="relative inline-flex h-2 w-2 rounded-full bg-amber-500"></span>
+          <span class="relative inline-flex h-2 w-2 rounded-full bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))]"></span>
         </span>
-      </button>
+      </Button>
 
       <!-- Dropdown -->
       <transition name="dropdown">
         <div
           v-if="dropdownOpen"
           ref="dropdownRef"
-          class="absolute left-0 z-50 mt-2 overflow-hidden whitespace-normal rounded-xl border border-gray-200 bg-white shadow-lg transition-all duration-200 dark:border-dark-700 dark:bg-dark-800"
+          class="absolute left-0 z-50 mt-2 overflow-hidden whitespace-normal rounded-xl border border-[var(--brand-line)] bg-white shadow-lg transition-[background-color,color,opacity] duration-200 border-[var(--brand-line)] bg-[var(--brand-tint)]"
           :class="rollbackPanelOpen && isReleaseBuild ? 'w-80' : 'w-64'"
         >
           <!-- Header with refresh button -->
           <div
-            class="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-dark-700"
+            class="flex items-center justify-between border-b border-[var(--brand-line)] px-4 py-3 border-[var(--brand-line)]"
           >
-            <span class="text-sm font-medium text-gray-700 dark:text-dark-300">{{
+            <span class="text-sm font-[var(--fw-medium)] text-[var(--body-copy)] text-[var(--muted-foreground)]">{{
               t('version.currentVersion')
             }}</span>
-            <button
+            <IconButton
               @click="refreshVersion(true)"
-              class="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-dark-700 dark:hover:text-dark-200"
+              icon="hgi-arrow-reload-horizontal"
+              :label="t('version.refresh')"
+              size="sm"
               :disabled="loading"
-              :title="t('version.refresh')"
-            >
-              <Icon
-                name="refresh"
-                size="sm"
-                :stroke-width="2"
-                :class="{ 'animate-spin': loading }"
-              />
-            </button>
+            />
           </div>
 
           <div class="p-4">
             <!-- Loading state -->
             <div v-if="loading" class="flex items-center justify-center py-6">
-              <svg class="h-6 w-6 animate-spin text-primary-500" fill="none" viewBox="0 0 24 24">
+              <svg class="h-6 w-6 animate-spin text-[var(--brand)]" fill="none" viewBox="0 0 24 24">
                 <circle
                   class="opacity-25"
                   cx="12"
@@ -83,17 +79,17 @@
                 <div class="inline-flex items-center gap-2">
                   <span
                     v-if="currentVersion"
-                    class="text-2xl font-bold text-gray-900 dark:text-white"
+                    class="text-2xl font-[var(--fw-medium)] text-[var(--foreground)] dark:text-white"
                     >v{{ currentVersion }}</span
                   >
-                  <span v-else class="text-2xl font-bold text-gray-400 dark:text-dark-500">--</span>
+                  <span v-else class="text-2xl font-[var(--fw-medium)] text-[var(--muted-foreground)] text-[var(--muted-foreground)]">--</span>
                   <!-- Show check mark when up to date -->
                   <span
                     v-if="!hasUpdate"
-                    class="flex h-5 w-5 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30"
+                    class="flex h-5 w-5 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] bg-[color-mix(in_oklch,var(--success)_14%,var(--card))/30]"
                   >
                     <svg
-                      class="h-3 w-3 text-green-600 dark:text-green-400"
+                      class="h-3 w-3 text-[var(--success)] text-[var(--success)]"
                       fill="currentColor"
                       viewBox="0 0 20 20"
                     >
@@ -105,7 +101,7 @@
                     </svg>
                   </span>
                 </div>
-                <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">
+                <p class="mt-1 text-xs text-[var(--muted-foreground)] text-[var(--muted-foreground)]">
                   {{
                     hasUpdate
                       ? t('version.latestVersion') + ': v' + latestVersion
@@ -117,48 +113,51 @@
               <!-- Priority 1: Update error (must check before hasUpdate) -->
               <div v-if="updateError" class="space-y-2">
                 <div
-                  class="flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800/50 dark:bg-red-900/20"
+                  class="flex items-center gap-3 rounded-lg border border-[var(--destructive)] bg-[var(--destructive-soft)] p-3 border-[var(--destructive)/50] bg-[var(--destructive-soft)/20]"
                 >
                   <div
-                    class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/50"
+                    class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[var(--destructive-soft)] bg-[var(--destructive-soft)/50]"
                   >
                     <Icon
                       name="x"
                       size="sm"
                       :stroke-width="2"
-                      class="text-red-600 dark:text-red-400"
+                      class="text-[var(--destructive)] text-[var(--destructive)]"
                     />
                   </div>
                   <div class="min-w-0 flex-1">
-                    <p class="text-sm font-medium text-red-700 dark:text-red-300">
+                    <p class="text-sm font-[var(--fw-medium)] text-[var(--destructive)] text-[var(--destructive)]">
                       {{ t('version.updateFailed') }}
                     </p>
-                    <p class="truncate text-xs text-red-600/70 dark:text-red-400/70">
+                    <p class="truncate text-xs text-[var(--destructive)/70] text-[var(--destructive)/70]">
                       {{ updateError }}
                     </p>
                   </div>
                 </div>
 
                 <!-- Retry button -->
-                <button
+                <Button
                   @click="handleUpdate"
                   :disabled="updating"
-                  class="flex w-full items-center justify-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  :loading="updating"
+                  variant="danger"
+                  size="md"
+                  class="w-full"
                 >
                   {{ t('version.retry') }}
-                </button>
+                </Button>
               </div>
 
               <!-- Priority 2: Update success - need restart -->
               <div v-else-if="updateSuccess && needRestart" class="space-y-2">
                 <div
-                  class="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-800/50 dark:bg-green-900/20"
+                  class="flex items-center gap-3 rounded-lg border border-[var(--success)] bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] p-3 border-[var(--success)/50] bg-[color-mix(in_oklch,var(--success)_14%,var(--card))/20]"
                 >
                   <div
-                    class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/50"
+                    class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] bg-[color-mix(in_oklch,var(--success)_14%,var(--card))/50]"
                   >
                     <svg
-                      class="h-4 w-4 text-green-600 dark:text-green-400"
+                      class="h-4 w-4 text-[var(--success)] text-[var(--success)]"
                       fill="none"
                       viewBox="0 0 24 24"
                       stroke="currentColor"
@@ -168,59 +167,28 @@
                     </svg>
                   </div>
                   <div class="min-w-0 flex-1">
-                    <p class="text-sm font-medium text-green-700 dark:text-green-300">
+                    <p class="text-sm font-[var(--fw-medium)] text-[var(--success)] text-[var(--success)]">
                       {{
                         successKind === 'rollback'
                           ? t('version.rollbackComplete')
                           : t('version.updateComplete')
                       }}
                     </p>
-                    <p class="text-xs text-green-600/70 dark:text-green-400/70">
+                    <p class="text-xs text-[var(--success)/70] text-[var(--success)/70]">
                       {{ t('version.restartRequired') }}
                     </p>
                   </div>
                 </div>
 
                 <!-- Restart button with countdown -->
-                <button
+                <Button
                   @click="handleRestart"
                   :disabled="restarting"
-                  class="flex w-full items-center justify-center gap-2 rounded-lg bg-green-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  :loading="restarting"
+                  variant="success"
+                  size="md"
+                  class="w-full"
                 >
-                  <svg
-                    v-if="restarting"
-                    class="h-4 w-4 animate-spin"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      class="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      stroke-width="4"
-                    ></circle>
-                    <path
-                      class="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                  <svg
-                    v-else
-                    class="h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    stroke-width="2"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                    />
-                  </svg>
                   <template v-if="restarting">
                     <span>{{ t('version.restarting') }}</span>
                     <span v-if="restartCountdown > 0" class="tabular-nums"
@@ -228,7 +196,7 @@
                     >
                   </template>
                   <span v-else>{{ t('version.restartNow') }}</span>
-                </button>
+                </Button>
               </div>
 
               <!-- Priority 3: Update available for source build - show git pull hint -->
@@ -238,28 +206,28 @@
                   :href="releaseInfo.html_url"
                   target="_blank"
                   rel="noopener noreferrer"
-                  class="group flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 transition-colors hover:bg-amber-100 dark:border-amber-800/50 dark:bg-amber-900/20 dark:hover:bg-amber-900/30"
+                  class="group flex items-center gap-3 rounded-lg border border-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] p-3 transition-colors hover:bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] border-[var(--warning)/50] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/20] dark:hover:bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/30]"
                 >
                   <div
-                    class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/50"
+                    class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/50]"
                   >
                     <Icon
                       name="download"
                       size="sm"
                       :stroke-width="2"
-                      class="text-amber-600 dark:text-amber-400"
+                      class="text-[var(--warning)] text-[var(--warning)]"
                     />
                   </div>
                   <div class="min-w-0 flex-1">
-                    <p class="text-sm font-medium text-amber-700 dark:text-amber-300">
+                    <p class="text-sm font-[var(--fw-medium)] text-[var(--warning)] text-[var(--warning)]">
                       {{ t('version.updateAvailable') }}
                     </p>
-                    <p class="text-xs text-amber-600/70 dark:text-amber-400/70">
+                    <p class="text-xs text-[var(--warning)/70] text-[var(--warning)/70]">
                       v{{ latestVersion }}
                     </p>
                   </div>
                   <svg
-                    class="h-4 w-4 text-amber-500 transition-transform group-hover:translate-x-0.5 dark:text-amber-400"
+                    class="h-4 w-4 text-[var(--warning)] transition-transform group-hover:translate-x-0.5 text-[var(--warning)]"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"
@@ -270,10 +238,10 @@
                 </a>
                 <!-- Source build hint -->
                 <div
-                  class="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2 dark:border-blue-800/50 dark:bg-blue-900/20"
+                  class="flex items-center gap-2 rounded-lg border border-[var(--brand-line)] bg-[var(--brand-tint)] p-2 border-[var(--brand-line)/50] bg-[var(--brand-tint)/20]"
                 >
                   <svg
-                    class="h-3.5 w-3.5 flex-shrink-0 text-blue-500 dark:text-blue-400"
+                    class="h-3.5 w-3.5 flex-shrink-0 text-[var(--brand)] text-[var(--brand)]"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"
@@ -285,7 +253,7 @@
                       d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                     />
                   </svg>
-                  <p class="text-xs text-blue-600 dark:text-blue-400">
+                  <p class="text-xs text-[var(--brand)] text-[var(--brand)]">
                     {{ t('version.sourceModeHint') }}
                   </p>
                 </div>
@@ -295,52 +263,40 @@
               <div v-else-if="hasUpdate && isReleaseBuild" class="space-y-2">
                 <!-- Update info card -->
                 <div
-                  class="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/50 dark:bg-amber-900/20"
+                  class="flex items-center gap-3 rounded-lg border border-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] p-3 border-[var(--warning)/50] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/20]"
                 >
                 <div
-                  class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/50"
+                  class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/50]"
                 >
                   <Icon
                     name="download"
                     size="sm"
                     :stroke-width="2"
-                    class="text-amber-600 dark:text-amber-400"
+                    class="text-[var(--warning)] text-[var(--warning)]"
                   />
                 </div>
                   <div class="min-w-0 flex-1">
-                    <p class="text-sm font-medium text-amber-700 dark:text-amber-300">
+                    <p class="text-sm font-[var(--fw-medium)] text-[var(--warning)] text-[var(--warning)]">
                       {{ t('version.updateAvailable') }}
                     </p>
-                    <p class="text-xs text-amber-600/70 dark:text-amber-400/70">
+                    <p class="text-xs text-[var(--warning)/70] text-[var(--warning)/70]">
                       v{{ latestVersion }}
                     </p>
                   </div>
                 </div>
 
                 <!-- Update button -->
-                <button
+                <Button
                   @click="handleUpdate"
                   :disabled="updating"
-                  class="flex w-full items-center justify-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  :loading="updating"
+                  icon="hgi-download-01"
+                  variant="solid"
+                  size="md"
+                  class="w-full"
                 >
-                  <svg v-if="updating" class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle
-                      class="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      stroke-width="4"
-                    ></circle>
-                    <path
-                      class="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                  <Icon v-else name="download" size="sm" :stroke-width="2" />
                   {{ updating ? t('version.updating') : t('version.updateNow') }}
-                </button>
+                </Button>
 
                 <!-- View release link -->
                 <a
@@ -348,7 +304,7 @@
                   :href="releaseInfo.html_url"
                   target="_blank"
                   rel="noopener noreferrer"
-                  class="flex items-center justify-center gap-1 text-xs text-gray-500 transition-colors hover:text-gray-700 dark:text-dark-400 dark:hover:text-dark-200"
+                  class="flex items-center justify-center gap-1 text-xs text-[var(--muted-foreground)] transition-colors hover:text-[var(--body-copy)] text-[var(--muted-foreground)] dark:hover:text-[var(--muted-foreground)]"
                 >
                   {{ t('version.viewChangelog') }}
                   <Icon name="externalLink" size="xs" :stroke-width="2" />
@@ -362,7 +318,7 @@
                   :href="releaseInfo.html_url"
                   target="_blank"
                   rel="noopener noreferrer"
-                  class="flex items-center justify-center gap-2 py-2 text-sm text-gray-500 transition-colors hover:text-gray-700 dark:text-dark-400 dark:hover:text-dark-200"
+                  class="flex items-center justify-center gap-2 py-2 text-sm text-[var(--muted-foreground)] transition-colors hover:text-[var(--body-copy)] text-[var(--muted-foreground)] dark:hover:text-[var(--muted-foreground)]"
                 >
                   <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
                     <path
@@ -375,10 +331,10 @@
                 </a>
 
                 <!-- Version rollback entry -->
-                <div class="border-t border-gray-100 pt-2 dark:border-dark-700">
+                <div class="border-t border-[var(--brand-line)] pt-2 border-[var(--brand-line)]">
                   <button
                     @click="toggleRollbackPanel"
-                    class="group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs text-gray-400 transition-colors hover:bg-gray-50 hover:text-gray-600 dark:text-dark-500 dark:hover:bg-dark-700/50 dark:hover:text-dark-300"
+                    class="group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs text-[var(--muted-foreground)] transition-colors hover:bg-[var(--brand-tint)] hover:text-[var(--muted-foreground)] text-[var(--muted-foreground)] dark:hover:bg-[var(--card)/50] dark:hover:text-[var(--muted-foreground)]"
                   >
                     <span class="flex items-center gap-1.5">
                       <Icon name="clock" size="xs" :stroke-width="2" />
@@ -398,10 +354,10 @@
                       <!-- Source build: online rollback unavailable, use git instead -->
                       <div
                         v-if="!isReleaseBuild"
-                        class="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2 dark:border-blue-800/50 dark:bg-blue-900/20"
+                        class="flex items-center gap-2 rounded-lg border border-[var(--brand-line)] bg-[var(--brand-tint)] p-2 border-[var(--brand-line)/50] bg-[var(--brand-tint)/20]"
                       >
                         <svg
-                          class="h-3.5 w-3.5 flex-shrink-0 text-blue-500 dark:text-blue-400"
+                          class="h-3.5 w-3.5 flex-shrink-0 text-[var(--brand)] text-[var(--brand)]"
                           fill="none"
                           viewBox="0 0 24 24"
                           stroke="currentColor"
@@ -413,7 +369,7 @@
                             d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                           />
                         </svg>
-                        <p class="min-w-0 flex-1 text-xs leading-4 text-blue-600 dark:text-blue-400">
+                        <p class="min-w-0 flex-1 text-xs leading-4 text-[var(--brand)] text-[var(--brand)]">
                           {{ t('version.rollbackSourceHint') }}
                         </p>
                       </div>
@@ -424,7 +380,7 @@
                         class="flex items-center justify-center py-4"
                       >
                         <svg
-                          class="h-5 w-5 animate-spin text-primary-500"
+                          class="h-5 w-5 animate-spin text-[var(--brand)]"
                           fill="none"
                           viewBox="0 0 24 24"
                         >
@@ -447,29 +403,31 @@
                       <!-- Load error + retry -->
                       <div v-else-if="rollbackVersionsError" class="space-y-2">
                         <p
-                          class="rounded-lg border border-red-200 bg-red-50 p-2.5 text-xs text-red-600 dark:border-red-800/50 dark:bg-red-900/20 dark:text-red-400"
+                          class="rounded-lg border border-[var(--destructive)] bg-[var(--destructive-soft)] p-2.5 text-xs text-[var(--destructive)] border-[var(--destructive)/50] bg-[var(--destructive-soft)/20] text-[var(--destructive)]"
                         >
                           {{ rollbackVersionsError }}
                         </p>
-                        <button
+                        <Button
                           @click="loadRollbackVersions"
-                          class="w-full rounded-lg border border-gray-200 py-1.5 text-xs text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 dark:border-dark-700 dark:text-dark-400 dark:hover:bg-dark-700/50 dark:hover:text-dark-200"
+                          variant="secondary"
+                          size="xs"
+                          class="w-full"
                         >
                           {{ t('version.retry') }}
-                        </button>
+                        </Button>
                       </div>
 
                       <!-- No versions available -->
                       <p
                         v-else-if="rollbackVersions.length === 0"
-                        class="py-3 text-center text-xs text-gray-400 dark:text-dark-500"
+                        class="py-3 text-center text-xs text-[var(--muted-foreground)] text-[var(--muted-foreground)]"
                       >
                         {{ t('version.noRollbackVersions') }}
                       </p>
 
                       <!-- Version list -->
                       <template v-else>
-                        <p class="px-0.5 text-[11px] text-gray-400 dark:text-dark-500">
+                        <p class="px-0.5 text-[11px] text-[var(--muted-foreground)] text-[var(--muted-foreground)]">
                           {{ t('version.rollbackSelectVersion') }}
                         </p>
 
@@ -478,11 +436,11 @@
                           :key="item.version"
                           @click="selectRollbackVersion(item.version)"
                           :disabled="rollingBack"
-                          class="flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left transition-all disabled:cursor-not-allowed disabled:opacity-60"
+                          class="flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left transition-[background-color,color,opacity] disabled:cursor-not-allowed disabled:opacity-60"
                           :class="
                             selectedRollbackVersion === item.version
-                              ? 'border-amber-300 bg-amber-50 shadow-sm dark:border-amber-700 dark:bg-amber-900/20'
-                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 dark:border-dark-700 dark:hover:border-dark-600 dark:hover:bg-dark-700/40'
+                              ? 'border-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] shadow-sm border-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/20]'
+                              : 'border-[var(--brand-line)] hover:border-[var(--brand-line)] hover:bg-[var(--brand-tint)] border-[var(--brand-line)] dark:hover:border-[var(--brand-line)] dark:hover:bg-[var(--card)/40]'
                           "
                         >
                           <span class="flex items-center gap-2">
@@ -490,26 +448,26 @@
                               class="flex h-3.5 w-3.5 items-center justify-center rounded-full border transition-colors"
                               :class="
                                 selectedRollbackVersion === item.version
-                                  ? 'border-amber-500'
-                                  : 'border-gray-300 dark:border-dark-500'
+                                  ? 'border-[var(--warning)]'
+                                  : 'border-[var(--brand-line)] border-[var(--brand-line)]'
                               "
                             >
                               <span
                                 v-if="selectedRollbackVersion === item.version"
-                                class="h-1.5 w-1.5 rounded-full bg-amber-500"
+                                class="h-1.5 w-1.5 rounded-full bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))]"
                               ></span>
                             </span>
                             <span
-                              class="text-sm font-semibold"
+                              class="text-sm font-[var(--fw-medium)]"
                               :class="
                                 selectedRollbackVersion === item.version
-                                  ? 'text-amber-700 dark:text-amber-300'
-                                  : 'text-gray-700 dark:text-dark-200'
+                                  ? 'text-[var(--warning)] text-[var(--warning)]'
+                                  : 'text-[var(--body-copy)] text-[var(--muted-foreground)]'
                               "
                               >v{{ item.version }}</span
                             >
                           </span>
-                          <span class="text-[11px] tabular-nums text-gray-400 dark:text-dark-500">
+                          <span class="text-[11px] tabular-nums text-[var(--muted-foreground)] text-[var(--muted-foreground)]">
                             {{ formatPublishedAt(item.published_at) }}
                           </span>
                         </button>
@@ -517,55 +475,40 @@
                         <!-- Selected version: manual command (per deploy method) + confirm -->
                         <transition name="rollback">
                           <div v-if="selectedRollbackVersion" class="space-y-2">
-                            <p class="px-0.5 text-[11px] text-gray-400 dark:text-dark-500">
+                            <p class="px-0.5 text-[11px] text-[var(--muted-foreground)] text-[var(--muted-foreground)]">
                               {{ t('version.manualRollbackCommand') }}
                             </p>
 
                             <!-- Terminal-style block with deploy-method tabs -->
                             <div
-                              class="overflow-hidden rounded-lg border border-gray-200 dark:border-dark-600"
+                              class="overflow-hidden rounded-lg border border-[var(--brand-line)] border-[var(--brand-line)]"
                             >
                               <div
-                                class="flex items-center justify-between border-b border-gray-200 bg-gray-100 px-2 py-1.5 dark:border-dark-600 dark:bg-dark-700"
+                                class="flex items-center justify-between border-b border-[var(--brand-line)] bg-[var(--brand-tint)] px-2 py-1.5 border-[var(--brand-line)] bg-[var(--brand-tint)]"
                               >
-                                <div
-                                  class="flex items-center gap-0.5 rounded-md bg-gray-200/70 p-0.5 dark:bg-dark-600/70"
-                                >
-                                  <button
-                                    v-for="tab in manualTabs"
-                                    :key="tab.key"
-                                    @click="manualTab = tab.key"
-                                    class="rounded px-2 py-0.5 text-[11px] font-medium transition-colors"
-                                    :class="
-                                      manualTab === tab.key
-                                        ? 'bg-white text-gray-700 shadow-sm dark:bg-dark-800 dark:text-dark-100'
-                                        : 'text-gray-400 hover:text-gray-600 dark:text-dark-400 dark:hover:text-dark-200'
-                                    "
-                                  >
-                                    {{ tab.label }}
-                                  </button>
-                                </div>
-                                <button
+                                <Segmented
+                                  :model-value="manualTab"
+                                  :items="manualTabItems"
+                                  aria-label="Deployment method"
+                                  @update:model-value="setManualTab"
+                                />
+                                <Button
                                   @click="copyToClipboard(activeManualCommand)"
-                                  class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-gray-400 transition-colors hover:bg-gray-200 hover:text-gray-600 dark:text-dark-400 dark:hover:bg-dark-600 dark:hover:text-dark-200"
+                                  variant="ghost"
+                                  size="xs"
+                                  :icon="copied ? 'hgi-checkmark-circle-02' : 'hgi-copy-01'"
                                 >
-                                  <Icon
-                                    :name="copied ? 'check' : 'copy'"
-                                    size="xs"
-                                    :stroke-width="2"
-                                    :class="copied ? 'text-green-500' : ''"
-                                  />
                                   {{ copied ? t('version.copied') : t('version.copyCommand') }}
-                                </button>
+                                </Button>
                               </div>
                               <code
-                                class="block select-all whitespace-pre-wrap break-all bg-gray-50 p-2.5 font-mono text-[10px] leading-relaxed text-gray-600 dark:bg-dark-900 dark:text-dark-300"
+                                class="block select-all whitespace-pre-wrap break-all bg-[var(--brand-tint)] p-2.5 font-mono text-[10px] leading-relaxed text-[var(--muted-foreground)] bg-[var(--brand-tint)] text-[var(--muted-foreground)]"
                                 >{{ activeManualCommand }}</code
                               >
                             </div>
 
                             <p
-                              class="flex items-start gap-1.5 px-0.5 text-[11px] leading-4 text-amber-600 dark:text-amber-400"
+                              class="flex items-start gap-1.5 px-0.5 text-[11px] leading-4 text-[var(--warning)] text-[var(--warning)]"
                             >
                               <Icon
                                 name="exclamationTriangle"
@@ -578,37 +521,19 @@
 
                             <p
                               v-if="rollbackError"
-                              class="rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-600 dark:border-red-800/50 dark:bg-red-900/20 dark:text-red-400"
+                              class="rounded-lg border border-[var(--destructive)] bg-[var(--destructive-soft)] p-2 text-xs text-[var(--destructive)] border-[var(--destructive)/50] bg-[var(--destructive-soft)/20] text-[var(--destructive)]"
                             >
                               {{ rollbackError }}
                             </p>
 
-                            <button
+                            <Button
                               @click="handleRollback"
                               :disabled="rollingBack"
-                              class="flex w-full items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+                              :loading="rollingBack"
+                              variant="warning"
+                              size="md"
+                              class="w-full"
                             >
-                              <svg
-                                v-if="rollingBack"
-                                class="h-4 w-4 animate-spin"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                              >
-                                <circle
-                                  class="opacity-25"
-                                  cx="12"
-                                  cy="12"
-                                  r="10"
-                                  stroke="currentColor"
-                                  stroke-width="4"
-                                ></circle>
-                                <path
-                                  class="opacity-75"
-                                  fill="currentColor"
-                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                ></path>
-                              </svg>
-                              <Icon v-else name="clock" size="sm" :stroke-width="2" />
                               <span>{{
                                 rollingBack
                                   ? t('version.rollingBack')
@@ -616,7 +541,7 @@
                                       version: 'v' + selectedRollbackVersion
                                     })
                               }}</span>
-                            </button>
+                            </Button>
                           </div>
                         </transition>
                       </template>
@@ -631,7 +556,7 @@
     </template>
 
     <!-- Non-admin: Simple static version text -->
-    <span v-else-if="version" class="text-xs text-gray-500 dark:text-dark-400">
+    <span v-else-if="version" class="text-xs text-[var(--muted-foreground)] text-[var(--muted-foreground)]">
       v{{ version }}
     </span>
   </div>
@@ -650,6 +575,9 @@ import {
 } from '@/api/admin/system'
 import { useClipboard } from '@/composables/useClipboard'
 import Icon from '@/components/icons/Icon.vue'
+import Button from '@/components/common/Button.vue'
+import IconButton from '@/components/common/IconButton.vue'
+import Segmented from '@/components/common/Segmented.vue'
 
 const GITHUB_REPO = 'Wei-Shaw/sub2api'
 // Docker Hub image published by CI (tags carry no "v" prefix, e.g. weishaw/sub2api:0.1.146)
@@ -706,6 +634,14 @@ const manualTabs = computed(() => [
   { key: 'script' as const, label: t('version.deployScript') },
   { key: 'docker' as const, label: t('version.deployDocker') }
 ])
+
+const manualTabItems = computed(() =>
+  manualTabs.value.map((tab) => ({ value: tab.key, label: tab.label }))
+)
+
+function setManualTab(value: string) {
+  if (value === 'script' || value === 'docker') manualTab.value = value
+}
 
 const scriptRollbackCommand = computed(() => {
   if (!selectedRollbackVersion.value) return ''
@@ -925,7 +861,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .dropdown-enter-active,
 .dropdown-leave-active {
-  transition: all 0.2s ease;
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
 .dropdown-enter-from,
@@ -936,7 +872,7 @@ onBeforeUnmount(() => {
 
 .rollback-enter-active,
 .rollback-leave-active {
-  transition: all 0.2s ease;
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
 .rollback-enter-from,

@@ -10,14 +10,14 @@
       aria-hidden="true"
     ></div>
     <div class="min-w-0 flex-1">
-      <span class="stat-label text-[10px] font-bold uppercase tracking-wider text-gray-400">{{ label }}</span>
+      <span class="stat-label text-[10px] font-[var(--fw-medium)]  tracking-wider text-[var(--muted-foreground)]">{{ label }}</span>
       <strong
         class="stat-value mt-1 block overflow-visible text-xl tabular-nums leading-tight !text-clip !whitespace-normal"
         :class="stateClass"
       >{{ value }}</strong>
       <div
         v-if="detailParts.length > 1"
-        class="mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] leading-snug text-gray-400 dark:text-dark-400"
+        class="mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] leading-snug text-[var(--muted-foreground)] dark:text-[var(--muted-foreground)]"
       >
         <span
           v-for="(part, index) in detailParts"
@@ -27,7 +27,7 @@
       </div>
       <small
         v-else-if="detail"
-        class="mt-1.5 block text-[11px] leading-snug text-gray-400 dark:text-dark-400"
+        class="mt-1.5 block text-[11px] leading-snug text-[var(--muted-foreground)] dark:text-[var(--muted-foreground)]"
       >{{ detail }}</small>
     </div>
   </div>
@@ -57,17 +57,17 @@ const detailParts = computed(() => {
 })
 
 const stateClass = computed(() => {
-  if (!props.state) return 'text-gray-900 dark:text-white'
-  if (props.state === 'healthy') return 'text-emerald-600 dark:text-emerald-400'
-  if (props.state === 'warning') return 'text-amber-600 dark:text-amber-400'
-  if (props.state === 'critical') return 'text-red-600 dark:text-red-400'
-  return 'text-gray-500 dark:text-dark-400'
+  if (!props.state) return 'text-[var(--foreground)] dark:text-white'
+  if (props.state === 'healthy') return 'text-[var(--success)] text-[var(--success)]'
+  if (props.state === 'warning') return 'text-[var(--warning)] text-[var(--warning)]'
+  if (props.state === 'critical') return 'text-[var(--destructive)] text-[var(--destructive)]'
+  return 'text-[var(--muted-foreground)] dark:text-[var(--muted-foreground)]'
 })
 
 const dotClass = computed(() => {
-  if (props.state === 'healthy') return 'bg-emerald-500'
-  if (props.state === 'warning') return 'bg-amber-500'
-  if (props.state === 'critical') return 'bg-red-500'
-  return 'bg-gray-300 dark:bg-dark-600'
+  if (props.state === 'healthy') return 'bg-[color-mix(in_oklch,var(--success)_14%,var(--card))]'
+  if (props.state === 'warning') return 'bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))]'
+  if (props.state === 'critical') return 'bg-[var(--destructive-soft)]'
+  return 'bg-[var(--brand-tint)] dark:bg-[var(--surface-subtle)]'
 })
 </script>
