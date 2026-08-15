@@ -84,11 +84,21 @@ function fieldInput(wrapper: ReturnType<typeof mount>, labelText: string) {
 /**
  * ConfirmDialog teleports to body, so its buttons are not inside the wrapper.
  * A native click on the real node still runs Vue's listener.
+ *
+ * Was `document.querySelectorAll('.cf-btn')`, taking the last match anywhere in
+ * the document. ConfirmDialog moved off raw `<button class="cf-btn">` onto the
+ * shared Button primitive, which renders `.btn2[data-variant]`, so that class no
+ * longer exists and the helper reported "dialog was not opened" for a dialog
+ * that had opened fine. Scoped to the dialog's own action row and to the
+ * confirming variant instead -- both are things the old selector could not
+ * assert, since ghost (cancel) and confirm were indistinguishable under one
+ * class and the search was not scoped to the dialog at all.
  */
 async function confirmDialog() {
-  const buttons = Array.from(document.querySelectorAll('.cf-btn'))
-  const confirm = buttons[buttons.length - 1] as HTMLElement | undefined
-  expect(confirm, 'confirm dialog was not opened').toBeDefined()
+  const actions = document.querySelector('.cf-actions')
+  expect(actions, 'confirm dialog was not opened').toBeTruthy()
+  const confirm = actions!.querySelector<HTMLElement>('.btn2:not([data-variant="ghost"])')
+  expect(confirm, 'confirm dialog has no confirming action').toBeTruthy()
   confirm!.click()
   await flushPromises()
 }
