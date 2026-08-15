@@ -1,6 +1,6 @@
 <template>
-  <div class="surface-card">
-    <div class="flex items-start justify-between border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+  <div :class="props.embedded ? 'space-y-4' : 'surface-card'">
+    <div v-if="!props.embedded" class="flex items-start justify-between border-b border-gray-100 px-6 py-4 dark:border-dark-700">
       <div>
         <h2 class="text-lg font-medium text-gray-900 dark:text-white">
           {{ t('profile.passkey.title') }}
@@ -20,7 +20,7 @@
       </button>
     </div>
 
-    <div class="px-6 py-6">
+    <div :class="props.embedded ? '' : 'px-6 py-6'">
       <div v-if="!enabled" class="mb-5 text-sm text-gray-500 dark:text-gray-400">
         {{ t('profile.passkey.featureDisabled') }}
       </div>
@@ -183,7 +183,12 @@ import { passkeyAPI, type PasskeyCredentialSummary } from '@/api'
 import { Icon } from '@/components/icons'
 import { useAppStore } from '@/stores/app'
 
-const props = defineProps<{ enabled: boolean }>()
+const props = withDefaults(defineProps<{
+  enabled: boolean
+  embedded?: boolean
+}>(), {
+  embedded: false,
+})
 
 const { t } = useI18n()
 const appStore = useAppStore()
