@@ -167,7 +167,10 @@ const contextParts = computed(() => {
         <span class="tile__label">{{ label }}</span>
       </div>
       <div class="tile__measure">
-        <p class="tile__value" :title="exact || value">{{ value }}</p>
+        <p v-if="$slots.value" class="tile__value tile__value--stacked" :title="exact || value">
+          <slot name="value" />
+        </p>
+        <p v-else class="tile__value" :title="exact || value">{{ value }}</p>
         <span v-if="delta" class="tile__delta" :data-sentiment="deltaSentiment">
           <i
             class="hgi-stroke tile__delta-icon"
@@ -327,6 +330,13 @@ a.tile:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tile__value--stacked {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  white-space: normal;
 }
 
 /*

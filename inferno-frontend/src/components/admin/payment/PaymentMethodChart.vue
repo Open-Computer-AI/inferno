@@ -1,44 +1,43 @@
 <template>
-  <div class="surface-card p-4">
-    <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
-      {{ t('payment.admin.paymentDistribution') }}
-    </h3>
-    <div
-      v-if="!methods?.length"
-      class="flex h-32 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
-    >
+  <section class="payment-panel" :aria-label="t('payment.admin.paymentDistribution')">
+    <header class="payment-panel__header">
+      <div>
+        <p class="payment-panel__eyebrow">{{ t('payment.admin.paymentDistribution') }}</p>
+        <h3 class="payment-panel__title">{{ t('payment.admin.paymentMethods') }}</h3>
+      </div>
+      <span class="payment-panel__summary">{{ t('payment.admin.paymentMethodsSummary', { count: methods.length }) }}</span>
+    </header>
+
+    <div v-if="!methods?.length" class="payment-panel__empty">
       {{ t('payment.admin.noData') }}
     </div>
-    <div v-else class="space-y-3">
-      <div v-for="method in methods" :key="method.type" class="space-y-1">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span :class="['inline-block h-3 w-3 rounded-full', colorMap[method.type] || 'bg-gray-400']"></span>
-            <span class="text-sm text-gray-700 dark:text-gray-300">
-              {{ t('payment.methods.' + method.type, method.type) }}
-            </span>
+
+    <div v-else class="payment-methods">
+      <article v-for="method in methods" :key="method.type" class="payment-method">
+        <header class="payment-method__header">
+          <div class="payment-method__name">
+            <span class="payment-method__dot" :data-method="method.type" aria-hidden="true" />
+            <span>{{ t('payment.methods.' + method.type, method.type) }}</span>
           </div>
-          <div class="space-y-1 text-right">
-            <span v-for="[currency, amount] in sortedAmounts(method.amount)" :key="currency" class="block text-sm font-medium text-gray-900 dark:text-white">
+          <div class="payment-method__meta">
+            <span v-for="[currency, amount] in sortedAmounts(method.amount)" :key="currency" class="payment-method__amount">
               {{ formatMoney(currency, amount) }}
             </span>
-            <span class="ml-2 text-xs text-gray-500 dark:text-gray-400">
-              ({{ method.count }})
-            </span>
+            <span class="payment-method__count">{{ method.count }} {{ t('payment.admin.orders') }}</span>
+          </div>
+        </header>
+
+        <div class="payment-method__bars">
+          <div v-for="[currency, amount] in sortedAmounts(method.amount)" :key="currency" class="payment-method__bar-row">
+            <span class="payment-method__currency">{{ currency }}</span>
+            <div class="payment-method__track" role="presentation">
+              <span class="payment-method__fill" :data-method="method.type" :style="{ width: `${barWidth(currency, amount)}%` }" />
+            </div>
           </div>
         </div>
-        <div v-for="[currency, amount] in sortedAmounts(method.amount)" :key="currency" class="flex items-center gap-2">
-          <span class="w-10 text-xs text-gray-500 dark:text-gray-400">{{ currency }}</span>
-          <div class="h-2 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-700">
-            <div
-              :class="['h-full rounded-full transition-all', barColorMap[method.type] || 'bg-gray-400']"
-              :style="{ width: barWidth(currency, amount) + '%' }"
-            ></div>
-          </div>
-        </div>
-      </div>
+      </article>
     </div>
-  </div>
+  </section>
 </template>
 
 <script setup lang="ts">
@@ -52,30 +51,14 @@ const props = defineProps<{
   methods: PaymentMethodStats[]
 }>()
 
-const colorMap: Record<string, string> = {
-  alipay: 'bg-blue-500',
-  wxpay: 'bg-green-500',
-  alipay_direct: 'bg-blue-400',
-  wxpay_direct: 'bg-green-400',
-  stripe: 'bg-purple-500',
-}
-
-const barColorMap: Record<string, string> = {
-  alipay: 'bg-blue-500',
-  wxpay: 'bg-green-500',
-  alipay_direct: 'bg-blue-400',
-  wxpay_direct: 'bg-green-400',
-  stripe: 'bg-purple-500',
-}
-
-const maxAmounts = computed<CurrencyAmounts>(() => {
-  return props.methods.reduce<CurrencyAmounts>((maximums, method) => {
+const maxAmounts = computed<CurrencyAmounts>(() =>
+  props.methods.reduce<CurrencyAmounts>((maximums, method) => {
     for (const [currency, amount] of Object.entries(method.amount)) {
       maximums[currency] = Math.max(maximums[currency] || 0, amount)
     }
     return maximums
   }, {})
-})
+)
 
 function sortedAmounts(amounts: CurrencyAmounts): [string, number][] {
   return Object.entries(amounts).sort(([left], [right]) => left.localeCompare(right))
@@ -86,6 +69,172 @@ function barWidth(currency: string, amount: number): number {
 }
 
 function formatMoney(currency: string, amount: number): string {
-  return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount)
+  return new Intl.NumberFormat(undefined, { style: 'currency', currency, currencyDisplay: 'code' }).format(amount)
 }
 </script>
+
+<style scoped>
+.payment-panel {
+  min-width: 0;
+  padding: var(--sp-5);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--r-xl);
+  background: var(--card);
+}
+
+.payment-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding-bottom: var(--sp-4);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+
+.payment-panel__eyebrow {
+  margin: 0 0 var(--sp-1);
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+}
+
+.payment-panel__title {
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
+}
+
+.payment-panel__summary {
+  flex: none;
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+  text-align: right;
+}
+
+.payment-panel__empty {
+  display: grid;
+  min-height: 160px;
+  place-items: center;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.payment-methods {
+  display: grid;
+  gap: var(--sp-4);
+  padding-top: var(--sp-4);
+}
+
+.payment-method {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.payment-method + .payment-method {
+  padding-top: var(--sp-4);
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.payment-method__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+
+.payment-method__name {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: var(--sp-2);
+  color: var(--foreground);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+
+.payment-method__dot {
+  flex: none;
+  width: var(--sp-3);
+  height: var(--sp-3);
+  border-radius: var(--r-pill);
+  background: var(--brand);
+}
+
+.payment-method__dot[data-method*='wxpay'] {
+  background: var(--success);
+}
+
+.payment-method__meta {
+  display: grid;
+  justify-items: end;
+  gap: var(--sp-1);
+  text-align: right;
+}
+
+.payment-method__amount {
+  color: var(--foreground);
+  font-family: var(--font-serif);
+  font-size: var(--fs-lg);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.payment-method__count {
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+
+.payment-method__bars {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.payment-method__bar-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.payment-method__currency {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.payment-method__track {
+  height: var(--sp-2);
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: var(--brand-tint);
+}
+
+.payment-method__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand);
+  transition: width var(--motion-layout);
+}
+
+.payment-method__fill[data-method*='wxpay'] {
+  background: var(--success);
+}
+
+@media (max-width: 640px) {
+  .payment-panel__header,
+  .payment-method__header {
+    flex-direction: column;
+  }
+
+  .payment-panel__summary {
+    text-align: left;
+  }
+
+  .payment-method__meta {
+    justify-items: start;
+    text-align: left;
+  }
+}
+</style>

@@ -27,23 +27,39 @@ const props = withDefaults(
     name: string
     label?: string
     note?: string
+    variant?: 'default' | 'pill'
     disabled?: boolean
   }>(),
-  { disabled: false }
+  { variant: 'default', disabled: false }
 )
 
 const emit = defineEmits<{ 'update:modelValue': [string | number | boolean] }>()
+
+let skipNextChange = false
 
 /* Listens on `click`, not `change`: see Toggle.vue's comment. `.checked` is
  * already settled by the time click fires, for both mouse and keyboard
  * activation, and it is what `wrapper.find(...).trigger('click')` needs. */
 const onClick = (event: Event) => {
-  if ((event.target as HTMLInputElement).checked) emit('update:modelValue', props.value)
+  const input = event.target as HTMLInputElement
+  if (input.checked) {
+    skipNextChange = true
+    emit('update:modelValue', props.value)
+  }
+}
+
+const onChange = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  if (skipNextChange) {
+    skipNextChange = false
+    return
+  }
+  if (input.checked) emit('update:modelValue', props.value)
 }
 </script>
 
 <template>
-  <label class="rdo" :data-disabled="disabled || undefined">
+  <label class="rdo" :class="`rdo--${variant}`" :data-disabled="disabled || undefined" :data-variant="variant">
     <input
       type="radio"
       class="rdo__input"
@@ -52,6 +68,7 @@ const onClick = (event: Event) => {
       :disabled="disabled"
       v-bind="$attrs"
       @click="onClick"
+      @change="onChange"
     />
     <span class="rdo__dot-box" :data-checked="modelValue === value || undefined" aria-hidden="true">
       <span class="rdo__dot" />
@@ -77,6 +94,32 @@ const onClick = (event: Event) => {
 .rdo[data-disabled] {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.rdo--pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--brand-line);
+  border-radius: 999px;
+  padding: 6px 12px;
+  color: var(--muted-foreground);
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.rdo--pill:has(.rdo__input:checked) {
+  border-color: var(--destructive);
+  background: var(--destructive-soft);
+  color: var(--destructive);
+}
+
+.rdo--pill .rdo__dot-box {
+  display: none;
+}
+
+.rdo--pill .rdo__text {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
 }
 
 /* Real, focusable, visually hidden. */

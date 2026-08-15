@@ -1,70 +1,54 @@
 <template>
-  <div class="surface-card">
-    <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
-      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('dashboard.quickActions') }}</h2>
-    </div>
-    <div class="space-y-3 p-4">
-      <button @click="router.push('/keys')" class="group flex w-full items-center gap-4 rounded-xl bg-gray-50 p-4 text-left transition-[background-color] duration-200 hover:bg-gray-100 dark:bg-dark-800/50 dark:hover:bg-dark-800">
-        <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-primary-100 transition-transform group- dark:bg-primary-900/30">
-          <Icon name="key" size="lg" class="text-primary-600 dark:text-primary-400" />
+  <section class="dashboard-panel">
+    <header class="dashboard-panel__header">
+      <h2 class="dashboard-panel__title">{{ t('dashboard.quickActions') }}</h2>
+    </header>
+    <div class="dashboard-action-list">
+      <button @click="router.push('/keys')" class="dashboard-action">
+        <div class="dashboard-action__icon">
+          <Icon name="key" size="md" />
         </div>
-        <div class="min-w-0 flex-1">
-          <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('dashboard.createApiKey') }}</p>
-          <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('dashboard.generateNewKey') }}</p>
+        <div class="dashboard-action__copy">
+          <p>{{ t('dashboard.createApiKey') }}</p>
+          <span>{{ t('dashboard.generateNewKey') }}</span>
         </div>
-        <Icon
-          name="chevronRight"
-          size="md"
-          class="text-gray-400 transition-colors group-hover:text-primary-500 dark:text-dark-500"
-        />
+        <Icon name="chevronRight" size="sm" class="dashboard-action__chevron" />
       </button>
 
-      <button @click="router.push('/usage')" class="group flex w-full items-center gap-4 rounded-xl bg-gray-50 p-4 text-left transition-[background-color] duration-200 hover:bg-gray-100 dark:bg-dark-800/50 dark:hover:bg-dark-800">
-        <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-100 transition-transform group- dark:bg-emerald-900/30">
-          <Icon name="chart" size="lg" class="text-emerald-600 dark:text-emerald-400" />
+      <button @click="router.push('/usage')" class="dashboard-action">
+        <div class="dashboard-action__icon">
+          <Icon name="chart" size="md" />
         </div>
-        <div class="min-w-0 flex-1">
-          <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('dashboard.viewUsage') }}</p>
-          <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('dashboard.checkDetailedLogs') }}</p>
+        <div class="dashboard-action__copy">
+          <p>{{ t('dashboard.viewUsage') }}</p>
+          <span>{{ t('dashboard.checkDetailedLogs') }}</span>
         </div>
-        <Icon
-          name="chevronRight"
-          size="md"
-          class="text-gray-400 transition-colors group-hover:text-emerald-500 dark:text-dark-500"
-        />
+        <Icon name="chevronRight" size="sm" class="dashboard-action__chevron" />
       </button>
 
-      <button v-if="canUseBatchImage" @click="router.push('/batch-image')" class="group flex w-full items-center gap-4 rounded-xl bg-gray-50 p-4 text-left transition-[background-color] duration-200 hover:bg-gray-100 dark:bg-dark-800/50 dark:hover:bg-dark-800">
-        <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-sky-100 transition-transform group- dark:bg-sky-900/30">
-          <Icon name="sparkles" size="lg" class="text-sky-600 dark:text-sky-400" />
+      <button v-if="canUseBatchImage" @click="router.push('/batch-image')" class="dashboard-action">
+        <div class="dashboard-action__icon">
+          <Icon name="sparkles" size="md" />
         </div>
-        <div class="min-w-0 flex-1">
-          <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('dashboard.batchImageAgent') }}</p>
-          <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('dashboard.batchImageAgentDesc') }}</p>
+        <div class="dashboard-action__copy">
+          <p>{{ t('dashboard.batchImageAgent') }}</p>
+          <span>{{ t('dashboard.batchImageAgentDesc') }}</span>
         </div>
-        <Icon
-          name="chevronRight"
-          size="md"
-          class="text-gray-400 transition-colors group-hover:text-sky-500 dark:text-dark-500"
-        />
+        <Icon name="chevronRight" size="sm" class="dashboard-action__chevron" />
       </button>
 
-      <button @click="router.push('/redeem')" class="group flex w-full items-center gap-4 rounded-xl bg-gray-50 p-4 text-left transition-[background-color] duration-200 hover:bg-gray-100 dark:bg-dark-800/50 dark:hover:bg-dark-800">
-        <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-amber-100 transition-transform group- dark:bg-amber-900/30">
-          <Icon name="gift" size="lg" class="text-amber-600 dark:text-amber-400" />
+      <button @click="router.push('/redeem')" class="dashboard-action">
+        <div class="dashboard-action__icon">
+          <Icon name="gift" size="md" />
         </div>
-        <div class="min-w-0 flex-1">
-          <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('dashboard.redeemCode') }}</p>
-          <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('dashboard.addBalanceWithCode') }}</p>
+        <div class="dashboard-action__copy">
+          <p>{{ t('dashboard.redeemCode') }}</p>
+          <span>{{ t('dashboard.addBalanceWithCode') }}</span>
         </div>
-        <Icon
-          name="chevronRight"
-          size="md"
-          class="text-gray-400 transition-colors group-hover:text-amber-500 dark:text-dark-500"
-        />
+        <Icon name="chevronRight" size="sm" class="dashboard-action__chevron" />
       </button>
     </div>
-  </div>
+  </section>
 </template>
 
 <script setup lang="ts">
@@ -81,3 +65,14 @@ onMounted(() => {
   void refreshBatchImageAccess()
 })
 </script>
+
+<style scoped>
+.dashboard-action-list{display:grid;gap:8px}
+.dashboard-action{display:flex;align-items:center;gap:12px;width:100%;padding:12px;border:0;border-radius:var(--r-md);background:var(--surface-subtle);color:var(--foreground);text-align:left;cursor:pointer;transition:background var(--motion-hover)}
+.dashboard-action:hover{background:var(--sidebar-accent)}
+.dashboard-action__icon{display:grid;place-items:center;flex:none;width:32px;height:32px;border-radius:var(--r-sm);background:var(--muted);color:var(--muted-foreground)}
+.dashboard-action__copy{min-width:0;flex:1}
+.dashboard-action__copy p{margin:0;overflow:hidden;font-size:var(--fs-sm);font-weight:var(--fw-medium);text-overflow:ellipsis;white-space:nowrap}
+.dashboard-action__copy span{display:block;margin-top:3px;overflow:hidden;color:var(--muted-foreground);font-size:var(--fs-xs);text-overflow:ellipsis;white-space:nowrap}
+.dashboard-action__chevron{flex:none;color:var(--muted-foreground)}
+</style>

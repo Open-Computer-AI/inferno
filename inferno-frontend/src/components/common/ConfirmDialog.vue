@@ -7,17 +7,12 @@
 
     <template #footer>
       <div class="cf-actions">
-        <button type="button" class="cf-btn" data-variant="ghost" @click="handleCancel">
+        <Button variant="ghost" size="sm" @click="handleCancel">
           {{ cancelText }}
-        </button>
-        <button
-          type="button"
-          class="cf-btn"
-          :data-variant="danger ? 'danger' : 'solid'"
-          @click="handleConfirm"
-        >
+        </Button>
+        <Button :variant="danger ? 'danger' : 'solid'" size="sm" @click="handleConfirm">
           {{ confirmText }}
-        </button>
+        </Button>
       </div>
     </template>
   </BaseDialog>
@@ -51,6 +46,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from './BaseDialog.vue'
+import Button from './Button.vue'
 
 const { t } = useI18n()
 
@@ -108,57 +104,4 @@ const handleCancel = () => {
   width: 100%;
 }
 
-/* Ghost/solid as data attributes, mirroring Button.vue's variant pattern:
-   a footer here is two decisions (which action, how urgent), not a class
-   per combination. */
-.cf-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 32px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: var(--r-md);
-  font-family: inherit;
-  font-size: var(--fs-md);
-  font-weight: 400;
-  white-space: nowrap;
-  cursor: pointer;
-  /* Background only, never border-color or `all` (ground rule 6). */
-  transition: background var(--motion-hover);
-}
-.cf-btn:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--focus-ring);
-}
-
-.cf-btn[data-variant='ghost'] {
-  background: transparent;
-  color: var(--body-copy);
-}
-.cf-btn[data-variant='ghost']:hover {
-  background: var(--sidebar-accent);
-  color: var(--foreground);
-}
-
-/* Solid, not outlined: unlike a toolbar button, this action already is the
-   one thing you can do here, so it can carry the fill. */
-.cf-btn[data-variant='solid'],
-.cf-btn[data-variant='danger'] {
-  padding: 0 14px;
-  color: var(--on-solid);
-  font-weight: var(--fw-medium);
-}
-.cf-btn[data-variant='solid'] {
-  background: var(--primary);
-}
-.cf-btn[data-variant='solid']:hover {
-  background: color-mix(in oklch, var(--primary) 92%, var(--foreground));
-}
-.cf-btn[data-variant='danger'] {
-  background: var(--destructive);
-}
-.cf-btn[data-variant='danger']:hover {
-  background: color-mix(in oklch, var(--destructive) 92%, var(--foreground));
-}
 </style>

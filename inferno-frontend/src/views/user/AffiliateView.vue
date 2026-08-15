@@ -8,40 +8,33 @@
       </div>
 
       <template v-else-if="detail">
-        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div class="surface-card p-5">
-            <p class="flex items-center gap-1.5 text-sm text-gray-500 dark:text-dark-400">
-              <Icon name="dollar" size="sm" class="text-primary-500" />
-              {{ t('affiliate.stats.rebateRate') }}
-            </p>
-            <p class="mt-2 text-2xl font-semibold text-primary-600 dark:text-primary-400">
-              {{ formattedRebateRate }}<span class="ml-0.5 text-base font-medium">%</span>
-            </p>
-            <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">
-              {{ t('affiliate.stats.rebateRateHint') }}
-            </p>
-          </div>
-          <div class="surface-card p-5">
-            <p class="text-sm text-gray-500 dark:text-dark-400">{{ t('affiliate.stats.invitedUsers') }}</p>
-            <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
-              {{ formatCount(detail.aff_count) }}
-            </p>
-          </div>
-          <div class="surface-card p-5">
-            <p class="text-sm text-gray-500 dark:text-dark-400">{{ t('affiliate.stats.availableQuota') }}</p>
-            <p class="mt-2 text-2xl font-semibold text-emerald-600 dark:text-emerald-400">
-              {{ formatCurrency(detail.aff_quota) }}
-            </p>
-          </div>
-          <div class="surface-card p-5">
-            <p class="text-sm text-gray-500 dark:text-dark-400">{{ t('affiliate.stats.totalQuota') }}</p>
-            <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
-              {{ formatCurrency(detail.aff_history_quota) }}
-            </p>
-            <p v-if="detail.aff_frozen_quota > 0" class="mt-1 text-xs text-amber-600 dark:text-amber-400">
-              {{ t('affiliate.stats.frozenQuota') }}: {{ formatCurrency(detail.aff_frozen_quota) }}
-            </p>
-          </div>
+        <div class="affiliate__tiles">
+          <StatTile
+            icon="percent-circle"
+            tone="brand"
+            :label="t('affiliate.stats.rebateRate')"
+            :value="`${formattedRebateRate}%`"
+            :context="t('affiliate.stats.rebateRateHint')"
+          />
+          <StatTile
+            icon="user-group"
+            tone="info"
+            :label="t('affiliate.stats.invitedUsers')"
+            :value="formatCount(detail.aff_count)"
+          />
+          <StatTile
+            icon="wallet-01"
+            tone="success"
+            :label="t('affiliate.stats.availableQuota')"
+            :value="formatCurrency(detail.aff_quota)"
+          />
+          <StatTile
+            icon="wallet-03"
+            tone="accent"
+            :label="t('affiliate.stats.totalQuota')"
+            :value="formatCurrency(detail.aff_history_quota)"
+            :context="frozenQuotaContext || undefined"
+          />
         </div>
 
         <div class="surface-card p-6">
@@ -143,6 +136,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import StatTile from '@/components/common/StatTile.vue'
 import Icon from '@/components/icons/Icon.vue'
 import userAPI from '@/api/user'
 import type { UserAffiliateDetail } from '@/types'
@@ -173,6 +167,11 @@ const formattedRebateRate = computed(() => {
   const v = detail.value?.effective_rebate_rate_percent ?? 0
   const rounded = Math.round(v * 100) / 100
   return Number.isInteger(rounded) ? String(rounded) : rounded.toString()
+})
+
+const frozenQuotaContext = computed(() => {
+  const frozen = detail.value?.aff_frozen_quota ?? 0
+  return frozen > 0 ? `${t('affiliate.stats.frozenQuota')}: ${formatCurrency(frozen)}` : ''
 })
 
 function formatCount(value: number): string {
@@ -225,3 +224,11 @@ onMounted(() => {
   void loadAffiliateDetail()
 })
 </script>
+
+<style scoped>
+.affiliate__tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+</style>

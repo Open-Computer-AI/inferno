@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { fetchOne, getEntry } from '@/utils/ipGeoLookup'
+import IconButton from '@/components/common/IconButton.vue'
 
 /**
  * IpGeoCell — part 03, section 10 ("IP geo cell and version badge").
@@ -80,14 +81,13 @@ const handleOpenDetail = () => {
         <i class="hgi-stroke hgi-location-01 geo__icon" aria-hidden="true" />
         <span class="geo__text">{{ entry.label }}</span>
       </button>
-      <button
-        type="button"
+      <IconButton
         class="geo__refresh"
-        :title="t('usage.ipGeo.refreshTitle')"
+        icon="hgi-refresh"
+        :label="t('usage.ipGeo.refreshTitle')"
+        size="xs"
         @click="handleRefresh"
-      >
-        <i class="hgi-stroke hgi-refresh geo__icon" aria-hidden="true" />
-      </button>
+      />
     </div>
 
     <button
@@ -174,22 +174,6 @@ const handleOpenDetail = () => {
 }
 .geo__link[data-tone='error']:hover {
   color: color-mix(in oklch, var(--destructive) 85%, var(--foreground));
-}
-
-.geo__refresh {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--muted-foreground);
-  cursor: pointer;
-  transition: color var(--motion-hover);
-}
-.geo__refresh:hover {
-  color: var(--foreground);
 }
 
 .geo__icon {

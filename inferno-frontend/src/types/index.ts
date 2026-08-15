@@ -67,6 +67,7 @@ export interface User {
   id: number
   username: string
   email: string
+  avatar_seed?: string
   avatar_url?: string | null
   avatar_source?: string | UserProfileSourceContext | null
   username_source?: string | UserProfileSourceContext | null
