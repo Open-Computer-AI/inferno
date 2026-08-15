@@ -73,7 +73,7 @@ describe('ProfileView', () => {
     })
   })
 
-  it('renders the simplified single-column profile shell without separate stat cards', async () => {
+  it('renders the June-style grouped profile shell without separate stat cards', async () => {
     const wrapper = mount(ProfileView, {
       global: {
         stubs: {
@@ -92,8 +92,11 @@ describe('ProfileView', () => {
 
     expect(wrapper.findAll('.statcell')).toHaveLength(0)
     expect(wrapper.get('[data-testid="profile-shell"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="profile-shell"]').html()).toContain('profile-info-card')
-    expect(wrapper.get('[data-testid="profile-shell"]').html()).toContain('profile-password-form')
-    expect(wrapper.get('[data-testid="profile-shell"]').html()).toContain('profile-totp-card')
+    expect(wrapper.findAll('.profile-settings-group')).toHaveLength(4)
+    expect(wrapper.get('#account').exists()).toBe(true)
+    expect(wrapper.get('#security').exists()).toBe(true)
+    expect(wrapper.get('#notifications').exists()).toBe(true)
+    expect(wrapper.get('#sign-in-methods').exists()).toBe(true)
+    expect(wrapper.findAll('.profile-settings-row__button')).toHaveLength(7)
   })
 })
