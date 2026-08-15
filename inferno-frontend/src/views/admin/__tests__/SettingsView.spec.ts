@@ -254,7 +254,7 @@ vi.mock("vue-i18n", async () => {
   };
 });
 
-const AppLayoutStub = { template: "<div><slot /></div>" };
+const AppLayoutStub = { template: "<div><aside><slot name=\"sidebar\" /></aside><main><slot /></main></div>" };
 const ToggleStub = defineComponent({
   props: {
     modelValue: {
@@ -560,7 +560,7 @@ function mountView() {
 
 async function openPaymentTab(wrapper: ReturnType<typeof mountView>) {
   const paymentTabButton = wrapper
-    .findAll("button")
+    .findAll(".settings-sidebar__item")
     .find((node) => node.text().includes("admin.settings.tabs.payment"));
 
   expect(paymentTabButton).toBeDefined();
@@ -570,7 +570,7 @@ async function openPaymentTab(wrapper: ReturnType<typeof mountView>) {
 
 async function openSecurityTab(wrapper: ReturnType<typeof mountView>) {
   const securityTabButton = wrapper
-    .findAll("button")
+    .findAll(".settings-sidebar__item")
     .find((node) => node.text().includes("admin.settings.tabs.security"));
 
   expect(securityTabButton).toBeDefined();
@@ -578,9 +578,25 @@ async function openSecurityTab(wrapper: ReturnType<typeof mountView>) {
   await flushPromises();
 }
 
+function captchaProvider(wrapper: ReturnType<typeof mountView>, key: string) {
+  const provider = wrapper
+    .findAll('[role="radio"]')
+    .find((node) => node.text().includes(key));
+  expect(provider).toBeDefined();
+  return provider!;
+}
+
+function segmentedOption(wrapper: ReturnType<typeof mountView>, key: string) {
+  const option = wrapper
+    .findAll('[role="radio"]')
+    .find((node) => node.text().includes(key));
+  expect(option).toBeDefined();
+  return option!;
+}
+
 async function openGatewayTab(wrapper: ReturnType<typeof mountView>) {
   const gatewayTabButton = wrapper
-    .findAll("button")
+    .findAll(".settings-sidebar__item")
     .find((node) => node.text().includes("admin.settings.tabs.gateway"));
 
   expect(gatewayTabButton).toBeDefined();
@@ -590,7 +606,7 @@ async function openGatewayTab(wrapper: ReturnType<typeof mountView>) {
 
 async function openUsersTab(wrapper: ReturnType<typeof mountView>) {
   const usersTabButton = wrapper
-    .findAll("button")
+    .findAll(".settings-sidebar__item")
     .find((node) => node.text().includes("admin.settings.tabs.users"));
 
   expect(usersTabButton).toBeDefined();
@@ -744,6 +760,7 @@ describe("admin SettingsView payment visible method controls", () => {
 
     const wrapper = mountView();
     await flushPromises();
+    await openSecurityTab(wrapper);
 
     expect(getPanelRateLimitSettings).toHaveBeenCalled();
     expect(wrapper.text()).toContain("admin.settings.panelRateLimit.title");
@@ -810,11 +827,11 @@ describe("admin SettingsView payment visible method controls", () => {
     // 默认选中 Turnstile
     expect(wrapper.text()).toContain("admin.settings.turnstile.siteKey");
 
-    await wrapper.get('[data-testid="captcha-provider-tencent"]').trigger("click");
+    await captchaProvider(wrapper, "admin.settings.captcha.providerTencent").trigger("click");
     await flushPromises();
 
     const card = wrapper
-      .findAll(".card")
+      .findAll(".settings-surface")
       .find((node) => node.text().includes("admin.settings.captcha.title"));
     expect(card).toBeDefined();
     expect(card!.text()).not.toContain("admin.settings.turnstile.siteKey");
@@ -852,11 +869,11 @@ describe("admin SettingsView payment visible method controls", () => {
     await openSecurityTab(wrapper);
 
     await wrapper.get('[data-testid="captcha-enabled-toggle"]').setValue(true);
-    await wrapper.get('[data-testid="captcha-provider-tencent"]').trigger("click");
-    await wrapper.get('[data-testid="tencent-captcha-region-intl"]').trigger("click");
+    await captchaProvider(wrapper, "admin.settings.captcha.providerTencent").trigger("click");
+    await segmentedOption(wrapper, "admin.settings.tencentCaptcha.regionIntl").trigger("click");
 
     const card = wrapper
-      .findAll(".card")
+      .findAll(".settings-surface")
       .find((node) => node.text().includes("admin.settings.captcha.title"));
     expect(card).toBeDefined();
     expect(card!.get('a[href="https://console.tencentcloud.com/captcha/graphical"]').exists()).toBe(
@@ -883,11 +900,11 @@ describe("admin SettingsView payment visible method controls", () => {
     const masterToggle = wrapper.get('[data-testid="captcha-enabled-toggle"]');
     await masterToggle.setValue(true);
 
-    await wrapper.get('[data-testid="captcha-provider-aliyun"]').trigger("click");
+    await captchaProvider(wrapper, "admin.settings.captcha.providerAliyun").trigger("click");
     await flushPromises();
 
     const card = wrapper
-      .findAll(".card")
+      .findAll(".settings-surface")
       .find((node) => node.text().includes("admin.settings.captcha.title"));
     expect(card).toBeDefined();
     expect(card!.text()).toContain("admin.settings.aliyunCaptcha.region");
@@ -983,7 +1000,7 @@ describe("admin SettingsView payment visible method controls", () => {
     await openSecurityTab(wrapper);
 
     const card = wrapper
-      .findAll(".card")
+      .findAll(".settings-surface")
       .find((node) => node.text().includes("admin.settings.apiKeyAcl.title"));
     expect(card).toBeDefined();
     const toggle = card!.get('input[type="checkbox"]');
@@ -1253,6 +1270,7 @@ describe("admin SettingsView payment visible method controls", () => {
     const wrapper = mountView();
 
     await flushPromises();
+    await openGatewayTab(wrapper);
 
     expect(wrapper.text()).toContain("OpenAI 实验调度策略");
     expect(wrapper.text()).toContain(
@@ -1352,6 +1370,7 @@ describe("admin SettingsView payment visible method controls", () => {
     const wrapper = mountView();
 
     await flushPromises();
+    await openGatewayTab(wrapper);
     expect(
       wrapper.find('[data-testid="openai-oauth-scheduling-rate-multiplier"]').exists(),
     ).toBe(false);
