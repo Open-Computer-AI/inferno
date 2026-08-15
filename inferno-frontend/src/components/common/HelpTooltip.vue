@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, useTemplateRef, nextTick } from 'vue'
+import IconButton from './IconButton.vue'
 
 const props = withDefaults(defineProps<{
   content?: string
@@ -100,7 +101,7 @@ onBeforeUnmount(() => {
     <!-- Trigger Icon -->
     <slot name="trigger">
       <svg
-        class="h-4 w-4 cursor-help text-gray-400 transition-colors hover:text-primary-600 dark:text-gray-500 dark:hover:text-primary-400"
+        class="h-4 w-4 cursor-help text-[var(--muted-foreground)] transition-colors hover:text-[var(--brand)]"
         fill="none"
         viewBox="0 0 24 24"
         stroke="currentColor"
@@ -121,25 +122,34 @@ onBeforeUnmount(() => {
         v-show="show"
         role="tooltip"
         :class="[
-          'fixed z-[99999] -translate-x-1/2 -translate-y-full rounded-lg bg-gray-900 p-3 text-xs leading-relaxed text-white shadow-xl ring-1 ring-white/10 dark:bg-gray-800',
+          'help-tooltip fixed z-[99999] -translate-x-1/2 -translate-y-full rounded-lg p-3 text-xs leading-relaxed shadow-xl',
           props.widthClass,
         ]"
         :style="{ top: `calc(${tooltipStyle.top} - 8px)`, left: tooltipStyle.left }"
       >
-        <button
+        <IconButton
           v-if="props.trigger === 'click'"
-          type="button"
-          class="absolute right-1.5 top-1.5 rounded p-1 text-gray-300 transition-colors hover:bg-white/10 hover:text-white"
-          aria-label="Close"
+          class="absolute right-1.5 top-1.5"
+          icon="hgi-cancel-01"
+          label="Close"
+          size="xs"
           @click.stop="closeTooltip"
-        >
-          <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        />
         <slot>{{ content }}</slot>
-        <div class="absolute -bottom-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 bg-gray-900 dark:bg-gray-800"></div>
+        <div class="help-tooltip__arrow absolute -bottom-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45"></div>
       </div>
     </Teleport>
   </div>
 </template>
+
+<style scoped>
+.help-tooltip {
+  background: var(--popover);
+  border: 1px solid var(--popover-border);
+  color: var(--popover-foreground);
+}
+
+.help-tooltip__arrow {
+  background: var(--popover);
+}
+</style>

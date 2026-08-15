@@ -58,7 +58,8 @@ describe('MonitorActionsCell duplicate action', () => {
 
     expect(button.attributes('disabled')).toBeDefined()
     expect(button.attributes('title')).toBe('admin.channelMonitor.duplicating')
-    expect(button.text()).toContain('admin.channelMonitor.duplicating')
+    expect(button.attributes('aria-label')).toBe('admin.channelMonitor.duplicating')
+    expect(button.attributes('aria-busy')).toBe('true')
   })
 
   it('disables the action when the stored API key cannot be decrypted', () => {

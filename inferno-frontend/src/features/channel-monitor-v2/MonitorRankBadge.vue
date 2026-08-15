@@ -41,8 +41,8 @@
     </svg>
     <span v-if="showTrophy" class="sr-only">{{ ariaLabel }}</span>
     <span
-      class="text-xs font-semibold"
-      :class="showTrophy ? rankClass : 'text-gray-500 dark:text-dark-300'"
+      class="text-xs font-[var(--fw-medium)]"
+      :class="showTrophy ? rankClass : 'text-[var(--muted-foreground)] text-[var(--muted-foreground)]'"
     >
       {{ label }}
     </span>
@@ -99,7 +99,7 @@ const palette = computed(() => {
 
 const label = computed(() => {
   // Rank 0 = present but unranked (no traffic in window / outside top list).
-  if (rankNum.value == null || rankNum.value <= 0) return '—'
+  if (rankNum.value == null || rankNum.value <= 0) return '-'
   return `#${rankNum.value}`
 })
 
@@ -114,9 +114,9 @@ const ariaLabel = computed(() => {
 const titleText = computed(() => ariaLabel.value)
 
 const rankClass = computed(() => {
-  if (rankNum.value === 1) return 'text-amber-600 dark:text-amber-400'
-  if (rankNum.value === 2) return 'text-slate-500 dark:text-slate-300'
-  if (rankNum.value === 3) return 'text-amber-800 dark:text-amber-600'
+  if (rankNum.value === 1) return 'text-[var(--warning)] text-[var(--warning)]'
+  if (rankNum.value === 2) return 'text-[var(--brand)] text-[var(--brand)]'
+  if (rankNum.value === 3) return 'text-[var(--warning)] text-[var(--warning)]'
   return ''
 })
 </script>

@@ -1,18 +1,18 @@
 <template>
   <div class="space-y-6">
     <!-- Date Range Filter -->
-    <div class="surface-card p-4">
-      <div class="flex flex-wrap items-center gap-4">
-        <div class="flex items-center gap-2">
-          <span class="text-sm text-gray-700 dark:text-gray-300">{{ t('dashboard.timeRange') }}:</span>
+    <div class="dashboard-panel dashboard-panel--controls">
+      <div class="dashboard-controls">
+        <div class="dashboard-control-group">
+          <span class="dashboard-control-label">{{ t('dashboard.timeRange') }}:</span>
           <DateRangePicker :start-date="startDate" :end-date="endDate" @update:startDate="$emit('update:startDate', $event)" @update:endDate="$emit('update:endDate', $event)" @change="$emit('dateRangeChange', $event)" />
         </div>
-        <button @click="$emit('refresh')" :disabled="loading" class="btn btn-secondary">
+        <button @click="$emit('refresh')" :disabled="loading" class="primary-action">
           {{ t('common.refresh') }}
         </button>
-        <div class="ml-auto flex items-center gap-2">
-          <span class="text-sm text-gray-700 dark:text-gray-300">{{ t('dashboard.granularity') }}:</span>
-          <div class="w-28">
+        <div class="dashboard-control-group dashboard-control-group--end">
+          <span class="dashboard-control-label">{{ t('dashboard.granularity') }}:</span>
+          <div class="dashboard-select-wrap">
             <Select :model-value="granularity" :options="[{value:'day', label:t('dashboard.day')}, {value:'hour', label:t('dashboard.hour')}]" @update:model-value="$emit('update:granularity', $event)" @change="$emit('granularityChange')" />
           </div>
         </div>
@@ -20,13 +20,13 @@
     </div>
 
     <!-- Charts Grid -->
-    <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+    <div class="dashboard-panels">
       <!-- Model Distribution Chart -->
-      <div class="surface-card relative overflow-hidden p-4">
+      <section class="dashboard-panel relative overflow-hidden">
         <div v-if="loading" class="chart-veil">
           <LoadingSpinner size="md" />
         </div>
-        <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">{{ t('dashboard.modelDistribution') }}</h3>
+        <h3 class="dashboard-panel__title mb-4">{{ t('dashboard.modelDistribution') }}</h3>
         <div class="flex flex-col items-center gap-4 sm:flex-row sm:gap-6">
           <div class="h-48 w-48 shrink-0">
             <DitherDonut
@@ -68,7 +68,7 @@
             </table>
           </div>
         </div>
-      </div>
+      </section>
 
       <!-- Token Usage Trend Chart -->
       <TokenUsageTrend :trend-data="trend" :loading="loading" />
@@ -98,18 +98,6 @@ const hovered = ref<number | null>(null)
 
 const TOP_SLICES = 4
 
-/*
- * The old doughnut carried eight hardcoded hues -- #3b82f6, #10b981, #f59e0b
- * and so on -- which is the twelve-hue collision part 09 removed from every
- * other distribution in the app, still sitting on the customer dashboard. The
- * sequential brand ramp replaces it, so the slices read as ordered parts of
- * one total and the card stops looking borrowed from another product.
- *
- * Capped at four models plus an explicit Other, for two reasons: the ramp is
- * five steps, and past five a slice is thinner than the gap between slices.
- * The table beside it still lists every model, so nothing is hidden -- the
- * donut is the shape and the table is the detail.
- */
 const slices = computed<DonutSlice[]>(() => {
   const sorted = [...(props.models ?? [])]
     .filter((m) => (Number(m.total_tokens) || 0) > 0)
@@ -131,27 +119,18 @@ const slices = computed<DonutSlice[]>(() => {
       key: '__other',
       label: t('dashboard.noGroup'),
       value: tail.reduce((sum, m) => sum + (Number(m.total_tokens) || 0), 0),
-      /* Deliberately off-ramp: Other is an aggregate, not a peer of the named
-         slices, and giving it the next ramp step would invite reading it as
-         one more model. */
       color: tokens.mutedForeground
     }
   ]
 })
 
-/** Table row index for the model a slice represents, or null for Other. */
 const hoveredModel = computed(() =>
   hovered.value != null ? slices.value[hovered.value]?.key ?? null : null
 )
 </script>
 
 <style scoped>
-/*
- * The loading veil was bg-white/50 + backdrop-blur-sm -- glass, which ground
- * rule 7 bans, and which also hard-coded white so it inverted wrongly in dark
- * mode. An opaque-enough --card does the same job: the point is to mute what
- * is behind the spinner, and blurring it was never what achieved that.
- */
+/* Keep the panel readable while the customer-scoped chart request is pending. */
 .chart-veil {
   position: absolute;
   inset: 0;
@@ -162,16 +141,10 @@ const hoveredModel = computed(() =>
   background: color-mix(in oklch, var(--card) 78%, transparent);
 }
 
-/* 600, not Tailwind's font-medium (500): 500 is not one of the two weights
-   the scale has, so it silently resolved to one of them anyway. */
 .model-name {
   font-weight: var(--fw-medium);
 }
 
-/* The ring and the table are one control: hovering either marks the same
-   model. Opacity and background only -- never border-color (ground rule 6).
-   The row divider moves here off `border-gray-100 dark:border-dark-700`: the
-   dark- palette is dead, and one token replaces the light/dark pair. */
 .model-row {
   border-top: 1px solid var(--border-subtle);
   transition:
@@ -185,5 +158,15 @@ const hoveredModel = computed(() =>
 
 .model-row[data-dim] {
   opacity: 0.5;
+}
+
+.dashboard-controls{display:flex;align-items:center;flex-wrap:wrap;gap:12px}
+.dashboard-control-group{display:flex;align-items:center;gap:8px;min-width:0}
+.dashboard-control-group--end{margin-left:auto}
+.dashboard-control-label{color:var(--muted-foreground);font-size:var(--fs-sm);white-space:nowrap}
+.dashboard-select-wrap{width:112px}
+
+@media (max-width:720px){
+  .dashboard-control-group--end{margin-left:0}
 }
 </style>
