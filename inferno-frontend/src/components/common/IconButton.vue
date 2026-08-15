@@ -26,9 +26,11 @@ withDefaults(
     size?: 'xs' | 'sm' | 'md'
     /** Destructive hover tint, for row actions like revoke. */
     tone?: 'neutral' | 'danger'
+    /** Replaces the glyph with the shared spinner while retaining the label. */
+    loading?: boolean
     disabled?: boolean
   }>(),
-  { size: 'xs', tone: 'neutral', disabled: false }
+  { size: 'xs', tone: 'neutral', loading: false, disabled: false }
 )
 
 defineEmits<{ click: [MouseEvent] }>()
@@ -44,9 +46,11 @@ defineEmits<{ click: [MouseEvent] }>()
     :aria-label="label"
     :disabled="disabled"
     :aria-disabled="disabled || undefined"
+    :aria-busy="loading || undefined"
     @click="$emit('click', $event)"
   >
-    <i :class="['hgi-stroke', icon]" aria-hidden="true" />
+    <span v-if="loading" class="iconbtn__spinner s2a-spinner" aria-hidden="true" />
+    <i v-else :class="['hgi-stroke', icon]" aria-hidden="true" />
   </button>
 </template>
 
@@ -103,5 +107,14 @@ defineEmits<{ click: [MouseEvent] }>()
 .iconbtn[aria-disabled='true'] {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.iconbtn[aria-busy='true'] {
+  cursor: progress;
+}
+
+.iconbtn__spinner {
+  width: 13px;
+  height: 13px;
 }
 </style>

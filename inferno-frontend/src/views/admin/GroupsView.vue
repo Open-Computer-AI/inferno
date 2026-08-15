@@ -117,6 +117,7 @@
           :columns="columns"
           :data="groups"
           :loading="loading"
+          :sticky-column-dividers="groups.length >= pagination.page_size"
           :server-side-sort="true"
           default-sort-key="sort_order"
           default-sort-order="asc"

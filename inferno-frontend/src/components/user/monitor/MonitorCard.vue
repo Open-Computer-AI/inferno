@@ -13,29 +13,29 @@
         <ProviderIcon :provider="item.provider" :size="20" />
       </span>
       <div class="flex-1 min-w-0">
-        <div class="text-base font-semibold truncate text-gray-900 dark:text-gray-100">
+        <div class="text-base font-[var(--fw-medium)] truncate text-[var(--foreground)] text-[var(--muted-foreground)]">
           {{ item.name }}
         </div>
         <div class="mt-0.5 flex items-center gap-1.5 min-w-0">
           <span
-            class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium flex-shrink-0"
+            class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-[var(--fw-medium)] flex-shrink-0"
             :class="providerBadgeClass(item.provider)"
           >
             {{ providerLabel(item.provider) }}
           </span>
-          <span class="font-mono text-xs truncate text-gray-500 dark:text-gray-400">
+          <span class="font-mono text-xs truncate text-[var(--muted-foreground)] text-[var(--muted-foreground)]">
             {{ item.primary_model }}
           </span>
           <span
             v-if="item.group_name"
-            class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300 flex-shrink-0"
+            class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-[var(--fw-medium)] bg-[var(--brand-tint)] text-[var(--muted-foreground)] dark:bg-[var(--card)] text-[var(--muted-foreground)] flex-shrink-0"
           >
             {{ item.group_name }}
           </span>
         </div>
       </div>
       <span
-        class="px-2.5 py-1 rounded-full text-xs font-semibold flex-shrink-0"
+        class="px-2.5 py-1 rounded-full text-xs font-[var(--fw-medium)] flex-shrink-0"
         :class="statusBadgeClass(item.primary_status)"
       >
         {{ statusLabel(item.primary_status) }}
@@ -55,7 +55,7 @@
     />
 
     <!-- Divider -->
-    <div class="mt-4 border-t border-gray-100 dark:border-dark-700/60"></div>
+    <div class="mt-4 border-t border-[var(--brand-line)] dark:border-[var(--border-subtle)]"></div>
 
     <!-- Availability row -->
     <MonitorAvailabilityRow
@@ -86,10 +86,10 @@ import MonitorAvailabilityRow from './MonitorAvailabilityRow.vue'
 import MonitorTimeline from './MonitorTimeline.vue'
 
 const PROVIDER_TINT: Record<string, string> = {
-  openai: 'text-emerald-600 dark:text-emerald-300',
-  anthropic: 'text-orange-600 dark:text-orange-300',
-  gemini: 'text-sky-600 dark:text-sky-300',
-  grok: 'text-zinc-700 dark:text-zinc-200',
+  openai: 'text-[var(--success)] text-[var(--success)]',
+  anthropic: 'text-[var(--warning)] text-[var(--warning)]',
+  gemini: 'text-[var(--brand)] text-[var(--brand)]',
+  grok: 'text-[var(--brand)] text-[var(--brand)]',
 }
 
 const props = defineProps<{
@@ -113,7 +113,7 @@ const {
 } = useChannelMonitorFormat()
 
 const providerTintClass = computed(() =>
-  PROVIDER_TINT[props.item.provider] ?? 'text-gray-500 dark:text-gray-300'
+  PROVIDER_TINT[props.item.provider] ?? 'text-[var(--muted-foreground)] text-[var(--muted-foreground)]'
 )
 
 const availabilityLabel = computed(() => {
