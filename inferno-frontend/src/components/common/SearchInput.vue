@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
+import IconButton from './IconButton.vue'
 
 /**
  * SearchInput — part 02, section 10.
@@ -94,16 +95,14 @@ onBeforeUnmount(() => clearTimeout(timer))
 
       <!-- Real button, not a bare glyph: needs an accessible name and a hit
            target of its own, not just a clickable icon. -->
-      <button
+      <IconButton
         v-if="hasValue"
-        type="button"
         class="srch__clear"
-        aria-label="Clear search"
-        title="Clear"
+        icon="hgi-cancel-01"
+        label="Clear search"
+        size="sm"
         @click="clear"
-      >
-        <i class="hgi-stroke hgi-cancel-01" aria-hidden="true" />
-      </button>
+      />
     </div>
 
     <!-- Reserved at 17px whether or not it has content, so a result landing
@@ -180,28 +179,6 @@ onBeforeUnmount(() => clearTimeout(timer))
   top: 0;
   right: 0;
   bottom: 0;
-  display: grid;
-  width: 30px;
-  place-items: center;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--muted-foreground);
-  cursor: pointer;
-  transition:
-    background var(--motion-hover),
-    color var(--motion-hover);
-}
-.srch__clear:hover {
-  background: var(--sidebar-accent);
-  color: var(--foreground);
-}
-.srch__clear:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--focus-ring);
-}
-.srch__clear i {
-  font-size: 13px; /* june-lint-disable ground-rule-4: icon glyph */
 }
 
 .srch__status {

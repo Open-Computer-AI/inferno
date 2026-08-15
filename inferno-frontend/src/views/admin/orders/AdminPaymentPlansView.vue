@@ -3,20 +3,20 @@
     <div class="space-y-4">
       <!-- Actions -->
       <div class="flex items-center justify-end gap-2">
-        <button @click="loadPlans" :disabled="plansLoading" class="btn btn-secondary" :title="t('common.refresh')">
-          <Icon name="refresh" size="md" :class="plansLoading ? 'animate-spin' : ''" />
-        </button>
-        <button @click="openPlanEdit(null)" class="btn btn-primary">{{ t('payment.admin.createPlan') }}</button>
+        <AppButton @click="loadPlans" :disabled="plansLoading" :loading="plansLoading" variant="secondary" :title="t('common.refresh')">
+          <Icon v-if="!plansLoading" name="refresh" size="md" />
+        </AppButton>
+        <AppButton @click="openPlanEdit(null)" variant="solid">{{ t('payment.admin.createPlan') }}</AppButton>
       </div>
 
       <!-- Plans Table -->
       <DataTable :columns="planColumns" :data="plans" :loading="plansLoading">
         <template #cell-name="{ value, row }">
-          <span class="text-sm font-medium" :class="getPlanNameClass(row.group_id)">{{ value }}</span>
+          <span class="text-sm font-[var(--fw-medium)]" :class="getPlanNameClass(row.group_id)">{{ value }}</span>
         </template>
         <template #cell-group_id="{ value }">
           <span v-if="isGroupMissing(value)" class="text-sm">
-            <span class="text-gray-400">#{{ value }}</span>
+            <span class="text-[var(--muted-foreground)]">#{{ value }}</span>
             <span class="ml-1 badge badge-danger">{{ t('payment.admin.groupMissing') }}</span>
           </span>
           <GroupBadge
@@ -25,13 +25,13 @@
             :platform="getGroup(value)!.platform"
             :rate-multiplier="getGroup(value)!.rate_multiplier"
           />
-          <span v-else class="text-sm text-gray-400">-</span>
+          <span v-else class="text-sm text-[var(--muted-foreground)]">-</span>
         </template>
         <template #cell-price="{ value, row }">
           <div class="text-sm">
-            <span class="font-medium text-gray-900 dark:text-white">{{ planCurrencySymbol(row.currency) }}{{ (value ?? 0).toFixed(2) }}</span>
-            <span v-if="row.currency" class="ml-1 text-xs text-gray-400">{{ row.currency }}</span>
-            <span v-if="row.original_price" class="ml-1 text-xs text-gray-400 line-through">{{ planCurrencySymbol(row.currency) }}{{ row.original_price.toFixed(2) }}</span>
+            <span class="font-[var(--fw-medium)] text-[var(--foreground)] dark:text-white">{{ planCurrencySymbol(row.currency) }}{{ (value ?? 0).toFixed(2) }}</span>
+            <span v-if="row.currency" class="ml-1 text-xs text-[var(--muted-foreground)]">{{ row.currency }}</span>
+            <span v-if="row.original_price" class="ml-1 text-xs text-[var(--muted-foreground)] line-through">{{ planCurrencySymbol(row.currency) }}{{ row.original_price.toFixed(2) }}</span>
           </div>
         </template>
         <template #cell-validity_days="{ value, row }">
@@ -41,8 +41,8 @@
           <button
             type="button"
             :class="[
-              'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              value ? 'bg-primary-500' : 'bg-gray-300 dark:bg-dark-600'
+              'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[var(--brand-line)] focus:ring-offset-2',
+              value ? 'bg-[var(--brand-tint)]' : 'bg-[var(--brand-tint)] bg-[var(--brand-tint)]'
             ]"
             @click="toggleForSale(row)"
           >
@@ -54,14 +54,8 @@
         </template>
         <template #cell-actions="{ row }">
           <div class="flex items-center gap-2">
-            <button @click="openPlanEdit(row)" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400">
-              <Icon name="edit" size="sm" />
-              <span class="text-xs">{{ t('common.edit') }}</span>
-            </button>
-            <button @click="confirmDeletePlan(row)" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400">
-              <Icon name="trash" size="sm" />
-              <span class="text-xs">{{ t('common.delete') }}</span>
-            </button>
+            <IconButton icon="hgi-edit-02" :label="t('common.edit')" @click="openPlanEdit(row)" />
+            <IconButton icon="hgi-delete-01" :label="t('common.delete')" tone="danger" @click="confirmDeletePlan(row)" />
           </div>
         </template>
       </DataTable>
@@ -86,6 +80,8 @@ import type { SubscriptionPlan } from '@/types/payment'
 import type { AdminGroup } from '@/types'
 import type { Column } from '@/components/common/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import AppButton from '@/components/common/Button.vue'
+import IconButton from '@/components/common/IconButton.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -129,7 +125,7 @@ function isGroupMissing(id: number): boolean {
 
 function getPlanNameClass(groupId: number): string {
   const group = getGroup(groupId)
-  return group ? platformTextClass(group.platform) : 'text-gray-900 dark:text-white'
+  return group ? platformTextClass(group.platform) : 'text-[var(--foreground)] dark:text-white'
 }
 
 

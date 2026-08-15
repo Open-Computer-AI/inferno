@@ -18,6 +18,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getConfiguredTablePageSizeOptions, normalizeTablePageSize } from '@/utils/tablePreferences'
 import { setPersistedPageSize } from '@/composables/usePersistedPageSize'
+import Button from './Button.vue'
 
 const { t } = useI18n()
 
@@ -123,7 +124,9 @@ const submitJump = () => {
 
     <div class="pager2__controls">
       <template v-if="totalPages > 1">
-        <button
+        <Button
+          variant="ghost"
+          size="xs"
           type="button"
           class="pager2__nav"
           :disabled="page === 1"
@@ -131,11 +134,13 @@ const submitJump = () => {
           @click="goToPage(page - 1)"
         >
           <i class="hgi-stroke hgi-arrow-left-01" aria-hidden="true" />
-        </button>
+        </Button>
 
-        <button
+        <Button
           v-for="(pageNum, index) in visiblePages"
           :key="`${pageNum}-${index}`"
+          :variant="pageNum === page ? 'solid' : 'ghost'"
+          size="xs"
           type="button"
           class="pager2__page"
           :disabled="typeof pageNum !== 'number'"
@@ -145,9 +150,11 @@ const submitJump = () => {
           @click="typeof pageNum === 'number' && goToPage(pageNum)"
         >
           {{ pageNum }}
-        </button>
+        </Button>
 
-        <button
+        <Button
+          variant="ghost"
+          size="xs"
           type="button"
           class="pager2__nav"
           :disabled="page === totalPages"
@@ -155,15 +162,17 @@ const submitJump = () => {
           @click="goToPage(page + 1)"
         >
           <i class="hgi-stroke hgi-arrow-right-01" aria-hidden="true" />
-        </button>
+        </Button>
       </template>
 
       <span v-if="totalPages > 1 && (showPageSizeSelector || showJump)" class="pager2__divider" aria-hidden="true" />
 
       <div v-if="showPageSizeSelector" class="pager2__sizes" role="group" :aria-label="t('pagination.perPage')">
-        <button
+        <Button
           v-for="size in pageSizeChoices"
           :key="size"
+          :variant="size === pageSize ? 'secondary' : 'ghost'"
+          size="xs"
           type="button"
           class="pager2__size"
           :data-active="size === pageSize ? '' : undefined"
@@ -171,7 +180,7 @@ const submitJump = () => {
           @click="handlePageSizeChange(size)"
         >
           {{ size }}
-        </button>
+        </Button>
       </div>
 
       <span v-if="showPageSizeSelector && showJump" class="pager2__divider" aria-hidden="true" />
@@ -186,9 +195,9 @@ const submitJump = () => {
           :placeholder="t('pagination.jumpPlaceholder')"
           @keyup.enter="submitJump"
         />
-        <button type="button" class="pager2__jump-btn" @click="submitJump">
+        <Button variant="ghost" size="xs" type="button" class="pager2__jump-btn" @click="submitJump">
           {{ t('pagination.jumpAction') }}
-        </button>
+        </Button>
       </label>
     </div>
   </nav>

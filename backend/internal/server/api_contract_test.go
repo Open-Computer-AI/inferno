@@ -732,10 +732,10 @@ func TestAPIContracts(t *testing.T) {
 						"login_agreement_mode": "modal",
 						"login_agreement_updated_at": "2026-03-31",
 						"login_agreement_documents": [
-							{"id": "terms", "title": "服务条款", "content_md": ""},
-							{"id": "usage-policy", "title": "使用政策", "content_md": ""},
-							{"id": "supported-regions", "title": "支持的国家和地区", "content_md": ""},
-							{"id": "service-specific-terms", "title": "服务特定条款", "content_md": ""}
+						{"id": "terms", "title": "Terms of Service", "content_md": ""},
+						{"id": "usage-policy", "title": "Usage Policy", "content_md": ""},
+						{"id": "supported-regions", "title": "Supported Countries and Regions", "content_md": ""},
+						{"id": "service-specific-terms", "title": "Service-Specific Terms", "content_md": ""}
 						],
 						"smtp_host": "smtp.example.com",
 						"smtp_port": 587,
@@ -1081,10 +1081,10 @@ func TestAPIContracts(t *testing.T) {
 						"login_agreement_mode": "modal",
 						"login_agreement_updated_at": "2026-03-31",
 						"login_agreement_documents": [
-							{"id": "terms", "title": "服务条款", "content_md": ""},
-							{"id": "usage-policy", "title": "使用政策", "content_md": ""},
-							{"id": "supported-regions", "title": "支持的国家和地区", "content_md": ""},
-							{"id": "service-specific-terms", "title": "服务特定条款", "content_md": ""}
+						{"id": "terms", "title": "Terms of Service", "content_md": ""},
+						{"id": "usage-policy", "title": "Usage Policy", "content_md": ""},
+						{"id": "supported-regions", "title": "Supported Countries and Regions", "content_md": ""},
+						{"id": "service-specific-terms", "title": "Service-Specific Terms", "content_md": ""}
 						],
 						"smtp_host": "",
 						"smtp_port": 587,

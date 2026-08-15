@@ -55,7 +55,7 @@ defineEmits<{ click: [MouseEvent] }>()
   >
     <span v-if="loading" class="btn2__spinner s2a-spinner" aria-hidden="true" />
     <i v-else-if="icon" :class="['hgi-stroke', icon]" class="btn2__icon" aria-hidden="true" />
-    <span><slot /></span>
+    <span class="btn2__label"><slot /></span>
   </button>
 </template>
 
@@ -182,6 +182,18 @@ defineEmits<{ click: [MouseEvent] }>()
 
 .btn2__icon {
   font-size: 14px;
+}
+
+/* Slotted icons are SVG elements from Icon.vue. The global SVG/span baseline
+   rules intentionally make them block-level elsewhere; buttons need their
+   label contents to be an explicit inline flex row so the glyph cannot stack
+   above the text. */
+.btn2__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  line-height: 1;
 }
 
 .btn2__spinner {

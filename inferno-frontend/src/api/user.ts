@@ -35,6 +35,7 @@ export async function getProfile(): Promise<User> {
  */
 export async function updateProfile(profile: {
   username?: string
+  avatar_seed?: string
   avatar_url?: string | null
   balance_notify_enabled?: boolean
   balance_notify_threshold?: number | null
