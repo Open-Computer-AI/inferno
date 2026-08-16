@@ -176,6 +176,51 @@ type ClientPaymentVerifier interface {
 	VerifyClientPayment(ctx context.Context, req ClientPaymentVerificationRequest) (*PaymentNotification, error)
 }
 
+// RazorpaySubscriptionPlanRequest describes the local plan that should be
+// mirrored into a Razorpay recurring plan. It is intentionally provider
+// specific: the shared Provider interface remains one-time-payment focused.
+type RazorpaySubscriptionPlanRequest struct {
+	LocalPlanID string
+	Name        string
+	Description string
+	Amount      float64
+	Currency    string
+	Period      string
+	Interval    int
+	InstanceID  string
+}
+
+// RazorpaySubscriptionRequest creates a checkout-ready Razorpay subscription.
+type RazorpaySubscriptionRequest struct {
+	Plan       RazorpaySubscriptionPlanRequest
+	OrderID    string
+	UserID     string
+	TotalCount int
+}
+
+type RazorpaySubscriptionResponse struct {
+	SubscriptionID string
+	PlanID         string
+	Status         string
+}
+
+// RazorpaySubscriptionPaymentVerificationRequest contains the browser values
+// returned by Razorpay Standard Checkout for a recurring subscription.
+type RazorpaySubscriptionPaymentVerificationRequest struct {
+	InternalOrderID        string
+	ProviderSubscriptionID string
+	PaymentID              string
+	Signature              string
+}
+
+// RazorpaySubscriptionProvider is an optional capability implemented only by
+// Razorpay. It prevents recurring concepts from leaking into every provider.
+type RazorpaySubscriptionProvider interface {
+	Provider
+	CreateSubscription(ctx context.Context, req RazorpaySubscriptionRequest) (*RazorpaySubscriptionResponse, error)
+	VerifySubscriptionPayment(ctx context.Context, req RazorpaySubscriptionPaymentVerificationRequest) (*PaymentNotification, error)
+}
+
 // QueryOrderResponse describes the payment status from the upstream provider.
 type QueryOrderResponse struct {
 	TradeNo  string
