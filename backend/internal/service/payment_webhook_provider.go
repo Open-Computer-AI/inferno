@@ -82,6 +82,42 @@ func (s *PaymentService) GetWebhookProviders(ctx context.Context, providerKey, o
 	return []payment.Provider{prov}, nil
 }
 
+// GetWebhookProvidersForNotification also resolves a pinned provider by the
+// upstream trade number. Razorpay payment.captured events can contain the
+// upstream order ID without Inferno's receipt, so this preserves correct
+// routing when multiple Razorpay instances exist.
+func (s *PaymentService) GetWebhookProvidersForNotification(ctx context.Context, providerKey, outTradeNo, providerTradeNo string) ([]payment.Provider, error) {
+	if strings.TrimSpace(outTradeNo) != "" {
+		return s.GetWebhookProviders(ctx, providerKey, outTradeNo)
+	}
+	providerTradeNo = strings.TrimSpace(providerTradeNo)
+	if providerTradeNo != "" {
+		order, err := s.entClient.PaymentOrder.Query().Where(paymentorder.PaymentTradeNo(providerTradeNo)).Only(ctx)
+		if err == nil {
+			prov, provErr := s.getPinnedOrderProvider(ctx, order)
+			if provErr == nil {
+				return []payment.Provider{prov}, nil
+			}
+		}
+		if providerKey == payment.TypeRazorpay {
+			orders, queryErr := s.entClient.PaymentOrder.Query().Where(paymentorder.ProviderKeyEQ(providerKey)).All(ctx)
+			if queryErr == nil {
+				for _, candidate := range orders {
+					snapshot := psOrderProviderSnapshot(candidate)
+					if snapshot == nil || !strings.EqualFold(strings.TrimSpace(snapshot.ProviderOrderID), providerTradeNo) {
+						continue
+					}
+					prov, provErr := s.getPinnedOrderProvider(ctx, candidate)
+					if provErr == nil {
+						return []payment.Provider{prov}, nil
+					}
+				}
+			}
+		}
+	}
+	return s.GetWebhookProviders(ctx, providerKey, "")
+}
+
 func (s *PaymentService) getPinnedOrderProvider(ctx context.Context, o *dbent.PaymentOrder) (payment.Provider, error) {
 	inst, err := s.getOrderProviderInstance(ctx, o)
 	if err != nil {
