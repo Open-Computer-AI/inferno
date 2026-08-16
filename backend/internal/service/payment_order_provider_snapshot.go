@@ -11,14 +11,15 @@ import (
 )
 
 type paymentOrderProviderSnapshot struct {
-	SchemaVersion      int
-	ProviderInstanceID string
-	ProviderKey        string
-	PaymentMode        string
-	MerchantAppID      string
-	MerchantID         string
-	ProviderOrderID    string
-	Currency           string
+	SchemaVersion          int
+	ProviderInstanceID     string
+	ProviderKey            string
+	PaymentMode            string
+	MerchantAppID          string
+	MerchantID             string
+	ProviderOrderID        string
+	ProviderSubscriptionID string
+	Currency               string
 }
 
 func psOrderProviderSnapshot(order *dbent.PaymentOrder) *paymentOrderProviderSnapshot {
@@ -27,14 +28,15 @@ func psOrderProviderSnapshot(order *dbent.PaymentOrder) *paymentOrderProviderSna
 	}
 
 	snapshot := &paymentOrderProviderSnapshot{
-		SchemaVersion:      psSnapshotIntValue(order.ProviderSnapshot["schema_version"]),
-		ProviderInstanceID: psSnapshotStringValue(order.ProviderSnapshot["provider_instance_id"]),
-		ProviderKey:        psSnapshotStringValue(order.ProviderSnapshot["provider_key"]),
-		PaymentMode:        psSnapshotStringValue(order.ProviderSnapshot["payment_mode"]),
-		MerchantAppID:      psSnapshotStringValue(order.ProviderSnapshot["merchant_app_id"]),
-		MerchantID:         psSnapshotStringValue(order.ProviderSnapshot["merchant_id"]),
-		ProviderOrderID:    psSnapshotStringValue(order.ProviderSnapshot["provider_order_id"]),
-		Currency:           psSnapshotStringValue(order.ProviderSnapshot["currency"]),
+		SchemaVersion:          psSnapshotIntValue(order.ProviderSnapshot["schema_version"]),
+		ProviderInstanceID:     psSnapshotStringValue(order.ProviderSnapshot["provider_instance_id"]),
+		ProviderKey:            psSnapshotStringValue(order.ProviderSnapshot["provider_key"]),
+		PaymentMode:            psSnapshotStringValue(order.ProviderSnapshot["payment_mode"]),
+		MerchantAppID:          psSnapshotStringValue(order.ProviderSnapshot["merchant_app_id"]),
+		MerchantID:             psSnapshotStringValue(order.ProviderSnapshot["merchant_id"]),
+		ProviderOrderID:        psSnapshotStringValue(order.ProviderSnapshot["provider_order_id"]),
+		ProviderSubscriptionID: psSnapshotStringValue(order.ProviderSnapshot["provider_subscription_id"]),
+		Currency:               psSnapshotStringValue(order.ProviderSnapshot["currency"]),
 	}
 	if snapshot.SchemaVersion == 0 &&
 		snapshot.ProviderInstanceID == "" &&
@@ -43,6 +45,7 @@ func psOrderProviderSnapshot(order *dbent.PaymentOrder) *paymentOrderProviderSna
 		snapshot.MerchantAppID == "" &&
 		snapshot.MerchantID == "" &&
 		snapshot.ProviderOrderID == "" &&
+		snapshot.ProviderSubscriptionID == "" &&
 		snapshot.Currency == "" {
 		return nil
 	}
@@ -224,7 +227,11 @@ func validateProviderSnapshotMetadata(order *dbent.PaymentOrder, providerKey str
 			return fmt.Errorf("airwallex status mismatch: expected SUCCEEDED, got %s", actual)
 		}
 	case payment.TypeRazorpay:
-		if expected := strings.TrimSpace(snapshot.ProviderOrderID); expected != "" {
+		expectedOrderID := strings.TrimSpace(snapshot.ProviderOrderID)
+		if expected := strings.TrimSpace(snapshot.ProviderSubscriptionID); expected != "" {
+			expectedOrderID = expected
+		}
+		if expected := expectedOrderID; expected != "" {
 			actual := strings.TrimSpace(metadata["provider_order_id"])
 			if actual == "" {
 				return fmt.Errorf("razorpay notification missing provider order id")
