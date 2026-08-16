@@ -18,6 +18,7 @@ const (
 	TypeLink         PaymentType = "link"
 	TypeEasyPay      PaymentType = "easypay"
 	TypeAirwallex    PaymentType = "airwallex"
+	TypeRazorpay     PaymentType = "razorpay"
 )
 
 // Order status constants shared across payment and service layers.
@@ -153,9 +154,26 @@ type CreatePaymentResponse struct {
 	Currency     string                  // 服务商支付币种
 	CountryCode  string                  // 服务商收银台国家/地区代码
 	PaymentEnv   string                  // 服务商前端环境标识
+	PublicKey    string                  // Publishable/provider key safe to expose to the frontend
 	ResultType   CreatePaymentResultType // Typed result contract for frontend flows
 	OAuth        *WechatOAuthInfo        // WeChat OAuth bootstrap payload when required
 	JSAPI        *WechatJSAPIPayload     // WeChat JSAPI invocation payload when ready
+}
+
+// ClientPaymentVerificationRequest contains the payment identifiers returned
+// by a provider's browser checkout. ProviderOrderID must come from the
+// server-created order, not from an untrusted client value.
+type ClientPaymentVerificationRequest struct {
+	InternalOrderID string
+	ProviderOrderID string
+	PaymentID       string
+	Signature       string
+}
+
+// ClientPaymentVerifier is an optional extension for providers whose browser
+// checkout returns a client signature that must be verified server-side.
+type ClientPaymentVerifier interface {
+	VerifyClientPayment(ctx context.Context, req ClientPaymentVerificationRequest) (*PaymentNotification, error)
 }
 
 // QueryOrderResponse describes the payment status from the upstream provider.
