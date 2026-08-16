@@ -106,6 +106,7 @@ import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import type { User } from '@/types'
 import { extractApiErrorMessage } from '@/utils/apiError'
+import { useAccountSeed } from '@/composables/useAccountSeed'
 import AccountPatternAvatar from '@/components/admin/settings/AccountPatternAvatar.vue'
 import { Icon } from '@/components/icons'
 
@@ -130,7 +131,9 @@ const generatedSeed = ref('')
 const displayName = computed(() => props.user?.username?.trim() || props.user?.email?.trim() || t('profile.user'))
 const avatarPreviewUrl = computed(() => avatarDraft.value.trim() || props.user?.avatar_url?.trim() || '')
 
-const defaultSeed = computed(() => props.user?.avatar_seed || String(props.user?.id || props.user?.email || displayName.value))
+// Seeds from the prop, not the auth store: this card also renders another
+// user's avatar, so it must not silently fall back to the signed-in account.
+const defaultSeed = useAccountSeed(() => props.user, displayName)
 
 function resetGeneratedSeed(): void {
   generatedSeed.value = defaultSeed.value
