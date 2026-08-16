@@ -40,6 +40,16 @@ describe('AppSidebar scroll position persistence', () => {
   })
 })
 
+describe('AppSidebar branding', () => {
+  it('keeps the wordmark without rendering a standalone logo mark', () => {
+    expect(componentSource).toContain('rail__brand-name')
+    expect(componentSource).toContain('{{ siteName }}')
+    expect(componentSource).not.toContain('rail__mark')
+    expect(componentSource).not.toContain('siteLogo')
+    expect(componentSource).not.toContain('markInitial')
+  })
+})
+
 describe('AppSidebar popover positioning', () => {
   // Part 07 v2 moves the version badge's dropdown-clipping fix (the reason
   // this file originally existed) into a structural guarantee instead of a
