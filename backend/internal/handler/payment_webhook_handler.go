@@ -127,6 +127,20 @@ func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string)
 		writeSuccessResponse(c, resolvedProviderKey)
 		return
 	}
+	if resolvedProviderKey == payment.TypeRazorpay && strings.TrimSpace(notification.Metadata["razorpay_event"]) == "subscription.charged" {
+		if err := h.paymentService.HandleRazorpaySubscriptionWebhook(c.Request.Context(), notification); err != nil {
+			if errors.Is(err, service.ErrOrderNotFound) {
+				slog.Warn("[Payment Webhook] unknown Razorpay subscription order, acking", "outTradeNo", notification.OrderID)
+				writeSuccessResponse(c, resolvedProviderKey)
+				return
+			}
+			slog.Error("[Payment Webhook] handle Razorpay subscription failed", "error", err)
+			c.String(http.StatusInternalServerError, "handle failed")
+			return
+		}
+		writeSuccessResponse(c, resolvedProviderKey)
+		return
+	}
 
 	if err := h.paymentService.HandlePaymentNotification(c.Request.Context(), notification, resolvedProviderKey); err != nil {
 		// Unknown order: ack with 2xx so the provider stops retrying. This
@@ -179,10 +193,18 @@ func extractOutTradeNo(rawBody, providerKey string) string {
 						Receipt string `json:"receipt"`
 					} `json:"entity"`
 				} `json:"order"`
+				Subscription struct {
+					Entity struct {
+						Notes map[string]string `json:"notes"`
+					} `json:"entity"`
+				} `json:"subscription"`
 			} `json:"payload"`
 		}
 		if err := json.Unmarshal([]byte(rawBody), &payload); err == nil {
-			return strings.TrimSpace(payload.Payload.Order.Entity.Receipt)
+			if receipt := strings.TrimSpace(payload.Payload.Order.Entity.Receipt); receipt != "" {
+				return receipt
+			}
+			return strings.TrimSpace(payload.Payload.Subscription.Entity.Notes["inferno_order_id"])
 		}
 	}
 	// For other providers (Stripe, Alipay direct, WxPay direct), the registry
@@ -206,6 +228,11 @@ func extractProviderTradeNo(rawBody, providerKey string) string {
 					ID string `json:"id"`
 				} `json:"entity"`
 			} `json:"order"`
+			Subscription struct {
+				Entity struct {
+					ID string `json:"id"`
+				} `json:"entity"`
+			} `json:"subscription"`
 		} `json:"payload"`
 	}
 	if err := json.Unmarshal([]byte(rawBody), &payload); err != nil {
@@ -214,7 +241,10 @@ func extractProviderTradeNo(rawBody, providerKey string) string {
 	if orderID := strings.TrimSpace(payload.Payload.Payment.Entity.OrderID); orderID != "" {
 		return orderID
 	}
-	return strings.TrimSpace(payload.Payload.Order.Entity.ID)
+	if orderID := strings.TrimSpace(payload.Payload.Order.Entity.ID); orderID != "" {
+		return orderID
+	}
+	return strings.TrimSpace(payload.Payload.Subscription.Entity.ID)
 }
 
 func verifyNotificationWithProviders(ctx context.Context, providers []payment.Provider, rawBody string, headers map[string]string) (string, *payment.PaymentNotification, error) {
