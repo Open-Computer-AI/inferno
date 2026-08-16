@@ -197,6 +197,7 @@ import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } 
 import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
+import { useAccountSeed } from '@/composables/useAccountSeed'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import AccountPatternAvatar from '@/components/admin/settings/AccountPatternAvatar.vue'
@@ -280,11 +281,11 @@ const markInitial = computed(() => (siteName.value || 'S').trim().charAt(0).toUp
 const user = computed(() => authStore.user)
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
 const displayName = computed(() => user.value?.username || user.value?.email?.split('@')[0] || '')
-/* avatar_seed is the persisted "regenerate my identicon" seed. ProfileAvatarCard
-   and ProfileSettingsSidebar both prefer it over id/email; the rail must too, or
-   regenerating on the profile page leaves the rail showing the old pattern and
-   the same user wears two different avatars at once. */
-const accountSeed = computed(() => user.value?.avatar_seed || String(user.value?.id || user.value?.email || displayName.value || 'inferno-account'))
+/* Shared with ProfileAvatarCard, ProfileSettingsSidebar and the admin
+   SettingsSidebar -- see useAccountSeed for why it is shared. The rail is always
+   mounted, so it is the one reader that supplies a last-resort seed rather than
+   risk rendering an empty one. */
+const accountSeed = useAccountSeed(user, displayName, 'inferno-account')
 const roleLabel = computed(() => (isAdmin.value ? t('shell.roleAdministrator') : t('shell.roleMember')))
 
 // ---- feature flags -------------------------------------------------------
