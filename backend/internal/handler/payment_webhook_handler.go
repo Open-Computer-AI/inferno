@@ -67,6 +67,12 @@ func (h *PaymentWebhookHandler) AirwallexWebhook(c *gin.Context) {
 	h.handleNotify(c, payment.TypeAirwallex)
 }
 
+// RazorpayWebhook handles Razorpay payment and order events.
+// POST /api/v1/payment/webhook/razorpay
+func (h *PaymentWebhookHandler) RazorpayWebhook(c *gin.Context) {
+	h.handleNotify(c, payment.TypeRazorpay)
+}
+
 // handleNotify is the shared logic for all provider webhook handlers.
 func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string) {
 	var rawBody string
@@ -86,8 +92,9 @@ func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string)
 	// Extract out_trade_no to look up the order's specific provider instance.
 	// This is needed when multiple instances of the same provider exist (e.g. multiple EasyPay accounts).
 	outTradeNo := extractOutTradeNo(rawBody, providerKey)
+	providerTradeNo := extractProviderTradeNo(rawBody, providerKey)
 
-	providers, err := h.paymentService.GetWebhookProviders(c.Request.Context(), providerKey, outTradeNo)
+	providers, err := h.paymentService.GetWebhookProvidersForNotification(c.Request.Context(), providerKey, outTradeNo, providerTradeNo)
 	if err != nil {
 		slog.Warn("[Payment Webhook] provider not found", "provider", providerKey, "outTradeNo", outTradeNo, "error", err)
 		if providerKey == payment.TypeWxpay {
@@ -164,10 +171,50 @@ func extractOutTradeNo(rawBody, providerKey string) string {
 		if err := json.Unmarshal([]byte(rawBody), &payload); err == nil {
 			return strings.TrimSpace(payload.Data.Object.MerchantOrderID)
 		}
+	case payment.TypeRazorpay:
+		var payload struct {
+			Payload struct {
+				Order struct {
+					Entity struct {
+						Receipt string `json:"receipt"`
+					} `json:"entity"`
+				} `json:"order"`
+			} `json:"payload"`
+		}
+		if err := json.Unmarshal([]byte(rawBody), &payload); err == nil {
+			return strings.TrimSpace(payload.Payload.Order.Entity.Receipt)
+		}
 	}
 	// For other providers (Stripe, Alipay direct, WxPay direct), the registry
 	// typically has only one instance, so no instance lookup is needed.
 	return ""
+}
+
+func extractProviderTradeNo(rawBody, providerKey string) string {
+	if providerKey != payment.TypeRazorpay {
+		return ""
+	}
+	var payload struct {
+		Payload struct {
+			Payment struct {
+				Entity struct {
+					OrderID string `json:"order_id"`
+				} `json:"entity"`
+			} `json:"payment"`
+			Order struct {
+				Entity struct {
+					ID string `json:"id"`
+				} `json:"entity"`
+			} `json:"order"`
+		} `json:"payload"`
+	}
+	if err := json.Unmarshal([]byte(rawBody), &payload); err != nil {
+		return ""
+	}
+	if orderID := strings.TrimSpace(payload.Payload.Payment.Entity.OrderID); orderID != "" {
+		return orderID
+	}
+	return strings.TrimSpace(payload.Payload.Order.Entity.ID)
 }
 
 func verifyNotificationWithProviders(ctx context.Context, providers []payment.Provider, rawBody string, headers map[string]string) (string, *payment.PaymentNotification, error) {
