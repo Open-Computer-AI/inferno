@@ -124,6 +124,84 @@ func TestRazorpayWebhookVerifiesSignature(t *testing.T) {
 	require.ErrorContains(t, err, "signature mismatch")
 }
 
+func TestRazorpaySubscriptionCreatesPlanAndVerifiesPayment(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/plans":
+			switch r.Method {
+			case http.MethodGet:
+				_, _ = w.Write([]byte(`{"items":[]}`))
+			case http.MethodPost:
+				_, _ = w.Write([]byte(`{"id":"plan_123","period":"monthly","interval":1}`))
+			default:
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			}
+		case "/subscriptions":
+			_, _ = w.Write([]byte(`{"id":"sub_123","plan_id":"plan_123","status":"created"}`))
+		case "/payments/pay_sub_123":
+			_, _ = w.Write([]byte(`{"id":"pay_sub_123","subscription_id":"sub_123","amount":99900,"currency":"INR","status":"captured","captured":true}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	provider, err := NewRazorpay("instance-1", map[string]string{
+		"keyId":         "key-id",
+		"keySecret":     "secret",
+		"webhookSecret": "webhook-secret",
+		"apiBase":       server.URL,
+	})
+	require.NoError(t, err)
+
+	created, err := provider.CreateSubscription(context.Background(), payment.RazorpaySubscriptionRequest{
+		Plan: payment.RazorpaySubscriptionPlanRequest{
+			LocalPlanID: "42",
+			Name:        "Inferno Pro",
+			Amount:      999,
+			Currency:    "INR",
+			Period:      "monthly",
+			Interval:    1,
+			InstanceID:  "instance-1",
+		},
+		OrderID: "inferno-order-42",
+		UserID:  "7",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "sub_123", created.SubscriptionID)
+	require.Equal(t, "plan_123", created.PlanID)
+
+	signature := razorpayTestSignature("pay_sub_123|sub_123", "secret")
+	notification, err := provider.VerifySubscriptionPayment(context.Background(), payment.RazorpaySubscriptionPaymentVerificationRequest{
+		InternalOrderID:        "inferno-order-42",
+		ProviderSubscriptionID: "sub_123",
+		PaymentID:              "pay_sub_123",
+		Signature:              signature,
+	})
+	require.NoError(t, err)
+	require.Equal(t, payment.ProviderStatusSuccess, notification.Status)
+	require.Equal(t, "sub_123", notification.Metadata["provider_subscription_id"])
+}
+
+func TestRazorpaySubscriptionWebhookUsesSubscriptionNotesAndEventID(t *testing.T) {
+	provider, err := NewRazorpay("instance-1", map[string]string{
+		"keyId":         "key-id",
+		"keySecret":     "secret",
+		"webhookSecret": "webhook-secret",
+	})
+	require.NoError(t, err)
+	body := `{"event":"subscription.charged","payload":{"subscription":{"entity":{"id":"sub_123","notes":{"inferno_order_id":"sub2_order"}}},"payment":{"entity":{"id":"pay_123","subscription_id":"sub_123","amount":99900,"currency":"INR","status":"captured","captured":true}}}}`
+	notification, err := provider.VerifyNotification(context.Background(), body, map[string]string{
+		"x-razorpay-signature": razorpayTestSignature(body, "webhook-secret"),
+		"x-razorpay-event-id":  "evt_123",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "sub2_order", notification.OrderID)
+	require.Equal(t, "sub_123", notification.Metadata["provider_subscription_id"])
+	require.Equal(t, "subscription.charged", notification.Metadata["razorpay_event"])
+	require.Equal(t, "evt_123", notification.Metadata["event_id"])
+}
+
 func razorpayTestSignature(message, secret string) string {
 	h := hmac.New(sha256.New, []byte(secret))
 	_, _ = h.Write([]byte(message))
