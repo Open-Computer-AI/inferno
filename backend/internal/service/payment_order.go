@@ -119,10 +119,16 @@ func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrder
 		return nil, infraerrors.Forbidden("BALANCE_PAYMENT_DISABLED", "balance recharge has been disabled")
 	}
 	if req.OrderType == payment.OrderTypeSubscription {
-		if payment.GetBasePaymentType(req.PaymentType) == payment.TypeRazorpay {
-			return nil, infraerrors.BadRequest("RAZORPAY_SUBSCRIPTIONS_UNSUPPORTED", "Razorpay is available for top-ups only")
+		plan, err := s.validateSubOrder(ctx, req)
+		if err != nil {
+			return nil, err
 		}
-		return s.validateSubOrder(ctx, req)
+		if payment.GetBasePaymentType(req.PaymentType) == payment.TypeRazorpay {
+			if _, _, err := razorpaySubscriptionCadence(plan); err != nil {
+				return nil, infraerrors.BadRequest("RAZORPAY_SUBSCRIPTION_CADENCE_UNSUPPORTED", err.Error())
+			}
+		}
+		return plan, nil
 	}
 	if math.IsNaN(req.Amount) || math.IsInf(req.Amount, 0) || req.Amount <= 0 {
 		return nil, infraerrors.BadRequest("INVALID_AMOUNT", "amount must be a positive number")
@@ -454,7 +460,49 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 	}, sel, outTradeNo, payAmountStr, subject)
 	providerReq.AlipayMobilePrecreate = shouldUseAlipayMobilePrecreate(req, cfg, sel)
 	finishProviderCall := servertiming.ObserveDependency(ctx, "payment")
-	pr, err := prov.CreatePayment(ctx, providerReq)
+	var pr *payment.CreatePaymentResponse
+	var razorpaySubscription *payment.RazorpaySubscriptionResponse
+	if req.OrderType == payment.OrderTypeSubscription && sel.ProviderKey == payment.TypeRazorpay {
+		razorpayProvider, ok := prov.(payment.RazorpaySubscriptionProvider)
+		if !ok {
+			finishProviderCall()
+			return nil, infraerrors.ServiceUnavailable("PAYMENT_PROVIDER_UNSUPPORTED", "Razorpay subscription capability is unavailable")
+		}
+		period, interval, cadenceErr := razorpaySubscriptionCadence(plan)
+		if cadenceErr != nil {
+			finishProviderCall()
+			return nil, infraerrors.BadRequest("RAZORPAY_SUBSCRIPTION_CADENCE_UNSUPPORTED", cadenceErr.Error())
+		}
+		created, createErr := razorpayProvider.CreateSubscription(ctx, payment.RazorpaySubscriptionRequest{
+			Plan: payment.RazorpaySubscriptionPlanRequest{
+				LocalPlanID: strconv.FormatInt(plan.ID, 10),
+				Name:        plan.Name,
+				Description: plan.Description,
+				Amount:      payAmount,
+				Currency:    paymentProviderConfigCurrency(sel.ProviderKey, sel.Config),
+				Period:      period,
+				Interval:    interval,
+				InstanceID:  sel.InstanceID,
+			},
+			OrderID:    order.OutTradeNo,
+			UserID:     strconv.FormatInt(req.UserID, 10),
+			TotalCount: 1200,
+		})
+		if createErr != nil {
+			finishProviderCall()
+			return nil, classifyCreatePaymentError(req, sel.ProviderKey, createErr)
+		}
+		razorpaySubscription = created
+		pr = &payment.CreatePaymentResponse{
+			TradeNo:    created.SubscriptionID,
+			IntentID:   created.SubscriptionID,
+			Currency:   paymentProviderConfigCurrency(sel.ProviderKey, sel.Config),
+			PaymentEnv: "razorpay",
+			PublicKey:  strings.TrimSpace(sel.Config["keyId"]),
+		}
+	} else {
+		pr, err = prov.CreatePayment(ctx, providerReq)
+	}
 	finishProviderCall()
 	if err != nil {
 		slog.Error("[PaymentService] CreatePayment failed", "provider", sel.ProviderKey, "instance", sel.InstanceID, "error", err)
@@ -467,6 +515,10 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 	providerSnapshot := cloneProviderSnapshot(order.ProviderSnapshot)
 	if sel.ProviderKey == payment.TypeRazorpay && strings.TrimSpace(pr.TradeNo) != "" {
 		providerSnapshot["provider_order_id"] = strings.TrimSpace(pr.TradeNo)
+	}
+	if razorpaySubscription != nil {
+		providerSnapshot["provider_subscription_id"] = strings.TrimSpace(razorpaySubscription.SubscriptionID)
+		providerSnapshot["provider_plan_id"] = strings.TrimSpace(razorpaySubscription.PlanID)
 	}
 	_, err = s.entClient.PaymentOrder.UpdateOneID(order.ID).
 		SetNillablePaymentTradeNo(psNilIfEmpty(pr.TradeNo)).
@@ -543,6 +595,25 @@ func buildProviderCreatePaymentRequest(req CreateOrderRequest, sel *payment.Inst
 		ClientIP:           req.ClientIP,
 		IsMobile:           req.IsMobile,
 		InstanceSubMethods: selectedInstanceSupportedTypes(sel),
+	}
+}
+
+func razorpaySubscriptionCadence(plan *dbent.SubscriptionPlan) (string, int, error) {
+	if plan == nil {
+		return "", 0, fmt.Errorf("subscription plan is missing")
+	}
+	days := psComputeValidityDays(plan.ValidityDays, plan.ValidityUnit)
+	switch days {
+	case 1:
+		return "daily", 1, nil
+	case 7:
+		return "weekly", 1, nil
+	case 30:
+		return "monthly", 1, nil
+	case 365:
+		return "yearly", 1, nil
+	default:
+		return "", 0, fmt.Errorf("Razorpay recurring plans require a 1, 7, 30, or 365 day validity period; this plan is %d days", days)
 	}
 }
 
