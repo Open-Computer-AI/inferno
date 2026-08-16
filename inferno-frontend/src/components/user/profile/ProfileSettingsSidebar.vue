@@ -42,6 +42,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useAccountSeed } from '@/composables/useAccountSeed'
 import Icon from '@/components/icons/Icon.vue'
 import AccountPatternAvatar from '@/components/admin/settings/AccountPatternAvatar.vue'
 
@@ -63,7 +64,7 @@ const activeGroup = computed(() => route.hash.replace(/^#/, '') || 'account')
 const displayName = computed(() => authStore.user?.username?.trim() || authStore.user?.email?.split('@')[0] || t('profile.user'))
 const roleLabel = computed(() => authStore.user?.role === 'admin' ? t('profile.administrator') : t('profile.user'))
 const avatarUrl = computed(() => authStore.user?.avatar_url?.trim() || '')
-const accountSeed = computed(() => authStore.user?.avatar_seed || String(authStore.user?.id || authStore.user?.email || displayName.value))
+const accountSeed = useAccountSeed(() => authStore.user, displayName)
 </script>
 
 <style scoped>

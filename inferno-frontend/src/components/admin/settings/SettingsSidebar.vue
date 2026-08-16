@@ -45,6 +45,7 @@ import { getActivePinia } from 'pinia'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useAccountSeed } from '@/composables/useAccountSeed'
 import AccountPatternAvatar from './AccountPatternAvatar.vue'
 import {
   SETTINGS_GROUPS,
@@ -68,7 +69,9 @@ const authStore = getActivePinia() ? useAuthStore() : null
 const groups = computed(() => SETTINGS_GROUPS)
 
 const displayName = computed(() => authStore?.user?.username || authStore?.user?.email?.split('@')[0] || 'admin')
-const accountSeed = computed(() => authStore?.user?.avatar_seed || String(authStore?.user?.id || authStore?.user?.email || displayName.value))
+// `authStore?.` is load-bearing, not defensive noise: authStore is genuinely
+// null whenever this component is mounted without Pinia (see above).
+const accountSeed = useAccountSeed(() => authStore?.user, displayName)
 
 function selectTabOnClick(section: SettingsSectionKey): void {
   emit('select', section)
