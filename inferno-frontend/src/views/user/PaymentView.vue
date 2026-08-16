@@ -290,6 +290,7 @@ import Icon from '@/components/icons/Icon.vue'
 import { DEFAULT_PAYMENT_CURRENCY, formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
 import { planValiditySuffix as validitySuffixOf } from '@/components/payment/validity'
 import type { PaymentMethodOption } from '@/components/payment/PaymentMethodSelector.vue'
+import { openRazorpayCheckout, type RazorpayFailureResult, type RazorpayCheckoutResult } from '@/components/payment/razorpayCheckout'
 import { buildPaymentErrorToastMessage, describePaymentScenarioError } from './paymentUx'
 import { hasWechatResumeQuery, parseWechatResumeRoute, stripWechatResumeQuery } from './paymentWechatResume'
 
@@ -676,7 +677,7 @@ function subscriptionTotalAmountForCurrency(value: number, currency: string): nu
 // Subscription-specific: method options based on gateway pay amount
 const subMethodOptions = computed<PaymentMethodOption[]>(() => {
   const price = selectedPlan.value?.price ?? 0
-  return enabledMethods.value.map((type) => {
+  return enabledMethods.value.filter((type) => type !== 'razorpay').map((type) => {
     const ml = visibleMethods.value[type]
     const currency = normalizePaymentCurrency(ml?.currency)
     return {
@@ -796,6 +797,10 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
       }
     }
     const visibleMethod = normalizeVisibleMethod(requestType) || requestType
+    if (visibleMethod === 'razorpay') {
+      await launchRazorpayCheckout(result, orderType)
+      return
+    }
     // When user clicks the dedicated Stripe button, leave method blank so the
     // landing page renders Stripe's full Payment Element (card/link/alipay/wxpay).
     const stripeMethod = visibleMethod === 'stripe'
@@ -948,6 +953,67 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
   } finally {
     submitting.value = false
   }
+}
+
+async function launchRazorpayCheckout(result: CreateOrderResult, orderType: OrderType): Promise<void> {
+  const key = (result.public_key || '').trim()
+  const providerOrderID = (result.intent_id || '').trim()
+  const outTradeNo = (result.out_trade_no || '').trim()
+  const currency = (result.currency || 'INR').trim().toUpperCase()
+  const amount = Math.round(Number(result.pay_amount) * 100)
+  if (!key || !providerOrderID || !outTradeNo || !Number.isInteger(amount) || amount < 100) {
+    throw new Error('RAZORPAY_CHECKOUT_PARAMS_MISSING')
+  }
+
+  const complete = async (response: RazorpayCheckoutResult) => {
+    try {
+      const orderResponse = await paymentAPI.verifyRazorpayPayment({
+        out_trade_no: outTradeNo,
+        razorpay_order_id: response.razorpay_order_id,
+        razorpay_payment_id: response.razorpay_payment_id,
+        razorpay_signature: response.razorpay_signature,
+      })
+      const completedState: PaymentRecoverySnapshot = {
+        ...emptyPaymentState(),
+        orderId: orderResponse.data?.id || result.order_id,
+        amount: result.amount,
+        payAmount: result.pay_amount,
+        paymentType: 'razorpay',
+        outTradeNo,
+        currency,
+        orderType,
+      }
+      authStore.refreshUser()
+      await redirectToPaymentResult(completedState)
+    } catch (error) {
+      const message = extractI18nErrorMessage(error, t, 'payment.errors', t('payment.razorpayPaymentFailed'))
+      appStore.showError(message)
+    }
+  }
+
+  const handleFailure = (response: RazorpayFailureResult) => {
+    const reason = response.error?.description || response.error?.reason
+    appStore.showError(reason || t('payment.razorpayPaymentFailed'))
+  }
+
+  await openRazorpayCheckout({
+    key,
+    amount,
+    currency,
+    name: 'Inferno',
+    description: t('payment.razorpayPay'),
+    order_id: providerOrderID,
+    prefill: {
+      name: user.value?.username || undefined,
+      email: user.value?.email || undefined,
+    },
+    retry: { enabled: true, max_count: 2 },
+    theme: { color: '#c25b21' },
+    handler: complete,
+    modal: {
+      ondismiss: () => appStore.showInfo(t('payment.razorpayPaymentCancelled')),
+    },
+  }, handleFailure)
 }
 
 interface MobileQrFallbackContext {
