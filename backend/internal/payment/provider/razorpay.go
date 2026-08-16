@@ -140,9 +140,10 @@ type razorpayPlansResponse struct {
 }
 
 type razorpaySubscription struct {
-	ID     string `json:"id"`
-	PlanID string `json:"plan_id"`
-	Status string `json:"status"`
+	ID     string            `json:"id"`
+	PlanID string            `json:"plan_id"`
+	Status string            `json:"status"`
+	Notes  map[string]string `json:"notes"`
 }
 
 func (r *Razorpay) CreatePayment(ctx context.Context, req payment.CreatePaymentRequest) (*payment.CreatePaymentResponse, error) {
@@ -389,7 +390,18 @@ func (r *Razorpay) VerifySubscriptionPayment(ctx context.Context, req payment.Ra
 		return nil, fmt.Errorf("razorpay verify subscription payment status: %w", err)
 	}
 	if !strings.EqualFold(strings.TrimSpace(p.SubscriptionID), subscriptionID) {
-		return nil, fmt.Errorf("razorpay payment does not belong to the created subscription")
+		// Razorpay's first subscription authorization can be represented as a
+		// captured payment without payment.subscription_id. In that case, bind
+		// the payment to the subscription through its signed checkout response
+		// and the provider-side Inferno order note we set at creation time.
+		var subscription razorpaySubscription
+		if err := r.doJSON(ctx, http.MethodGet, "/subscriptions/"+url.PathEscape(subscriptionID), nil, &subscription); err != nil {
+			return nil, fmt.Errorf("razorpay verify subscription: %w", err)
+		}
+		if !strings.EqualFold(strings.TrimSpace(subscription.ID), subscriptionID) ||
+			!strings.EqualFold(strings.TrimSpace(subscription.Notes["inferno_order_id"]), strings.TrimSpace(req.InternalOrderID)) {
+			return nil, fmt.Errorf("razorpay payment does not belong to the created subscription")
+		}
 	}
 	if !p.Captured && !strings.EqualFold(p.Status, "captured") {
 		return nil, fmt.Errorf("razorpay subscription payment is not captured")
