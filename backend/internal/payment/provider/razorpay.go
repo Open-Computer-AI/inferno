@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,8 +27,8 @@ const (
 	razorpayMinimumMinorAmount int64 = 100
 )
 
-// Razorpay implements Standard Web Checkout for one-time payments.
-// Subscriptions deliberately remain outside this adapter for now.
+// Razorpay implements Standard Web Checkout for one-time payments and the
+// optional recurring-subscription capability.
 type Razorpay struct {
 	instanceID string
 	config     map[string]string
@@ -115,12 +116,33 @@ type razorpayOrder struct {
 }
 
 type razorpayPayment struct {
-	ID       string `json:"id"`
-	OrderID  string `json:"order_id"`
-	Amount   int64  `json:"amount"`
-	Currency string `json:"currency"`
-	Status   string `json:"status"`
-	Captured bool   `json:"captured"`
+	ID             string `json:"id"`
+	OrderID        string `json:"order_id"`
+	SubscriptionID string `json:"subscription_id"`
+	Amount         int64  `json:"amount"`
+	Currency       string `json:"currency"`
+	Status         string `json:"status"`
+	Captured       bool   `json:"captured"`
+}
+
+type razorpayPlan struct {
+	ID   string `json:"id"`
+	Item struct {
+		Name string `json:"name"`
+	} `json:"item"`
+	Notes    map[string]string `json:"notes"`
+	Period   string            `json:"period"`
+	Interval int               `json:"interval"`
+}
+
+type razorpayPlansResponse struct {
+	Items []razorpayPlan `json:"items"`
+}
+
+type razorpaySubscription struct {
+	ID     string `json:"id"`
+	PlanID string `json:"plan_id"`
+	Status string `json:"status"`
 }
 
 func (r *Razorpay) CreatePayment(ctx context.Context, req payment.CreatePaymentRequest) (*payment.CreatePaymentResponse, error) {
@@ -155,6 +177,115 @@ func (r *Razorpay) CreatePayment(ctx context.Context, req payment.CreatePaymentR
 		PaymentEnv: "razorpay",
 		PublicKey:  strings.TrimSpace(r.config["keyId"]),
 	}, nil
+}
+
+func (r *Razorpay) CreateSubscription(ctx context.Context, req payment.RazorpaySubscriptionRequest) (*payment.RazorpaySubscriptionResponse, error) {
+	planID, err := r.ensurePlan(ctx, req.Plan)
+	if err != nil {
+		return nil, fmt.Errorf("razorpay ensure subscription plan: %w", err)
+	}
+
+	totalCount := req.TotalCount
+	if totalCount <= 0 {
+		// Razorpay requires a finite count. 1,200 monthly cycles is 100 years;
+		// users can still cancel through the provider before the next charge.
+		totalCount = 1200
+	}
+	subscriptionRequest := map[string]any{
+		"plan_id":         planID,
+		"total_count":     totalCount,
+		"quantity":        1,
+		"customer_notify": 1,
+		"notes": map[string]string{
+			"inferno_order_id": req.OrderID,
+			"inferno_user_id":  req.UserID,
+			"inferno_plan_id":  req.Plan.LocalPlanID,
+		},
+	}
+	var created razorpaySubscription
+	if err := r.doJSON(ctx, http.MethodPost, "/subscriptions", subscriptionRequest, &created); err != nil {
+		return nil, fmt.Errorf("razorpay create subscription: %w", err)
+	}
+	if strings.TrimSpace(created.ID) == "" {
+		return nil, fmt.Errorf("razorpay create subscription returned no subscription id")
+	}
+	return &payment.RazorpaySubscriptionResponse{
+		SubscriptionID: created.ID,
+		PlanID:         planID,
+		Status:         created.Status,
+	}, nil
+}
+
+func (r *Razorpay) ensurePlan(ctx context.Context, req payment.RazorpaySubscriptionPlanRequest) (string, error) {
+	if strings.TrimSpace(req.LocalPlanID) == "" || strings.TrimSpace(req.InstanceID) == "" {
+		return "", fmt.Errorf("local plan id and provider instance id are required")
+	}
+	amount, err := payment.AmountToMinorUnit(strconv.FormatFloat(req.Amount, 'f', -1, 64), req.Currency)
+	if err != nil {
+		return "", fmt.Errorf("subscription plan amount: %w", err)
+	}
+	if amount < razorpayMinimumMinorAmount {
+		return "", fmt.Errorf("subscription plan amount must be at least %d paise", razorpayMinimumMinorAmount)
+	}
+	period := strings.TrimSpace(strings.ToLower(req.Period))
+	if period == "" || req.Interval <= 0 {
+		return "", fmt.Errorf("subscription plan period and interval are required")
+	}
+
+	// Plan IDs belong to a Razorpay account, so reuse a matching plan after a
+	// process restart instead of creating a new provider plan for every order.
+	for skip := 0; skip < 2000; skip += 100 {
+		var listed razorpayPlansResponse
+		path := "/plans?count=100&skip=" + strconv.Itoa(skip)
+		if err := r.doJSON(ctx, http.MethodGet, path, nil, &listed); err != nil {
+			return "", fmt.Errorf("list plans: %w", err)
+		}
+		for _, candidate := range listed.Items {
+			if candidate.ID == "" || candidate.Notes == nil {
+				continue
+			}
+			if candidate.Notes["inferno_plan_id"] == req.LocalPlanID &&
+				candidate.Notes["inferno_provider_instance_id"] == req.InstanceID &&
+				strings.EqualFold(candidate.Period, period) && candidate.Interval == req.Interval {
+				return candidate.ID, nil
+			}
+		}
+		if len(listed.Items) < 100 {
+			break
+		}
+	}
+
+	planRequest := map[string]any{
+		"period":   period,
+		"interval": req.Interval,
+		"item": map[string]any{
+			"name":        firstNonEmpty(req.Name, "Inferno subscription"),
+			"amount":      amount,
+			"currency":    r.currency(),
+			"description": strings.TrimSpace(req.Description),
+		},
+		"notes": map[string]string{
+			"inferno_plan_id":              req.LocalPlanID,
+			"inferno_provider_instance_id": req.InstanceID,
+		},
+	}
+	var created razorpayPlan
+	if err := r.doJSON(ctx, http.MethodPost, "/plans", planRequest, &created); err != nil {
+		return "", fmt.Errorf("create plan: %w", err)
+	}
+	if strings.TrimSpace(created.ID) == "" {
+		return "", fmt.Errorf("create plan returned no plan id")
+	}
+	return created.ID, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func (r *Razorpay) QueryOrder(ctx context.Context, tradeNo string) (*payment.QueryOrderResponse, error) {
@@ -242,6 +373,44 @@ func (r *Razorpay) VerifyClientPayment(ctx context.Context, req payment.ClientPa
 	}, nil
 }
 
+func (r *Razorpay) VerifySubscriptionPayment(ctx context.Context, req payment.RazorpaySubscriptionPaymentVerificationRequest) (*payment.PaymentNotification, error) {
+	subscriptionID := strings.TrimSpace(req.ProviderSubscriptionID)
+	paymentID := strings.TrimSpace(req.PaymentID)
+	signature := strings.TrimSpace(req.Signature)
+	if subscriptionID == "" || paymentID == "" || signature == "" || strings.TrimSpace(req.InternalOrderID) == "" {
+		return nil, fmt.Errorf("razorpay subscription verification requires subscription id, payment id, signature, and internal order id")
+	}
+	if !verifyHMAC(paymentID+"|"+subscriptionID, signature, r.config["keySecret"]) {
+		return nil, fmt.Errorf("razorpay subscription payment signature mismatch")
+	}
+
+	var p razorpayPayment
+	if err := r.doJSON(ctx, http.MethodGet, "/payments/"+url.PathEscape(paymentID), nil, &p); err != nil {
+		return nil, fmt.Errorf("razorpay verify subscription payment status: %w", err)
+	}
+	if !strings.EqualFold(strings.TrimSpace(p.SubscriptionID), subscriptionID) {
+		return nil, fmt.Errorf("razorpay payment does not belong to the created subscription")
+	}
+	if !p.Captured && !strings.EqualFold(p.Status, "captured") {
+		return nil, fmt.Errorf("razorpay subscription payment is not captured")
+	}
+	if p.Amount <= 0 {
+		return nil, fmt.Errorf("razorpay subscription payment returned an invalid amount")
+	}
+	return &payment.PaymentNotification{
+		TradeNo: p.ID,
+		OrderID: req.InternalOrderID,
+		Amount:  payment.MinorUnitToAmount(p.Amount, r.currency()),
+		Status:  payment.ProviderStatusSuccess,
+		Metadata: map[string]string{
+			"currency":                 r.currency(),
+			"status":                   "captured",
+			"provider_order_id":        subscriptionID,
+			"provider_subscription_id": subscriptionID,
+		},
+	}, nil
+}
+
 func (r *Razorpay) VerifyNotification(_ context.Context, rawBody string, headers map[string]string) (*payment.PaymentNotification, error) {
 	signature := strings.TrimSpace(headers["x-razorpay-signature"])
 	if signature == "" {
@@ -249,6 +418,11 @@ func (r *Razorpay) VerifyNotification(_ context.Context, rawBody string, headers
 	}
 	if !verifyHMAC(rawBody, signature, r.config["webhookSecret"]) {
 		return nil, fmt.Errorf("razorpay webhook signature mismatch")
+	}
+	eventID := strings.TrimSpace(headers["x-razorpay-event-id"])
+	if eventID == "" {
+		hash := sha256.Sum256([]byte(rawBody))
+		eventID = hex.EncodeToString(hash[:])
 	}
 
 	var event struct {
@@ -260,6 +434,13 @@ func (r *Razorpay) VerifyNotification(_ context.Context, rawBody string, headers
 			Order struct {
 				Entity razorpayOrder `json:"entity"`
 			} `json:"order"`
+			Subscription struct {
+				Entity struct {
+					ID     string            `json:"id"`
+					Status string            `json:"status"`
+					Notes  map[string]string `json:"notes"`
+				} `json:"entity"`
+			} `json:"subscription"`
 		} `json:"payload"`
 	}
 	if err := json.Unmarshal([]byte(rawBody), &event); err != nil {
@@ -274,12 +455,18 @@ func (r *Razorpay) VerifyNotification(_ context.Context, rawBody string, headers
 		status = payment.ProviderStatusSuccess
 	case "payment.failed":
 		status = payment.ProviderStatusFailed
+	case "subscription.charged":
+		status = payment.ProviderStatusSuccess
 	default:
 		return nil, nil
 	}
 	tradeNo := strings.TrimSpace(p.ID)
 	amount := p.Amount
 	currency := strings.TrimSpace(p.Currency)
+	providerSubscriptionID := strings.TrimSpace(event.Payload.Subscription.Entity.ID)
+	if event.Event == "subscription.charged" && providerSubscriptionID == "" {
+		providerSubscriptionID = strings.TrimSpace(p.SubscriptionID)
+	}
 	if tradeNo == "" {
 		tradeNo = strings.TrimSpace(o.ID)
 	}
@@ -293,12 +480,18 @@ func (r *Razorpay) VerifyNotification(_ context.Context, rawBody string, headers
 		currency = r.currency()
 	}
 	orderID := strings.TrimSpace(o.Receipt)
+	if orderID == "" && event.Event == "subscription.charged" {
+		orderID = strings.TrimSpace(event.Payload.Subscription.Entity.Notes["inferno_order_id"])
+	}
 	if orderID == "" {
 		orderID = strings.TrimSpace(p.OrderID)
 	}
 	providerOrderID := strings.TrimSpace(p.OrderID)
 	if providerOrderID == "" {
 		providerOrderID = strings.TrimSpace(o.ID)
+	}
+	if event.Event == "subscription.charged" {
+		providerOrderID = providerSubscriptionID
 	}
 	return &payment.PaymentNotification{
 		TradeNo: tradeNo,
@@ -307,9 +500,12 @@ func (r *Razorpay) VerifyNotification(_ context.Context, rawBody string, headers
 		Status:  status,
 		RawData: rawBody,
 		Metadata: map[string]string{
-			"currency":          currency,
-			"status":            strings.TrimSpace(p.Status),
-			"provider_order_id": providerOrderID,
+			"currency":                 currency,
+			"status":                   strings.TrimSpace(p.Status),
+			"provider_order_id":        providerOrderID,
+			"provider_subscription_id": providerSubscriptionID,
+			"razorpay_event":           event.Event,
+			"event_id":                 eventID,
 		},
 	}, nil
 }
