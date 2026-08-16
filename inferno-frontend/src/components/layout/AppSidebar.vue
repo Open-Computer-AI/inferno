@@ -280,7 +280,11 @@ const markInitial = computed(() => (siteName.value || 'S').trim().charAt(0).toUp
 const user = computed(() => authStore.user)
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
 const displayName = computed(() => user.value?.username || user.value?.email?.split('@')[0] || '')
-const accountSeed = computed(() => String(user.value?.id || user.value?.email || displayName.value || 'inferno-account'))
+/* avatar_seed is the persisted "regenerate my identicon" seed. ProfileAvatarCard
+   and ProfileSettingsSidebar both prefer it over id/email; the rail must too, or
+   regenerating on the profile page leaves the rail showing the old pattern and
+   the same user wears two different avatars at once. */
+const accountSeed = computed(() => user.value?.avatar_seed || String(user.value?.id || user.value?.email || displayName.value || 'inferno-account'))
 const roleLabel = computed(() => (isAdmin.value ? t('shell.roleAdministrator') : t('shell.roleMember')))
 
 // ---- feature flags -------------------------------------------------------
