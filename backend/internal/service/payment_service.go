@@ -103,6 +103,7 @@ type CreateOrderResponse struct {
 	Currency                      string                          `json:"currency,omitempty"`
 	CountryCode                   string                          `json:"country_code,omitempty"`
 	PaymentEnv                    string                          `json:"payment_env,omitempty"`
+	PublicKey                     string                          `json:"public_key,omitempty"`
 	OAuth                         *payment.WechatOAuthInfo        `json:"oauth,omitempty"`
 	JSAPI                         *payment.WechatJSAPIPayload     `json:"jsapi,omitempty"`
 	JSAPIPayload                  *payment.WechatJSAPIPayload     `json:"jsapi_payload,omitempty"`
