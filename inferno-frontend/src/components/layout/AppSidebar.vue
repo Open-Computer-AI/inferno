@@ -6,10 +6,6 @@
     <!-- Brand row: name and collapse toggle. The toggle remains available in
          the collapsed rail so the navigation is always reversible. -->
     <div class="rail__brand">
-      <router-link :to="homePath" class="rail__mark" @click="handleMenuItemClick(homePath)">
-        <img v-if="settingsLoaded && siteLogo" :src="siteLogo" alt="" class="rail__mark-img" />
-        <span v-else class="rail__mark-fallback" aria-hidden="true">{{ markInitial }}</span>
-      </router-link>
       <router-link
         :to="homePath"
         class="rail__brand-name"
@@ -195,7 +191,6 @@ import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
 import { sanitizeSvg } from '@/utils/sanitize'
-import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
 import { useAccountSeed } from '@/composables/useAccountSeed'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
@@ -269,14 +264,6 @@ const isDark = ref(document.documentElement.classList.contains('dark'))
 
 const homePath = computed(() => (isAdmin.value ? '/admin/dashboard' : '/dashboard'))
 const siteName = computed(() => appStore.siteName)
-/* site_logo is admin-settable, so it is never bound to :src raw. HomeView and
-   KeyUsageView sanitise the same value with the same two options; all three
-   must agree or the guard is only as strong as its weakest consumer. */
-const siteLogo = computed(() =>
-  sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true })
-)
-const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
-const markInitial = computed(() => (siteName.value || 'S').trim().charAt(0).toUpperCase() || 'S')
 
 const user = computed(() => authStore.user)
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
@@ -682,24 +669,6 @@ onUnmounted(() => {
   gap: 7px;
   flex-shrink: 0;
   padding: 2px 4px;
-}
-.rail__mark {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 20px;
-  height: 20px;
-  border-radius: var(--r-sm);
-  background: var(--brand);
-  color: var(--on-solid);
-  font-size: 10px; /* june-lint-disable ground-rule-4: icon-scale mark, not text */
-  font-weight: var(--fw-medium);
-  overflow: hidden;
-}
-.rail__mark-img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
 }
 .rail__brand-name {
   flex: 1 1 auto;
