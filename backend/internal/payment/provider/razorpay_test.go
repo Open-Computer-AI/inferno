@@ -183,6 +183,38 @@ func TestRazorpaySubscriptionCreatesPlanAndVerifiesPayment(t *testing.T) {
 	require.Equal(t, "sub_123", notification.Metadata["provider_subscription_id"])
 }
 
+func TestRazorpaySubscriptionAcceptsInitialAuthorizationWithoutPaymentSubscriptionID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/payments/pay_auth_123":
+			_, _ = w.Write([]byte(`{"id":"pay_auth_123","order_id":"order_auth_123","amount":500,"currency":"INR","status":"captured","captured":true}`))
+		case "/subscriptions/sub_123":
+			_, _ = w.Write([]byte(`{"id":"sub_123","plan_id":"plan_123","status":"active","notes":{"inferno_order_id":"inferno-order-42"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	provider, err := NewRazorpay("instance-1", map[string]string{
+		"keyId":         "key-id",
+		"keySecret":     "secret",
+		"webhookSecret": "webhook-secret",
+		"apiBase":       server.URL,
+	})
+	require.NoError(t, err)
+
+	notification, err := provider.VerifySubscriptionPayment(context.Background(), payment.RazorpaySubscriptionPaymentVerificationRequest{
+		InternalOrderID:        "inferno-order-42",
+		ProviderSubscriptionID: "sub_123",
+		PaymentID:              "pay_auth_123",
+		Signature:              razorpayTestSignature("pay_auth_123|sub_123", "secret"),
+	})
+	require.NoError(t, err)
+	require.Equal(t, payment.ProviderStatusSuccess, notification.Status)
+	require.Equal(t, "pay_auth_123", notification.TradeNo)
+}
+
 func TestRazorpaySubscriptionWebhookUsesSubscriptionNotesAndEventID(t *testing.T) {
 	provider, err := NewRazorpay("instance-1", map[string]string{
 		"keyId":         "key-id",
