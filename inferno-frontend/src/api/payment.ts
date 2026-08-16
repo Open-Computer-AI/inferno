@@ -78,6 +78,15 @@ export const paymentAPI = {
     return apiClient.post<PaymentOrder>('/payment/orders/verify-razorpay', data)
   },
 
+  verifyRazorpaySubscriptionPayment(data: {
+    out_trade_no: string
+    razorpay_subscription_id: string
+    razorpay_payment_id: string
+    razorpay_signature: string
+  }) {
+    return apiClient.post<PaymentOrder>('/payment/orders/verify-razorpay-subscription', data)
+  },
+
   /** Legacy-compatible public order lookup by out_trade_no */
   verifyOrderPublic(outTradeNo: string) {
     return apiClient.post<PublicOrderVerifyResult>('/payment/public/orders/verify', { out_trade_no: outTradeNo })

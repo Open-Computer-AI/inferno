@@ -677,7 +677,7 @@ function subscriptionTotalAmountForCurrency(value: number, currency: string): nu
 // Subscription-specific: method options based on gateway pay amount
 const subMethodOptions = computed<PaymentMethodOption[]>(() => {
   const price = selectedPlan.value?.price ?? 0
-  return enabledMethods.value.filter((type) => type !== 'razorpay').map((type) => {
+  return enabledMethods.value.map((type) => {
     const ml = visibleMethods.value[type]
     const currency = normalizePaymentCurrency(ml?.currency)
     return {
@@ -967,12 +967,19 @@ async function launchRazorpayCheckout(result: CreateOrderResult, orderType: Orde
 
   const complete = async (response: RazorpayCheckoutResult) => {
     try {
-      const orderResponse = await paymentAPI.verifyRazorpayPayment({
-        out_trade_no: outTradeNo,
-        razorpay_order_id: response.razorpay_order_id,
-        razorpay_payment_id: response.razorpay_payment_id,
-        razorpay_signature: response.razorpay_signature,
-      })
+      const orderResponse = orderType === 'subscription'
+        ? await paymentAPI.verifyRazorpaySubscriptionPayment({
+          out_trade_no: outTradeNo,
+          razorpay_subscription_id: response.razorpay_subscription_id || providerOrderID,
+          razorpay_payment_id: response.razorpay_payment_id,
+          razorpay_signature: response.razorpay_signature,
+        })
+        : await paymentAPI.verifyRazorpayPayment({
+          out_trade_no: outTradeNo,
+          razorpay_order_id: response.razorpay_order_id || providerOrderID,
+          razorpay_payment_id: response.razorpay_payment_id,
+          razorpay_signature: response.razorpay_signature,
+        })
       const completedState: PaymentRecoverySnapshot = {
         ...emptyPaymentState(),
         orderId: orderResponse.data?.id || result.order_id,
@@ -1002,7 +1009,9 @@ async function launchRazorpayCheckout(result: CreateOrderResult, orderType: Orde
     currency,
     name: 'Inferno',
     description: t('payment.razorpayPay'),
-    order_id: providerOrderID,
+    ...(orderType === 'subscription'
+      ? { subscription_id: providerOrderID }
+      : { order_id: providerOrderID }),
     prefill: {
       name: user.value?.username || undefined,
       email: user.value?.email || undefined,
