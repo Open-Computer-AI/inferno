@@ -473,6 +473,38 @@ func (h *PaymentHandler) VerifyOrder(c *gin.Context) {
 	response.Success(c, sanitizePaymentOrderForResponse(order))
 }
 
+// VerifyRazorpayPayment verifies a Standard Checkout browser response and
+// fulfills the associated top-up only after server-side verification.
+// POST /api/v1/payment/orders/verify-razorpay
+func (h *PaymentHandler) VerifyRazorpayPayment(c *gin.Context) {
+	subject, ok := requireAuth(c)
+	if !ok {
+		return
+	}
+
+	var req struct {
+		OutTradeNo      string `json:"out_trade_no" binding:"required"`
+		ProviderOrderID string `json:"razorpay_order_id" binding:"required"`
+		PaymentID       string `json:"razorpay_payment_id" binding:"required"`
+		Signature       string `json:"razorpay_signature" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	order, err := h.paymentService.VerifyRazorpayPayment(c.Request.Context(), subject.UserID, service.VerifyRazorpayPaymentRequest{
+		OutTradeNo:      req.OutTradeNo,
+		ProviderOrderID: req.ProviderOrderID,
+		PaymentID:       req.PaymentID,
+		Signature:       req.Signature,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, sanitizePaymentOrderForResponse(order))
+}
+
 // PublicOrderResult is returned after a signed resume-token lookup. The token
 // proves possession of the checkout session, so the result keeps the legacy
 // frontend contract needed by payment result pages.
