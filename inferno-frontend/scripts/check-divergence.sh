@@ -55,7 +55,7 @@ backend/internal/repository/api_key_repo.go
 backend/internal/repository/user_repo.go
 backend/internal/service/user.go
 backend/internal/service/user_service.go
-backend/migrations/221_add_user_avatar_seed.sql
+backend/migrations/900_add_user_avatar_seed.sql
 # D2 -- English legal-document defaults
 backend/internal/service/setting_public.go
 backend/internal/server/api_contract_test.go
