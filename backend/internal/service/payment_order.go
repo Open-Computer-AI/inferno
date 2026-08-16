@@ -119,6 +119,9 @@ func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrder
 		return nil, infraerrors.Forbidden("BALANCE_PAYMENT_DISABLED", "balance recharge has been disabled")
 	}
 	if req.OrderType == payment.OrderTypeSubscription {
+		if payment.GetBasePaymentType(req.PaymentType) == payment.TypeRazorpay {
+			return nil, infraerrors.BadRequest("RAZORPAY_SUBSCRIPTIONS_UNSUPPORTED", "Razorpay is available for top-ups only")
+		}
 		return s.validateSubOrder(ctx, req)
 	}
 	if math.IsNaN(req.Amount) || math.IsInf(req.Amount, 0) || req.Amount <= 0 {
@@ -305,6 +308,9 @@ func buildPaymentOrderProviderSnapshot(sel *payment.InstanceSelection, req Creat
 		}
 		snapshot["currency"] = paymentProviderConfigCurrency(providerKey, sel.Config)
 	}
+	if providerKey == payment.TypeRazorpay {
+		snapshot["currency"] = paymentProviderConfigCurrency(providerKey, sel.Config)
+	}
 
 	if len(snapshot) == 1 {
 		return nil
@@ -458,12 +464,17 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 		return nil, classifyCreatePaymentError(req, sel.ProviderKey, err)
 	}
 	sanitizeCreatePaymentResponseDetails(pr)
+	providerSnapshot := cloneProviderSnapshot(order.ProviderSnapshot)
+	if sel.ProviderKey == payment.TypeRazorpay && strings.TrimSpace(pr.TradeNo) != "" {
+		providerSnapshot["provider_order_id"] = strings.TrimSpace(pr.TradeNo)
+	}
 	_, err = s.entClient.PaymentOrder.UpdateOneID(order.ID).
 		SetNillablePaymentTradeNo(psNilIfEmpty(pr.TradeNo)).
 		SetNillablePayURL(psNilIfEmpty(pr.PayURL)).
 		SetNillableQrCode(psNilIfEmpty(pr.QRCode)).
 		SetNillableProviderInstanceID(psNilIfEmpty(sel.InstanceID)).
 		SetNillableProviderKey(psNilIfEmpty(sel.ProviderKey)).
+		SetProviderSnapshot(providerSnapshot).
 		Save(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("update order with payment details: %w", err)
@@ -484,6 +495,17 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 	resp.ResumeToken = resumeToken
 	resp.AlipayMobilePrecreateDeepLink = providerReq.AlipayMobilePrecreate && strings.TrimSpace(pr.QRCode) != ""
 	return resp, nil
+}
+
+func cloneProviderSnapshot(snapshot map[string]interface{}) map[string]interface{} {
+	if snapshot == nil {
+		return map[string]interface{}{}
+	}
+	cloned := make(map[string]interface{}, len(snapshot)+1)
+	for key, value := range snapshot {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func shouldUseAlipayMobilePrecreate(req CreateOrderRequest, cfg *PaymentConfig, sel *payment.InstanceSelection) bool {
@@ -746,6 +768,7 @@ func buildCreateOrderResponse(order *dbent.PaymentOrder, req CreateOrderRequest,
 		Currency:     pr.Currency,
 		CountryCode:  pr.CountryCode,
 		PaymentEnv:   pr.PaymentEnv,
+		PublicKey:    pr.PublicKey,
 		OAuth:        pr.OAuth,
 		JSAPI:        pr.JSAPI,
 		JSAPIPayload: pr.JSAPI,
