@@ -1637,3 +1637,103 @@ Fixed by unioning `git ls-files --others --exclude-standard` into the scope.
 `KeyUsageView`, `PlazaNavBar`, `EmailVerifyView`, `LegalDocumentView`, `SettingsView`,
 `AnnouncementBell`, `UserDashboardQuickActions`. Each is a deferred check, not a waiver:
 remove the line when the file is converted and the lint starts holding it to the rules.
+
+## Upstream reconciliation log (cont'd)
+
+### 2026-08-16 — fourth sync, rebase only, nothing to port
+
+**124 commits behind.** Range `c204d33b0` (2026-08-15, previous sync's endpoint)
+.. `baeac1f3d` (2026-08-16, new last-reviewed SHA).
+
+**Rebase: clean.** All 120 of our commits (everything past the fork point from
+`upstream/main`) replayed with zero conflicts.
+
+**Gate 5 asserted post-rebase:** `check-divergence.sh` exits 0 — 19 files differ
+against `git merge-base HEAD upstream/main`, all 19 declared (D1 avatar_seed, D2
+English legal defaults, plus the undeclared-but-outside-scope `.gitignore`
+line). No accidental backend drift.
+
+**Frontend gate:** `june-lint` 845 violation(s) across 270 converted file(s) —
+same 845 total as the pre-rebase baseline (verified by running the identical
+lint against `pre-sync-backup` in a scratch worktree: 845 across 273). The file
+count dropped by 3 (`src/constants/channel.ts`,
+`src/utils/accountUsageRefresh.ts`, `src/views/admin/groupsImagePricing.ts`)
+because those three are pure 2026-08-15 wholesale ports with zero customization
+-- upstream did not touch them again this cycle, so they went byte-identical to
+the mirror and dropped out of lint scope. Confirmed neither file carried any
+violation before or after, so this is the file-count drop GOAL.md warns to
+distrust, checked and cleared, not silently accepted.
+`npx vue-tsc --noEmit` 0 errors. `npx vitest run` 228 files / 1603 tests green
+(no drop from the 224/1588 baseline recorded in GOAL.md; the increase reflects
+work landed since that baseline was taken, not anything from this sync).
+`npx vite build` succeeded, only the pre-existing >500kB chunk warnings.
+
+**Backend gate, run because upstream's own commits touched `backend/` during
+the rebase:** `go build ./...` clean. `go test -tags unit ./internal/... ./ent/...`
+all packages `ok` (including `internal/server`, which carries D2's golden
+fixture in `api_contract_test.go`).
+
+## Diffed for portable work -- found none
+
+Per the runbook, diffed everything the port policy cares about between
+`c204d33b0` and `upstream/main`:
+
+- `frontend/src/{api,stores,composables,utils,types}` -- **zero files changed.**
+- `frontend/src/{App.vue,main.ts,router,style.css,styles,index.html,tailwind.config.js}`
+  -- **zero files changed.**
+- `backend/internal/handler/dto`, `backend/internal/handler/admin` -- **zero
+  files changed.** No admin/user-facing response-shape drift to check against
+  converted components.
+- `backend/internal/handler` as a whole -- one file touched,
+  `openai_gateway_handler.go` (+ its tests), reworking Codex remote-compaction-v2
+  path detection (`isBareOpenAIResponsesPath`, `isOpenAIRemoteCompactionV2Request`)
+  and adding `openAIResponsesRequiredCapabilityForRequest`. Entirely inside the
+  gateway/proxy request path (the AI traffic path itself), not an admin/user SPA
+  endpoint -- same category as the seven files logged skipped-with-reason on
+  2026-08-15. Nothing under `frontend/src/api` reads it. Not ported.
+- `frontend/src` as a whole, restricted to non-ignored paths (excludes
+  `components/`, `views/`, `features/` per the standing rule) -- **only the two
+  files above.**
+
+**The only frontend-relevant upstream commit this cycle** is `fce41e318`
+("make Codex fingerprint convergence opt-in and cover passthrough"), which
+touches five files: `CreateAccountModal.vue`, `EditAccountModal.vue`,
+`BulkEditAccountModal.vue` (all under the ignored `components/account/` bucket
+-- the June redesign replaces them, not a merge target) plus
+`i18n/locales/{en,zh}/admin/accounts.ts`, changing the copy on three existing
+keys (`codexFingerprintModeDesc`, `codexFingerprintOff`, `codexFingerprintSession`)
+to describe the new opt-in default. **Checked and skipped, not merely ignored:**
+grepped `inferno-frontend/src/i18n/locales/{en,zh}/admin/accounts.ts` and all
+three account modals for `codexFingerprint` -- zero matches anywhere in our
+tree. The feature was never ported past what these modals started with, so
+there is no key to update and no orphaned string would result from skipping
+this. Recorded so a future sync does not need to re-derive this.
+
+## Skipped, carried forward unchanged from 2026-08-15
+
+`backup.ts` (multi-part download shape), `admin/groups.ts` `getUsageSummary`
+(dropped `timezone` param, new `yesterday_cost` field), and their skipped spec
+file -- re-checked against `upstream/main` and **none of the three changed
+since `c204d33b0`**, so the 2026-08-15 skip reasons still apply verbatim. Not
+re-litigated.
+
+## Unsure about / flagging for review
+
+- **The PR diff will look enormous and is not.** This branch is a straight
+  rebase of `inferno-redesign` onto 124 new upstream commits; every one of our
+  120 commits was replayed with a new hash. `git status` reports "244 and 120
+  different commits" against `origin/inferno-redesign` -- 124 new upstream
+  commits plus 120 rewritten hashes on our side, none of it real drift, the
+  same effect GOAL.md's gate-5 section documents for `check-divergence.sh`
+  against a fresh ref. **The actual new content in this PR is exactly one
+  commit: this log entry.** Recommend the reviewer fast-forward
+  `inferno-redesign` to this branch's tip (gates are green end to end) rather
+  than attempting a merge; a merge across two divergent rebase lines is exactly
+  what stranded sync PRs #1-#3.
+- Nothing else surfaced with a real judgement call this cycle -- every item
+  above resolved cleanly to "unchanged, still applies" or "out of tree, not
+  reachable." Flagging the absence of a judgement call explicitly, since a
+  quiet cycle should not read the same as an unreviewed one.
+
+**Last reviewed upstream SHA: `baeac1f3de21d37b129405f092ef86c24b3f203d`**
+(2026-08-15 13:40:21 UTC, "chore: sync VERSION to 0.1.177 [skip ci]").
