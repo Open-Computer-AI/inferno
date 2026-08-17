@@ -33,9 +33,15 @@ func RegisterOAuthAPIRoutes(r gin.IRouter, h *handler.OAuthHandler, jwtAuth midd
 // token. Both groups share the /api/oauth prefix; gin allows two distinct
 // *gin.RouterGroup values rooted at the same path as long as their route
 // patterns don't collide.
+//
+// POST /api/oauth/token belongs here for the same reason: it is the
+// credential-issuance step itself (device_code and refresh_token grants) —
+// the caller by definition has no session/bearer token yet, so it cannot be
+// gated behind jwtAuth.
 func RegisterOAuthDeviceRoutes(r gin.IRouter, h *handler.OAuthHandler) {
 	unauthenticated := r.Group("/api/oauth")
 	{
 		unauthenticated.POST("/device/code", h.DeviceCode)
+		unauthenticated.POST("/token", h.Token)
 	}
 }

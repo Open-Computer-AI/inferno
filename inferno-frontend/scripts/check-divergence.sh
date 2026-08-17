@@ -159,6 +159,14 @@ backend/ent/oauthdeviceauthorization_update.go
 backend/migrations/903_oauth_device_authorization.sql
 backend/internal/service/oauth_device_service.go
 backend/internal/service/oauth_device_service_test.go
+# D5 -- OAuth AS (Task 5: token endpoint -- device_code and refresh_token grants)
+backend/internal/service/oauth_token_service.go
+backend/internal/service/oauth_token_service_test.go
+backend/internal/service/refresh_token_cache.go
+backend/internal/service/wire.go
+backend/cmd/server/wire_gen.go
+backend/internal/handler/oauth_handler.go
+backend/internal/server/routes/oauth.go
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }

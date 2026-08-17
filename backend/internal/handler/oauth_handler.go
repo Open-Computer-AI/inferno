@@ -22,10 +22,11 @@ type OAuthHandler struct {
 	clientSvc *service.OAuthClientService
 	orgSvc    *service.OrgService
 	deviceSvc *service.OAuthDeviceService
+	tokenSvc  *service.OAuthTokenService
 }
 
-func NewOAuthHandler(keySvc *service.OAuthKeyService, clientSvc *service.OAuthClientService, orgSvc *service.OrgService, deviceSvc *service.OAuthDeviceService) *OAuthHandler {
-	return &OAuthHandler{keySvc: keySvc, clientSvc: clientSvc, orgSvc: orgSvc, deviceSvc: deviceSvc}
+func NewOAuthHandler(keySvc *service.OAuthKeyService, clientSvc *service.OAuthClientService, orgSvc *service.OrgService, deviceSvc *service.OAuthDeviceService, tokenSvc *service.OAuthTokenService) *OAuthHandler {
+	return &OAuthHandler{keySvc: keySvc, clientSvc: clientSvc, orgSvc: orgSvc, deviceSvc: deviceSvc, tokenSvc: tokenSvc}
 }
 
 // JWKS handles GET /.well-known/jwks.json
@@ -126,4 +127,64 @@ func (h *OAuthHandler) DeviceCode(c *gin.Context) {
 		"expires_in":                grant.ExpiresIn,
 		"interval":                  grant.Interval,
 	})
+}
+
+// tokenResponse writes a bare RFC 6749 §5.1 token response — NOT wrapped by
+// internal/pkg/response.
+func tokenResponse(c *gin.Context, tokens *service.OAuthTokens) {
+	c.JSON(http.StatusOK, gin.H{
+		"access_token":  tokens.AccessToken,
+		"refresh_token": tokens.RefreshToken,
+		"token_type":    "Bearer",
+		"expires_in":    tokens.ExpiresIn,
+		"scope":         tokens.Scope,
+	})
+}
+
+// Token handles POST /api/oauth/token. Unauthenticated — this endpoint IS
+// the credential-issuance step; a caller with a valid session wouldn't need
+// it. Form-encoded per RFC 6749/8628. Never logs device_code, refresh_token,
+// or access_token — client_id only.
+func (h *OAuthHandler) Token(c *gin.Context) {
+	grantType := c.PostForm("grant_type")
+	clientID := c.PostForm("client_id")
+
+	switch grantType {
+	case "urn:ietf:params:oauth:grant-type:device_code":
+		tokens, err := h.tokenSvc.ExchangeDeviceCode(c.Request.Context(), clientID, c.PostForm("device_code"))
+		if err != nil {
+			// RFC 8628 §3.5: authorization_pending/slow_down are the normal
+			// poll-loop responses, not failures — the hermes client branches
+			// on these exact strings. All are 400s; the OAuth error body,
+			// not the HTTP status, carries the meaning.
+			switch {
+			case errors.Is(err, service.ErrAuthorizationPending):
+				c.JSON(http.StatusBadRequest, gin.H{"error": "authorization_pending"})
+			case errors.Is(err, service.ErrSlowDown):
+				c.JSON(http.StatusBadRequest, gin.H{"error": "slow_down"})
+			case errors.Is(err, service.ErrAccessDenied):
+				c.JSON(http.StatusBadRequest, gin.H{"error": "access_denied"})
+			default:
+				c.JSON(http.StatusBadRequest, gin.H{"error": "expired_token"})
+			}
+			return
+		}
+		tokenResponse(c, tokens)
+
+	case "refresh_token":
+		tokens, err := h.tokenSvc.ExchangeRefreshToken(c.Request.Context(), clientID, c.PostForm("refresh_token"))
+		if err != nil {
+			// RFC 6749 §5.2: invalid_grant covers unknown/expired/wrong-client
+			// tokens AND detected reuse — the wire response deliberately does
+			// not distinguish reuse from an ordinary invalid token (that
+			// would tell a prober which case it hit); the reuse case is
+			// logged server-side instead (see ExchangeRefreshToken).
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant"})
+			return
+		}
+		tokenResponse(c, tokens)
+
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported_grant_type"})
+	}
 }

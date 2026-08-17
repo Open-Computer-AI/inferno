@@ -18,6 +18,26 @@ type RefreshTokenData struct {
 	BindingHash  string    `json:"binding_hash,omitempty"` // 会话指纹哈希（IP+UA），会话绑定开启时校验
 	CreatedAt    time.Time `json:"created_at"`
 	ExpiresAt    time.Time `json:"expires_at"`
+
+	// The fields below are OAuth-token-service additions (device_code /
+	// refresh_token grants, backend/internal/service/oauth_token_service.go).
+	// Panel-session refresh tokens never set them; `omitempty` keeps existing
+	// Redis-stored session records backward compatible — they deserialize
+	// with these at their zero value and behave exactly as before.
+
+	// Scope is the OAuth scope this refresh token is bound to. A refresh
+	// must return exactly this scope, never a wider or narrower one.
+	Scope string `json:"scope,omitempty"`
+	// ClientID is the OAuth client_id this refresh token was issued to.
+	// ExchangeRefreshToken rejects a refresh_token grant presented by any
+	// other client_id.
+	ClientID string `json:"client_id,omitempty"`
+	// Rotated marks this record as a tombstone: the raw token that hashes to
+	// this entry has already been redeemed once. The record is deliberately
+	// kept (re-stored, not deleted) for the rest of its original TTL so that
+	// a replay of that same raw token can still be traced to FamilyID and
+	// the whole family revoked — see OAuthTokenService.ExchangeRefreshToken.
+	Rotated bool `json:"rotated,omitempty"`
 }
 
 // RefreshTokenCache 管理Refresh Token的Redis缓存

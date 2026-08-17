@@ -104,6 +104,17 @@ func ProvideOAuthDeviceService(entClient *dbent.Client, cfg *config.Config) *OAu
 	return NewOAuthDeviceService(entClient, cfg.Server.FrontendURL)
 }
 
+// ProvideOAuthTokenService wires OAuthTokenService's issuer from
+// cfg.Server.FrontendURL — the same publicly reachable base URL used for
+// the device flow's verification_uri, and the origin JWKS is served from
+// ({issuer}/.well-known/jwks.json), so agent-side ES256 verification can
+// resolve the signing key from the "iss" claim alone. refreshTokenCache is
+// the SAME Redis-backed store panel sessions use (repository.NewRefreshTokenCache)
+// — OAuth refresh tokens are extra rows in that store, not a parallel one.
+func ProvideOAuthTokenService(entClient *dbent.Client, keySvc *OAuthKeyService, deviceSvc *OAuthDeviceService, refreshTokenCache RefreshTokenCache, cfg *config.Config) *OAuthTokenService {
+	return NewOAuthTokenService(entClient, keySvc, deviceSvc, refreshTokenCache, cfg.Server.FrontendURL)
+}
+
 // ProvideOAuthRefreshAPI creates OAuthRefreshAPI with the default lock TTL.
 func ProvideOAuthRefreshAPI(accountRepo AccountRepository, tokenCache GeminiTokenCache) *OAuthRefreshAPI {
 	return NewOAuthRefreshAPI(accountRepo, tokenCache)
@@ -768,6 +779,7 @@ var ProviderSet = wire.NewSet(
 	NewOAuthKeyService,
 	NewOAuthClientService,
 	ProvideOAuthDeviceService,
+	ProvideOAuthTokenService,
 	NewPasskeyService,
 	NewUserService,
 	ProvideAPIKeyService,
