@@ -105,24 +105,49 @@ type razorpayOrderRequest struct {
 }
 
 type razorpayOrder struct {
-	ID         string            `json:"id"`
-	Amount     int64             `json:"amount"`
-	AmountPaid int64             `json:"amount_paid"`
-	AmountDue  int64             `json:"amount_due"`
-	Currency   string            `json:"currency"`
-	Receipt    string            `json:"receipt"`
-	Status     string            `json:"status"`
-	Notes      map[string]string `json:"notes"`
+	ID         string `json:"id"`
+	Amount     int64  `json:"amount"`
+	AmountPaid int64  `json:"amount_paid"`
+	AmountDue  int64  `json:"amount_due"`
+	Currency   string `json:"currency"`
+	Receipt    string `json:"receipt"`
+	Status     string `json:"status"`
+}
+
+// razorpayBool accepts the boolean fields Razorpay returns as either JSON
+// booleans or string values in webhook payloads.
+type razorpayBool bool
+
+func (b *razorpayBool) UnmarshalJSON(data []byte) error {
+	var value bool
+	if err := json.Unmarshal(data, &value); err == nil {
+		*b = razorpayBool(value)
+		return nil
+	}
+
+	var text string
+	if err := json.Unmarshal(data, &text); err == nil {
+		switch strings.ToLower(strings.TrimSpace(text)) {
+		case "true", "1", "yes":
+			*b = true
+			return nil
+		case "false", "0", "no":
+			*b = false
+			return nil
+		}
+	}
+
+	return fmt.Errorf("invalid Razorpay boolean value %s", string(data))
 }
 
 type razorpayPayment struct {
-	ID             string `json:"id"`
-	OrderID        string `json:"order_id"`
-	SubscriptionID string `json:"subscription_id"`
-	Amount         int64  `json:"amount"`
-	Currency       string `json:"currency"`
-	Status         string `json:"status"`
-	Captured       bool   `json:"captured"`
+	ID             string       `json:"id"`
+	OrderID        string       `json:"order_id"`
+	SubscriptionID string       `json:"subscription_id"`
+	Amount         int64        `json:"amount"`
+	Currency       string       `json:"currency"`
+	Status         string       `json:"status"`
+	Captured       razorpayBool `json:"captured"`
 }
 
 type razorpayPlan struct {
@@ -301,7 +326,7 @@ func (r *Razorpay) QueryOrder(ctx context.Context, tradeNo string) (*payment.Que
 			return nil, fmt.Errorf("razorpay query payment: %w", err)
 		}
 		status := payment.ProviderStatusPending
-		if p.Captured || strings.EqualFold(p.Status, "captured") {
+		if bool(p.Captured) || strings.EqualFold(p.Status, "captured") {
 			status = payment.ProviderStatusPaid
 		} else if strings.EqualFold(p.Status, "failed") {
 			status = payment.ProviderStatusFailed
@@ -354,7 +379,7 @@ func (r *Razorpay) VerifyClientPayment(ctx context.Context, req payment.ClientPa
 	if !strings.EqualFold(strings.TrimSpace(p.OrderID), providerOrderID) {
 		return nil, fmt.Errorf("razorpay payment does not belong to the created order")
 	}
-	if !p.Captured && !strings.EqualFold(p.Status, "captured") {
+	if !bool(p.Captured) && !strings.EqualFold(p.Status, "captured") {
 		return nil, fmt.Errorf("razorpay payment is not captured")
 	}
 	if p.Amount <= 0 {
@@ -406,7 +431,7 @@ func (r *Razorpay) VerifySubscriptionPayment(ctx context.Context, req payment.Ra
 	// Razorpay's initial subscription authorization is intentionally not
 	// captured: the small authorization amount is auto-refunded after the
 	// mandate is created. Subsequent subscription charges are auto-captured.
-	if !p.Captured && !strings.EqualFold(p.Status, "captured") && !strings.EqualFold(p.Status, "authorized") {
+	if !bool(p.Captured) && !strings.EqualFold(p.Status, "captured") && !strings.EqualFold(p.Status, "authorized") {
 		return nil, fmt.Errorf("razorpay subscription payment is not captured")
 	}
 	if p.Amount <= 0 {
