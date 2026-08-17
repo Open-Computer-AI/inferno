@@ -134,7 +134,7 @@ OAuth AS plan, running in its OWN worktree so it never touches the redesign bran
 | plan | `docs/superpowers/plans/2026-08-17-inferno-oauth-authorization-server.md` |
 | ledger | `.superpowers/sdd/2026-08-17-inferno-oauth-authorization-server/progress.md` |
 | purpose | make Inferno the OC Portal — replace Nous Portal for hermes-agent + Hermes Desktop |
-| status | RUNNING (started Task 1 of 8) |
+| status | **COMPLETE** — 8/8 tasks, final review + fix wave done. HEAD `ee9b3c12`. Awaiting the user's merge decision. |
 
 ## Recover / resume
 
