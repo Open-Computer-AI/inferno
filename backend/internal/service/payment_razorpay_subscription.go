@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 )
 
 const razorpaySubscriptionEventScope = "razorpay_subscription_webhook"
+const razorpaySubscriptionStatusNotePrefix = "Razorpay subscription status:"
 
 type VerifyRazorpaySubscriptionPaymentRequest struct {
 	OutTradeNo             string
@@ -136,6 +138,122 @@ func (s *PaymentService) HandleRazorpaySubscriptionWebhook(ctx context.Context, 
 			SetStatus("succeeded").SetResponseStatus(200).ClearLockedUntil().Save(ctx)
 	}
 	return nil
+}
+
+// HandleRazorpaySubscriptionLifecycleWebhook records recurring-mandate state
+// changes without treating them as payment fulfillment. Cancellation and
+// completion stop future renewals at Razorpay, while halted records the
+// failed mandate; neither event revokes time the user has already paid for.
+func (s *PaymentService) HandleRazorpaySubscriptionLifecycleWebhook(ctx context.Context, n *payment.PaymentNotification) error {
+	if n == nil || !payment.IsRazorpaySubscriptionLifecycleEvent(n.Metadata["razorpay_event"]) {
+		return nil
+	}
+	eventName := strings.TrimSpace(n.Metadata["razorpay_event"])
+	eventID := strings.TrimSpace(n.Metadata["event_id"])
+	if eventID == "" {
+		eventID = n.OrderID + "|" + n.TradeNo + "|" + eventName
+	}
+	claimed, record, err := s.claimRazorpaySubscriptionEvent(ctx, eventID)
+	if err != nil {
+		return err
+	}
+	if !claimed {
+		return nil
+	}
+	markFailed := func(cause error) error {
+		if record != nil {
+			_, _ = s.entClient.IdempotencyRecord.UpdateOneID(record.ID).
+				SetStatus("failed").SetErrorReason(cause.Error()).ClearLockedUntil().Save(ctx)
+		}
+		return cause
+	}
+
+	order, err := s.entClient.PaymentOrder.Query().Where(paymentorder.OutTradeNo(n.OrderID)).Only(ctx)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return markFailed(fmt.Errorf("%w: out_trade_no=%s", ErrOrderNotFound, n.OrderID))
+		}
+		return markFailed(err)
+	}
+	if order.OrderType != payment.OrderTypeSubscription || payment.GetBasePaymentType(order.PaymentType) != payment.TypeRazorpay {
+		return markFailed(fmt.Errorf("Razorpay subscription lifecycle references a non-subscription order"))
+	}
+	if err := validateProviderSnapshotMetadata(order, payment.TypeRazorpay, n.Metadata); err != nil {
+		return markFailed(err)
+	}
+
+	snapshot := cloneProviderSnapshot(order.ProviderSnapshot)
+	snapshot["provider_subscription_status"] = strings.TrimSpace(n.Metadata["provider_subscription_status"])
+	snapshot["provider_subscription_event"] = eventName
+	snapshot["provider_subscription_event_id"] = eventID
+	snapshot["provider_subscription_event_at"] = time.Now().UTC().Format(time.RFC3339)
+	if _, err := s.entClient.PaymentOrder.UpdateOneID(order.ID).SetProviderSnapshot(snapshot).Save(ctx); err != nil {
+		return markFailed(fmt.Errorf("update Razorpay subscription lifecycle snapshot: %w", err))
+	}
+
+	// The local entitlement is intentionally not suspended on a provider
+	// lifecycle event: it represents already-paid access. It naturally expires
+	// at expires_at unless a later subscription.charged event extends it.
+	if order.SubscriptionGroupID != nil && s.subscriptionSvc != nil && s.subscriptionSvc.userSubRepo != nil {
+		sub, lookupErr := s.subscriptionSvc.userSubRepo.GetByUserIDAndGroupID(ctx, order.UserID, *order.SubscriptionGroupID)
+		if lookupErr == nil {
+			note := formatRazorpaySubscriptionStatusNote(eventName, n.Metadata["provider_subscription_status"], eventID)
+			if err := s.subscriptionSvc.userSubRepo.UpdateNotes(ctx, sub.ID, upsertRazorpaySubscriptionStatusNote(sub.Notes, note)); err != nil {
+				return markFailed(fmt.Errorf("update Razorpay subscription status note: %w", err))
+			}
+			if !sub.ExpiresAt.After(time.Now()) && sub.Status == SubscriptionStatusActive {
+				if err := s.subscriptionSvc.userSubRepo.UpdateStatus(ctx, sub.ID, SubscriptionStatusExpired); err != nil {
+					return markFailed(fmt.Errorf("expire completed Razorpay subscription: %w", err))
+				}
+			}
+		} else if !errors.Is(lookupErr, ErrSubscriptionNotFound) {
+			return markFailed(fmt.Errorf("load Razorpay subscription entitlement: %w", lookupErr))
+		}
+	}
+
+	s.writeAuditLog(ctx, order.ID, "RAZORPAY_SUBSCRIPTION_LIFECYCLE", "razorpay", map[string]any{
+		"eventID":        eventID,
+		"event":          eventName,
+		"subscriptionID": n.Metadata["provider_subscription_id"],
+		"providerStatus": n.Metadata["provider_subscription_status"],
+		"entitlement":    "preserved_until_expiry",
+	})
+	if record != nil {
+		_, _ = s.entClient.IdempotencyRecord.UpdateOneID(record.ID).
+			SetStatus("succeeded").SetResponseStatus(200).ClearLockedUntil().Save(ctx)
+	}
+	return nil
+}
+
+func formatRazorpaySubscriptionStatusNote(eventName, providerStatus, eventID string) string {
+	providerStatus = strings.TrimSpace(providerStatus)
+	if providerStatus == "" {
+		providerStatus = strings.TrimPrefix(eventName, "subscription.")
+	}
+	return fmt.Sprintf("%s %s (%s, event %s)", razorpaySubscriptionStatusNotePrefix, providerStatus, eventName, eventID)
+}
+
+func upsertRazorpaySubscriptionStatusNote(existingNotes, statusNote string) string {
+	lines := strings.Split(strings.ReplaceAll(existingNotes, "\r\n", "\n"), "\n")
+	updated := make([]string, 0, len(lines)+1)
+	replaced := false
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), razorpaySubscriptionStatusNotePrefix) {
+			if !replaced {
+				updated = append(updated, statusNote)
+				replaced = true
+			}
+			continue
+		}
+		updated = append(updated, line)
+	}
+	if !replaced {
+		if strings.TrimSpace(strings.Join(updated, "\n")) == "" {
+			return statusNote
+		}
+		return strings.TrimRight(strings.Join(updated, "\n"), "\n") + "\n" + statusNote
+	}
+	return strings.Trim(strings.Join(updated, "\n"), "\n")
 }
 
 func absFloat(value float64) float64 {

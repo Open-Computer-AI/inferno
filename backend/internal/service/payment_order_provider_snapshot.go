@@ -11,15 +11,19 @@ import (
 )
 
 type paymentOrderProviderSnapshot struct {
-	SchemaVersion          int
-	ProviderInstanceID     string
-	ProviderKey            string
-	PaymentMode            string
-	MerchantAppID          string
-	MerchantID             string
-	ProviderOrderID        string
-	ProviderSubscriptionID string
-	Currency               string
+	SchemaVersion               int
+	ProviderInstanceID          string
+	ProviderKey                 string
+	PaymentMode                 string
+	MerchantAppID               string
+	MerchantID                  string
+	ProviderOrderID             string
+	ProviderSubscriptionID      string
+	ProviderSubscriptionStatus  string
+	ProviderSubscriptionEvent   string
+	ProviderSubscriptionEventID string
+	ProviderSubscriptionEventAt string
+	Currency                    string
 }
 
 func psOrderProviderSnapshot(order *dbent.PaymentOrder) *paymentOrderProviderSnapshot {
@@ -28,15 +32,19 @@ func psOrderProviderSnapshot(order *dbent.PaymentOrder) *paymentOrderProviderSna
 	}
 
 	snapshot := &paymentOrderProviderSnapshot{
-		SchemaVersion:          psSnapshotIntValue(order.ProviderSnapshot["schema_version"]),
-		ProviderInstanceID:     psSnapshotStringValue(order.ProviderSnapshot["provider_instance_id"]),
-		ProviderKey:            psSnapshotStringValue(order.ProviderSnapshot["provider_key"]),
-		PaymentMode:            psSnapshotStringValue(order.ProviderSnapshot["payment_mode"]),
-		MerchantAppID:          psSnapshotStringValue(order.ProviderSnapshot["merchant_app_id"]),
-		MerchantID:             psSnapshotStringValue(order.ProviderSnapshot["merchant_id"]),
-		ProviderOrderID:        psSnapshotStringValue(order.ProviderSnapshot["provider_order_id"]),
-		ProviderSubscriptionID: psSnapshotStringValue(order.ProviderSnapshot["provider_subscription_id"]),
-		Currency:               psSnapshotStringValue(order.ProviderSnapshot["currency"]),
+		SchemaVersion:               psSnapshotIntValue(order.ProviderSnapshot["schema_version"]),
+		ProviderInstanceID:          psSnapshotStringValue(order.ProviderSnapshot["provider_instance_id"]),
+		ProviderKey:                 psSnapshotStringValue(order.ProviderSnapshot["provider_key"]),
+		PaymentMode:                 psSnapshotStringValue(order.ProviderSnapshot["payment_mode"]),
+		MerchantAppID:               psSnapshotStringValue(order.ProviderSnapshot["merchant_app_id"]),
+		MerchantID:                  psSnapshotStringValue(order.ProviderSnapshot["merchant_id"]),
+		ProviderOrderID:             psSnapshotStringValue(order.ProviderSnapshot["provider_order_id"]),
+		ProviderSubscriptionID:      psSnapshotStringValue(order.ProviderSnapshot["provider_subscription_id"]),
+		ProviderSubscriptionStatus:  psSnapshotStringValue(order.ProviderSnapshot["provider_subscription_status"]),
+		ProviderSubscriptionEvent:   psSnapshotStringValue(order.ProviderSnapshot["provider_subscription_event"]),
+		ProviderSubscriptionEventID: psSnapshotStringValue(order.ProviderSnapshot["provider_subscription_event_id"]),
+		ProviderSubscriptionEventAt: psSnapshotStringValue(order.ProviderSnapshot["provider_subscription_event_at"]),
+		Currency:                    psSnapshotStringValue(order.ProviderSnapshot["currency"]),
 	}
 	if snapshot.SchemaVersion == 0 &&
 		snapshot.ProviderInstanceID == "" &&
@@ -46,6 +54,10 @@ func psOrderProviderSnapshot(order *dbent.PaymentOrder) *paymentOrderProviderSna
 		snapshot.MerchantID == "" &&
 		snapshot.ProviderOrderID == "" &&
 		snapshot.ProviderSubscriptionID == "" &&
+		snapshot.ProviderSubscriptionStatus == "" &&
+		snapshot.ProviderSubscriptionEvent == "" &&
+		snapshot.ProviderSubscriptionEventID == "" &&
+		snapshot.ProviderSubscriptionEventAt == "" &&
 		snapshot.Currency == "" {
 		return nil
 	}
