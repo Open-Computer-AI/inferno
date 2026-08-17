@@ -187,7 +187,7 @@ func TestRazorpaySubscriptionAcceptsInitialAuthorizationWithoutPaymentSubscripti
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/payments/pay_auth_123":
-			_, _ = w.Write([]byte(`{"id":"pay_auth_123","order_id":"order_auth_123","amount":500,"currency":"INR","status":"captured","captured":true}`))
+			_, _ = w.Write([]byte(`{"id":"pay_auth_123","order_id":"order_auth_123","amount":500,"currency":"INR","status":"authorized","captured":false}`))
 		case "/subscriptions/sub_123":
 			_, _ = w.Write([]byte(`{"id":"sub_123","plan_id":"plan_123","status":"active","notes":{"inferno_order_id":"inferno-order-42"}}`))
 		default:
