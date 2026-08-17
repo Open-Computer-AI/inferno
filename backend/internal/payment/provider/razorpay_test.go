@@ -234,6 +234,29 @@ func TestRazorpaySubscriptionWebhookUsesSubscriptionNotesAndEventID(t *testing.T
 	require.Equal(t, "evt_123", notification.Metadata["event_id"])
 }
 
+func TestRazorpaySubscriptionLifecycleWebhookPreservesStateMetadata(t *testing.T) {
+	provider, err := NewRazorpay("instance-1", map[string]string{
+		"keyId":         "key-id",
+		"keySecret":     "secret",
+		"webhookSecret": "webhook-secret",
+	})
+	require.NoError(t, err)
+
+	body := `{"event":"subscription.cancelled","payload":{"subscription":{"entity":{"id":"sub_123","status":"cancelled","notes":{"inferno_order_id":"sub2_order"}}}}}`
+	notification, err := provider.VerifyNotification(context.Background(), body, map[string]string{
+		"x-razorpay-signature": razorpayTestSignature(body, "webhook-secret"),
+		"x-razorpay-event-id":  "evt_cancelled_123",
+	})
+	require.NoError(t, err)
+	require.Equal(t, payment.ProviderStatusPending, notification.Status)
+	require.Equal(t, "sub_123", notification.TradeNo)
+	require.Equal(t, "sub2_order", notification.OrderID)
+	require.Equal(t, "sub_123", notification.Metadata["provider_subscription_id"])
+	require.Equal(t, "sub_123", notification.Metadata["provider_order_id"])
+	require.Equal(t, "cancelled", notification.Metadata["provider_subscription_status"])
+	require.Equal(t, "subscription.cancelled", notification.Metadata["razorpay_event"])
+}
+
 func TestRazorpayWebhookAcceptsProviderMetadataVariants(t *testing.T) {
 	provider, err := NewRazorpay("instance-1", map[string]string{
 		"keyId":         "key-id",
