@@ -217,7 +217,7 @@ completes its own PKCE exchange.
 
 | Scope | Grants |
 |---|---|
-| `inference` | `/v1/*` |
+| `inference:invoke` | `/v1/*` (corrected from `inference` — Task 8 found the real hermes client, `hermes_cli/auth.py`'s `NOUS_INFERENCE_INVOKE_SCOPE`, hardcodes `inference:invoke`; Task 6's `scopeSatisfies` is exact-match, so this table must name what the client actually sends) |
 | `billing:read` | read billing state |
 | `billing:manage` | charge, auto-top-up, subscription changes |
 | `agents:read` | `GET /api/agents` |

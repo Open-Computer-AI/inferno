@@ -200,7 +200,7 @@ func newDeviceFlowFixtureWithDeps(t *testing.T) (context.Context, *OAuthTokenSer
 	if err != nil {
 		t.Fatalf("RegisterSelfHosted: %v", err)
 	}
-	grant, err := devices.RequestCode(ctx, oc.ClientID, "inference")
+	grant, err := devices.RequestCode(ctx, oc.ClientID, "inference:invoke")
 	if err != nil {
 		t.Fatalf("RequestCode: %v", err)
 	}
@@ -252,8 +252,8 @@ func TestExchangeReturnsSignedES256TokenAfterApproval(t *testing.T) {
 	if got.AccessToken == "" || got.RefreshToken == "" {
 		t.Fatal("expected both access and refresh tokens")
 	}
-	if got.Scope != "inference" {
-		t.Fatalf("expected scope %q, got %q", "inference", got.Scope)
+	if got.Scope != "inference:invoke" {
+		t.Fatalf("expected scope %q, got %q", "inference:invoke", got.Scope)
 	}
 
 	parsed, _, err := jwt.NewParser().ParseUnverified(got.AccessToken, jwt.MapClaims{})
@@ -366,8 +366,8 @@ func TestRefreshPreservesScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExchangeDeviceCode: %v", err)
 	}
-	if original.Scope != "inference" {
-		t.Fatalf("expected initial scope %q, got %q", "inference", original.Scope)
+	if original.Scope != "inference:invoke" {
+		t.Fatalf("expected initial scope %q, got %q", "inference:invoke", original.Scope)
 	}
 
 	rotated, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
@@ -386,8 +386,8 @@ func TestRefreshPreservesScope(t *testing.T) {
 	if !ok {
 		t.Fatal("expected MapClaims")
 	}
-	if claims["scope"] != "inference" {
-		t.Fatalf("access token scope claim = %v, want %q", claims["scope"], "inference")
+	if claims["scope"] != "inference:invoke" {
+		t.Fatalf("access token scope claim = %v, want %q", claims["scope"], "inference:invoke")
 	}
 }
 

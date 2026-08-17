@@ -175,7 +175,7 @@ func TestRequireOAuthScopeRejectsNoScopeClaimAgainstNonEmptyRequirement(t *testi
 	}
 	tok := mintTestES256Token(t, keySvc, claims)
 
-	r, w := newOAuthScopeTestRouter(keySvc, "inference")
+	r, w := newOAuthScopeTestRouter(keySvc, "inference:invoke")
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	r.ServeHTTP(w, req)
@@ -194,13 +194,13 @@ func TestRequireOAuthScopeRejectsNoScopeClaimAgainstNonEmptyRequirement(t *testi
 // otherwise perfectly valid (correct sub, aud, scope, and a future exp).
 func TestRequireOAuthScopeRejectsHMACSignedToken(t *testing.T) {
 	keySvc := newOAuthScopeTestKeyService(t)
-	claims := baseTestClaims(42, "agent:abc123", "inference", time.Now().Add(time.Hour))
+	claims := baseTestClaims(42, "agent:abc123", "inference:invoke", time.Now().Add(time.Hour))
 
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	signed, err := tok.SignedString([]byte("some-hmac-secret-that-is-not-the-es256-key"))
 	require.NoError(t, err)
 
-	r, w := newOAuthScopeTestRouter(keySvc, "inference")
+	r, w := newOAuthScopeTestRouter(keySvc, "inference:invoke")
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)
 	req.Header.Set("Authorization", "Bearer "+signed)
 	r.ServeHTTP(w, req)
@@ -223,13 +223,13 @@ func TestRequireOAuthScopeRejectsTokenWithNoExpClaim(t *testing.T) {
 		"iss":   "https://portal.example.com",
 		"sub":   "42",
 		"aud":   "agent:abc123",
-		"scope": "inference",
+		"scope": "inference:invoke",
 		"iat":   time.Now().Unix(),
 		// no "exp" claim at all.
 	}
 	tok := mintTestES256Token(t, keySvc, claims)
 
-	r, w := newOAuthScopeTestRouter(keySvc, "inference")
+	r, w := newOAuthScopeTestRouter(keySvc, "inference:invoke")
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	r.ServeHTTP(w, req)
@@ -240,10 +240,10 @@ func TestRequireOAuthScopeRejectsTokenWithNoExpClaim(t *testing.T) {
 
 func TestRequireOAuthScopeRejectsExpiredToken(t *testing.T) {
 	keySvc := newOAuthScopeTestKeyService(t)
-	claims := baseTestClaims(42, "agent:abc123", "inference", time.Now().Add(-time.Hour))
+	claims := baseTestClaims(42, "agent:abc123", "inference:invoke", time.Now().Add(-time.Hour))
 	tok := mintTestES256Token(t, keySvc, claims)
 
-	r, w := newOAuthScopeTestRouter(keySvc, "inference")
+	r, w := newOAuthScopeTestRouter(keySvc, "inference:invoke")
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	r.ServeHTTP(w, req)
@@ -258,13 +258,13 @@ func TestRequireOAuthScopeRejectsUnparsableSubject(t *testing.T) {
 		"iss":   "https://portal.example.com",
 		"sub":   "not-a-number",
 		"aud":   "agent:abc123",
-		"scope": "inference",
+		"scope": "inference:invoke",
 		"iat":   time.Now().Unix(),
 		"exp":   time.Now().Add(time.Hour).Unix(),
 	}
 	tok := mintTestES256Token(t, keySvc, claims)
 
-	r, w := newOAuthScopeTestRouter(keySvc, "inference")
+	r, w := newOAuthScopeTestRouter(keySvc, "inference:invoke")
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	r.ServeHTTP(w, req)

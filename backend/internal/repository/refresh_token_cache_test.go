@@ -38,7 +38,7 @@ func TestRefreshTokenCache_MarkRotatedWinnerLoser(t *testing.T) {
 		UserID:    7,
 		FamilyID:  "family-1",
 		ClientID:  "agent:x",
-		Scope:     "inference",
+		Scope:     "inference:invoke",
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(time.Hour),
 	}

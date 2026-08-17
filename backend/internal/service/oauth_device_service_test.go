@@ -18,7 +18,7 @@ func TestRequestCodeReturnsEveryRequiredField(t *testing.T) {
 		t.Fatalf("RegisterSelfHosted: %v", err)
 	}
 
-	grant, err := svc.RequestCode(ctx, oc.ClientID, "inference")
+	grant, err := svc.RequestCode(ctx, oc.ClientID, "inference:invoke")
 	if err != nil {
 		t.Fatalf("RequestCode: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestApproveMarksTheRowApproved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RegisterSelfHosted: %v", err)
 	}
-	grant, err := svc.RequestCode(ctx, oc.ClientID, "inference")
+	grant, err := svc.RequestCode(ctx, oc.ClientID, "inference:invoke")
 	if err != nil {
 		t.Fatalf("RequestCode: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestDenyMarksTheRowDenied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RegisterSelfHosted: %v", err)
 	}
-	grant, err := svc.RequestCode(ctx, oc.ClientID, "inference")
+	grant, err := svc.RequestCode(ctx, oc.ClientID, "inference:invoke")
 	if err != nil {
 		t.Fatalf("RequestCode: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestRequestCodeRejectsUnknownClient(t *testing.T) {
 	client := newPaymentConfigServiceTestClient(t)
 	svc := NewOAuthDeviceService(client, "https://portal.example.com")
 
-	if _, err := svc.RequestCode(ctx, "agent:does-not-exist", "inference"); err == nil {
+	if _, err := svc.RequestCode(ctx, "agent:does-not-exist", "inference:invoke"); err == nil {
 		t.Fatal("expected an error for an unregistered client_id")
 	}
 }
@@ -139,7 +139,7 @@ func TestRequestCodeRejectsEmptyPortalBaseURL(t *testing.T) {
 		t.Fatalf("RegisterSelfHosted: %v", err)
 	}
 
-	_, err = svc.RequestCode(ctx, oc.ClientID, "inference")
+	_, err = svc.RequestCode(ctx, oc.ClientID, "inference:invoke")
 	if !errors.Is(err, ErrPortalNotConfigured) {
 		t.Fatalf("expected ErrPortalNotConfigured, got %v", err)
 	}

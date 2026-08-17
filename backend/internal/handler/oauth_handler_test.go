@@ -253,7 +253,7 @@ func TestTokenDeviceCodeGrantErrorBranches(t *testing.T) {
 	clientID := clientOC.ClientID
 
 	t.Run("authorization_pending before approval", func(t *testing.T) {
-		grant, err := h.deviceSvc.RequestCode(ctx, clientID, "inference")
+		grant, err := h.deviceSvc.RequestCode(ctx, clientID, "inference:invoke")
 		require.NoError(t, err)
 
 		rec := postOAuthToken(t, router, url.Values{
@@ -267,7 +267,7 @@ func TestTokenDeviceCodeGrantErrorBranches(t *testing.T) {
 	})
 
 	t.Run("slow_down on immediate repoll", func(t *testing.T) {
-		grant, err := h.deviceSvc.RequestCode(ctx, clientID, "inference")
+		grant, err := h.deviceSvc.RequestCode(ctx, clientID, "inference:invoke")
 		require.NoError(t, err)
 		form := url.Values{
 			"grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
@@ -283,7 +283,7 @@ func TestTokenDeviceCodeGrantErrorBranches(t *testing.T) {
 	})
 
 	t.Run("access_denied for mismatched client", func(t *testing.T) {
-		grant, err := h.deviceSvc.RequestCode(ctx, clientID, "inference")
+		grant, err := h.deviceSvc.RequestCode(ctx, clientID, "inference:invoke")
 		require.NoError(t, err)
 		require.NoError(t, h.deviceSvc.Approve(ctx, grant.UserCode, 42))
 
@@ -298,7 +298,7 @@ func TestTokenDeviceCodeGrantErrorBranches(t *testing.T) {
 	})
 
 	t.Run("successful exchange returns a bare token body with no-store headers", func(t *testing.T) {
-		grant, err := h.deviceSvc.RequestCode(ctx, clientID, "inference")
+		grant, err := h.deviceSvc.RequestCode(ctx, clientID, "inference:invoke")
 		require.NoError(t, err)
 		require.NoError(t, h.deviceSvc.Approve(ctx, grant.UserCode, 42))
 
@@ -432,7 +432,7 @@ func TestAccountReturnsOrgsForValidToken(t *testing.T) {
 	org, err := h.orgSvc.EnsurePersonalOrg(ctx, 42, "alice")
 	require.NoError(t, err)
 
-	tok := mintTestAccountToken(t, h, 42, "inference")
+	tok := mintTestAccountToken(t, h, 42, "inference:invoke")
 	rec := getOAuthAccount(router, tok)
 
 	require.Equal(t, http.StatusOK, rec.Code)
@@ -468,7 +468,7 @@ func TestAccountRejectsInsufficientScopeIsUnreachable(t *testing.T) {
 	_, err := h.orgSvc.EnsurePersonalOrg(ctx, 7, "bob")
 	require.NoError(t, err)
 
-	tok := mintTestAccountToken(t, h, 7, "inference")
+	tok := mintTestAccountToken(t, h, 7, "inference:invoke")
 	rec := getOAuthAccount(router, tok)
 
 	require.Equal(t, http.StatusOK, rec.Code)

@@ -189,6 +189,18 @@ backend/internal/server/routes/oauth_account_route_test.go
 # router/index.ts, i18n/locales/en+zh/misc.ts) never appear in this gate
 # and are not listed here -- see GOAL.md's D5 row for the full file list.
 backend/internal/handler/oauth_device_decision_test.go
+# D5 -- OAuth AS (Task 8: end-to-end conformance against the real hermes
+# client -- seeds the first-party hermes-cli client, corrects the scope
+# vocabulary to inference:invoke, and adds the conformance runbook). Test
+# files whose scope literals changed from inference to inference:invoke
+# (oauth_handler_test.go, oauth_device_service_test.go,
+# oauth_token_service_test.go, oauth_scope_test.go,
+# refresh_token_cache_test.go) and the design doc
+# (docs/superpowers/specs/2026-08-17-inferno-oauth-authorization-server-design.md)
+# are already declared above (Tasks 3/4/5/6 and D4) -- not re-listed here,
+# same files.
+backend/migrations/905_hermes_cli_first_party_client.sql
+backend/scripts/oauth-conformance.md
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }
