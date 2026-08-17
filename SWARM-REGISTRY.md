@@ -118,3 +118,48 @@ checked by the orchestrator before its row is marked done:
   the state at any moment.
 - If a worker dies, its section simply stays `todo` in `INFERNO-BUILD.md`; no
   partial state is shared between workers because no two workers share a file.
+
+---
+
+# Swarm registry — OC Portal: OAuth authorization server (2026-08-17)
+
+Separate effort from the June rewrite above. Subagent-driven execution of the
+OAuth AS plan, running in its OWN worktree so it never touches the redesign branch.
+
+| field | value |
+|---|---|
+| worktree | `/Users/saksham/OpenComputerV2/inferno-oauth-as` |
+| branch | `feat/oauth-authorization-server` (cut from `inferno-redesign` @ `1c91c378`) |
+| spec | `docs/superpowers/specs/2026-08-17-inferno-oauth-authorization-server-design.md` |
+| plan | `docs/superpowers/plans/2026-08-17-inferno-oauth-authorization-server.md` |
+| ledger | `.superpowers/sdd/2026-08-17-inferno-oauth-authorization-server/progress.md` |
+| purpose | make Inferno the OC Portal — replace Nous Portal for hermes-agent + Hermes Desktop |
+| status | RUNNING (started Task 1 of 8) |
+
+## Recover / resume
+
+The ledger is git-IGNORED scratch — `git clean -fdx` destroys it. Git history is
+the durable record. To resume in a fresh session:
+
+```sh
+cd /Users/saksham/OpenComputerV2/inferno-oauth-as
+cat .superpowers/sdd/2026-08-17-inferno-oauth-authorization-server/progress.md  # if it survives
+git log --oneline 1c91c378..HEAD                                                # authoritative
+```
+
+Each task commits separately with a `feat(oauth):` subject. Tasks with a
+`Task <N>: complete` ledger line are DONE — resume at the first task without one.
+If the ledger is gone, `git log` tells you which tasks landed; re-read the plan's
+task list and resume after the last committed one. Per-task briefs and reports live
+beside the ledger (`task-N-brief.md`, `task-N-report.md`).
+
+## Tasks
+
+1. org tenancy + personal org on signup
+2. ES256 signing key + JWKS endpoint
+3. `oauth_client` registry + self-hosted client registration
+4. RFC 8628 device authorization request
+5. token endpoint (device_code + refresh_token grants)
+6. scope enforcement middleware + `/api/oauth/account`
+7. device approval screen (`inferno-frontend`)
+8. end-to-end conformance against the real hermes CLI
