@@ -59,8 +59,9 @@ backend/migrations/900_add_user_avatar_seed.sql
 # D2 -- English legal-document defaults
 backend/internal/service/setting_public.go
 backend/internal/server/api_contract_test.go
-# D4 -- OpenComputer portal design specs
+# D4 -- OpenComputer portal design specs + plans
 docs/superpowers/specs/2026-08-17-inferno-oauth-authorization-server-design.md
+docs/superpowers/plans/2026-08-17-inferno-oauth-authorization-server.md
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }
