@@ -10,7 +10,6 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
-	"math/big"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
@@ -37,10 +36,15 @@ func NewOAuthKeyService(entClient *dbent.Client) *OAuthKeyService {
 
 // kidFor derives a stable key id from the public key bytes, so the same key
 // always produces the same kid without storing it separately.
-func kidFor(pub *ecdsa.PublicKey) string {
-	raw := elliptic.Marshal(pub.Curve, pub.X, pub.Y) //nolint:staticcheck // JWK thumbprint input
+func kidFor(pub *ecdsa.PublicKey) (string, error) {
+	// SEC1 uncompressed point: 0x04 || X (32 bytes) || Y (32 bytes) for P-256.
+	// Already fixed-width — no manual big.Int padding needed.
+	raw, err := pub.Bytes()
+	if err != nil {
+		return "", fmt.Errorf("oauth signing key: encode public key: %w", err)
+	}
 	sum := sha256.Sum256(raw)
-	return base64.RawURLEncoding.EncodeToString(sum[:16])
+	return base64.RawURLEncoding.EncodeToString(sum[:16]), nil
 }
 
 // signingKeyFromPEM parses a stored PEM-encoded EC private key row into a
@@ -55,7 +59,11 @@ func signingKeyFromPEM(value string) (*SigningKey, error) {
 	if err != nil {
 		return nil, fmt.Errorf("oauth signing key: parse: %w", err)
 	}
-	return &SigningKey{Kid: kidFor(&priv.PublicKey), Private: priv}, nil
+	kid, err := kidFor(&priv.PublicKey)
+	if err != nil {
+		return nil, err
+	}
+	return &SigningKey{Kid: kid, Private: priv}, nil
 }
 
 // Active returns the current signing key, generating and persisting one on
@@ -106,17 +114,11 @@ func (s *OAuthKeyService) Active(ctx context.Context) (*SigningKey, error) {
 		return nil, fmt.Errorf("oauth signing key: persist: %w", err)
 	}
 
-	return &SigningKey{Kid: kidFor(&priv.PublicKey), Private: priv}, nil
-}
-
-func b64uint(i *big.Int, size int) string {
-	b := i.Bytes()
-	if len(b) < size {
-		padded := make([]byte, size)
-		copy(padded[size-len(b):], b)
-		b = padded
+	kid, err := kidFor(&priv.PublicKey)
+	if err != nil {
+		return nil, err
 	}
-	return base64.RawURLEncoding.EncodeToString(b)
+	return &SigningKey{Kid: kid, Private: priv}, nil
 }
 
 // JWKS projects the active key to its public JWK form. Never includes "d".
@@ -126,12 +128,27 @@ func (s *OAuthKeyService) JWKS(ctx context.Context) (map[string]any, error) {
 		return nil, err
 	}
 	pub := key.Private.PublicKey
+
+	// SEC1 uncompressed point: 0x04 || X (32 bytes) || Y (32 bytes) for
+	// P-256 — already fixed-width, so slicing it out is the padding: no
+	// manual big.Int left-pad needed (and none of the deprecated direct
+	// pub.X/pub.Y field access this replaced).
+	raw, err := pub.Bytes()
+	if err != nil {
+		return nil, fmt.Errorf("oauth signing key: encode public key: %w", err)
+	}
+	if len(raw) != 65 || raw[0] != 0x04 {
+		return nil, fmt.Errorf("oauth signing key: unexpected public key encoding (len=%d)", len(raw))
+	}
+	x := raw[1:33]
+	y := raw[33:65]
+
 	return map[string]any{
 		"keys": []map[string]any{{
 			"kty": "EC",
 			"crv": "P-256",
-			"x":   b64uint(pub.X, 32), //nolint:staticcheck // JWK x/y encoding needs the raw coordinates; big.Int is fine for a public value
-			"y":   b64uint(pub.Y, 32), //nolint:staticcheck // JWK x/y encoding needs the raw coordinates; big.Int is fine for a public value
+			"x":   base64.RawURLEncoding.EncodeToString(x),
+			"y":   base64.RawURLEncoding.EncodeToString(y),
 			"kid": key.Kid,
 			"use": "sig",
 			"alg": "ES256",
