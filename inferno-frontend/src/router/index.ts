@@ -408,6 +408,25 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    // Load-bearing path: OAuthDeviceService.RequestCode
+    // (backend/internal/service/oauth_device_service.go) hardcodes
+    // "{frontend_url}/device" as verification_uri, and the hermes CLI prints
+    // that URL verbatim for the human to open. Not in the sidebar
+    // (hideInMenu) -- it is reached only via that printed link/QR code, never
+    // by navigating the app.
+    path: '/device',
+    name: 'DeviceApproval',
+    component: () => import('@/views/oauth/DeviceApprovalView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      hideInMenu: true,
+      title: 'Authorize device',
+      titleKey: 'device.title',
+      descriptionKey: 'device.description'
+    }
+  },
+  {
     path: '/custom/:id',
     name: 'CustomPage',
     component: () => import('@/views/user/CustomPageView.vue'),

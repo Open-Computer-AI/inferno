@@ -23,6 +23,13 @@ func RegisterOAuthAPIRoutes(r gin.IRouter, h *handler.OAuthHandler, jwtAuth midd
 	authenticated.Use(gin.HandlerFunc(jwtAuth))
 	{
 		authenticated.POST("/self-hosted-client", h.RegisterSelfHostedClient)
+		// Device approval screen (Task 7): a logged-in human confirming or
+		// rejecting a device-flow login in inferno-frontend's browser UI.
+		// Session-authenticated like self-hosted-client above, unlike
+		// device/code and token below (RegisterOAuthDeviceRoutes) which have
+		// no session by design.
+		authenticated.POST("/device/approve", h.ApproveDevice)
+		authenticated.POST("/device/deny", h.DenyDevice)
 	}
 }
 

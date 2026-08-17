@@ -654,4 +654,26 @@ export default {
     },
   },
 
+  device: {
+    title: '授权设备',
+    description: '确认此代码与终端显示的一致,然后批准或拒绝。',
+    codeLabel: '设备代码',
+    codePlaceholder: 'XXXX-XXXX',
+    codeHint: '输入终端中显示的代码。',
+    approve: '批准',
+    approving: '批准中...',
+    deny: '拒绝',
+    denying: '拒绝中...',
+    approvedTitle: '设备已批准',
+    approvedBody: '你可以返回终端,它会自动继续。',
+    deniedTitle: '设备请求已拒绝',
+    deniedBody: '该设备未登录,你可以关闭此页面。',
+    expiredTitle: '代码已过期',
+    expiredBody: '此代码已失效,请重新运行命令获取新代码。',
+    errors: {
+      notFound: '未找到该代码,请检查后重试。',
+      generic: '出错了,请重试。',
+    },
+  },
+
 }

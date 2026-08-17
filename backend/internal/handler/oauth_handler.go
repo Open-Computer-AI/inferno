@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -276,4 +277,85 @@ func (h *OAuthHandler) Account(c *gin.Context) {
 		"user_id": strconv.FormatInt(userID, 10),
 		"orgs":    out,
 	})
+}
+
+// deviceDecisionRequest is the body both ApproveDevice and DenyDevice bind:
+// the user_code the human typed or that verification_uri_complete prefilled.
+type deviceDecisionRequest struct {
+	UserCode string `json:"user_code" binding:"required"`
+}
+
+// ApproveDevice handles POST /api/oauth/device/approve and DenyDevice handles
+// POST /api/oauth/device/deny — the device-flow approval screen's two
+// actions, session-authenticated (jwtAuth): a logged-in human is confirming
+// or rejecting a device-flow login in inferno-frontend's browser UI, not an
+// agent or CLI presenting a bearer token or a bare client_id.
+//
+// DELIBERATE ASYMMETRY, read before "fixing" this: every other handler in
+// this file (JWKS, DeviceCode, Token, Account, RegisterSelfHostedClient)
+// emits bare JSON and is barred from internal/pkg/response, because the
+// hermes client parses RFC-shaped JSON at the top level. These two handlers
+// are the opposite — they MUST use internal/pkg/response — because they are
+// NOT part of that wire contract at all. Nothing outside inferno-frontend
+// ever calls them; they exist solely for its device approval screen.
+// inferno-frontend/src/api/client.ts's response interceptor (its error path)
+// reads apiData.code and apiData.message to build the message it surfaces to
+// the user. A bare {"error":"not_found"} body has neither field, so every
+// failure here would otherwise reach the user as a generic, non-actionable
+// axios error instead of "that code doesn't exist" / "that code expired,
+// run the command again". Keep this pair on response.*; keep the rest of
+// this file bare.
+//
+// Neither handler ever logs user_code — it is a credential until redeemed,
+// same rule as DeviceCode/Token above.
+func (h *OAuthHandler) ApproveDevice(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "unauthorized")
+		return
+	}
+
+	var req deviceDecisionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "invalid_request")
+		return
+	}
+
+	switch err := h.deviceSvc.Approve(c.Request.Context(), req.UserCode, subject.UserID); {
+	case err == nil:
+		response.Success(c, gin.H{"status": "approved"})
+	case errors.Is(err, service.ErrDeviceCodeNotFound):
+		response.NotFound(c, "device code not found")
+	case errors.Is(err, service.ErrDeviceCodeExpired):
+		response.Error(c, http.StatusGone, "device code expired")
+	default:
+		slog.Error("oauth: device approval failed", "user_id", subject.UserID, "error", err)
+		response.InternalError(c, "server_error")
+	}
+}
+
+func (h *OAuthHandler) DenyDevice(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "unauthorized")
+		return
+	}
+
+	var req deviceDecisionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "invalid_request")
+		return
+	}
+
+	switch err := h.deviceSvc.Deny(c.Request.Context(), req.UserCode); {
+	case err == nil:
+		response.Success(c, gin.H{"status": "denied"})
+	case errors.Is(err, service.ErrDeviceCodeNotFound):
+		response.NotFound(c, "device code not found")
+	case errors.Is(err, service.ErrDeviceCodeExpired):
+		response.Error(c, http.StatusGone, "device code expired")
+	default:
+		slog.Error("oauth: device denial failed", "user_id", subject.UserID, "error", err)
+		response.InternalError(c, "server_error")
+	}
 }

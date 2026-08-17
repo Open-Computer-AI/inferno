@@ -179,6 +179,16 @@ backend/internal/server/routes/oauth_token_route_test.go
 backend/internal/server/middleware/oauth_scope.go
 backend/internal/server/middleware/oauth_scope_test.go
 backend/internal/server/routes/oauth_account_route_test.go
+# D5 -- OAuth AS (Task 7: device approval screen -- ApproveDevice/DenyDevice)
+# oauth_handler.go and routes/oauth.go are already declared above (Tasks
+# 2/5) -- not re-listed here, same files. inferno-frontend/ is out of this
+# script's diff scope entirely (CHANGED below is `-- backend frontend deploy
+# docs` from the repo root; "frontend" there is the pristine upstream
+# mirror, not inferno-frontend/), so the Vue/TS files this task added
+# (views/oauth/DeviceApprovalView.vue + its spec, api/oauth.ts,
+# router/index.ts, i18n/locales/{en,zh}/misc.ts) never appear in this gate
+# and are not listed here -- see GOAL.md's D5 row for the full file list.
+backend/internal/handler/oauth_device_decision_test.go
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }

@@ -637,4 +637,28 @@ export default {
     },
   },
 
+  // Device flow approval screen (/device) -- the browser step of the RFC
+  // 8628 device authorization flow, opened from a link a headless CLI prints.
+  device: {
+    title: 'Authorize device',
+    description: 'Check that this code matches what your terminal is showing, then approve or deny.',
+    codeLabel: 'Device code',
+    codePlaceholder: 'XXXX-XXXX',
+    codeHint: 'Enter the code shown in your terminal.',
+    approve: 'Approve',
+    approving: 'Approving...',
+    deny: 'Deny',
+    denying: 'Denying...',
+    approvedTitle: 'Device approved',
+    approvedBody: 'You can return to your terminal. It will continue automatically.',
+    deniedTitle: 'Device request denied',
+    deniedBody: 'The device was not signed in. You can close this page.',
+    expiredTitle: 'Code expired',
+    expiredBody: 'This code is no longer valid. Run the command again to get a new one.',
+    errors: {
+      notFound: "That code wasn't found. Check it and try again.",
+      generic: 'Something went wrong. Please try again.',
+    },
+  },
+
 }
