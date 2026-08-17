@@ -342,6 +342,123 @@ func TestTokenRefreshGrantInvalidGrant(t *testing.T) {
 	requireBareErrorBody(t, rec, "invalid_grant")
 }
 
+// mintOAuthTestTokenPair runs a full device_code grant (request → approve →
+// exchange) and returns the resulting refresh_token, so refresh-grant tests
+// below don't have to duplicate that setup. Each call mints a FRESH token —
+// refresh tokens are single-use/rotate-on-use (Task 5), so a subtest that
+// calls this must not reuse another subtest's value.
+func mintOAuthTestTokenPair(t *testing.T, router *gin.Engine, h *OAuthHandler, ctx context.Context, clientID string) string {
+	t.Helper()
+	grant, err := h.deviceSvc.RequestCode(ctx, clientID, "inference:invoke")
+	require.NoError(t, err)
+	require.NoError(t, h.deviceSvc.Approve(ctx, grant.UserCode, 42))
+
+	rec := postOAuthToken(t, router, url.Values{
+		"grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
+		"client_id":   {clientID},
+		"device_code": {grant.DeviceCode},
+	})
+	require.Equal(t, http.StatusOK, rec.Code, "device_code exchange must succeed to set up a refresh test: %s", rec.Body.String())
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	refreshToken, _ := body["refresh_token"].(string)
+	require.NotEmpty(t, refreshToken)
+	return refreshToken
+}
+
+// postOAuthTokenWithHeader is postOAuthToken plus an optional
+// x-nous-refresh-token header — used only by the refresh-grant
+// credential-source tests below. header == "" omits the header entirely
+// (distinct from sending it empty, which the tests exercise separately).
+func postOAuthTokenWithHeader(t *testing.T, router *gin.Engine, form url.Values, header string, headerSet bool) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/oauth/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if headerSet {
+		req.Header.Set(nousRefreshTokenHeader, header)
+	}
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestTokenRefreshGrantCredentialSource locks down refreshTokenFromRequest's
+// contract: the real hermes client (hermes_cli/auth.py's
+// _refresh_access_token) sends the refresh token in the x-nous-refresh-token
+// HEADER, with only grant_type/client_id in the body — confirmed by reading
+// that function directly (that repo is read-only; never edited). Task 8's
+// conformance run tested the device_code grant only and missed this: the
+// refresh grant read RFC 6749 §5.2-correctly from the body, passed every
+// existing test, and was still completely broken against the one real
+// client this plan exists to serve, because that client never populates the
+// body field at all. These four cases are the ones that would have caught
+// it, plus the precedence/fallback rules the fix's doc comment promises.
+func TestTokenRefreshGrantCredentialSource(t *testing.T) {
+	router, h := newOAuthHandlerTestRouter(t)
+	ctx := context.Background()
+	clientOC, err := h.clientSvc.RegisterSelfHosted(ctx, 1, 42, "https://agent.example.com", "")
+	require.NoError(t, err)
+	clientID := clientOC.ClientID
+
+	requireSuccessfulRefresh := func(t *testing.T, rec *httptest.ResponseRecorder) {
+		t.Helper()
+		require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+		require.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		require.NotEmpty(t, body["access_token"])
+		require.NotEmpty(t, body["refresh_token"])
+	}
+
+	t.Run("succeeds via header alone (the real client's path)", func(t *testing.T) {
+		refreshToken := mintOAuthTestTokenPair(t, router, h, ctx, clientID)
+		form := url.Values{"grant_type": {"refresh_token"}, "client_id": {clientID}}
+		rec := postOAuthTokenWithHeader(t, router, form, refreshToken, true)
+		requireSuccessfulRefresh(t, rec)
+	})
+
+	t.Run("still succeeds via the RFC 6749 body field", func(t *testing.T) {
+		refreshToken := mintOAuthTestTokenPair(t, router, h, ctx, clientID)
+		form := url.Values{
+			"grant_type":    {"refresh_token"},
+			"client_id":     {clientID},
+			"refresh_token": {refreshToken},
+		}
+		rec := postOAuthTokenWithHeader(t, router, form, "", false)
+		requireSuccessfulRefresh(t, rec)
+	})
+
+	t.Run("header takes precedence when both are present", func(t *testing.T) {
+		validToken := mintOAuthTestTokenPair(t, router, h, ctx, clientID)
+		form := url.Values{
+			"grant_type":    {"refresh_token"},
+			"client_id":     {clientID},
+			"refresh_token": {"art_wrong-value-from-body-must-be-ignored"},
+		}
+		rec := postOAuthTokenWithHeader(t, router, form, validToken, true)
+		requireSuccessfulRefresh(t, rec)
+	})
+
+	t.Run("empty/whitespace header falls through to a valid body value", func(t *testing.T) {
+		refreshToken := mintOAuthTestTokenPair(t, router, h, ctx, clientID)
+		form := url.Values{
+			"grant_type":    {"refresh_token"},
+			"client_id":     {clientID},
+			"refresh_token": {refreshToken},
+		}
+		rec := postOAuthTokenWithHeader(t, router, form, "   ", true)
+		requireSuccessfulRefresh(t, rec)
+	})
+
+	t.Run("both absent keeps the existing invalid_grant contract", func(t *testing.T) {
+		form := url.Values{"grant_type": {"refresh_token"}, "client_id": {clientID}}
+		rec := postOAuthTokenWithHeader(t, router, form, "", false)
+		require.Equal(t, http.StatusBadRequest, rec.Code)
+		requireBareErrorBody(t, rec, "invalid_grant")
+	})
+}
+
 // The tests below cover GET /api/oauth/account's wire contract, the same way
 // the Token tests above cover POST /api/oauth/token's: exactly the bare
 // {"error": "..."} (or, on success, the account body) at the top level,

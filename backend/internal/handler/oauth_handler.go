@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -157,6 +158,38 @@ func tokenResponse(c *gin.Context, tokens *service.OAuthTokens) {
 	})
 }
 
+// nousRefreshTokenHeader is the header the real hermes client sends the
+// refresh_token grant's credential in, INSTEAD of the RFC 6749 §6 form
+// field: hermes_cli/auth.py's `_refresh_access_token` posts
+// `headers={"x-nous-refresh-token": refresh_token}` with only `grant_type`
+// and `client_id` in the body (confirmed by reading that function — never
+// edited, that repo is read-only). Task 8 conformance-tested the
+// device_code grant only and missed this: the refresh grant looked correct
+// against RFC 6749 and the wire-contract tests, but against the actual
+// client it silently read an always-empty body field and rejected every
+// refresh. The client is the specification, so this is what the server
+// reads.
+const nousRefreshTokenHeader = "X-Nous-Refresh-Token"
+
+// refreshTokenFromRequest resolves the refresh_token grant's credential:
+// the header the real client sends, first; the RFC 6749 §6 form field,
+// second. Preferring the header (rather than requiring both, or requiring
+// the header) keeps this endpoint compatible with any other RFC-conformant
+// client that only knows the body field, while still working against the
+// one real client this plan exists to serve. An empty-after-trim header is
+// treated as absent, not as a present-but-empty credential, so a client
+// that sends an empty header alongside a real body value (or omits the
+// header entirely — Go's http.Header.Get returns "" either way) still
+// falls through to the body. Never log the return value — it's a bearer
+// credential exactly like the body field it may have come from (see the
+// no-credential-logging rule stated on Token below).
+func refreshTokenFromRequest(c *gin.Context) string {
+	if header := strings.TrimSpace(c.GetHeader(nousRefreshTokenHeader)); header != "" {
+		return header
+	}
+	return c.PostForm("refresh_token")
+}
+
 // Token handles POST /api/oauth/token. Unauthenticated — this endpoint IS
 // the credential-issuance step; a caller with a valid session wouldn't need
 // it. Form-encoded per RFC 6749/8628. Never logs device_code, refresh_token,
@@ -203,7 +236,7 @@ func (h *OAuthHandler) Token(c *gin.Context) {
 		tokenResponse(c, tokens)
 
 	case "refresh_token":
-		tokens, err := h.tokenSvc.ExchangeRefreshToken(c.Request.Context(), clientID, c.PostForm("refresh_token"))
+		tokens, err := h.tokenSvc.ExchangeRefreshToken(c.Request.Context(), clientID, refreshTokenFromRequest(c))
 		if err != nil {
 			switch {
 			case errors.Is(err, service.ErrInvalidGrant), errors.Is(err, service.ErrRefreshTokenReused):

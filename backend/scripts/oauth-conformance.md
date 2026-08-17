@@ -4,7 +4,14 @@ Drives the REAL hermes Python CLI (`hermes_cli/auth.py`, repo
 `/Users/saksham/OpenComputerV2/OpenComputerV2`, **read-only** — never edit it,
 never commit to it) against Inferno's OAuth 2.0 authorization server, end to
 end: device authorization request → human approval → token exchange →
-signature verification → `slow_down` backoff.
+signature verification → `slow_down` backoff → **refresh grant**.
+
+**Run both grants, not just device_code.** The first pass of this runbook
+tested device_code alone and shipped with the refresh grant silently
+broken against the real client (see defect 3 below) — a token pair that
+works for exactly 15 minutes and then can never be renewed looks
+identical to full success until the first expiry. Steps 1-7 below cover
+device_code; step 8 covers the refresh grant. Do not skip step 8.
 
 **⚠️ `HERMES_HOME` warning — read before running anything below.** The real
 CLI persists credentials to `$HERMES_HOME/auth.json`, defaulting to
@@ -13,11 +20,11 @@ below sets `HERMES_HOME` to a throwaway scratch directory for the entire run.
 **Never** run the CLI commands in this runbook without `HERMES_HOME` set to
 something disposable, or you will clobber your own working Hermes install.
 
-## Two defects this runbook depends on being fixed
+## Three defects this runbook depends on being fixed
 
-Both are fixed in this repo (migration `905` + the scope literal below) —
-this section exists so a future conformance run against a fresh checkout
-knows what to check first if step 1 or step 2 below fails.
+All three are fixed in this repo — this section exists so a future
+conformance run against a fresh checkout knows what to check first if a
+step below fails.
 
 1. **`hermes-cli` must exist as an `oauth_clients` row.** The real CLI
    hardcodes `client_id="hermes-cli"` (`hermes_cli/auth.py:77`,
@@ -47,6 +54,24 @@ knows what to check first if step 1 or step 2 below fails.
    `oauth_scope_test.go`, `refresh_token_cache_test.go`) so future
    scope-enforcement work is built against the vocabulary the real client
    actually uses.
+3. **The refresh grant reads the credential from the wrong place.** The
+   real CLI's `_refresh_access_token` (`hermes_cli/auth.py:5507-5521`)
+   sends the refresh token in an **`x-nous-refresh-token` HEADER** — the
+   request body carries only `grant_type` and `client_id`. This was missed
+   by the first pass of this conformance run, which only exercised
+   device_code: the refresh grant was RFC 6749 §5.2-correct (reads
+   `refresh_token` from the form body) and fully covered by wire-contract
+   tests, and still silently rejected every refresh from the real client,
+   because that client never populates the body field at all. Fixed in
+   `internal/handler/oauth_handler.go`'s `refreshTokenFromRequest`: reads
+   the `x-nous-refresh-token` header first (trimmed; empty-after-trim
+   counts as absent), falling back to the RFC 6749 body field — so this
+   endpoint still works for any other RFC-conformant client that only
+   knows the body field. This is Critical, not cosmetic: access tokens are
+   short-lived (15 minutes) and the refresh grant is the entire mechanism
+   behind "log in once, the agent runs forever" — with it broken, every
+   agent would die 15 minutes after login and never recover, invisibly,
+   because the device-code leg alone looks like complete success.
 
 ## 1. Bring up the server against throwaway infra
 
@@ -257,13 +282,66 @@ curl -s -X POST http://127.0.0.1:18480/api/oauth/token \
 **Expected:** first call `{"error":"authorization_pending"}`, immediate
 second call `{"error":"slow_down"}`.
 
+## 8. Verify the refresh grant — do not skip this
+
+The device_code steps above prove login works. This step proves the
+credential the CLI just obtained can actually be renewed — the property
+the whole autonomous-agent design depends on. Drives the real, unedited
+`hermes_cli.auth._refresh_access_token` directly (the exact function
+`refresh_nous_oauth_pure` calls internally, which sends the refresh token
+via the `x-nous-refresh-token` header — see defect 3 above):
+
+```bash
+mkdir -p /tmp/t8-hermes-home-2   # a second throwaway HERMES_HOME
+
+cat > /tmp/t8-drive-refresh.py <<'PYEOF'
+import sys
+sys.path.insert(0, "/Users/saksham/OpenComputerV2/OpenComputerV2")
+import httpx
+from hermes_cli.auth import _nous_device_code_login, _refresh_access_token, PROVIDER_REGISTRY
+
+pconfig = PROVIDER_REGISTRY["nous"]
+auth_state = _nous_device_code_login(open_browser=False, timeout_seconds=20.0)
+print("[driver] device_code login complete")
+
+with httpx.Client(timeout=httpx.Timeout(20.0), headers={"Accept": "application/json"}) as client:
+    refreshed = _refresh_access_token(
+        client=client,
+        portal_base_url=auth_state["portal_base_url"],
+        client_id=auth_state["client_id"],
+        refresh_token=auth_state["refresh_token"],
+    )
+
+assert "access_token" in refreshed
+assert refreshed["access_token"] != auth_state["access_token"]
+print("[driver] REFRESH_OK")
+PYEOF
+
+cd /Users/saksham/OpenComputerV2/OpenComputerV2 && \
+HERMES_HOME=/tmp/t8-hermes-home-2 \
+HERMES_PORTAL_BASE_URL=http://127.0.0.1:18480 \
+uv run python /tmp/t8-drive-refresh.py
+```
+
+It blocks on `_nous_device_code_login` waiting for approval — read the
+`user_code` it prints and approve exactly as in step 4, then it proceeds
+straight into the refresh call.
+
+**Expected:** `[driver] device_code login complete` then
+`[driver] REFRESH_OK`. Before the header fix, this call raised
+`AuthError: Refresh token exchange failed` (the server saw an empty
+`refresh_token` form field and returned `invalid_grant`) — if you see that
+here, the header isn't being read; check `refreshTokenFromRequest` in
+`internal/handler/oauth_handler.go`.
+
 ## Cleanup
 
 ```bash
 kill %1 2>/dev/null   # or: pkill -f /tmp/sub2api-t8
 docker rm -f t8-pg t8-redis
 docker network rm t8net
-rm -rf /tmp/t8-data /tmp/t8-hermes-home /tmp/t8-drive-login.py /tmp/sub2api-t8
+rm -rf /tmp/t8-data /tmp/t8-hermes-home /tmp/t8-hermes-home-2 \
+       /tmp/t8-drive-login.py /tmp/t8-drive-refresh.py /tmp/sub2api-t8
 ```
 
 Verify nothing named `t8*` remains (`docker ps -a`) and ports
