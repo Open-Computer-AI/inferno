@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"sync"
 	"testing"
+
+	dbent "github.com/Wei-Shaw/sub2api/ent"
 )
 
 // newTestEntClient is not defined in this package. The closest existing
@@ -45,6 +48,76 @@ func TestEnsurePersonalOrgMakesUserOwner(t *testing.T) {
 	}
 
 	role, err := svc.RoleIn(ctx, org.ID, 7)
+	if err != nil {
+		t.Fatalf("RoleIn: %v", err)
+	}
+	if role != OrgRoleOwner {
+		t.Fatalf("expected %q, got %q", OrgRoleOwner, role)
+	}
+}
+
+// TestEnsurePersonalOrgIsRaceSafe fires N goroutines at EnsurePersonalOrg for
+// the SAME user id, coordinated to genuinely overlap via a start channel, and
+// asserts every call succeeds and every call returns the same org. This is
+// the regression test for the double-fired-OAuth-callback / two-tabs bug:
+// a naive read-then-create (no DB-level constraint spanning the invariant)
+// lets two concurrent callers both miss the "does a personal org already
+// exist" check and both create one. TestEnsurePersonalOrgIsIdempotent alone
+// does not catch this — it calls the function twice serially, so it never
+// exercises the race window.
+func TestEnsurePersonalOrgIsRaceSafe(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := NewOrgService(client)
+
+	const n = 8
+	const userID = int64(4242)
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	results := make([]*dbent.Org, n)
+	errs := make([]error, n)
+
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start // released together so calls genuinely overlap
+			org, err := svc.EnsurePersonalOrg(ctx, userID, "racer")
+			results[i] = org
+			errs[i] = err
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("call %d: EnsurePersonalOrg returned error: %v", i, err)
+		}
+	}
+
+	firstID := results[0].ID
+	for i, org := range results {
+		if org == nil {
+			t.Fatalf("call %d: returned nil org with no error", i)
+		}
+		if org.ID != firstID {
+			t.Fatalf("not race-safe: call 0 returned org %d, call %d returned org %d — user has two personal orgs", firstID, i, org.ID)
+		}
+	}
+
+	// Exactly one personal org should exist for this user, with exactly one
+	// OWNER membership — not one org per goroutine.
+	orgs, err := svc.OrgsForUser(ctx, userID)
+	if err != nil {
+		t.Fatalf("OrgsForUser: %v", err)
+	}
+	if len(orgs) != 1 {
+		t.Fatalf("expected exactly 1 org for user, got %d", len(orgs))
+	}
+
+	role, err := svc.RoleIn(ctx, firstID, userID)
 	if err != nil {
 		t.Fatalf("RoleIn: %v", err)
 	}

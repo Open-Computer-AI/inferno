@@ -1093,6 +1093,7 @@ var (
 		{Name: "slug", Type: field.TypeString, Unique: true, Size: 64},
 		{Name: "name", Type: field.TypeString, Size: 128},
 		{Name: "is_personal", Type: field.TypeBool, Default: false},
+		{Name: "personal_user_id", Type: field.TypeInt64, Unique: true, Nullable: true},
 	}
 	// OrgsTable holds the schema information for the "orgs" table.
 	OrgsTable = &schema.Table{

@@ -26,8 +26,10 @@ type Org struct {
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
 	// IsPersonal holds the value of the "is_personal" field.
-	IsPersonal   bool `json:"is_personal,omitempty"`
-	selectValues sql.SelectValues
+	IsPersonal bool `json:"is_personal,omitempty"`
+	// PersonalUserID holds the value of the "personal_user_id" field.
+	PersonalUserID *int64 `json:"personal_user_id,omitempty"`
+	selectValues   sql.SelectValues
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -37,7 +39,7 @@ func (*Org) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case org.FieldIsPersonal:
 			values[i] = new(sql.NullBool)
-		case org.FieldID:
+		case org.FieldID, org.FieldPersonalUserID:
 			values[i] = new(sql.NullInt64)
 		case org.FieldSlug, org.FieldName:
 			values[i] = new(sql.NullString)
@@ -94,6 +96,13 @@ func (_m *Org) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.IsPersonal = value.Bool
 			}
+		case org.FieldPersonalUserID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field personal_user_id", values[i])
+			} else if value.Valid {
+				_m.PersonalUserID = new(int64)
+				*_m.PersonalUserID = value.Int64
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -144,6 +153,11 @@ func (_m *Org) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("is_personal=")
 	builder.WriteString(fmt.Sprintf("%v", _m.IsPersonal))
+	builder.WriteString(", ")
+	if v := _m.PersonalUserID; v != nil {
+		builder.WriteString("personal_user_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteByte(')')
 	return builder.String()
 }

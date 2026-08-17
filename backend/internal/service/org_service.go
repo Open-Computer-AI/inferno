@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/org"
 	"github.com/Wei-Shaw/sub2api/ent/orgmember"
 )
 
@@ -56,22 +57,30 @@ func slugFor(username string) (string, error) {
 }
 
 // EnsurePersonalOrg returns the user's personal org, creating it on first call.
-// Idempotent: safe to call on every login.
+// Idempotent: safe to call on every login, and safe under concurrent callers
+// for the same user (e.g. a double-fired OAuth callback, or two tabs finishing
+// signup at once).
+//
+// Concurrency safety is enforced at the database level via a unique index on
+// orgs.personal_user_id (nulls excluded — see ent/schema/org.go), not by
+// application-level locking, because Inferno runs multiple server processes
+// and an in-process lock would not be visible across them. The lookup below
+// queries that same column directly (a single indexed read, and a clearer
+// expression of the invariant than scanning org_members), and the create
+// path below handles losing the race: if a concurrent caller's insert wins,
+// this caller's insert fails the unique constraint, and we re-read and
+// return the winner's row rather than propagating an error — the contract
+// is "idempotent, returns the user's personal org," and the loser of the
+// race must get a correct result too.
 func (s *OrgService) EnsurePersonalOrg(ctx context.Context, userID int64, username string) (*dbent.Org, error) {
-	members, err := s.entClient.OrgMember.Query().
-		Where(orgmember.UserID(userID)).
-		All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("query memberships: %w", err)
-	}
-	for _, m := range members {
-		org, err := s.entClient.Org.Get(ctx, m.OrgID)
-		if err != nil {
-			return nil, fmt.Errorf("load org %d: %w", m.OrgID, err)
-		}
-		if org.IsPersonal {
-			return org, nil
-		}
+	existing, err := s.entClient.Org.Query().
+		Where(org.PersonalUserID(userID)).
+		Only(ctx)
+	switch {
+	case err == nil:
+		return existing, nil
+	case !dbent.IsNotFound(err):
+		return nil, fmt.Errorf("query personal org: %w", err)
 	}
 
 	slug, err := slugFor(username)
@@ -83,24 +92,36 @@ func (s *OrgService) EnsurePersonalOrg(ctx context.Context, userID int64, userna
 		name = slug
 	}
 
-	org, err := s.entClient.Org.Create().
+	created, err := s.entClient.Org.Create().
 		SetSlug(slug).
 		SetName(name).
 		SetIsPersonal(true).
+		SetPersonalUserID(userID).
 		Save(ctx)
 	if err != nil {
+		if dbent.IsConstraintError(err) {
+			// Lost the race: another caller's create for the same userID won
+			// between our lookup and our insert. Re-read and return their row.
+			winner, getErr := s.entClient.Org.Query().
+				Where(org.PersonalUserID(userID)).
+				Only(ctx)
+			if getErr != nil {
+				return nil, fmt.Errorf("re-read personal org after race: %w", getErr)
+			}
+			return winner, nil
+		}
 		return nil, fmt.Errorf("create personal org: %w", err)
 	}
 
 	if _, err := s.entClient.OrgMember.Create().
-		SetOrgID(org.ID).
+		SetOrgID(created.ID).
 		SetUserID(userID).
 		SetRole(OrgRoleOwner).
 		Save(ctx); err != nil {
 		return nil, fmt.Errorf("create owner membership: %w", err)
 	}
 
-	return org, nil
+	return created, nil
 }
 
 // OrgsForUser lists every org the user belongs to.

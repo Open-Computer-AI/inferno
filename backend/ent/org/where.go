@@ -79,6 +79,11 @@ func IsPersonal(v bool) predicate.Org {
 	return predicate.Org(sql.FieldEQ(FieldIsPersonal, v))
 }
 
+// PersonalUserID applies equality check predicate on the "personal_user_id" field. It's identical to PersonalUserIDEQ.
+func PersonalUserID(v int64) predicate.Org {
+	return predicate.Org(sql.FieldEQ(FieldPersonalUserID, v))
+}
+
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.Org {
 	return predicate.Org(sql.FieldEQ(FieldCreatedAt, v))
@@ -297,6 +302,56 @@ func IsPersonalEQ(v bool) predicate.Org {
 // IsPersonalNEQ applies the NEQ predicate on the "is_personal" field.
 func IsPersonalNEQ(v bool) predicate.Org {
 	return predicate.Org(sql.FieldNEQ(FieldIsPersonal, v))
+}
+
+// PersonalUserIDEQ applies the EQ predicate on the "personal_user_id" field.
+func PersonalUserIDEQ(v int64) predicate.Org {
+	return predicate.Org(sql.FieldEQ(FieldPersonalUserID, v))
+}
+
+// PersonalUserIDNEQ applies the NEQ predicate on the "personal_user_id" field.
+func PersonalUserIDNEQ(v int64) predicate.Org {
+	return predicate.Org(sql.FieldNEQ(FieldPersonalUserID, v))
+}
+
+// PersonalUserIDIn applies the In predicate on the "personal_user_id" field.
+func PersonalUserIDIn(vs ...int64) predicate.Org {
+	return predicate.Org(sql.FieldIn(FieldPersonalUserID, vs...))
+}
+
+// PersonalUserIDNotIn applies the NotIn predicate on the "personal_user_id" field.
+func PersonalUserIDNotIn(vs ...int64) predicate.Org {
+	return predicate.Org(sql.FieldNotIn(FieldPersonalUserID, vs...))
+}
+
+// PersonalUserIDGT applies the GT predicate on the "personal_user_id" field.
+func PersonalUserIDGT(v int64) predicate.Org {
+	return predicate.Org(sql.FieldGT(FieldPersonalUserID, v))
+}
+
+// PersonalUserIDGTE applies the GTE predicate on the "personal_user_id" field.
+func PersonalUserIDGTE(v int64) predicate.Org {
+	return predicate.Org(sql.FieldGTE(FieldPersonalUserID, v))
+}
+
+// PersonalUserIDLT applies the LT predicate on the "personal_user_id" field.
+func PersonalUserIDLT(v int64) predicate.Org {
+	return predicate.Org(sql.FieldLT(FieldPersonalUserID, v))
+}
+
+// PersonalUserIDLTE applies the LTE predicate on the "personal_user_id" field.
+func PersonalUserIDLTE(v int64) predicate.Org {
+	return predicate.Org(sql.FieldLTE(FieldPersonalUserID, v))
+}
+
+// PersonalUserIDIsNil applies the IsNil predicate on the "personal_user_id" field.
+func PersonalUserIDIsNil() predicate.Org {
+	return predicate.Org(sql.FieldIsNull(FieldPersonalUserID))
+}
+
+// PersonalUserIDNotNil applies the NotNil predicate on the "personal_user_id" field.
+func PersonalUserIDNotNil() predicate.Org {
+	return predicate.Org(sql.FieldNotNull(FieldPersonalUserID))
 }
 
 // And groups predicates with the AND operator between them.

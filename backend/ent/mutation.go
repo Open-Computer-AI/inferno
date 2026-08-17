@@ -29113,18 +29113,20 @@ func (m *IdentityAdoptionDecisionMutation) ResetEdge(name string) error {
 // OrgMutation represents an operation that mutates the Org nodes in the graph.
 type OrgMutation struct {
 	config
-	op            Op
-	typ           string
-	id            *int64
-	created_at    *time.Time
-	updated_at    *time.Time
-	slug          *string
-	name          *string
-	is_personal   *bool
-	clearedFields map[string]struct{}
-	done          bool
-	oldValue      func(context.Context) (*Org, error)
-	predicates    []predicate.Org
+	op                  Op
+	typ                 string
+	id                  *int64
+	created_at          *time.Time
+	updated_at          *time.Time
+	slug                *string
+	name                *string
+	is_personal         *bool
+	personal_user_id    *int64
+	addpersonal_user_id *int64
+	clearedFields       map[string]struct{}
+	done                bool
+	oldValue            func(context.Context) (*Org, error)
+	predicates          []predicate.Org
 }
 
 var _ ent.Mutation = (*OrgMutation)(nil)
@@ -29405,6 +29407,76 @@ func (m *OrgMutation) ResetIsPersonal() {
 	m.is_personal = nil
 }
 
+// SetPersonalUserID sets the "personal_user_id" field.
+func (m *OrgMutation) SetPersonalUserID(i int64) {
+	m.personal_user_id = &i
+	m.addpersonal_user_id = nil
+}
+
+// PersonalUserID returns the value of the "personal_user_id" field in the mutation.
+func (m *OrgMutation) PersonalUserID() (r int64, exists bool) {
+	v := m.personal_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPersonalUserID returns the old "personal_user_id" field's value of the Org entity.
+// If the Org object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *OrgMutation) OldPersonalUserID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPersonalUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPersonalUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPersonalUserID: %w", err)
+	}
+	return oldValue.PersonalUserID, nil
+}
+
+// AddPersonalUserID adds i to the "personal_user_id" field.
+func (m *OrgMutation) AddPersonalUserID(i int64) {
+	if m.addpersonal_user_id != nil {
+		*m.addpersonal_user_id += i
+	} else {
+		m.addpersonal_user_id = &i
+	}
+}
+
+// AddedPersonalUserID returns the value that was added to the "personal_user_id" field in this mutation.
+func (m *OrgMutation) AddedPersonalUserID() (r int64, exists bool) {
+	v := m.addpersonal_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearPersonalUserID clears the value of the "personal_user_id" field.
+func (m *OrgMutation) ClearPersonalUserID() {
+	m.personal_user_id = nil
+	m.addpersonal_user_id = nil
+	m.clearedFields[org.FieldPersonalUserID] = struct{}{}
+}
+
+// PersonalUserIDCleared returns if the "personal_user_id" field was cleared in this mutation.
+func (m *OrgMutation) PersonalUserIDCleared() bool {
+	_, ok := m.clearedFields[org.FieldPersonalUserID]
+	return ok
+}
+
+// ResetPersonalUserID resets all changes to the "personal_user_id" field.
+func (m *OrgMutation) ResetPersonalUserID() {
+	m.personal_user_id = nil
+	m.addpersonal_user_id = nil
+	delete(m.clearedFields, org.FieldPersonalUserID)
+}
+
 // Where appends a list predicates to the OrgMutation builder.
 func (m *OrgMutation) Where(ps ...predicate.Org) {
 	m.predicates = append(m.predicates, ps...)
@@ -29439,7 +29511,7 @@ func (m *OrgMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *OrgMutation) Fields() []string {
-	fields := make([]string, 0, 5)
+	fields := make([]string, 0, 6)
 	if m.created_at != nil {
 		fields = append(fields, org.FieldCreatedAt)
 	}
@@ -29454,6 +29526,9 @@ func (m *OrgMutation) Fields() []string {
 	}
 	if m.is_personal != nil {
 		fields = append(fields, org.FieldIsPersonal)
+	}
+	if m.personal_user_id != nil {
+		fields = append(fields, org.FieldPersonalUserID)
 	}
 	return fields
 }
@@ -29473,6 +29548,8 @@ func (m *OrgMutation) Field(name string) (ent.Value, bool) {
 		return m.Name()
 	case org.FieldIsPersonal:
 		return m.IsPersonal()
+	case org.FieldPersonalUserID:
+		return m.PersonalUserID()
 	}
 	return nil, false
 }
@@ -29492,6 +29569,8 @@ func (m *OrgMutation) OldField(ctx context.Context, name string) (ent.Value, err
 		return m.OldName(ctx)
 	case org.FieldIsPersonal:
 		return m.OldIsPersonal(ctx)
+	case org.FieldPersonalUserID:
+		return m.OldPersonalUserID(ctx)
 	}
 	return nil, fmt.Errorf("unknown Org field %s", name)
 }
@@ -29536,6 +29615,13 @@ func (m *OrgMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetIsPersonal(v)
 		return nil
+	case org.FieldPersonalUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPersonalUserID(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Org field %s", name)
 }
@@ -29543,13 +29629,21 @@ func (m *OrgMutation) SetField(name string, value ent.Value) error {
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *OrgMutation) AddedFields() []string {
-	return nil
+	var fields []string
+	if m.addpersonal_user_id != nil {
+		fields = append(fields, org.FieldPersonalUserID)
+	}
+	return fields
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *OrgMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case org.FieldPersonalUserID:
+		return m.AddedPersonalUserID()
+	}
 	return nil, false
 }
 
@@ -29558,6 +29652,13 @@ func (m *OrgMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *OrgMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case org.FieldPersonalUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPersonalUserID(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Org numeric field %s", name)
 }
@@ -29565,7 +29666,11 @@ func (m *OrgMutation) AddField(name string, value ent.Value) error {
 // ClearedFields returns all nullable fields that were cleared during this
 // mutation.
 func (m *OrgMutation) ClearedFields() []string {
-	return nil
+	var fields []string
+	if m.FieldCleared(org.FieldPersonalUserID) {
+		fields = append(fields, org.FieldPersonalUserID)
+	}
+	return fields
 }
 
 // FieldCleared returns a boolean indicating if a field with the given name was
@@ -29578,6 +29683,11 @@ func (m *OrgMutation) FieldCleared(name string) bool {
 // ClearField clears the value of the field with the given name. It returns an
 // error if the field is not defined in the schema.
 func (m *OrgMutation) ClearField(name string) error {
+	switch name {
+	case org.FieldPersonalUserID:
+		m.ClearPersonalUserID()
+		return nil
+	}
 	return fmt.Errorf("unknown Org nullable field %s", name)
 }
 
@@ -29599,6 +29709,9 @@ func (m *OrgMutation) ResetField(name string) error {
 		return nil
 	case org.FieldIsPersonal:
 		m.ResetIsPersonal()
+		return nil
+	case org.FieldPersonalUserID:
+		m.ResetPersonalUserID()
 		return nil
 	}
 	return fmt.Errorf("unknown Org field %s", name)

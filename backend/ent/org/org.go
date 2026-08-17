@@ -23,6 +23,8 @@ const (
 	FieldName = "name"
 	// FieldIsPersonal holds the string denoting the is_personal field in the database.
 	FieldIsPersonal = "is_personal"
+	// FieldPersonalUserID holds the string denoting the personal_user_id field in the database.
+	FieldPersonalUserID = "personal_user_id"
 	// Table holds the table name of the org in the database.
 	Table = "orgs"
 )
@@ -35,6 +37,7 @@ var Columns = []string{
 	FieldSlug,
 	FieldName,
 	FieldIsPersonal,
+	FieldPersonalUserID,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -93,4 +96,9 @@ func ByName(opts ...sql.OrderTermOption) OrderOption {
 // ByIsPersonal orders the results by the is_personal field.
 func ByIsPersonal(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldIsPersonal, opts...).ToFunc()
+}
+
+// ByPersonalUserID orders the results by the personal_user_id field.
+func ByPersonalUserID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPersonalUserID, opts...).ToFunc()
 }

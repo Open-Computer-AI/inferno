@@ -76,6 +76,20 @@ func (_c *OrgCreate) SetNillableIsPersonal(v *bool) *OrgCreate {
 	return _c
 }
 
+// SetPersonalUserID sets the "personal_user_id" field.
+func (_c *OrgCreate) SetPersonalUserID(v int64) *OrgCreate {
+	_c.mutation.SetPersonalUserID(v)
+	return _c
+}
+
+// SetNillablePersonalUserID sets the "personal_user_id" field if the given value is not nil.
+func (_c *OrgCreate) SetNillablePersonalUserID(v *int64) *OrgCreate {
+	if v != nil {
+		_c.SetPersonalUserID(*v)
+	}
+	return _c
+}
+
 // Mutation returns the OrgMutation object of the builder.
 func (_c *OrgCreate) Mutation() *OrgMutation {
 	return _c.mutation
@@ -199,6 +213,10 @@ func (_c *OrgCreate) createSpec() (*Org, *sqlgraph.CreateSpec) {
 		_spec.SetField(org.FieldIsPersonal, field.TypeBool, value)
 		_node.IsPersonal = value
 	}
+	if value, ok := _c.mutation.PersonalUserID(); ok {
+		_spec.SetField(org.FieldPersonalUserID, field.TypeInt64, value)
+		_node.PersonalUserID = &value
+	}
 	return _node, _spec
 }
 
@@ -296,6 +314,30 @@ func (u *OrgUpsert) SetIsPersonal(v bool) *OrgUpsert {
 // UpdateIsPersonal sets the "is_personal" field to the value that was provided on create.
 func (u *OrgUpsert) UpdateIsPersonal() *OrgUpsert {
 	u.SetExcluded(org.FieldIsPersonal)
+	return u
+}
+
+// SetPersonalUserID sets the "personal_user_id" field.
+func (u *OrgUpsert) SetPersonalUserID(v int64) *OrgUpsert {
+	u.Set(org.FieldPersonalUserID, v)
+	return u
+}
+
+// UpdatePersonalUserID sets the "personal_user_id" field to the value that was provided on create.
+func (u *OrgUpsert) UpdatePersonalUserID() *OrgUpsert {
+	u.SetExcluded(org.FieldPersonalUserID)
+	return u
+}
+
+// AddPersonalUserID adds v to the "personal_user_id" field.
+func (u *OrgUpsert) AddPersonalUserID(v int64) *OrgUpsert {
+	u.Add(org.FieldPersonalUserID, v)
+	return u
+}
+
+// ClearPersonalUserID clears the value of the "personal_user_id" field.
+func (u *OrgUpsert) ClearPersonalUserID() *OrgUpsert {
+	u.SetNull(org.FieldPersonalUserID)
 	return u
 }
 
@@ -397,6 +439,34 @@ func (u *OrgUpsertOne) SetIsPersonal(v bool) *OrgUpsertOne {
 func (u *OrgUpsertOne) UpdateIsPersonal() *OrgUpsertOne {
 	return u.Update(func(s *OrgUpsert) {
 		s.UpdateIsPersonal()
+	})
+}
+
+// SetPersonalUserID sets the "personal_user_id" field.
+func (u *OrgUpsertOne) SetPersonalUserID(v int64) *OrgUpsertOne {
+	return u.Update(func(s *OrgUpsert) {
+		s.SetPersonalUserID(v)
+	})
+}
+
+// AddPersonalUserID adds v to the "personal_user_id" field.
+func (u *OrgUpsertOne) AddPersonalUserID(v int64) *OrgUpsertOne {
+	return u.Update(func(s *OrgUpsert) {
+		s.AddPersonalUserID(v)
+	})
+}
+
+// UpdatePersonalUserID sets the "personal_user_id" field to the value that was provided on create.
+func (u *OrgUpsertOne) UpdatePersonalUserID() *OrgUpsertOne {
+	return u.Update(func(s *OrgUpsert) {
+		s.UpdatePersonalUserID()
+	})
+}
+
+// ClearPersonalUserID clears the value of the "personal_user_id" field.
+func (u *OrgUpsertOne) ClearPersonalUserID() *OrgUpsertOne {
+	return u.Update(func(s *OrgUpsert) {
+		s.ClearPersonalUserID()
 	})
 }
 
@@ -664,6 +734,34 @@ func (u *OrgUpsertBulk) SetIsPersonal(v bool) *OrgUpsertBulk {
 func (u *OrgUpsertBulk) UpdateIsPersonal() *OrgUpsertBulk {
 	return u.Update(func(s *OrgUpsert) {
 		s.UpdateIsPersonal()
+	})
+}
+
+// SetPersonalUserID sets the "personal_user_id" field.
+func (u *OrgUpsertBulk) SetPersonalUserID(v int64) *OrgUpsertBulk {
+	return u.Update(func(s *OrgUpsert) {
+		s.SetPersonalUserID(v)
+	})
+}
+
+// AddPersonalUserID adds v to the "personal_user_id" field.
+func (u *OrgUpsertBulk) AddPersonalUserID(v int64) *OrgUpsertBulk {
+	return u.Update(func(s *OrgUpsert) {
+		s.AddPersonalUserID(v)
+	})
+}
+
+// UpdatePersonalUserID sets the "personal_user_id" field to the value that was provided on create.
+func (u *OrgUpsertBulk) UpdatePersonalUserID() *OrgUpsertBulk {
+	return u.Update(func(s *OrgUpsert) {
+		s.UpdatePersonalUserID()
+	})
+}
+
+// ClearPersonalUserID clears the value of the "personal_user_id" field.
+func (u *OrgUpsertBulk) ClearPersonalUserID() *OrgUpsertBulk {
+	return u.Update(func(s *OrgUpsert) {
+		s.ClearPersonalUserID()
 	})
 }
 

@@ -90,6 +90,7 @@ backend/ent/predicate/predicate.go
 backend/ent/runtime/runtime.go
 backend/ent/tx.go
 backend/migrations/901_org_and_members.sql
+backend/migrations/904_org_personal_user_id.sql
 backend/internal/service/org_service.go
 backend/internal/service/org_service_test.go
 backend/internal/service/auth_service.go

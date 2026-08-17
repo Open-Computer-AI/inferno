@@ -76,6 +76,33 @@ func (_u *OrgUpdate) SetNillableIsPersonal(v *bool) *OrgUpdate {
 	return _u
 }
 
+// SetPersonalUserID sets the "personal_user_id" field.
+func (_u *OrgUpdate) SetPersonalUserID(v int64) *OrgUpdate {
+	_u.mutation.ResetPersonalUserID()
+	_u.mutation.SetPersonalUserID(v)
+	return _u
+}
+
+// SetNillablePersonalUserID sets the "personal_user_id" field if the given value is not nil.
+func (_u *OrgUpdate) SetNillablePersonalUserID(v *int64) *OrgUpdate {
+	if v != nil {
+		_u.SetPersonalUserID(*v)
+	}
+	return _u
+}
+
+// AddPersonalUserID adds value to the "personal_user_id" field.
+func (_u *OrgUpdate) AddPersonalUserID(v int64) *OrgUpdate {
+	_u.mutation.AddPersonalUserID(v)
+	return _u
+}
+
+// ClearPersonalUserID clears the value of the "personal_user_id" field.
+func (_u *OrgUpdate) ClearPersonalUserID() *OrgUpdate {
+	_u.mutation.ClearPersonalUserID()
+	return _u
+}
+
 // Mutation returns the OrgMutation object of the builder.
 func (_u *OrgUpdate) Mutation() *OrgMutation {
 	return _u.mutation
@@ -156,6 +183,15 @@ func (_u *OrgUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.IsPersonal(); ok {
 		_spec.SetField(org.FieldIsPersonal, field.TypeBool, value)
 	}
+	if value, ok := _u.mutation.PersonalUserID(); ok {
+		_spec.SetField(org.FieldPersonalUserID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPersonalUserID(); ok {
+		_spec.AddField(org.FieldPersonalUserID, field.TypeInt64, value)
+	}
+	if _u.mutation.PersonalUserIDCleared() {
+		_spec.ClearField(org.FieldPersonalUserID, field.TypeInt64)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{org.Label}
@@ -221,6 +257,33 @@ func (_u *OrgUpdateOne) SetNillableIsPersonal(v *bool) *OrgUpdateOne {
 	if v != nil {
 		_u.SetIsPersonal(*v)
 	}
+	return _u
+}
+
+// SetPersonalUserID sets the "personal_user_id" field.
+func (_u *OrgUpdateOne) SetPersonalUserID(v int64) *OrgUpdateOne {
+	_u.mutation.ResetPersonalUserID()
+	_u.mutation.SetPersonalUserID(v)
+	return _u
+}
+
+// SetNillablePersonalUserID sets the "personal_user_id" field if the given value is not nil.
+func (_u *OrgUpdateOne) SetNillablePersonalUserID(v *int64) *OrgUpdateOne {
+	if v != nil {
+		_u.SetPersonalUserID(*v)
+	}
+	return _u
+}
+
+// AddPersonalUserID adds value to the "personal_user_id" field.
+func (_u *OrgUpdateOne) AddPersonalUserID(v int64) *OrgUpdateOne {
+	_u.mutation.AddPersonalUserID(v)
+	return _u
+}
+
+// ClearPersonalUserID clears the value of the "personal_user_id" field.
+func (_u *OrgUpdateOne) ClearPersonalUserID() *OrgUpdateOne {
+	_u.mutation.ClearPersonalUserID()
 	return _u
 }
 
@@ -333,6 +396,15 @@ func (_u *OrgUpdateOne) sqlSave(ctx context.Context) (_node *Org, err error) {
 	}
 	if value, ok := _u.mutation.IsPersonal(); ok {
 		_spec.SetField(org.FieldIsPersonal, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.PersonalUserID(); ok {
+		_spec.SetField(org.FieldPersonalUserID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPersonalUserID(); ok {
+		_spec.AddField(org.FieldPersonalUserID, field.TypeInt64, value)
+	}
+	if _u.mutation.PersonalUserIDCleared() {
+		_spec.ClearField(org.FieldPersonalUserID, field.TypeInt64)
 	}
 	_node = &Org{config: _u.config}
 	_spec.Assign = _node.assignValues
