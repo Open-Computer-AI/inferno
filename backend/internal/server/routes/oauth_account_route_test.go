@@ -21,7 +21,7 @@ import (
 func TestOAuthAccountRouteUsesScopeMiddlewareNotJWTAuth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	RegisterOAuthAccountRoutes(router, handler.NewOAuthHandler(nil, nil, nil, nil, nil))
+	RegisterOAuthAccountRoutes(router, handler.NewOAuthHandler(nil, nil, nil, nil, nil, nil))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/oauth/account", nil)
 	// Deliberately no Authorization header.
@@ -46,7 +46,7 @@ func TestOAuthAccountRouteNotRegisteredOnJWTAuthGroup(t *testing.T) {
 		t.Error("jwtAuth middleware must never run for GET /api/oauth/account")
 		c.AbortWithStatus(http.StatusUnauthorized)
 	})
-	RegisterOAuthAccountRoutes(router, handler.NewOAuthHandler(nil, nil, nil, nil, nil))
+	RegisterOAuthAccountRoutes(router, handler.NewOAuthHandler(nil, nil, nil, nil, nil, nil))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/oauth/account", nil)
 	rec := httptest.NewRecorder()

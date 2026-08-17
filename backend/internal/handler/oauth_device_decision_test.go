@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -37,7 +38,7 @@ func newDeviceDecisionTestHandler(t *testing.T) (*OAuthHandler, *dbent.Client) {
 	clientSvc := service.NewOAuthClientService(client)
 	deviceSvc := service.NewOAuthDeviceService(client, "https://portal.example.com")
 	tokenSvc := service.NewOAuthTokenService(client, keySvc, deviceSvc, newOAuthHandlerTestRefreshCache(), oauthHandlerTestUserLookup{}, "https://portal.example.com")
-	return NewOAuthHandler(keySvc, clientSvc, nil, deviceSvc, tokenSvc), client
+	return NewOAuthHandler(keySvc, clientSvc, nil, deviceSvc, tokenSvc, nil), client
 }
 
 // authedOAuthDeviceRouter wires ApproveDevice/DenyDevice behind a stand-in
@@ -209,4 +210,127 @@ func TestDenyDeviceSuccess(t *testing.T) {
 	row, err := entClient.OAuthDeviceAuthorization.Query().Only(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "denied", row.Status)
+}
+
+// authedPendingRouter wires GET /api/oauth/device/pending behind the same
+// AuthSubject stand-in the approve/deny routes use in production.
+func authedPendingRouter(t *testing.T, h *OAuthHandler, userID int64) *gin.Engine {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: userID})
+		c.Next()
+	})
+	router.GET("/api/oauth/device/pending", h.PendingDeviceAuthorization)
+	return router
+}
+
+func getPending(router *gin.Engine, userCode string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet, "/api/oauth/device/pending?user_code="+url.QueryEscape(userCode), nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestPendingDeviceAuthorizationRequiresSession: an unauthenticated caller
+// must not be able to learn whether a user_code exists. Without this, anyone
+// who phished (or guessed) a code could confirm it is live before using it.
+func TestPendingDeviceAuthorizationRequiresSession(t *testing.T) {
+	h, client := newDeviceDecisionTestHandler(t)
+	seedDeviceAuthorization(t, client, "ABCD-EFGH", time.Now().Add(10*time.Minute))
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/api/oauth/device/pending", h.PendingDeviceAuthorization)
+
+	rec := getPending(router, "ABCD-EFGH")
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	requireResponseEnvelopeBody(t, rec, http.StatusUnauthorized, "unauthorized")
+}
+
+// TestPendingDeviceAuthorizationReturnsClientAndScopes is the endpoint that
+// makes the approval screen say WHO is asking and FOR WHAT — RFC 8628 §5.4.
+// It is on the response envelope like its approve/deny neighbours, not bare:
+// it is a panel endpoint the Vue app consumes, never part of the hermes wire
+// contract.
+func TestPendingDeviceAuthorizationReturnsClientAndScopes(t *testing.T) {
+	h, client := newDeviceDecisionTestHandler(t)
+	ctx := t.Context()
+
+	_, err := client.OAuthClient.Create().
+		SetClientID("agent:test-client").
+		SetKind("SELF_HOSTED").
+		SetName("my-laptop").
+		SetOwnerUserID(7).
+		SetOrgID(1).
+		SetStatus(service.ClientActive).
+		SetRedirectURIOrigin("https://agent.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = client.OAuthDeviceAuthorization.Create().
+		SetDeviceCode("device-code-WXYZ-2345").
+		SetUserCode("WXYZ-2345").
+		SetClientID("agent:test-client").
+		SetScope("inference:invoke billing:read").
+		SetStatus(service.DeviceStatusPending).
+		SetExpiresAt(time.Now().Add(10 * time.Minute)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	router := authedPendingRouter(t, h, 7)
+	rec := getPending(router, "wxyz-2345")
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := requireResponseEnvelopeBody(t, rec, 0, "success")
+	data, ok := body["data"].(map[string]any)
+	require.True(t, ok, "data must be an object, got %T", body["data"])
+	require.Equal(t, "my-laptop", data["client_name"])
+	require.Equal(t, "agent:test-client", data["client_id"])
+	require.Equal(t, []any{"inference:invoke", "billing:read"}, data["scopes"])
+	require.NotEmpty(t, data["expires_at"])
+
+	// The user_code is a credential until redeemed and must never be echoed.
+	require.NotContains(t, rec.Body.String(), "WXYZ-2345")
+}
+
+// TestPendingDeviceAuthorizationRejectsDecidedCode: once a decision exists the
+// screen must not re-offer the Approve button, so the endpoint reports the
+// state rather than returning stale details.
+func TestPendingDeviceAuthorizationRejectsDecidedCode(t *testing.T) {
+	h, client := newDeviceDecisionTestHandler(t)
+	seedDeviceAuthorization(t, client, "ABCD-EFGH", time.Now().Add(10*time.Minute))
+	_, err := client.OAuthDeviceAuthorization.Update().
+		SetStatus(service.DeviceStatusApproved).Save(t.Context())
+	require.NoError(t, err)
+
+	router := authedPendingRouter(t, h, 7)
+	rec := getPending(router, "ABCD-EFGH")
+
+	require.Equal(t, http.StatusConflict, rec.Code)
+	requireResponseEnvelopeBody(t, rec, http.StatusConflict, "device code already decided")
+}
+
+// TestApproveDeviceRejectsAlreadyDecidedCode is the handler-level half of the
+// terminal-state fix: re-approving a consumed code must surface as a distinct
+// 409, not a success that silently re-arms the row.
+func TestApproveDeviceRejectsAlreadyDecidedCode(t *testing.T) {
+	h, client := newDeviceDecisionTestHandler(t)
+	seedDeviceAuthorization(t, client, "ABCD-EFGH", time.Now().Add(10*time.Minute))
+	_, err := client.OAuthDeviceAuthorization.Update().
+		SetStatus(service.DeviceStatusExpired).Save(t.Context())
+	require.NoError(t, err)
+
+	router := authedOAuthDeviceRouter(t, h, 7)
+	rec := postDeviceDecision(router, "/api/oauth/device/approve", `{"user_code":"ABCD-EFGH"}`)
+
+	require.Equal(t, http.StatusConflict, rec.Code)
+	requireResponseEnvelopeBody(t, rec, http.StatusConflict, "device code already decided")
+
+	row, err := client.OAuthDeviceAuthorization.Query().Only(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, service.DeviceStatusExpired, row.Status,
+		"a consumed authorization must not be re-armed — the device_code would be redeemable twice")
 }

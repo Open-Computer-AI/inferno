@@ -154,10 +154,21 @@ type userLookupStub struct {
 	mu       sync.Mutex
 	inactive map[int64]bool
 	missing  map[int64]bool
+	// passwordHash and email back the credential-invalidation tests:
+	// resolvedTokenVersion fingerprints email+password_hash, so mutating either
+	// is exactly what an in-app password or email change does to the value
+	// stamped on a refresh token.
+	passwordHash map[int64]string
+	email        map[int64]string
 }
 
 func newUserLookupStub() *userLookupStub {
-	return &userLookupStub{inactive: map[int64]bool{}, missing: map[int64]bool{}}
+	return &userLookupStub{
+		inactive:     map[int64]bool{},
+		missing:      map[int64]bool{},
+		passwordHash: map[int64]string{},
+		email:        map[int64]string{},
+	}
 }
 
 func (u *userLookupStub) GetByID(_ context.Context, id int64) (*User, error) {
@@ -170,7 +181,31 @@ func (u *userLookupStub) GetByID(_ context.Context, id int64) (*User, error) {
 	if u.inactive[id] {
 		status = "banned"
 	}
-	return &User{ID: id, Status: status}, nil
+	hash, ok := u.passwordHash[id]
+	if !ok {
+		hash = "original-bcrypt-hash"
+	}
+	mail, ok := u.email[id]
+	if !ok {
+		mail = "user@example.com"
+	}
+	return &User{ID: id, Email: mail, PasswordHash: hash, Status: status}, nil
+}
+
+// setPasswordHash simulates UserService.ChangePassword: the new hash is
+// written and nothing else happens — in particular RevokeAllUserSessions is
+// NOT called, which is precisely the production behaviour the OAuth path has
+// to defend itself against.
+func (u *userLookupStub) setPasswordHash(id int64, hash string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.passwordHash[id] = hash
+}
+
+func (u *userLookupStub) setEmail(id int64, mail string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.email[id] = mail
 }
 
 func (u *userLookupStub) setInactive(id int64) {
@@ -348,6 +383,90 @@ func TestRefreshTokenReuseIsRejected(t *testing.T) {
 	// outcome is ErrInvalidGrant (not found), not ErrRefreshTokenReused.
 	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, rotated.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
 		t.Fatalf("(b) expected ErrInvalidGrant for the legitimately-rotated token after reuse revoked its family, got %v", err)
+	}
+}
+
+// TestRefreshFailsAfterPasswordChange is the regression test for the
+// credential-revocation gap between the panel and the OAuth path.
+//
+// UserService.ChangePassword writes the new password hash and returns; it does
+// NOT call RevokeAllUserSessions. Panel sessions still die because
+// AuthService.RefreshTokenPair compares the stored TokenVersion against
+// resolvedTokenVersion(user) — a fingerprint of email+password_hash. The OAuth
+// path used to have NEITHER half: issueRefreshToken never stamped TokenVersion
+// (it stayed 0) and ExchangeRefreshToken never read it, so an exfiltrated
+// ~/.hermes/auth.json kept self-rotating for its full 30 days after the victim
+// changed their password — and there is no UI listing OAuth grants to tell
+// them.
+//
+// The assertion is deliberately on the whole FAMILY, not just the presented
+// token: killing one token would leave any concurrently-rotated sibling alive.
+func TestRefreshFailsAfterPasswordChange(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, _, users := newDeviceFlowFixtureWithDeps(t)
+
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+
+	original, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+
+	// Sanity: the credential works before the password changes. Without this,
+	// a test that broke the fixture would still "pass" the assertion below for
+	// entirely the wrong reason.
+	rotated, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err != nil {
+		t.Fatalf("pre-change rotation should succeed: %v", err)
+	}
+
+	// The victim changes their password in the panel. Nothing else happens —
+	// no explicit revocation call, exactly as in production.
+	users.setPasswordHash(42, "new-bcrypt-hash-after-the-user-changed-it")
+
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, rotated.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected ErrInvalidGrant after password change, got %v — "+
+			"a stolen agent credential would keep rotating for 30 more days", err)
+	}
+
+	// And the family is gone, not just the one token: re-presenting the
+	// already-rotated original must now read as "unknown", proving the whole
+	// rotation chain was revoked rather than a single entry invalidated.
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected the whole family to be revoked, got %v", err)
+	}
+}
+
+// TestRefreshFailsAfterEmailChange covers the other half of what
+// resolvedTokenVersion fingerprints. It is a separate test rather than a
+// subtest of the password case because the two are different revocation
+// triggers that happen to share one mechanism — if that mechanism is ever
+// narrowed to password_hash only, this is the test that notices.
+func TestRefreshFailsAfterEmailChange(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, _, users := newDeviceFlowFixtureWithDeps(t)
+
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+
+	original, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+
+	users.setEmail(42, "attacker-cannot-follow-this@example.com")
+
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected ErrInvalidGrant after email change, got %v", err)
 	}
 }
 
@@ -609,5 +728,110 @@ func TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins(t *testing.T) {
 	cache.mu.Unlock()
 	if originalStillPresent {
 		t.Fatal("expected DeleteTokenFamily to have actually removed the original token's cache entry")
+	}
+}
+
+// TestRevokedClientCannotRedeemOrRefresh proves oauth_client.status is a real
+// kill switch on BOTH grants, not just at flow start.
+//
+// Checking status only at RequestCode would leave every already-issued refresh
+// family rotating for up to 30 more days after a client is revoked — i.e. a
+// switch that stops new logins and nothing that matters. Sub-project #1's
+// reconcile job is being designed against this column, so it has to mean
+// something before that lands.
+func TestRevokedClientCannotRedeemOrRefresh(t *testing.T) {
+	ctx := context.Background()
+	entClient := newPaymentConfigServiceTestClient(t)
+	clients := NewOAuthClientService(entClient)
+	keys := NewOAuthKeyService(entClient)
+	devices := NewOAuthDeviceService(entClient, "https://portal.example.com")
+	cache := newFakeRefreshTokenCache()
+	tokens := NewOAuthTokenService(entClient, keys, devices, cache, newUserLookupStub(), "https://portal.example.com")
+
+	oc, err := clients.RegisterSelfHosted(ctx, 1, 42, "https://agent.example.com", "")
+	if err != nil {
+		t.Fatalf("RegisterSelfHosted: %v", err)
+	}
+
+	// Flow 1: approved, then the client is revoked BEFORE redemption.
+	grant, err := devices.RequestCode(ctx, oc.ClientID, ScopeInferenceInvoke)
+	if err != nil {
+		t.Fatalf("RequestCode: %v", err)
+	}
+	if err := devices.Approve(ctx, grant.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+
+	// Flow 2: fully redeemed while still usable, so we hold a live refresh
+	// token whose family must also die on revocation.
+	grant2, err := devices.RequestCode(ctx, oc.ClientID, ScopeInferenceInvoke)
+	if err != nil {
+		t.Fatalf("RequestCode (2): %v", err)
+	}
+	if err := devices.Approve(ctx, grant2.UserCode, 42); err != nil {
+		t.Fatalf("Approve (2): %v", err)
+	}
+	live, err := tokens.ExchangeDeviceCode(ctx, oc.ClientID, deviceCodeFor(t, devices, ctx, grant2.UserCode))
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode (2): %v", err)
+	}
+	if _, err := tokens.ExchangeRefreshToken(ctx, oc.ClientID, live.RefreshToken); err != nil {
+		t.Fatalf("refresh must work while the client is usable: %v", err)
+	}
+
+	if _, err := entClient.OAuthClient.UpdateOneID(oc.ID).SetStatus(ClientRevoked).Save(ctx); err != nil {
+		t.Fatalf("revoke client: %v", err)
+	}
+
+	// device_code grant: an approved-but-unredeemed code is now worthless.
+	if _, err := tokens.ExchangeDeviceCode(ctx, oc.ClientID, deviceCodeFor(t, devices, ctx, grant.UserCode)); !errors.Is(err, ErrAccessDenied) {
+		t.Fatalf("expected ErrAccessDenied redeeming for a revoked client, got %v", err)
+	}
+
+	// refresh_token grant: the already-issued family stops rotating.
+	if _, err := tokens.ExchangeRefreshToken(ctx, oc.ClientID, live.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected ErrInvalidGrant refreshing for a revoked client, got %v", err)
+	}
+}
+
+// deviceCodeFor resolves a user_code back to its device_code, which the CLI
+// would be holding.
+func deviceCodeFor(t *testing.T, devices *OAuthDeviceService, ctx context.Context, userCode string) string {
+	t.Helper()
+	row, err := devices.byUserCodeForTest(ctx, userCode)
+	if err != nil {
+		t.Fatalf("byUserCodeForTest: %v", err)
+	}
+	return row.DeviceCode
+}
+
+// TestDeviceGrantRejectsBannedApprover: an approval is not a session. A user
+// banned between clicking Approve in the browser and the CLI's next poll must
+// not receive a 30-day credential.
+func TestDeviceGrantRejectsBannedApprover(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, _, users := newDeviceFlowFixtureWithDeps(t)
+
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+
+	users.setInactive(42)
+
+	if _, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode); !errors.Is(err, ErrAccessDenied) {
+		t.Fatalf("expected ErrAccessDenied for a banned approver, got %v", err)
+	}
+
+	// The approval must NOT have been burned: the user-status check runs
+	// before the consuming update, so an unban leaves the code redeemable.
+	reloaded, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if reloaded.Status != DeviceStatusApproved {
+		t.Fatalf("a rejected redemption must not consume the approval, status is %q", reloaded.Status)
 	}
 }

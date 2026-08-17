@@ -185,7 +185,11 @@ func (c *oauthHandlerTestRefreshCache) MarkRotated(_ context.Context, hash strin
 type oauthHandlerTestUserLookup struct{}
 
 func (oauthHandlerTestUserLookup) GetByID(_ context.Context, id int64) (*service.User, error) {
-	return &service.User{ID: id, Status: service.StatusActive}, nil
+	return &service.User{
+		ID:     id,
+		Email:  fmt.Sprintf("user%d@example.com", id),
+		Status: service.StatusActive,
+	}, nil
 }
 
 func newOAuthHandlerTestHandler(t *testing.T) *OAuthHandler {
@@ -195,7 +199,7 @@ func newOAuthHandlerTestHandler(t *testing.T) *OAuthHandler {
 	clientSvc := service.NewOAuthClientService(client)
 	deviceSvc := service.NewOAuthDeviceService(client, "https://portal.example.com")
 	tokenSvc := service.NewOAuthTokenService(client, keySvc, deviceSvc, newOAuthHandlerTestRefreshCache(), oauthHandlerTestUserLookup{}, "https://portal.example.com")
-	return NewOAuthHandler(keySvc, clientSvc, nil, deviceSvc, tokenSvc)
+	return NewOAuthHandler(keySvc, clientSvc, nil, deviceSvc, tokenSvc, nil)
 }
 
 func newOAuthHandlerTestRouter(t *testing.T) (*gin.Engine, *OAuthHandler) {
@@ -477,7 +481,7 @@ func newOAuthAccountTestHandler(t *testing.T) *OAuthHandler {
 	orgSvc := service.NewOrgService(client)
 	deviceSvc := service.NewOAuthDeviceService(client, "https://portal.example.com")
 	tokenSvc := service.NewOAuthTokenService(client, keySvc, deviceSvc, newOAuthHandlerTestRefreshCache(), oauthHandlerTestUserLookup{}, "https://portal.example.com")
-	return NewOAuthHandler(keySvc, clientSvc, orgSvc, deviceSvc, tokenSvc)
+	return NewOAuthHandler(keySvc, clientSvc, orgSvc, deviceSvc, tokenSvc, oauthHandlerTestUserLookup{})
 }
 
 func newOAuthAccountTestRouter(t *testing.T) (*gin.Engine, *OAuthHandler) {
@@ -556,12 +560,44 @@ func TestAccountReturnsOrgsForValidToken(t *testing.T) {
 
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	require.Len(t, body, 2, "unexpected top-level keys: %v", body)
-	require.Equal(t, "42", body["user_id"])
+	// Still bare — no {code,message,data} envelope.
 	require.NotContains(t, body, "code")
 	require.NotContains(t, body, "message")
 	require.NotContains(t, body, "data")
 
+	// The shape hermes_cli/nous_account.py's _info_from_account_payload
+	// actually reads. Every assertion below names a key that function
+	// dereferences; the previous {"user_id","orgs"} shape matched NONE of
+	// them and failed soft, so the client reported "could not find a Nous
+	// Portal account or organisation" on every paid-capability gate.
+	user, ok := body["user"].(map[string]any)
+	require.True(t, ok, "user must be an object, got %T", body["user"])
+	require.Equal(t, "user42@example.com", user["email"])
+	// privy_did is deliberately absent: Inferno does not use Privy and a
+	// fabricated value would be worse than none.
+	require.NotContains(t, user, "privy_did")
+
+	organisation, ok := body["organisation"].(map[string]any)
+	require.True(t, ok, "organisation must be an object, got %T", body["organisation"])
+	require.Equal(t, strconv.FormatInt(org.ID, 10), organisation["id"])
+	require.Equal(t, org.Slug, organisation["slug"])
+	require.Equal(t, org.Name, organisation["name"])
+	require.Equal(t, service.OrgRoleOwner, organisation["role"])
+	require.Equal(t, true, organisation["isPersonal"])
+
+	// Explicit "no paid tier" rather than an absent key: absent makes the
+	// client say "could not verify your entitlement", which is a different
+	// (and wrong) claim from "you are on the free tier".
+	access, ok := body["paid_service_access"].(map[string]any)
+	require.True(t, ok, "paid_service_access must be an object, got %T", body["paid_service_access"])
+	require.Equal(t, false, access["allowed"])
+	require.Equal(t, false, access["paid_access"])
+	require.Equal(t, strconv.FormatInt(org.ID, 10), access["organisation_id"])
+	// The user HAS an account, so the client's "account_missing" branch —
+	// which tells them to re-authenticate — must not fire.
+	require.NotContains(t, access, "reason")
+
+	// Retained for the multi-org picker the design anticipates.
 	orgs, ok := body["orgs"].([]any)
 	require.True(t, ok, "orgs must be an array, got %T", body["orgs"])
 	require.Len(t, orgs, 1)
@@ -571,6 +607,29 @@ func TestAccountReturnsOrgsForValidToken(t *testing.T) {
 	require.Equal(t, org.Slug, orgBody["slug"])
 	require.Equal(t, service.OrgRoleOwner, orgBody["role"])
 	require.Equal(t, true, orgBody["isPersonal"])
+}
+
+// TestAccountReportsAccountMissingWithNoOrg locks the degraded path. Post-C1
+// every session provisions a personal org, so this should be unreachable — but
+// if it ever happens the client must get the specific "account_missing" reason
+// (which tells the user to re-authenticate) rather than a silently org-less
+// payload that reads as a valid free-tier account.
+func TestAccountReportsAccountMissingWithNoOrg(t *testing.T) {
+	router, h := newOAuthAccountTestRouter(t)
+
+	tok := mintTestAccountToken(t, h, 99, "inference:invoke")
+	rec := getOAuthAccount(router, tok)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.NotContains(t, body, "organisation")
+
+	access, ok := body["paid_service_access"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "account_missing", access["reason"])
+	require.Equal(t, false, access["allowed"])
 }
 
 func TestAccountRejectsInsufficientScopeIsUnreachable(t *testing.T) {
@@ -589,4 +648,48 @@ func TestAccountRejectsInsufficientScopeIsUnreachable(t *testing.T) {
 	rec := getOAuthAccount(router, tok)
 
 	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+// TestDeviceCodeRejectsUnknownScope pins the wire contract for the scope
+// allowlist: `invalid_scope` is RFC 8628 §3.2 / RFC 6749 §4.1.2.1's code, and
+// it must stay a BARE body like every other hermes-facing response here.
+//
+// It is deliberately distinct from invalid_client: an unrecognised scope is a
+// caller bug a developer has to be able to see, and the vocabulary is public
+// and fixed, so naming it leaks nothing.
+func TestDeviceCodeRejectsUnknownScope(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	client := newOAuthHandlerTestEntClient(t)
+	keySvc := service.NewOAuthKeyService(client)
+	clientSvc := service.NewOAuthClientService(client)
+	deviceSvc := service.NewOAuthDeviceService(client, "https://portal.example.com")
+	tokenSvc := service.NewOAuthTokenService(client, keySvc, deviceSvc, newOAuthHandlerTestRefreshCache(), oauthHandlerTestUserLookup{}, "https://portal.example.com")
+	h := NewOAuthHandler(keySvc, clientSvc, nil, deviceSvc, tokenSvc, nil)
+
+	router := gin.New()
+	router.POST("/api/oauth/device/code", h.DeviceCode)
+
+	oc, err := clientSvc.RegisterSelfHosted(t.Context(), 1, 42, "https://agent.example.com", "")
+	require.NoError(t, err)
+
+	post := func(scope string) *httptest.ResponseRecorder {
+		form := url.Values{"client_id": {oc.ClientID}, "scope": {scope}}
+		req := httptest.NewRequest(http.MethodPost, "/api/oauth/device/code", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// The phishing payload from the finding: real client, real code, scopes
+	// the victim would never knowingly grant.
+	rec := post("billing:manage agents:manage inference:invoke everything")
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	requireBareErrorBody(t, rec, "invalid_scope")
+
+	// A legitimate request still works, and the same scopes minus the bogus
+	// entry are perfectly grantable — the allowlist rejects unknown values,
+	// it does not blanket-ban privileged ones.
+	require.Equal(t, http.StatusOK, post("billing:manage agents:manage inference:invoke").Code)
+	require.Equal(t, http.StatusOK, post("").Code)
 }

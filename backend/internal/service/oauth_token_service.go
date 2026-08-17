@@ -86,6 +86,7 @@ type OAuthTokenService struct {
 	entClient    *dbent.Client
 	keySvc       *OAuthKeyService
 	deviceSvc    *OAuthDeviceService
+	clientSvc    *OAuthClientService
 	refreshCache RefreshTokenCache
 	userRepo     OAuthUserLookup
 	issuer       string
@@ -96,13 +97,31 @@ type OAuthTokenService struct {
 // URL (the JWKS lives at {issuer}/.well-known/jwks.json).
 func NewOAuthTokenService(entClient *dbent.Client, keySvc *OAuthKeyService, deviceSvc *OAuthDeviceService, refreshCache RefreshTokenCache, userRepo OAuthUserLookup, issuer string) *OAuthTokenService {
 	return &OAuthTokenService{
-		entClient:    entClient,
-		keySvc:       keySvc,
-		deviceSvc:    deviceSvc,
+		entClient: entClient,
+		keySvc:    keySvc,
+		deviceSvc: deviceSvc,
+		// Constructed here rather than injected, matching OAuthDeviceService:
+		// both live in package service over the same ent client, and threading
+		// a fourth wire dependency through for one lookup buys nothing.
+		clientSvc:    NewOAuthClientService(entClient),
 		refreshCache: refreshCache,
 		userRepo:     userRepo,
 		issuer:       issuer,
 	}
+}
+
+// assertClientUsable re-checks oauth_client.status on every grant.
+//
+// Checking it only at RequestCode would make `revoked` a one-way door that
+// stops new logins while every already-issued refresh family keeps rotating
+// for up to 30 more days — i.e. a kill switch that does not kill anything that
+// matters. Both grants therefore consult it.
+//
+// The error is deliberately returned as the caller's ordinary rejection
+// sentinel rather than a distinct one; see ErrClientNotUsable.
+func (s *OAuthTokenService) assertClientUsable(ctx context.Context, clientID string) error {
+	_, err := s.clientSvc.UsableByClientID(ctx, clientID)
+	return err
 }
 
 // mintAccessToken signs an ES256 JWT whose audience is the client_id, so an
@@ -154,7 +173,12 @@ func newFamilyID() (string, error) {
 // auth_service.go) in RefreshTokenCache, and returns the raw value — which
 // exists only in this return value and the caller's TLS response body,
 // never in Redis or a log line.
-func (s *OAuthTokenService) issueRefreshToken(ctx context.Context, userID int64, clientID, scope, familyID string) (string, error) {
+// tokenVersion is the credential-invalidation fingerprint from
+// resolvedTokenVersion(user) — a hash of the user's email + password_hash.
+// Stamping it here (and comparing it in ExchangeRefreshToken) is what makes an
+// in-app password or email change kill an OAuth agent credential, exactly as
+// AuthService.RefreshTokenPair does for panel sessions.
+func (s *OAuthTokenService) issueRefreshToken(ctx context.Context, userID int64, clientID, scope, familyID string, tokenVersion int64) (string, error) {
 	raw, err := newOAuthRefreshToken()
 	if err != nil {
 		return "", fmt.Errorf("refresh token entropy: %w", err)
@@ -163,22 +187,34 @@ func (s *OAuthTokenService) issueRefreshToken(ctx context.Context, userID int64,
 
 	now := time.Now()
 	data := &RefreshTokenData{
-		UserID:    userID,
-		FamilyID:  familyID,
-		ClientID:  clientID,
-		Scope:     scope,
-		CreatedAt: now,
-		ExpiresAt: now.Add(oauthRefreshTokenTTL),
+		UserID:       userID,
+		TokenVersion: tokenVersion,
+		FamilyID:     familyID,
+		ClientID:     clientID,
+		Scope:        scope,
+		CreatedAt:    now,
+		ExpiresAt:    now.Add(oauthRefreshTokenTTL),
 	}
 
 	if err := s.refreshCache.StoreRefreshToken(ctx, tokenHash, data, oauthRefreshTokenTTL); err != nil {
 		return "", fmt.Errorf("store refresh token: %w", err)
 	}
-	// Shares the user's token set with panel sessions: a password-change /
-	// logout-all-devices revocation (AuthService.RevokeAllUserSessions) kills
-	// agent-issued OAuth sessions too, not just browser sessions. Fatal, not
-	// just logged: a token silently missing from the user set would survive
-	// exactly that kind of revocation for the rest of its 30-day life.
+	// Shares the user's token set with panel sessions, so an explicit
+	// logout-all-devices / forgot-password RESET (both of which call
+	// AuthService.RevokeAllUserSessions) kills agent-issued OAuth sessions too,
+	// not just browser ones. Fatal, not just logged: a token silently missing
+	// from the user set would survive exactly that kind of revocation for the
+	// rest of its 30-day life.
+	//
+	// Note this set does NOT cover an in-app password change:
+	// UserService.ChangePassword writes the new hash and returns without
+	// calling RevokeAllUserSessions. Panel sessions still die there because
+	// AuthService.RefreshTokenPair compares TokenVersion, a fingerprint of
+	// email+password_hash. The TokenVersion stamped above, and the matching
+	// comparison in ExchangeRefreshToken, is what gives the OAuth path the
+	// same property — without it a stolen ~/.hermes/auth.json kept
+	// self-rotating for its full 30 days after the victim changed their
+	// password, with no UI anywhere listing OAuth grants to tell them.
 	if err := s.refreshCache.AddToUserTokenSet(ctx, userID, tokenHash, oauthRefreshTokenTTL); err != nil {
 		return "", fmt.Errorf("add refresh token to user set: %w", err)
 	}
@@ -199,6 +235,13 @@ func (s *OAuthTokenService) ExchangeDeviceCode(ctx context.Context, clientID, de
 	// Bind the code to the client that requested it — otherwise any
 	// registered agent could redeem another agent's pending login.
 	if row.ClientID != clientID {
+		return nil, ErrAccessDenied
+	}
+
+	// A client revoked between requesting the code and redeeming it must not
+	// get a token. Collapsed into access_denied, the same code a mismatched
+	// client already gets, so this adds no new observable signal.
+	if err := s.assertClientUsable(ctx, clientID); err != nil {
 		return nil, ErrAccessDenied
 	}
 
@@ -236,6 +279,25 @@ func (s *OAuthTokenService) ExchangeDeviceCode(ctx context.Context, clientID, de
 	}
 	userID := *row.ApprovedUserID
 
+	// Load the approving user BEFORE consuming the code, for two reasons.
+	// First, the refresh token this grant is about to mint must carry the
+	// user's current TokenVersion fingerprint (email+password_hash) or an
+	// in-app password change can never invalidate it — see issueRefreshToken.
+	// Second, an approval is not a session: a user banned or deleted in the
+	// window between approving in the browser and the CLI's next poll must not
+	// receive a 30-day credential. Doing this before the consuming UPDATE also
+	// means a transient user-lookup failure does not burn the human's approval.
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			return nil, ErrAccessDenied
+		}
+		return nil, fmt.Errorf("load user for device grant: %w", err)
+	}
+	if !user.IsActive() {
+		return nil, ErrAccessDenied
+	}
+
 	// Single use, race-safe: consume the row with a status-guarded UPDATE
 	// instead of an unconditional one. Two concurrent redemptions of the
 	// same approved code both read status="approved" above, but only one
@@ -262,7 +324,7 @@ func (s *OAuthTokenService) ExchangeDeviceCode(ctx context.Context, clientID, de
 	if err != nil {
 		return nil, err
 	}
-	refresh, err := s.issueRefreshToken(ctx, userID, clientID, row.Scope, familyID)
+	refresh, err := s.issueRefreshToken(ctx, userID, clientID, row.Scope, familyID, resolvedTokenVersion(user))
 	if err != nil {
 		return nil, err
 	}
@@ -319,6 +381,15 @@ func (s *OAuthTokenService) ExchangeRefreshToken(ctx context.Context, clientID, 
 	if data.ClientID != clientID {
 		return nil, ErrInvalidGrant
 	}
+	// Revoking a client stops its existing refresh families at their next
+	// rotation, not just new logins. Checked here — after the token has been
+	// resolved and bound to this client_id — rather than at the top of the
+	// function, so an unauthenticated caller cannot use this endpoint to probe
+	// which client_ids are revoked. Collapsed into invalid_grant, the same
+	// code every other credential rejection returns.
+	if err := s.assertClientUsable(ctx, clientID); err != nil {
+		return nil, ErrInvalidGrant
+	}
 	if time.Now().After(data.ExpiresAt) {
 		_ = s.refreshCache.DeleteRefreshToken(ctx, tokenHash)
 		return nil, ErrInvalidGrant
@@ -340,6 +411,24 @@ func (s *OAuthTokenService) ExchangeRefreshToken(ctx context.Context, clientID, 
 		return nil, fmt.Errorf("load user for refresh: %w", err)
 	}
 	if !user.IsActive() {
+		_ = s.refreshCache.DeleteTokenFamily(ctx, data.FamilyID)
+		return nil, ErrInvalidGrant
+	}
+
+	// Credential-invalidation check, mirroring auth_service.go:1798-1802 for
+	// panel sessions. resolvedTokenVersion is a fingerprint over the user's
+	// email + password_hash, so this single comparison covers BOTH an in-app
+	// password change and an email change.
+	//
+	// It is load-bearing rather than belt-and-braces: UserService.ChangePassword
+	// writes the new hash and returns without calling RevokeAllUserSessions, so
+	// nothing else stops this family. Without this branch the attack is: laptop
+	// compromised, ~/.hermes/auth.json exfiltrated, victim changes their
+	// password — panel access dies, the agent credential does not, and it
+	// self-rotates for the rest of its 30 days with no UI listing OAuth grants
+	// to tell them. Killing the whole family (not just this token) matches what
+	// the panel path does and means the attacker's in-flight rotations die too.
+	if data.TokenVersion != resolvedTokenVersion(user) {
 		_ = s.refreshCache.DeleteTokenFamily(ctx, data.FamilyID)
 		return nil, ErrInvalidGrant
 	}
@@ -382,7 +471,7 @@ func (s *OAuthTokenService) ExchangeRefreshToken(ctx context.Context, clientID, 
 	if err != nil {
 		return nil, err
 	}
-	newRefresh, err := s.issueRefreshToken(ctx, winner.UserID, clientID, winner.Scope, winner.FamilyID)
+	newRefresh, err := s.issueRefreshToken(ctx, winner.UserID, clientID, winner.Scope, winner.FamilyID, resolvedTokenVersion(user))
 	if err != nil {
 		return nil, err
 	}

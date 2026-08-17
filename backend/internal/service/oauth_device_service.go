@@ -35,9 +35,26 @@ const (
 	userCodeCollisionRetries = 5
 )
 
+// Device authorization lifecycle. `expired` doubles as "consumed": a device
+// code is single-use, and ExchangeDeviceCode marks a redeemed row `expired`
+// because RFC 8628 has no distinct "already used" error code.
+const (
+	DeviceStatusPending  = "pending"
+	DeviceStatusApproved = "approved"
+	DeviceStatusDenied   = "denied"
+	DeviceStatusExpired  = "expired"
+)
+
 var (
 	ErrDeviceCodeNotFound = errors.New("device code not found")
 	ErrDeviceCodeExpired  = errors.New("device code expired")
+
+	// ErrDeviceCodeNotPending is returned when a device authorization exists
+	// and has not timed out, but has already left `pending` — it was approved,
+	// denied, or redeemed. Distinct from ErrDeviceCodeExpired so the approval
+	// screen can say "that decision was already made" rather than mislabelling
+	// it a timeout.
+	ErrDeviceCodeNotPending = errors.New("device code is no longer pending")
 
 	// ErrPortalNotConfigured is returned by RequestCode when the service was
 	// constructed with an empty portalBaseURL. A device flow that emits
@@ -106,8 +123,15 @@ func (s *OAuthDeviceService) RequestCode(ctx context.Context, clientID, scope st
 		return nil, ErrPortalNotConfigured
 	}
 
-	if _, err := s.clientSvc.ByClientID(ctx, clientID); err != nil {
-		return nil, fmt.Errorf("unknown client_id %q: %w", clientID, err)
+	if _, err := s.clientSvc.UsableByClientID(ctx, clientID); err != nil {
+		// Unknown and not-usable (revoked) collapse into one wrapped error on
+		// purpose — the handler renders both as a single "invalid_client", so
+		// this endpoint is not a client_id existence oracle.
+		return nil, fmt.Errorf("client_id %q not usable: %w", clientID, err)
+	}
+
+	if err := ValidateScope(scope); err != nil {
+		return nil, err
 	}
 
 	row, err := s.createWithUniqueCodes(ctx, clientID, scope)
@@ -153,7 +177,7 @@ func (s *OAuthDeviceService) createWithUniqueCodes(ctx context.Context, clientID
 			SetUserCode(userCode).
 			SetClientID(clientID).
 			SetScope(scope).
-			SetStatus("pending").
+			SetStatus(DeviceStatusPending).
 			SetExpiresAt(time.Now().Add(deviceCodeTTL)).
 			Save(ctx)
 		if err == nil {
@@ -178,6 +202,26 @@ func (s *OAuthDeviceService) byDeviceCode(ctx context.Context, deviceCode string
 	return row, err
 }
 
+// setStatusByUserCode moves a device authorization out of `pending` — and out
+// of `pending` ONLY.
+//
+// The status guard is load-bearing, not defensive tidiness. Without it every
+// status was writable for as long as the 15-minute expiry allowed, so both of
+// these were legal:
+//
+//   - expired(consumed) → approved. ExchangeDeviceCode consumes an approved row
+//     by setting status="expired". Re-entering the same user_code and clicking
+//     Approve again RE-ARMED that row, letting whoever holds the device_code
+//     redeem a SECOND access token and a second 30-day refresh family from a
+//     single human approval. A person who approves, sees nothing happen, and
+//     approves again — the most natural thing to do — triggers exactly this.
+//   - denied → approved. A deliberate Deny could be silently overturned by
+//     anyone who could get the code re-submitted.
+//
+// The guard is a status-predicated UPDATE rather than a Go-side check on the
+// row read above, so it is also atomic: two concurrent approvals of the same
+// code cannot both observe `pending` and both write. Same CAS shape as
+// ExchangeDeviceCode's consuming update.
 func (s *OAuthDeviceService) setStatusByUserCode(ctx context.Context, userCode, status string, userID *int64) error {
 	row, err := s.entClient.OAuthDeviceAuthorization.Query().
 		Where(oauthdeviceauthorization.UserCode(userCode)).
@@ -192,14 +236,98 @@ func (s *OAuthDeviceService) setStatusByUserCode(ctx context.Context, userCode, 
 		return ErrDeviceCodeExpired
 	}
 
-	upd := row.Update().SetStatus(status)
+	upd := s.entClient.OAuthDeviceAuthorization.Update().
+		Where(
+			oauthdeviceauthorization.ID(row.ID),
+			oauthdeviceauthorization.Status(DeviceStatusPending),
+		).
+		SetStatus(status)
 	if userID != nil {
 		upd = upd.SetApprovedUserID(*userID)
 	}
-	if _, err := upd.Save(ctx); err != nil {
+	affected, err := upd.Save(ctx)
+	if err != nil {
 		return fmt.Errorf("update device authorization: %w", err)
 	}
+	if affected == 0 {
+		// Already approved, denied, or consumed. Reported distinctly from
+		// "expired" so the caller can tell the human their decision was already
+		// recorded rather than implying their code timed out.
+		return ErrDeviceCodeNotPending
+	}
 	return nil
+}
+
+// PendingAuthorization is what the human is being asked to approve: which
+// client is asking, and for what.
+type PendingAuthorization struct {
+	// ClientName is the client's display label — the docker-style
+	// adjective_noun a self-hosted agent was registered with, or "hermes-cli"
+	// for the first-party CLI. It is user-supplied for self-hosted clients and
+	// must be rendered as text, never as markup.
+	ClientName string
+	// ClientID is the public client identifier. Shown alongside the name
+	// because the name is neither unique nor server-controlled, so it alone
+	// cannot distinguish a legitimate agent from one an attacker registered
+	// with a convincing label.
+	ClientID string
+	// Scopes are the individual scope entries requested, already validated
+	// against the vocabulary at RequestCode time.
+	Scopes []string
+	// ExpiresAt is when the code stops being approvable.
+	ExpiresAt time.Time
+}
+
+// PendingByUserCode resolves a user_code to the authorization awaiting a
+// decision, so the approval screen can tell the human WHO is asking and WHAT
+// they are asking for.
+//
+// RFC 8628 §5.4 requires the authorization server to display client and
+// authorization information at the verification URI; before this existed the
+// screen showed a bare code box and two buttons, which is indistinguishable
+// from a legitimate login prompt and is exactly what makes a phished user_code
+// dangerous.
+//
+// Callers MUST require a live panel session before calling this. It returns
+// ErrDeviceCodeNotFound for both "no such code" and "not currently pending",
+// so it cannot be used to probe which user_codes exist or what state they are
+// in.
+func (s *OAuthDeviceService) PendingByUserCode(ctx context.Context, userCode string) (*PendingAuthorization, error) {
+	normalized := strings.ToUpper(strings.TrimSpace(userCode))
+	row, err := s.entClient.OAuthDeviceAuthorization.Query().
+		Where(oauthdeviceauthorization.UserCode(normalized)).
+		Only(ctx)
+	if dbent.IsNotFound(err) {
+		return nil, ErrDeviceCodeNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query device authorization: %w", err)
+	}
+	if time.Now().After(row.ExpiresAt) {
+		return nil, ErrDeviceCodeExpired
+	}
+	if row.Status != DeviceStatusPending {
+		return nil, ErrDeviceCodeNotPending
+	}
+
+	name := row.ClientID
+	if client, cerr := s.clientSvc.ByClientID(ctx, row.ClientID); cerr == nil && client.Name != "" {
+		name = client.Name
+	} else if cerr != nil {
+		// The client row vanished (or the read failed) between RequestCode and
+		// now. Fall back to the client_id rather than failing the whole screen:
+		// showing the raw identifier is less informative than the label, but
+		// showing NOTHING is what this endpoint exists to prevent.
+		slog.Warn("oauth: could not resolve client name for pending authorization",
+			"client_id", row.ClientID, "error", cerr)
+	}
+
+	return &PendingAuthorization{
+		ClientName: name,
+		ClientID:   row.ClientID,
+		Scopes:     ScopeList(row.Scope),
+		ExpiresAt:  row.ExpiresAt,
+	}, nil
 }
 
 // Approve marks a device authorization approved by the given user.

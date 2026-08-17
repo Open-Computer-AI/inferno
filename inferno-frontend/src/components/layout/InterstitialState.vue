@@ -18,26 +18,38 @@
 
 <script setup lang="ts">
 /**
- * Archetype F. Nine interstitial routes collapse to this one component: the
- * OAuth callbacks, email verify, and the payment redirects all show the same
- * three things -- a wait, a statement of what is being waited for, and a way
- * out when it fails.
+ * Archetype F. The interstitial shape the OAuth callbacks, email verify and
+ * the payment redirects are all meant to collapse onto: a wait, a statement of
+ * what is being waited for, and a way out when it fails.
  *
- * The three tones are the spec's own states:
+ * SCOPE NOTE, corrected 2026-08-18: an earlier version of this comment said
+ * "Nine interstitial routes collapse to this one component", and that line was
+ * copied into DeviceApprovalView and GOAL.md's D5 row as evidence the
+ * component was battle-tested. It was aspirational, not a fact --
+ * /device is currently its ONLY consumer. Treat it as new code and scrutinise
+ * changes accordingly; the other nine routes are still to be converted.
+ *
+ * The four tones are the spec's own states:
  *
  *   waiting      "Signing you in" -- a spinner, no icon, no action. Neutral.
+ *   success      "Device approved" -- the thing the person asked for happened.
  *   attention    "That link has already been used" -- recoverable, and the
  *                recovery is the action.
  *   failed       "Google could not verify you" -- names the provider's own
  *                error and says what was NOT changed, because the first thing
  *                a person wants to know is whether they broke something.
  *
+ * `success` exists because without it an approval rendered in the same amber
+ * caution card as "that link has already been used", which actively
+ * miscommunicates the outcome of a security decision -- the one place a person
+ * most needs to be sure what just happened.
+ *
  * Tone drives colour and nothing else drives colour: ground rule 5 reserves it
  * for state, and "waiting" is not a state worth colouring.
  */
 withDefaults(
   defineProps<{
-    tone?: 'waiting' | 'attention' | 'failed'
+    tone?: 'waiting' | 'success' | 'attention' | 'failed'
     title: string
     body?: string
     /** Hugeicons class. Ignored while waiting, which shows the spinner. */
@@ -62,6 +74,15 @@ withDefaults(
   text-align: center;
 }
 
+/* Built from --success with the same color-mix ratios the success alert in
+   design-system/legacy-bridge.css already uses, rather than minting a
+   --success-soft token for one consumer. --success is defined for both
+   themes in design-system/tokens/colors.css. */
+.int[data-tone='success'] {
+  border-color: color-mix(in oklch, var(--success) 26%, transparent);
+  background: color-mix(in oklch, var(--success) 12%, var(--card));
+}
+
 .int[data-tone='attention'] {
   border-color: color-mix(in oklch, var(--s2a-attn) 26%, transparent);
   background: var(--s2a-attn-soft);
@@ -76,6 +97,10 @@ withDefaults(
   /* Glyphs are fixed chrome and must not scale with --font-scale. */
   font-size: 20px; /* june-lint-disable ground-rule-4: icon glyph, not text */
   color: var(--muted-foreground);
+}
+
+.int[data-tone='success'] .int__icon {
+  color: var(--success);
 }
 
 .int[data-tone='attention'] .int__icon {

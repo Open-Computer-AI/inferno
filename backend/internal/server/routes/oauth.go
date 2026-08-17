@@ -28,6 +28,11 @@ func RegisterOAuthAPIRoutes(r gin.IRouter, h *handler.OAuthHandler, jwtAuth midd
 		// Session-authenticated like self-hosted-client above, unlike
 		// device/code and token below (RegisterOAuthDeviceRoutes) which have
 		// no session by design.
+		// What the human is being asked to approve. Session-gated for the same
+		// reason approve/deny are, and additionally because an unauthenticated
+		// version would let anyone holding a phished user_code confirm it is
+		// live and read back the scopes it carries.
+		authenticated.GET("/device/pending", h.PendingDeviceAuthorization)
 		authenticated.POST("/device/approve", h.ApproveDevice)
 		authenticated.POST("/device/deny", h.DenyDevice)
 	}

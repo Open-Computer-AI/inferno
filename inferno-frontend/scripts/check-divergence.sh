@@ -201,6 +201,20 @@ backend/internal/handler/oauth_device_decision_test.go
 # same files.
 backend/migrations/905_hermes_cli_first_party_client.sql
 backend/scripts/oauth-conformance.md
+# D5 -- OAuth AS (final whole-branch fix wave: personal org on every login,
+# TokenVersion on OAuth refresh tokens, oauth_client.status enforcement,
+# device-authorization terminal states, the scope allowlist + consent screen,
+# and the /api/oauth/account contract reshape). Every other file this wave
+# touched -- auth_service.go, oauth_{client,device,token}_service{,_test}.go,
+# handler/oauth_handler{,_test}.go, oauth_device_decision_test.go,
+# handler/wire.go, server/routes/oauth{,_account_route_test}.go,
+# ent/schema/oauth_client.go and cmd/server/wire_gen.go -- is already declared
+# above (Tasks 1-8), same files. The inferno-frontend Vue/TS side
+# (views/oauth/DeviceApprovalView.vue + its spec, api/oauth.ts,
+# components/layout/InterstitialState.vue, i18n/locales/en+zh/misc.ts) is out
+# of this script's diff scope entirely -- see GOAL.md's D5 row for that list.
+backend/internal/service/oauth_scope_vocabulary.go
+backend/internal/service/auth_service_personal_org_login_test.go
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }

@@ -43,8 +43,14 @@ func (OAuthClient) Fields() []ent.Field {
 			Default("SELF_HOSTED"),
 		// Docker-style adjective_noun. NOT unique — the row id is the key;
 		// a name collision is harmless.
+		// MaxRuneLen, not MaxLen: the Postgres column is VARCHAR(64), which
+		// counts CHARACTERS, while ent's MaxLen validator counts BYTES. The
+		// mismatch is safe against the database but over-rejects — a 22-character
+		// CJK name is 66 bytes and was refused, on a product whose primary
+		// markets are CJK. MaxRuneLen sets the same Size(64) (so the generated
+		// column is unchanged) and validates the unit the column actually uses.
 		field.String("name").
-			MaxLen(64).
+			MaxRuneLen(64).
 			NotEmpty(),
 		field.Int64("owner_user_id"),
 		field.Int64("org_id"),

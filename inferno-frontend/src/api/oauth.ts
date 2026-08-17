@@ -31,3 +31,34 @@ export async function denyDevice(userCode: string): Promise<DeviceDecisionResult
   )
   return data
 }
+
+/**
+ * What the human is being asked to approve, resolved from the user_code they
+ * typed or that verification_uri_complete prefilled.
+ *
+ * RFC 8628 section 5.4 requires the authorization server to display client and
+ * authorization information at the verification URI. Without it the approval
+ * screen was a bare code box and two buttons -- indistinguishable from an
+ * ordinary login prompt, which is exactly what makes a phished user_code
+ * dangerous: the victim approves without ever seeing who is asking or what
+ * they are handing over.
+ *
+ * Session-authenticated like approveDevice/denyDevice, so an unauthenticated
+ * holder of a code cannot use it to confirm the code is live.
+ */
+export interface PendingDeviceAuthorization {
+  client_name: string
+  client_id: string
+  scopes: string[]
+  expires_at: string
+}
+
+export async function fetchPendingDeviceAuthorization(
+  userCode: string
+): Promise<PendingDeviceAuthorization> {
+  const { data } = await apiClient.get<PendingDeviceAuthorization>(
+    buildGatewayUrl('/api/oauth/device/pending'),
+    { params: { user_code: userCode } }
+  )
+  return data
+}

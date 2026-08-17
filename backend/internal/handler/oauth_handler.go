@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -26,10 +27,15 @@ type OAuthHandler struct {
 	orgSvc    *service.OrgService
 	deviceSvc *service.OAuthDeviceService
 	tokenSvc  *service.OAuthTokenService
+	// userSvc resolves the bearer's email for the Account payload. Deliberately
+	// the narrow OAuthUserLookup (one read method) rather than the full
+	// UserRepository, so this handler cannot grow into mutating users. Callers
+	// may pass nil; Account then degrades to an email-less payload.
+	userSvc service.OAuthUserLookup
 }
 
-func NewOAuthHandler(keySvc *service.OAuthKeyService, clientSvc *service.OAuthClientService, orgSvc *service.OrgService, deviceSvc *service.OAuthDeviceService, tokenSvc *service.OAuthTokenService) *OAuthHandler {
-	return &OAuthHandler{keySvc: keySvc, clientSvc: clientSvc, orgSvc: orgSvc, deviceSvc: deviceSvc, tokenSvc: tokenSvc}
+func NewOAuthHandler(keySvc *service.OAuthKeyService, clientSvc *service.OAuthClientService, orgSvc *service.OrgService, deviceSvc *service.OAuthDeviceService, tokenSvc *service.OAuthTokenService, userSvc service.OAuthUserLookup) *OAuthHandler {
+	return &OAuthHandler{keySvc: keySvc, clientSvc: clientSvc, orgSvc: orgSvc, deviceSvc: deviceSvc, tokenSvc: tokenSvc, userSvc: userSvc}
 }
 
 // KeyService exposes the OAuth signing key service so
@@ -117,6 +123,15 @@ func (h *OAuthHandler) DeviceCode(c *gin.Context) {
 		if errors.Is(err, service.ErrPortalNotConfigured) {
 			slog.Error("oauth: device code request failed, server misconfigured", "client_id", clientID)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+			return
+		}
+		if errors.Is(err, service.ErrInvalidScope) {
+			// RFC 8628 §3.2 / RFC 6749 §4.1.2.1. Distinct from invalid_client
+			// on purpose: an unrecognised scope is a caller bug that a
+			// developer must be able to see, and it reveals nothing — the
+			// vocabulary is public and fixed.
+			slog.Warn("oauth: device code request rejected, unknown scope", "client_id", clientID)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_scope"})
 			return
 		}
 		// err is logged (it's an internal wrapped error — "unknown client_id"
@@ -259,12 +274,53 @@ func (h *OAuthHandler) Token(c *gin.Context) {
 	}
 }
 
-// Account handles GET /api/oauth/account — consumed by the hermes CLI to
-// resolve which org(s) the bearer's holder belongs to. Authenticated by
-// middleware.RequireOAuthScope (Task 6, ES256 OAuth bearer), NOT jwtAuth: a
-// headless agent presents an OAuth-issued access token here, not an Inferno
-// panel session, so it is registered on its own route group in
-// server/routes/oauth.go rather than under RegisterOAuthAPIRoutes.
+// Account handles GET /api/oauth/account — the account/entitlement summary the
+// hermes CLI reads. Authenticated by middleware.RequireOAuthScope (Task 6,
+// ES256 OAuth bearer), NOT jwtAuth: a headless agent presents an OAuth-issued
+// access token here, not an Inferno panel session, so it is registered on its
+// own route group in server/routes/oauth.go rather than under
+// RegisterOAuthAPIRoutes.
+//
+// THE RESPONSE SHAPE IS NOT OURS TO CHOOSE. Its only real consumer is
+// hermes_cli/nous_account.py's `_info_from_account_payload`, which reads
+// exactly these top-level keys:
+//
+//	payload["user"]                {email, privy_did}
+//	payload["organisation"]        {id, slug, name}
+//	payload["subscription"]        {plan, tier, monthly_charge, …}
+//	payload["paid_service_access"] {allowed, paid_access, reason, …}
+//	payload["tool_access"]         {enabled, coverage{…}}
+//
+// The first version of this handler returned {"user_id", "orgs"} — a shape
+// lifted from the desktop's /api/agents 409 error body, not from this endpoint
+// — so not one key matched. It failed SOFT (every .get() misses), which is
+// worse than failing loudly: the client concluded "could not find a Nous
+// Portal account or organisation" and "does not currently have paid service
+// access" on every paid-capability gate, with nothing anywhere pointing at the
+// contract mismatch.
+//
+// WHAT IS REAL AND WHAT IS NOT, so the billing sub-project knows what it
+// inherits:
+//   - `user.email` and `organisation` {id, slug, name} are REAL, read from
+//     this Inferno's users and orgs tables.
+//   - `privy_did` is OMITTED, not stubbed. Inferno does not use Privy; there is
+//     no honest value, and inventing one would make the client believe it has a
+//     wallet identity it does not have.
+//   - `subscription` and `tool_access` are OMITTED. Mapping Inferno's
+//     subscription/quota model onto Nous's plan/tier/credits shape is a billing
+//     decision this sub-project explicitly defers (see the design doc's
+//     non-goals: "the /api/billing/* contract adapter — later"). The client
+//     treats a missing/non-object value as None, which is the honest answer.
+//   - `paid_service_access` is STUBBED to a deliberate, explicit "no paid
+//     tier": allowed=false, paid_access=false. That is a choice to under-grant.
+//     Inferno does have a real balance and subscriptions, but the mapping from
+//     those to Nous's entitlement semantics is unverified, and guessing wrong
+//     in the permissive direction unlocks paid capabilities nobody paid for.
+//     Replace this — not the surrounding shape — when the billing adapter lands.
+//
+// `orgs` is retained alongside `organisation` for the multi-org case the design
+// anticipates (D-1's 409 org_selection_required picker). Nothing consumes it
+// today; it costs one array and losing it would mean rebuilding it later.
 func (h *OAuthHandler) Account(c *gin.Context) {
 	uidVal, ok := c.Get(middleware2.OAuthContextKeyUserID)
 	if !ok {
@@ -306,10 +362,47 @@ func (h *OAuthHandler) Account(c *gin.Context) {
 		})
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"user_id": strconv.FormatInt(userID, 10),
-		"orgs":    out,
-	})
+	user := gin.H{"id": strconv.FormatInt(userID, 10)}
+	if h.userSvc != nil {
+		if u, uerr := h.userSvc.GetByID(ctx, userID); uerr != nil {
+			// The bearer verified, so the user existed when the token was
+			// minted. Degrade to an email-less payload rather than 500ing the
+			// whole account lookup: the org half is still useful and the client
+			// treats a missing email as unknown.
+			slog.Error("oauth: account user lookup failed", "user_id", userID, "error", uerr)
+		} else if u != nil {
+			user["email"] = u.Email
+		}
+	}
+
+	// See the "no paid tier" note above: deliberately explicit rather than
+	// omitted, so the client reports a definite free tier instead of "could not
+	// verify your entitlement", which is what an absent key produces.
+	paidAccess := gin.H{
+		"allowed":                 false,
+		"paid_access":             false,
+		"has_active_subscription": false,
+	}
+
+	payload := gin.H{
+		"user":                user,
+		"orgs":                out,
+		"paid_service_access": paidAccess,
+	}
+
+	if len(orgs) > 0 {
+		primary := out[0]
+		payload["organisation"] = primary
+		paidAccess["organisation_id"] = primary["id"]
+	} else {
+		// Post-C1 this should be unreachable (every session provisions a
+		// personal org), but if it ever happens the honest answer is the one
+		// the client already has a specific message for.
+		slog.Error("oauth: account has no org", "user_id", userID)
+		paidAccess["reason"] = "account_missing"
+	}
+
+	c.JSON(http.StatusOK, payload)
 }
 
 // deviceDecisionRequest is the body both ApproveDevice and DenyDevice bind:
@@ -341,6 +434,58 @@ type deviceDecisionRequest struct {
 //
 // Neither handler ever logs user_code — it is a credential until redeemed,
 // same rule as DeviceCode/Token above.
+// PendingDeviceAuthorization handles GET /api/oauth/device/pending?user_code=…
+// — what the approval screen shows the human BEFORE the Approve button.
+//
+// RFC 8628 §5.4 requires the authorization server to display client and
+// authorization information at the verification URI. Without it the screen was
+// a bare code box and two buttons, identical to a routine login prompt, which
+// is what makes a phished user_code work: the victim sees nothing naming the
+// requester or the powers being handed over, approves, and the attacker polls
+// out an access token plus a 30-day refresh family.
+//
+// Session-authenticated (jwtAuth) and on the envelope, like its ApproveDevice /
+// DenyDevice neighbours and for the same reason — see the asymmetry note on
+// ApproveDevice below.
+//
+// It never reveals whether a user_code exists to a caller without a session,
+// and the service layer collapses "no such code" and "not pending" so a
+// logged-in caller cannot enumerate other people's codes either. user_code is
+// read from the query string and, like everywhere else in this file, never
+// logged.
+func (h *OAuthHandler) PendingDeviceAuthorization(c *gin.Context) {
+	if _, ok := middleware2.GetAuthSubjectFromContext(c); !ok {
+		response.Unauthorized(c, "unauthorized")
+		return
+	}
+
+	userCode := strings.TrimSpace(c.Query("user_code"))
+	if userCode == "" {
+		response.BadRequest(c, "invalid_request")
+		return
+	}
+
+	pending, err := h.deviceSvc.PendingByUserCode(c.Request.Context(), userCode)
+	switch {
+	case err == nil:
+		response.Success(c, gin.H{
+			"client_name": pending.ClientName,
+			"client_id":   pending.ClientID,
+			"scopes":      pending.Scopes,
+			"expires_at":  pending.ExpiresAt.UTC().Format(time.RFC3339),
+		})
+	case errors.Is(err, service.ErrDeviceCodeNotFound):
+		response.NotFound(c, "device code not found")
+	case errors.Is(err, service.ErrDeviceCodeExpired):
+		response.Error(c, http.StatusGone, "device code expired")
+	case errors.Is(err, service.ErrDeviceCodeNotPending):
+		response.Error(c, http.StatusConflict, "device code already decided")
+	default:
+		slog.Error("oauth: pending device authorization lookup failed", "error", err)
+		response.InternalError(c, "server_error")
+	}
+}
+
 func (h *OAuthHandler) ApproveDevice(c *gin.Context) {
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
 	if !ok {
@@ -361,6 +506,11 @@ func (h *OAuthHandler) ApproveDevice(c *gin.Context) {
 		response.NotFound(c, "device code not found")
 	case errors.Is(err, service.ErrDeviceCodeExpired):
 		response.Error(c, http.StatusGone, "device code expired")
+	case errors.Is(err, service.ErrDeviceCodeNotPending):
+		// Already approved, denied, or redeemed. 409 rather than 410: the code
+		// has not timed out, a decision was simply already recorded for it, and
+		// the screen says something different for each.
+		response.Error(c, http.StatusConflict, "device code already decided")
 	default:
 		slog.Error("oauth: device approval failed", "user_id", subject.UserID, "error", err)
 		response.InternalError(c, "server_error")
@@ -387,6 +537,8 @@ func (h *OAuthHandler) DenyDevice(c *gin.Context) {
 		response.NotFound(c, "device code not found")
 	case errors.Is(err, service.ErrDeviceCodeExpired):
 		response.Error(c, http.StatusGone, "device code expired")
+	case errors.Is(err, service.ErrDeviceCodeNotPending):
+		response.Error(c, http.StatusConflict, "device code already decided")
 	default:
 		slog.Error("oauth: device denial failed", "user_id", subject.UserID, "error", err)
 		response.InternalError(c, "server_error")
