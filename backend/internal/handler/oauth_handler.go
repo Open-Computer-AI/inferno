@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -27,6 +28,15 @@ type OAuthHandler struct {
 
 func NewOAuthHandler(keySvc *service.OAuthKeyService, clientSvc *service.OAuthClientService, orgSvc *service.OrgService, deviceSvc *service.OAuthDeviceService, tokenSvc *service.OAuthTokenService) *OAuthHandler {
 	return &OAuthHandler{keySvc: keySvc, clientSvc: clientSvc, orgSvc: orgSvc, deviceSvc: deviceSvc, tokenSvc: tokenSvc}
+}
+
+// KeyService exposes the OAuth signing key service so
+// middleware.RequireOAuthScope (the resource-server bearer-verification
+// middleware guarding GET /api/oauth/account) can verify token signatures
+// without a separate wire-provided dependency — routes.go already has this
+// handler in hand when it builds that middleware.
+func (h *OAuthHandler) KeyService() *service.OAuthKeyService {
+	return h.keySvc
 }
 
 // JWKS handles GET /.well-known/jwks.json
@@ -213,4 +223,57 @@ func (h *OAuthHandler) Token(c *gin.Context) {
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported_grant_type"})
 	}
+}
+
+// Account handles GET /api/oauth/account — consumed by the hermes CLI to
+// resolve which org(s) the bearer's holder belongs to. Authenticated by
+// middleware.RequireOAuthScope (Task 6, ES256 OAuth bearer), NOT jwtAuth: a
+// headless agent presents an OAuth-issued access token here, not an Inferno
+// panel session, so it is registered on its own route group in
+// server/routes/oauth.go rather than under RegisterOAuthAPIRoutes.
+func (h *OAuthHandler) Account(c *gin.Context) {
+	uidVal, ok := c.Get(middleware2.OAuthContextKeyUserID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+		return
+	}
+	userID, ok := uidVal.(int64)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	orgs, err := h.orgSvc.OrgsForUser(ctx, userID)
+	if err != nil {
+		slog.Error("oauth: account org lookup failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+
+	out := make([]gin.H, 0, len(orgs))
+	for _, o := range orgs {
+		role, rerr := h.orgSvc.RoleIn(ctx, o.ID, userID)
+		if rerr != nil {
+			// A per-org role lookup failure should not fail the whole
+			// account response (the caller still legitimately belongs to
+			// this org — OrgsForUser just proved it via org_members) — but
+			// it must never silently claim an elevated role. MEMBER is
+			// this codebase's least-privileged org role.
+			slog.Error("oauth: account role lookup failed", "org_id", o.ID, "error", rerr)
+			role = service.OrgRoleMember
+		}
+		out = append(out, gin.H{
+			"id":         strconv.FormatInt(o.ID, 10),
+			"slug":       o.Slug,
+			"name":       o.Name,
+			"isPersonal": o.IsPersonal,
+			"role":       role,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"user_id": strconv.FormatInt(userID, 10),
+		"orgs":    out,
+	})
 }

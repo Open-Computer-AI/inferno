@@ -125,6 +125,11 @@ func registerRoutes(
 	// the identity), also under /api/oauth. See RegisterOAuthDeviceRoutes.
 	routes.RegisterOAuthDeviceRoutes(r, h.OAuth)
 
+	// OAuth resource-server surface: GET /api/oauth/account, authenticated
+	// by Task 6's ES256 bearer middleware (NOT jwtAuth). See
+	// RegisterOAuthAccountRoutes.
+	routes.RegisterOAuthAccountRoutes(r, h.OAuth)
+
 	// API v1
 	v1 := r.Group("/api/v1")
 

@@ -45,3 +45,20 @@ func RegisterOAuthDeviceRoutes(r gin.IRouter, h *handler.OAuthHandler) {
 		unauthenticated.POST("/token", h.Token)
 	}
 }
+
+// RegisterOAuthAccountRoutes mounts GET /api/oauth/account behind Task 6's
+// middleware.RequireOAuthScope — a THIRD distinct /api/oauth group,
+// deliberately not merged into RegisterOAuthAPIRoutes (gated by jwtAuth,
+// Inferno's HMAC panel-session middleware) or RegisterOAuthDeviceRoutes
+// (unauthenticated). A hermes agent calling this endpoint presents an
+// OAuth-issued ES256 bearer token, not a panel session and not a bare
+// client_id — a third auth shape needs its own group. required scope is ""
+// (any validly-signed, unexpired OAuth token) since this endpoint only
+// resolves which org(s) the token's holder belongs to; it grants no
+// elevated capability itself.
+func RegisterOAuthAccountRoutes(r gin.IRouter, h *handler.OAuthHandler) {
+	scoped := r.Group("/api/oauth")
+	{
+		scoped.GET("/account", middleware.RequireOAuthScope(h.KeyService(), ""), h.Account)
+	}
+}

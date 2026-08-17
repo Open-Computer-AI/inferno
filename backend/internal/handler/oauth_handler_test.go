@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -15,11 +16,13 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
+	oauthmiddleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 )
@@ -337,4 +340,136 @@ func TestTokenRefreshGrantInvalidGrant(t *testing.T) {
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	requireBareErrorBody(t, rec, "invalid_grant")
+}
+
+// The tests below cover GET /api/oauth/account's wire contract, the same way
+// the Token tests above cover POST /api/oauth/token's: exactly the bare
+// {"error": "..."} (or, on success, the account body) at the top level,
+// never internal/pkg/response's {code,message,data} wrapper — see
+// requireBareErrorBody's doc comment. Unlike the Token tests, this endpoint
+// sits behind middleware.RequireOAuthScope (Task 6), so these routers
+// register that middleware for real rather than calling h.Account directly,
+// so a regression in either layer (the middleware's context keys, or the
+// handler reading them) fails a test.
+
+func newOAuthAccountTestHandler(t *testing.T) *OAuthHandler {
+	t.Helper()
+	client := newOAuthHandlerTestEntClient(t)
+	keySvc := service.NewOAuthKeyService(client)
+	clientSvc := service.NewOAuthClientService(client)
+	orgSvc := service.NewOrgService(client)
+	deviceSvc := service.NewOAuthDeviceService(client, "https://portal.example.com")
+	tokenSvc := service.NewOAuthTokenService(client, keySvc, deviceSvc, newOAuthHandlerTestRefreshCache(), oauthHandlerTestUserLookup{}, "https://portal.example.com")
+	return NewOAuthHandler(keySvc, clientSvc, orgSvc, deviceSvc, tokenSvc)
+}
+
+func newOAuthAccountTestRouter(t *testing.T) (*gin.Engine, *OAuthHandler) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	h := newOAuthAccountTestHandler(t)
+	router := gin.New()
+	router.GET("/api/oauth/account", oauthmiddleware.RequireOAuthScope(h.KeyService(), ""), h.Account)
+	return router, h
+}
+
+// mintTestAccountToken signs an ES256 access token with h's own active
+// signing key, exactly as OAuthTokenService.mintAccessToken does — same
+// claim shape — so these tests exercise the real verification path in
+// RequireOAuthScope rather than a hand-rolled approximation of it.
+func mintTestAccountToken(t *testing.T, h *OAuthHandler, userID int64, scope string) string {
+	t.Helper()
+	key, err := h.keySvc.Active(context.Background())
+	require.NoError(t, err)
+
+	now := time.Now()
+	claims := jwt.MapClaims{
+		"iss":   "https://portal.example.com",
+		"sub":   strconv.FormatInt(userID, 10),
+		"aud":   "agent:test-client",
+		"scope": scope,
+		"iat":   now.Unix(),
+		"exp":   now.Add(time.Hour).Unix(),
+	}
+	tok := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+	tok.Header["kid"] = key.Kid
+	signed, err := tok.SignedString(key.Private)
+	require.NoError(t, err)
+	return signed
+}
+
+func getOAuthAccount(router *gin.Engine, bearer string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet, "/api/oauth/account", nil)
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestAccountRejectsMissingBearer(t *testing.T) {
+	router, _ := newOAuthAccountTestRouter(t)
+
+	rec := getOAuthAccount(router, "")
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	requireBareErrorBody(t, rec, "invalid_token")
+}
+
+func TestAccountRejectsGarbageToken(t *testing.T) {
+	router, _ := newOAuthAccountTestRouter(t)
+
+	rec := getOAuthAccount(router, "not-a-jwt-at-all")
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	requireBareErrorBody(t, rec, "invalid_token")
+}
+
+func TestAccountReturnsOrgsForValidToken(t *testing.T) {
+	router, h := newOAuthAccountTestRouter(t)
+	ctx := context.Background()
+
+	org, err := h.orgSvc.EnsurePersonalOrg(ctx, 42, "alice")
+	require.NoError(t, err)
+
+	tok := mintTestAccountToken(t, h, 42, "inference")
+	rec := getOAuthAccount(router, tok)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body, 2, "unexpected top-level keys: %v", body)
+	require.Equal(t, "42", body["user_id"])
+	require.NotContains(t, body, "code")
+	require.NotContains(t, body, "message")
+	require.NotContains(t, body, "data")
+
+	orgs, ok := body["orgs"].([]any)
+	require.True(t, ok, "orgs must be an array, got %T", body["orgs"])
+	require.Len(t, orgs, 1)
+	orgBody, ok := orgs[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, strconv.FormatInt(org.ID, 10), orgBody["id"])
+	require.Equal(t, org.Slug, orgBody["slug"])
+	require.Equal(t, service.OrgRoleOwner, orgBody["role"])
+	require.Equal(t, true, orgBody["isPersonal"])
+}
+
+func TestAccountRejectsInsufficientScopeIsUnreachable(t *testing.T) {
+	// GET /api/oauth/account is registered with required scope "" (see
+	// RegisterOAuthAccountRoutes) — any validly-signed, unexpired token
+	// passes the scope check regardless of what scope it carries. This test
+	// documents that choice: an inference-only token (never granted
+	// billing:manage at login, per the plan) must still be able to resolve
+	// its own account/org info.
+	router, h := newOAuthAccountTestRouter(t)
+	ctx := context.Background()
+	_, err := h.orgSvc.EnsurePersonalOrg(ctx, 7, "bob")
+	require.NoError(t, err)
+
+	tok := mintTestAccountToken(t, h, 7, "inference")
+	rec := getOAuthAccount(router, tok)
+
+	require.Equal(t, http.StatusOK, rec.Code)
 }
