@@ -234,6 +234,24 @@ func TestRazorpaySubscriptionWebhookUsesSubscriptionNotesAndEventID(t *testing.T
 	require.Equal(t, "evt_123", notification.Metadata["event_id"])
 }
 
+func TestRazorpayWebhookAcceptsProviderMetadataVariants(t *testing.T) {
+	provider, err := NewRazorpay("instance-1", map[string]string{
+		"keyId":         "key-id",
+		"keySecret":     "secret",
+		"webhookSecret": "webhook-secret",
+	})
+	require.NoError(t, err)
+
+	body := `{"event":"payment.captured","payload":{"payment":{"entity":{"id":"pay_456","order_id":"order_456","amount":1234,"currency":"INR","status":"captured","captured":"true"}},"order":{"entity":{"id":"order_456","notes":[]}}}}`
+	notification, err := provider.VerifyNotification(context.Background(), body, map[string]string{
+		"x-razorpay-signature": razorpayTestSignature(body, "webhook-secret"),
+	})
+	require.NoError(t, err)
+	require.Equal(t, "pay_456", notification.TradeNo)
+	require.Equal(t, "order_456", notification.OrderID)
+	require.Equal(t, payment.ProviderStatusSuccess, notification.Status)
+}
+
 func razorpayTestSignature(message, secret string) string {
 	h := hmac.New(sha256.New, []byte(secret))
 	_, _ = h.Write([]byte(message))
