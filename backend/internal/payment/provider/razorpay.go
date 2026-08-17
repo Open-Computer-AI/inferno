@@ -403,7 +403,10 @@ func (r *Razorpay) VerifySubscriptionPayment(ctx context.Context, req payment.Ra
 			return nil, fmt.Errorf("razorpay payment does not belong to the created subscription")
 		}
 	}
-	if !p.Captured && !strings.EqualFold(p.Status, "captured") {
+	// Razorpay's initial subscription authorization is intentionally not
+	// captured: the small authorization amount is auto-refunded after the
+	// mandate is created. Subsequent subscription charges are auto-captured.
+	if !p.Captured && !strings.EqualFold(p.Status, "captured") && !strings.EqualFold(p.Status, "authorized") {
 		return nil, fmt.Errorf("razorpay subscription payment is not captured")
 	}
 	if p.Amount <= 0 {
@@ -416,7 +419,7 @@ func (r *Razorpay) VerifySubscriptionPayment(ctx context.Context, req payment.Ra
 		Status:  payment.ProviderStatusSuccess,
 		Metadata: map[string]string{
 			"currency":                 r.currency(),
-			"status":                   "captured",
+			"status":                   strings.ToLower(strings.TrimSpace(p.Status)),
 			"provider_order_id":        subscriptionID,
 			"provider_subscription_id": subscriptionID,
 		},
