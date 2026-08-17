@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/mail"
 	"strconv"
 	"strings"
@@ -86,6 +87,7 @@ type AuthService struct {
 	affiliateService      *AffiliateService
 	defaultSubAssigner    DefaultSubscriptionAssigner
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	orgService            *OrgService
 }
 
 type CaptchaProof struct {
@@ -121,6 +123,7 @@ func NewAuthService(
 	defaultSubAssigner DefaultSubscriptionAssigner,
 	affiliateService *AffiliateService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	orgService *OrgService,
 ) *AuthService {
 	return &AuthService{
 		entClient:             entClient,
@@ -136,6 +139,7 @@ func NewAuthService(
 		affiliateService:      affiliateService,
 		defaultSubAssigner:    defaultSubAssigner,
 		userPlatformQuotaRepo: userPlatformQuotaRepo,
+		orgService:            orgService,
 	}
 }
 
@@ -255,6 +259,12 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		default:
 			logger.LegacyPrintf("service.auth", "[Auth] Database error creating user: %v", err)
 			return "", nil, ErrServiceUnavailable
+		}
+	}
+	if s.orgService != nil {
+		if _, err := s.orgService.EnsurePersonalOrg(ctx, user.ID, user.Username); err != nil {
+			slog.Warn("auth: personal org creation failed, will retry on next login",
+				"user_id", user.ID, "error", err)
 		}
 	}
 	s.postAuthUserBootstrap(ctx, user, "email", true)
@@ -802,6 +812,12 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 					}
 					user = newUser
 					created = true
+					if s.orgService != nil {
+						if _, err := s.orgService.EnsurePersonalOrg(ctx, user.ID, user.Username); err != nil {
+							slog.Warn("oauth: personal org creation failed, will retry on next login",
+								"user_id", user.ID, "error", err)
+						}
+					}
 					s.postAuthUserBootstrap(ctx, user, signupSource, false)
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 					// snapshot user × platform quota（fail-open）
@@ -823,6 +839,12 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 				} else {
 					user = newUser
 					created = true
+					if s.orgService != nil {
+						if _, err := s.orgService.EnsurePersonalOrg(ctx, user.ID, user.Username); err != nil {
+							slog.Warn("oauth: personal org creation failed, will retry on next login",
+								"user_id", user.ID, "error", err)
+						}
+					}
 					s.postAuthUserBootstrap(ctx, user, signupSource, false)
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 					// snapshot user × platform quota（fail-open）

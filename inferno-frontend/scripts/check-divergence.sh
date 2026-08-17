@@ -62,6 +62,57 @@ backend/internal/server/api_contract_test.go
 # D4 -- OpenComputer portal design specs + plans
 docs/superpowers/specs/2026-08-17-inferno-oauth-authorization-server-design.md
 docs/superpowers/plans/2026-08-17-inferno-oauth-authorization-server.md
+# D5 -- org tenancy (Task 1: org + org_member tables, personal org on signup)
+backend/ent/schema/org.go
+backend/ent/schema/org_member.go
+backend/ent/org.go
+backend/ent/org/org.go
+backend/ent/org/where.go
+backend/ent/org_create.go
+backend/ent/org_delete.go
+backend/ent/org_query.go
+backend/ent/org_update.go
+backend/ent/orgmember.go
+backend/ent/orgmember/orgmember.go
+backend/ent/orgmember/where.go
+backend/ent/orgmember_create.go
+backend/ent/orgmember_delete.go
+backend/ent/orgmember_query.go
+backend/ent/orgmember_update.go
+backend/ent/client.go
+backend/ent/ent.go
+backend/ent/group.go
+backend/ent/hook/hook.go
+backend/ent/intercept/intercept.go
+backend/ent/migrate/schema.go
+backend/ent/mutation.go
+backend/ent/predicate/predicate.go
+backend/ent/runtime/runtime.go
+backend/ent/tx.go
+backend/migrations/901_org_and_members.sql
+backend/internal/service/org_service.go
+backend/internal/service/org_service_test.go
+backend/internal/service/auth_service.go
+backend/internal/service/wire.go
+backend/cmd/server/wire_gen.go
+backend/cmd/jwtgen/main.go
+backend/internal/handler/auth_oauth_pending_flow_test.go
+backend/internal/handler/passkey_handler_test.go
+backend/internal/handler/auth_oauth_captcha_start_test.go
+backend/internal/handler/auth_wechat_oauth_test.go
+backend/internal/handler/auth_session_revocation_test.go
+backend/internal/handler/user_handler_test.go
+backend/internal/server/middleware/jwt_auth_test.go
+backend/internal/server/middleware/optional_jwt_auth_test.go
+backend/internal/server/middleware/admin_auth_test.go
+backend/internal/service/auth_service_register_test.go
+backend/internal/service/auth_service_identity_sync_test.go
+backend/internal/service/auth_service_email_bind_test.go
+backend/internal/service/auth_service_captcha_test.go
+backend/internal/service/auth_email_oauth_auto_test.go
+backend/internal/service/aliyun_captcha_service_test.go
+backend/internal/service/auth_oauth_email_flow_test.go
+backend/internal/service/auth_service_turnstile_register_test.go
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }

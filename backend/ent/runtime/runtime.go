@@ -24,6 +24,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
+	"github.com/Wei-Shaw/sub2api/ent/org"
+	"github.com/Wei-Shaw/sub2api/ent/orgmember"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
@@ -1275,6 +1277,82 @@ func init() {
 	identityadoptiondecisionDescDecidedAt := identityadoptiondecisionFields[4].Descriptor()
 	// identityadoptiondecision.DefaultDecidedAt holds the default value on creation for the decided_at field.
 	identityadoptiondecision.DefaultDecidedAt = identityadoptiondecisionDescDecidedAt.Default.(func() time.Time)
+	orgMixin := schema.Org{}.Mixin()
+	orgMixinFields0 := orgMixin[0].Fields()
+	_ = orgMixinFields0
+	orgFields := schema.Org{}.Fields()
+	_ = orgFields
+	// orgDescCreatedAt is the schema descriptor for created_at field.
+	orgDescCreatedAt := orgMixinFields0[0].Descriptor()
+	// org.DefaultCreatedAt holds the default value on creation for the created_at field.
+	org.DefaultCreatedAt = orgDescCreatedAt.Default.(func() time.Time)
+	// orgDescUpdatedAt is the schema descriptor for updated_at field.
+	orgDescUpdatedAt := orgMixinFields0[1].Descriptor()
+	// org.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	org.DefaultUpdatedAt = orgDescUpdatedAt.Default.(func() time.Time)
+	// org.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	org.UpdateDefaultUpdatedAt = orgDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// orgDescSlug is the schema descriptor for slug field.
+	orgDescSlug := orgFields[0].Descriptor()
+	// org.SlugValidator is a validator for the "slug" field. It is called by the builders before save.
+	org.SlugValidator = func() func(string) error {
+		validators := orgDescSlug.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(slug string) error {
+			for _, fn := range fns {
+				if err := fn(slug); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// orgDescName is the schema descriptor for name field.
+	orgDescName := orgFields[1].Descriptor()
+	// org.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	org.NameValidator = func() func(string) error {
+		validators := orgDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// orgDescIsPersonal is the schema descriptor for is_personal field.
+	orgDescIsPersonal := orgFields[2].Descriptor()
+	// org.DefaultIsPersonal holds the default value on creation for the is_personal field.
+	org.DefaultIsPersonal = orgDescIsPersonal.Default.(bool)
+	orgmemberMixin := schema.OrgMember{}.Mixin()
+	orgmemberMixinFields0 := orgmemberMixin[0].Fields()
+	_ = orgmemberMixinFields0
+	orgmemberFields := schema.OrgMember{}.Fields()
+	_ = orgmemberFields
+	// orgmemberDescCreatedAt is the schema descriptor for created_at field.
+	orgmemberDescCreatedAt := orgmemberMixinFields0[0].Descriptor()
+	// orgmember.DefaultCreatedAt holds the default value on creation for the created_at field.
+	orgmember.DefaultCreatedAt = orgmemberDescCreatedAt.Default.(func() time.Time)
+	// orgmemberDescUpdatedAt is the schema descriptor for updated_at field.
+	orgmemberDescUpdatedAt := orgmemberMixinFields0[1].Descriptor()
+	// orgmember.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	orgmember.DefaultUpdatedAt = orgmemberDescUpdatedAt.Default.(func() time.Time)
+	// orgmember.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	orgmember.UpdateDefaultUpdatedAt = orgmemberDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// orgmemberDescRole is the schema descriptor for role field.
+	orgmemberDescRole := orgmemberFields[2].Descriptor()
+	// orgmember.DefaultRole holds the default value on creation for the role field.
+	orgmember.DefaultRole = orgmemberDescRole.Default.(string)
+	// orgmember.RoleValidator is a validator for the "role" field. It is called by the builders before save.
+	orgmember.RoleValidator = orgmemberDescRole.Validators[0].(func(string) error)
 	paymentauditlogFields := schema.PaymentAuditLog{}.Fields()
 	_ = paymentauditlogFields
 	// paymentauditlogDescOrderID is the schema descriptor for order_id field.

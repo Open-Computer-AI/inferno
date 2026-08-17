@@ -1085,6 +1085,48 @@ var (
 			},
 		},
 	}
+	// OrgsColumns holds the columns for the "orgs" table.
+	OrgsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "slug", Type: field.TypeString, Unique: true, Size: 64},
+		{Name: "name", Type: field.TypeString, Size: 128},
+		{Name: "is_personal", Type: field.TypeBool, Default: false},
+	}
+	// OrgsTable holds the schema information for the "orgs" table.
+	OrgsTable = &schema.Table{
+		Name:       "orgs",
+		Columns:    OrgsColumns,
+		PrimaryKey: []*schema.Column{OrgsColumns[0]},
+	}
+	// OrgMembersColumns holds the columns for the "org_members" table.
+	OrgMembersColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "org_id", Type: field.TypeInt64},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "role", Type: field.TypeString, Size: 16, Default: "MEMBER"},
+	}
+	// OrgMembersTable holds the schema information for the "org_members" table.
+	OrgMembersTable = &schema.Table{
+		Name:       "org_members",
+		Columns:    OrgMembersColumns,
+		PrimaryKey: []*schema.Column{OrgMembersColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "orgmember_org_id_user_id",
+				Unique:  true,
+				Columns: []*schema.Column{OrgMembersColumns[3], OrgMembersColumns[4]},
+			},
+			{
+				Name:    "orgmember_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{OrgMembersColumns[4]},
+			},
+		},
+	}
 	// PaymentAuditLogsColumns holds the columns for the "payment_audit_logs" table.
 	PaymentAuditLogsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -2095,6 +2137,8 @@ var (
 		GroupsTable,
 		IdempotencyRecordsTable,
 		IdentityAdoptionDecisionsTable,
+		OrgsTable,
+		OrgMembersTable,
 		PaymentAuditLogsTable,
 		PaymentOrdersTable,
 		PaymentProviderInstancesTable,
@@ -2191,6 +2235,12 @@ func init() {
 	IdentityAdoptionDecisionsTable.ForeignKeys[1].RefTable = PendingAuthSessionsTable
 	IdentityAdoptionDecisionsTable.Annotation = &entsql.Annotation{
 		Table: "identity_adoption_decisions",
+	}
+	OrgsTable.Annotation = &entsql.Annotation{
+		Table: "orgs",
+	}
+	OrgMembersTable.Annotation = &entsql.Annotation{
+		Table: "org_members",
 	}
 	PaymentAuditLogsTable.Annotation = &entsql.Annotation{
 		Table: "payment_audit_logs",

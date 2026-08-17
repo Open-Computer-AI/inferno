@@ -237,6 +237,30 @@ func (f IdentityAdoptionDecisionFunc) Mutate(ctx context.Context, m ent.Mutation
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.IdentityAdoptionDecisionMutation", m)
 }
 
+// The OrgFunc type is an adapter to allow the use of ordinary
+// function as Org mutator.
+type OrgFunc func(context.Context, *ent.OrgMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f OrgFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.OrgMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.OrgMutation", m)
+}
+
+// The OrgMemberFunc type is an adapter to allow the use of ordinary
+// function as OrgMember mutator.
+type OrgMemberFunc func(context.Context, *ent.OrgMemberMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f OrgMemberFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.OrgMemberMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.OrgMemberMutation", m)
+}
+
 // The PaymentAuditLogFunc type is an adapter to allow the use of ordinary
 // function as PaymentAuditLog mutator.
 type PaymentAuditLogFunc func(context.Context, *ent.PaymentAuditLogMutation) (ent.Value, error)
