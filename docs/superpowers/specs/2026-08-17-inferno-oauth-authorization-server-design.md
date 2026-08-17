@@ -110,7 +110,26 @@ never validated by the same code path.
 
 ## Data model
 
-Two new tables. Both are generic OAuth concepts, not OpenComputer-specific.
+Three new tables (`org`, `oauth_client`, `oauth_device_authorization`). All are generic
+OAuth/tenancy concepts, not OpenComputer-specific.
+
+### `org` + `org_member`
+
+Minimal tenancy per D-1. One personal org auto-created per user at signup.
+
+| `org` column | Type | Notes |
+|---|---|---|
+| `id` | int64 PK | |
+| `slug` | text unique | appears in portal URLs (`/orgs/{slug}/api-keys`) |
+| `name` | text | |
+| `is_personal` | bool | true for the auto-created org; surfaces as `isPersonal` in `/api/agents` |
+| `created_at` | timestamp | |
+
+`org_member`: (`org_id`, `user_id`, `role`) where role ∈ `OWNER | ADMIN | MEMBER`. The
+desktop reads `role` off the org object (`main.ts:6152`) and defaults it to `MEMBER`, so
+the values must match those strings exactly.
+
+No invitation flow, no role-management UI, no org switching in this sub-project.
 
 ### `oauth_client`
 
@@ -121,7 +140,9 @@ Two new tables. Both are generic OAuth concepts, not OpenComputer-specific.
 | `kind` | enum | `SELF_HOSTED` \| `HOSTED` |
 | `name` | text | docker-style `adjective_noun`; **no uniqueness constraint** (matches upstream: the row id is the key, collisions are harmless) |
 | `owner_user_id` | FK users | |
-| `org_id` | FK org | billing subject; see Open Questions |
+| `org_id` | FK org | owning tenant; see D-1 |
+| `instance_id` | text nullable, unique | set by oc-platform; registration is idempotent on this. See D-3 |
+| `status` | enum | `pending` \| `active` \| `revoked`. See D-3 |
 | `redirect_uri_origin` | text | the gateway's public origin |
 | `created_at`, `revoked_at` | timestamp | |
 
@@ -241,32 +262,73 @@ already implements this and its tests assert the behaviour.
   divergence they catch is a real incompatibility.
 - **Live:** `oc setup` against a local Inferno completes a device login end to end.
 
-## Open questions
+## Resolved decisions
 
-1. **Org vs user as the billing subject.** Nous Portal is org-scoped throughout —
-   routes are `/orgs/{slug}/api-keys`, `/api/agents` returns an `org`, and multi-org
-   users get a `409 org_selection_required` the desktop renders as a picker
-   (`main.ts:6165`). Inferno has `group`, which is an entitlement bucket, not a tenant.
-   Adopting orgs now is more work; skipping them means the `409` path is dead code and
-   retrofitting tenancy later is expensive. **Recommendation: model a minimal org now**
-   — one personal org auto-created per user — so the contract is satisfied and the
-   desktop's org handling is exercised rather than bypassed.
-2. **`dashboardToken` disposition.** oc-platform stores it plaintext with
-   `TODO(security, before public signups)` for KMS encryption, and rotation is
-   unimplemented. This design removes its primary job. Confirm it can be deleted rather
-   than inherited.
-3. **Provisioning atomicity.** Inferno mints a `client_id`, then oc-platform may fail to
-   provision. Needs a reconcile job or orphaned clients accumulate. Belongs to
-   sub-project #1 but is caused here.
+These were open at first draft; resolved 2026-08-17.
+
+### D-1. Orgs: model a minimal org now
+
+Nous Portal is org-scoped throughout — routes are `/orgs/{slug}/api-keys`, `/api/agents`
+returns an `org`, and multi-org users get a `409 org_selection_required` that the desktop
+renders as a picker (`main.ts:6165`). Inferno's `group` is an entitlement bucket, not a
+tenant, so it cannot stand in.
+
+**Decision: introduce a minimal `org` now.** One personal org auto-created per user at
+signup (`isPersonal: true`), user is `OWNER`. No invitations, no role management, no org
+switching UI in this sub-project — just the entity, membership, and org-scoped ownership
+of clients and API keys.
+
+Rationale: the alternative is dead code. `/api/agents` must return an `org` object and
+the desktop's 409 handler must have something to exercise, or we ship an untested branch
+that fails the first time a second org exists. Retrofitting tenancy after keys, agents,
+and billing rows already exist is materially more expensive than adding a table with one
+row per user now. `org_id` therefore appears on `oauth_client` from day one.
+
+**Billing subject stays the user for now.** The org exists to satisfy the contract and
+own resources; it does not yet own a wallet. Moving the wallet to the org is a later,
+independent change.
+
+### D-2. `dashboardToken` is deprecated here, deleted in #1 — not in this sub-project
+
+The token's job today is: the `workspace/` BFF forwards it as `Authorization: Bearer` so
+the agent's `require_session_token` dependency accepts a proxied chat request. Once the
+desktop authenticates as a real user through the gateway broker, nothing needs it.
+
+**Decision: do not touch it in #4.** Deleting a live auth path before its replacement is
+proven in production is how you strand two paying customers. It is retired in
+sub-project #1, at the point where a VM is provisioned with a `client_id` and the OAuth
+gate is verified working end to end, and only then.
+
+Corollary: the outstanding `TODO(security, before public signups)` to KMS-encrypt it
+should **not** be actioned. Encrypting a field that is being deleted is wasted work.
+Track the deletion instead, and treat "dashboardToken removed" as the security fix.
+
+### D-3. Provisioning atomicity: mint first, sweep orphans
+
+Cloud-init needs the `client_id` at VM-creation time, so the client must be minted before
+oc-platform provisions. That ordering makes an orphan possible: client created, VM never
+comes up. (Nous has the same ordering — they inject the client_id as a Fly platform
+secret at provisioning time.)
+
+**Decision:** `oauth_client` carries a nullable `instance_id` and a `status` of
+`pending | active | revoked`. Clients are minted `pending`; oc-platform confirming the
+instance flips them to `active`. A reconcile job revokes `pending` clients older than a
+provisioning-timeout window. Client registration is **idempotent on `instance_id`**, so a
+retried provision reuses the row rather than minting a second client.
+
+The sweep and the `instance_id` linkage belong to sub-project #1; the `status` and
+`instance_id` columns are defined **here** so the schema does not need a migration two
+weeks later.
 
 ## Implementation order within this sub-project
 
-1. ES256 keypair + `security_secret` storage + `GET /.well-known/jwks.json`
-2. `oauth_client` table + `POST /api/oauth/self-hosted-client`
-3. Device flow: `POST /api/oauth/device/code` + `POST /api/oauth/token` + approval page
-4. `authorization_code` + PKCE + `GET /oauth/authorize` with org auto-approve
-5. Scope enforcement middleware + `GET /api/oauth/account`
-6. Conformance run against the desktop's fixtures
+1. `org` + `org_member` tables; auto-create a personal org per user at signup (D-1)
+2. ES256 keypair + `security_secret` storage + `GET /.well-known/jwks.json`
+3. `oauth_client` table + `POST /api/oauth/self-hosted-client`
+4. Device flow: `POST /api/oauth/device/code` + `POST /api/oauth/token` + approval page
+5. `authorization_code` + PKCE + `GET /oauth/authorize` with org auto-approve
+6. Scope enforcement middleware + `GET /api/oauth/account`
+7. Conformance run against the desktop's fixtures
 
 ## Divergence ledger
 
