@@ -139,8 +139,9 @@ func TestRequestCodeRejectsEmptyPortalBaseURL(t *testing.T) {
 		t.Fatalf("RegisterSelfHosted: %v", err)
 	}
 
-	if _, err := svc.RequestCode(ctx, oc.ClientID, "inference"); err == nil {
-		t.Fatal("expected an error when portalBaseURL is empty")
+	_, err = svc.RequestCode(ctx, oc.ClientID, "inference")
+	if !errors.Is(err, ErrPortalNotConfigured) {
+		t.Fatalf("expected ErrPortalNotConfigured, got %v", err)
 	}
 }
 

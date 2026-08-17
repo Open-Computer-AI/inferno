@@ -24,9 +24,11 @@ const (
 	deviceCodeTTL      = 15 * time.Minute
 	devicePollInterval = 5
 
-	// userCodeCollisionRetries bounds how many times RequestCode regenerates
-	// a colliding user_code before giving up. user_code is an 8-character
-	// code drawn from a 31-character alphabet (~8.5e11 combinations), so a
+	// userCodeCollisionRetries bounds how many times createWithUniqueCodes
+	// regenerates BOTH device_code and user_code before giving up, on a
+	// unique-constraint collision on either column. user_code is an
+	// 8-character code drawn from a 31-character alphabet (~8.5e11
+	// combinations) and device_code is 256 bits of crypto/rand, so a
 	// collision on the first attempt is already astronomically unlikely;
 	// this only exists so a freak collision surfaces as a retry instead of
 	// a raw constraint-violation 500 for an innocent caller.
@@ -108,13 +110,7 @@ func (s *OAuthDeviceService) RequestCode(ctx context.Context, clientID, scope st
 		return nil, fmt.Errorf("unknown client_id %q: %w", clientID, err)
 	}
 
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return nil, fmt.Errorf("device code entropy: %w", err)
-	}
-	deviceCode := hex.EncodeToString(raw)
-
-	row, err := s.createWithUniqueUserCode(ctx, deviceCode, clientID, scope)
+	row, err := s.createWithUniqueCodes(ctx, clientID, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -132,12 +128,21 @@ func (s *OAuthDeviceService) RequestCode(ctx context.Context, clientID, scope st
 	}, nil
 }
 
-// createWithUniqueUserCode inserts the device authorization row, regenerating
-// user_code (the lookup key, schema-unique) on a constraint collision rather
-// than failing the whole request outright.
-func (s *OAuthDeviceService) createWithUniqueUserCode(ctx context.Context, deviceCode, clientID, scope string) (*dbent.OAuthDeviceAuthorization, error) {
+// createWithUniqueCodes inserts the device authorization row, regenerating
+// BOTH device_code and user_code (device_code and user_code are each
+// schema-Unique()) on a constraint collision rather than failing the whole
+// request outright. A collision could in principle come from either column,
+// and re-deriving only one of them would retry with the same losing value on
+// the other, so every attempt draws fresh entropy for both.
+func (s *OAuthDeviceService) createWithUniqueCodes(ctx context.Context, clientID, scope string) (*dbent.OAuthDeviceAuthorization, error) {
 	var lastErr error
 	for attempt := 0; attempt < userCodeCollisionRetries; attempt++ {
+		raw := make([]byte, 32)
+		if _, err := rand.Read(raw); err != nil {
+			return nil, fmt.Errorf("device code entropy: %w", err)
+		}
+		deviceCode := hex.EncodeToString(raw)
+
 		userCode, err := randomUserCode()
 		if err != nil {
 			return nil, fmt.Errorf("user code: %w", err)
@@ -157,10 +162,6 @@ func (s *OAuthDeviceService) createWithUniqueUserCode(ctx context.Context, devic
 		if !dbent.IsConstraintError(err) {
 			return nil, fmt.Errorf("persist device authorization: %w", err)
 		}
-		// Constraint error: could be the device_code (also unique, drawn
-		// from 256 bits of entropy — collision is not worth distinguishing
-		// from a user_code collision) or the user_code. Either way, retrying
-		// with a freshly generated user_code resolves it.
 		lastErr = err
 		slog.Warn("oauth: device authorization insert collided, retrying", "client_id", clientID, "attempt", attempt+1)
 	}

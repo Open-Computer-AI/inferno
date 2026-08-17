@@ -106,11 +106,13 @@ func (h *OAuthHandler) DeviceCode(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
 			return
 		}
-		// Deliberately no error detail here beyond client_id — never log a
-		// user-supplied value verbatim, and this path also covers "unknown
-		// client_id", which must not distinguish itself from other request
-		// shapes an attacker could use to probe registered client_ids.
-		slog.Warn("oauth: device code request rejected", "client_id", clientID)
+		// err is logged (it's an internal wrapped error — "unknown client_id"
+		// or a persistence failure — never device_code/user_code, which are
+		// never logged anywhere) so an operator can tell a bad client_id
+		// apart from a real backend fault. The response body deliberately
+		// stays the single generic "invalid_client" for both cases — this is
+		// an anti-probing choice on the wire, not a logging one.
+		slog.Warn("oauth: device code request rejected", "client_id", clientID, "error", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_client"})
 		return
 	}
