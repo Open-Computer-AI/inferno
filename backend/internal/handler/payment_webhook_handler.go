@@ -141,6 +141,20 @@ func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string)
 		writeSuccessResponse(c, resolvedProviderKey)
 		return
 	}
+	if resolvedProviderKey == payment.TypeRazorpay && payment.IsRazorpaySubscriptionLifecycleEvent(strings.TrimSpace(notification.Metadata["razorpay_event"])) {
+		if err := h.paymentService.HandleRazorpaySubscriptionLifecycleWebhook(c.Request.Context(), notification); err != nil {
+			if errors.Is(err, service.ErrOrderNotFound) {
+				slog.Warn("[Payment Webhook] unknown Razorpay subscription lifecycle order, acking", "outTradeNo", notification.OrderID, "event", notification.Metadata["razorpay_event"])
+				writeSuccessResponse(c, resolvedProviderKey)
+				return
+			}
+			slog.Error("[Payment Webhook] handle Razorpay subscription lifecycle failed", "error", err)
+			c.String(http.StatusInternalServerError, "handle failed")
+			return
+		}
+		writeSuccessResponse(c, resolvedProviderKey)
+		return
+	}
 
 	if err := h.paymentService.HandlePaymentNotification(c.Request.Context(), notification, resolvedProviderKey); err != nil {
 		// Unknown order: ack with 2xx so the provider stops retrying. This
