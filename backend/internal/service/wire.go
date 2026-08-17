@@ -755,6 +755,7 @@ var ProviderSet = wire.NewSet(
 	ProvideAuthService,
 	NewOrgService,
 	NewOAuthKeyService,
+	NewOAuthClientService,
 	NewPasskeyService,
 	NewUserService,
 	ProvideAPIKeyService,

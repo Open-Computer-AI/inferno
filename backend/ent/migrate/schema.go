@@ -1085,6 +1085,44 @@ var (
 			},
 		},
 	}
+	// OauthClientsColumns holds the columns for the "oauth_clients" table.
+	OauthClientsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "client_id", Type: field.TypeString, Unique: true, Size: 128},
+		{Name: "kind", Type: field.TypeString, Size: 16, Default: "SELF_HOSTED"},
+		{Name: "name", Type: field.TypeString, Size: 64},
+		{Name: "owner_user_id", Type: field.TypeInt64},
+		{Name: "org_id", Type: field.TypeInt64},
+		{Name: "instance_id", Type: field.TypeString, Unique: true, Nullable: true, Size: 128},
+		{Name: "status", Type: field.TypeString, Size: 16, Default: "pending"},
+		{Name: "redirect_uri_origin", Type: field.TypeString, Size: 255},
+		{Name: "revoked_at", Type: field.TypeTime, Nullable: true},
+	}
+	// OauthClientsTable holds the schema information for the "oauth_clients" table.
+	OauthClientsTable = &schema.Table{
+		Name:       "oauth_clients",
+		Columns:    OauthClientsColumns,
+		PrimaryKey: []*schema.Column{OauthClientsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "oauthclient_org_id",
+				Unique:  false,
+				Columns: []*schema.Column{OauthClientsColumns[7]},
+			},
+			{
+				Name:    "oauthclient_owner_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{OauthClientsColumns[6]},
+			},
+			{
+				Name:    "oauthclient_status",
+				Unique:  false,
+				Columns: []*schema.Column{OauthClientsColumns[9]},
+			},
+		},
+	}
 	// OrgsColumns holds the columns for the "orgs" table.
 	OrgsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -2138,6 +2176,7 @@ var (
 		GroupsTable,
 		IdempotencyRecordsTable,
 		IdentityAdoptionDecisionsTable,
+		OauthClientsTable,
 		OrgsTable,
 		OrgMembersTable,
 		PaymentAuditLogsTable,
@@ -2236,6 +2275,9 @@ func init() {
 	IdentityAdoptionDecisionsTable.ForeignKeys[1].RefTable = PendingAuthSessionsTable
 	IdentityAdoptionDecisionsTable.Annotation = &entsql.Annotation{
 		Table: "identity_adoption_decisions",
+	}
+	OauthClientsTable.Annotation = &entsql.Annotation{
+		Table: "oauth_clients",
 	}
 	OrgsTable.Annotation = &entsql.Annotation{
 		Table: "orgs",

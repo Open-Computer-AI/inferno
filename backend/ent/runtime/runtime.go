@@ -24,6 +24,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
+	"github.com/Wei-Shaw/sub2api/ent/oauthclient"
 	"github.com/Wei-Shaw/sub2api/ent/org"
 	"github.com/Wei-Shaw/sub2api/ent/orgmember"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
@@ -1277,6 +1278,91 @@ func init() {
 	identityadoptiondecisionDescDecidedAt := identityadoptiondecisionFields[4].Descriptor()
 	// identityadoptiondecision.DefaultDecidedAt holds the default value on creation for the decided_at field.
 	identityadoptiondecision.DefaultDecidedAt = identityadoptiondecisionDescDecidedAt.Default.(func() time.Time)
+	oauthclientMixin := schema.OAuthClient{}.Mixin()
+	oauthclientMixinFields0 := oauthclientMixin[0].Fields()
+	_ = oauthclientMixinFields0
+	oauthclientFields := schema.OAuthClient{}.Fields()
+	_ = oauthclientFields
+	// oauthclientDescCreatedAt is the schema descriptor for created_at field.
+	oauthclientDescCreatedAt := oauthclientMixinFields0[0].Descriptor()
+	// oauthclient.DefaultCreatedAt holds the default value on creation for the created_at field.
+	oauthclient.DefaultCreatedAt = oauthclientDescCreatedAt.Default.(func() time.Time)
+	// oauthclientDescUpdatedAt is the schema descriptor for updated_at field.
+	oauthclientDescUpdatedAt := oauthclientMixinFields0[1].Descriptor()
+	// oauthclient.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	oauthclient.DefaultUpdatedAt = oauthclientDescUpdatedAt.Default.(func() time.Time)
+	// oauthclient.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	oauthclient.UpdateDefaultUpdatedAt = oauthclientDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// oauthclientDescClientID is the schema descriptor for client_id field.
+	oauthclientDescClientID := oauthclientFields[0].Descriptor()
+	// oauthclient.ClientIDValidator is a validator for the "client_id" field. It is called by the builders before save.
+	oauthclient.ClientIDValidator = func() func(string) error {
+		validators := oauthclientDescClientID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(client_id string) error {
+			for _, fn := range fns {
+				if err := fn(client_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// oauthclientDescKind is the schema descriptor for kind field.
+	oauthclientDescKind := oauthclientFields[1].Descriptor()
+	// oauthclient.DefaultKind holds the default value on creation for the kind field.
+	oauthclient.DefaultKind = oauthclientDescKind.Default.(string)
+	// oauthclient.KindValidator is a validator for the "kind" field. It is called by the builders before save.
+	oauthclient.KindValidator = oauthclientDescKind.Validators[0].(func(string) error)
+	// oauthclientDescName is the schema descriptor for name field.
+	oauthclientDescName := oauthclientFields[2].Descriptor()
+	// oauthclient.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	oauthclient.NameValidator = func() func(string) error {
+		validators := oauthclientDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// oauthclientDescInstanceID is the schema descriptor for instance_id field.
+	oauthclientDescInstanceID := oauthclientFields[5].Descriptor()
+	// oauthclient.InstanceIDValidator is a validator for the "instance_id" field. It is called by the builders before save.
+	oauthclient.InstanceIDValidator = oauthclientDescInstanceID.Validators[0].(func(string) error)
+	// oauthclientDescStatus is the schema descriptor for status field.
+	oauthclientDescStatus := oauthclientFields[6].Descriptor()
+	// oauthclient.DefaultStatus holds the default value on creation for the status field.
+	oauthclient.DefaultStatus = oauthclientDescStatus.Default.(string)
+	// oauthclient.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	oauthclient.StatusValidator = oauthclientDescStatus.Validators[0].(func(string) error)
+	// oauthclientDescRedirectURIOrigin is the schema descriptor for redirect_uri_origin field.
+	oauthclientDescRedirectURIOrigin := oauthclientFields[7].Descriptor()
+	// oauthclient.RedirectURIOriginValidator is a validator for the "redirect_uri_origin" field. It is called by the builders before save.
+	oauthclient.RedirectURIOriginValidator = func() func(string) error {
+		validators := oauthclientDescRedirectURIOrigin.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(redirect_uri_origin string) error {
+			for _, fn := range fns {
+				if err := fn(redirect_uri_origin); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
 	orgMixin := schema.Org{}.Mixin()
 	orgMixinFields0 := orgMixin[0].Fields()
 	_ = orgMixinFields0

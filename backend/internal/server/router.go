@@ -117,6 +117,10 @@ func registerRoutes(
 	// (/.well-known/jwks.json) at the server ROOT, not under /api.
 	routes.RegisterCommonRoutes(r, h.OAuth)
 
+	// OAuth 2.0 self-service surface (bearer-authenticated), mounted at
+	// /api/oauth — not under /api/v1, see RegisterOAuthAPIRoutes.
+	routes.RegisterOAuthAPIRoutes(r, h.OAuth, jwtAuth)
+
 	// API v1
 	v1 := r.Group("/api/v1")
 

@@ -123,6 +123,30 @@ backend/internal/service/auth_email_oauth_auto_test.go
 backend/internal/service/aliyun_captcha_service_test.go
 backend/internal/service/auth_oauth_email_flow_test.go
 backend/internal/service/auth_service_turnstile_register_test.go
+# D5 -- OAuth AS (Task 3: oauth_client registry + self-hosted client registration)
+backend/ent/schema/oauth_client.go
+backend/ent/oauthclient.go
+backend/ent/oauthclient/oauthclient.go
+backend/ent/oauthclient/where.go
+backend/ent/oauthclient_create.go
+backend/ent/oauthclient_delete.go
+backend/ent/oauthclient_query.go
+backend/ent/oauthclient_update.go
+backend/ent/client.go
+backend/ent/ent.go
+backend/ent/hook/hook.go
+backend/ent/intercept/intercept.go
+backend/ent/migrate/schema.go
+backend/ent/mutation.go
+backend/ent/predicate/predicate.go
+backend/ent/runtime/runtime.go
+backend/ent/tx.go
+backend/migrations/902_oauth_client.sql
+backend/internal/service/oauth_client_service.go
+backend/internal/service/oauth_client_service_test.go
+backend/internal/service/wire.go
+backend/internal/handler/dto/oauth.go
+backend/cmd/server/wire_gen.go
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }
