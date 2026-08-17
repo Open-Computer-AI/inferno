@@ -98,6 +98,15 @@ backend/internal/service/wire.go
 backend/cmd/server/wire_gen.go
 backend/cmd/jwtgen/main.go
 backend/internal/handler/auth_oauth_pending_flow_test.go
+# D5 -- OAuth AS (Task 2: ES256 signing key + JWKS endpoint)
+backend/internal/service/oauth_signing_key.go
+backend/internal/service/oauth_signing_key_test.go
+backend/internal/handler/oauth_handler.go
+backend/internal/handler/handler.go
+backend/internal/handler/wire.go
+backend/internal/server/routes/oauth.go
+backend/internal/server/routes/common.go
+backend/internal/server/router.go
 backend/internal/handler/passkey_handler_test.go
 backend/internal/handler/auth_oauth_captcha_start_test.go
 backend/internal/handler/auth_wechat_oauth_test.go

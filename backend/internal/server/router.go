@@ -113,8 +113,9 @@ func registerRoutes(
 	cfg *config.Config,
 	redisClient *redis.Client,
 ) {
-	// 通用路由（健康检查、状态等）
-	routes.RegisterCommonRoutes(r)
+	// 通用路由（健康检查、状态等）；also mounts OAuth 2.0 discovery
+	// (/.well-known/jwks.json) at the server ROOT, not under /api.
+	routes.RegisterCommonRoutes(r, h.OAuth)
 
 	// API v1
 	v1 := r.Group("/api/v1")
