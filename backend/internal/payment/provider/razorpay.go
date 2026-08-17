@@ -498,7 +498,13 @@ func (r *Razorpay) VerifyNotification(_ context.Context, rawBody string, headers
 	case "subscription.charged":
 		status = payment.ProviderStatusSuccess
 	default:
-		return nil, nil
+		if !payment.IsRazorpaySubscriptionLifecycleEvent(event.Event) {
+			return nil, nil
+		}
+		// Lifecycle events are state notifications, not payment fulfillment
+		// events. They intentionally carry a zero amount and are routed to the
+		// subscription lifecycle handler by the webhook adapter.
+		status = payment.ProviderStatusPending
 	}
 	tradeNo := strings.TrimSpace(p.ID)
 	amount := p.Amount
@@ -510,6 +516,9 @@ func (r *Razorpay) VerifyNotification(_ context.Context, rawBody string, headers
 	if tradeNo == "" {
 		tradeNo = strings.TrimSpace(o.ID)
 	}
+	if tradeNo == "" && payment.IsRazorpaySubscriptionLifecycleEvent(event.Event) {
+		tradeNo = providerSubscriptionID
+	}
 	if amount == 0 {
 		amount = o.AmountPaid
 		if amount == 0 {
@@ -520,7 +529,7 @@ func (r *Razorpay) VerifyNotification(_ context.Context, rawBody string, headers
 		currency = r.currency()
 	}
 	orderID := strings.TrimSpace(o.Receipt)
-	if orderID == "" && event.Event == "subscription.charged" {
+	if orderID == "" && strings.HasPrefix(event.Event, "subscription.") {
 		orderID = strings.TrimSpace(event.Payload.Subscription.Entity.Notes["inferno_order_id"])
 	}
 	if orderID == "" {
@@ -530,8 +539,12 @@ func (r *Razorpay) VerifyNotification(_ context.Context, rawBody string, headers
 	if providerOrderID == "" {
 		providerOrderID = strings.TrimSpace(o.ID)
 	}
-	if event.Event == "subscription.charged" {
+	if strings.HasPrefix(event.Event, "subscription.") {
 		providerOrderID = providerSubscriptionID
+	}
+	providerSubscriptionStatus := strings.TrimSpace(event.Payload.Subscription.Entity.Status)
+	if providerSubscriptionStatus == "" && payment.IsRazorpaySubscriptionLifecycleEvent(event.Event) {
+		providerSubscriptionStatus = strings.TrimPrefix(event.Event, "subscription.")
 	}
 	return &payment.PaymentNotification{
 		TradeNo: tradeNo,
@@ -540,12 +553,13 @@ func (r *Razorpay) VerifyNotification(_ context.Context, rawBody string, headers
 		Status:  status,
 		RawData: rawBody,
 		Metadata: map[string]string{
-			"currency":                 currency,
-			"status":                   strings.TrimSpace(p.Status),
-			"provider_order_id":        providerOrderID,
-			"provider_subscription_id": providerSubscriptionID,
-			"razorpay_event":           event.Event,
-			"event_id":                 eventID,
+			"currency":                     currency,
+			"status":                       strings.TrimSpace(p.Status),
+			"provider_order_id":            providerOrderID,
+			"provider_subscription_id":     providerSubscriptionID,
+			"provider_subscription_status": providerSubscriptionStatus,
+			"razorpay_event":               event.Event,
+			"event_id":                     eventID,
 		},
 	}, nil
 }
