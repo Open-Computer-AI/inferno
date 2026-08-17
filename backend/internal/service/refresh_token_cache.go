@@ -91,4 +91,31 @@ type RefreshTokenCache interface {
 	// IsTokenInFamily 检查Token是否属于指定家族
 	// 用于验证Token家族关系
 	IsTokenInFamily(ctx context.Context, familyID string, tokenHash string) (bool, error)
+
+	// MarkRotated atomically marks a refresh token record as rotated,
+	// GETting its current value and SETting the tombstoned replacement in
+	// ONE operation. Implementations MUST make the get-and-set atomic (e.g.
+	// a Redis Lua script) — NOT a separate GetRefreshToken() followed by
+	// StoreRefreshToken(), which race under concurrent redemption of the
+	// same token: two simultaneous presentations of one refresh token could
+	// otherwise both observe Rotated=false and both proceed to mint a token
+	// pair from it. See OAuthTokenService.ExchangeRefreshToken, which uses
+	// this as the single serialization point deciding who gets to rotate.
+	//
+	// tombstoned is the value to store IF this call wins the race (i.e. the
+	// record was not already rotated) — callers derive it from a prior read
+	// with Rotated set true. The record's existing TTL is preserved
+	// unchanged.
+	//
+	// Returns:
+	//   - (data, false, nil): this call won. data reflects the record as it
+	//     stood immediately before the mark (Rotated=false). tombstoned has
+	//     been stored.
+	//   - (data, true, nil): this call lost — the record was already
+	//     rotated, by either a genuine replay of an old token or the losing
+	//     side of a concurrent double-presentation. Nothing was written.
+	//     data reflects the (already-rotated) record as found — still
+	//     useful for its FamilyID.
+	//   - (nil, false, ErrRefreshTokenNotFound): no record exists for this hash.
+	MarkRotated(ctx context.Context, tokenHash string, tombstoned *RefreshTokenData) (data *RefreshTokenData, alreadyRotated bool, err error)
 }

@@ -61,6 +61,16 @@ type OAuthTokens struct {
 	ExpiresIn    int
 }
 
+// OAuthUserLookup is the minimal user-lookup capability
+// OAuthTokenService.ExchangeRefreshToken needs to re-validate an account on
+// every refresh. Deliberately narrower than the full UserRepository
+// interface (which also owns creation, listing, avatars, etc.) — any value
+// implementing UserRepository already satisfies this smaller interface
+// structurally, no adapter needed, but tests only have to stub one method.
+type OAuthUserLookup interface {
+	GetByID(ctx context.Context, id int64) (*User, error)
+}
+
 // OAuthTokenService implements the device_code and refresh_token grants of
 // POST /api/oauth/token. It mints access tokens itself — ES256, signed by
 // OAuthKeyService's key — and deliberately does NOT call
@@ -77,18 +87,20 @@ type OAuthTokenService struct {
 	keySvc       *OAuthKeyService
 	deviceSvc    *OAuthDeviceService
 	refreshCache RefreshTokenCache
+	userRepo     OAuthUserLookup
 	issuer       string
 }
 
 // NewOAuthTokenService constructs the token-endpoint service. issuer is the
 // "iss" claim on minted access tokens — pass the server's own public base
 // URL (the JWKS lives at {issuer}/.well-known/jwks.json).
-func NewOAuthTokenService(entClient *dbent.Client, keySvc *OAuthKeyService, deviceSvc *OAuthDeviceService, refreshCache RefreshTokenCache, issuer string) *OAuthTokenService {
+func NewOAuthTokenService(entClient *dbent.Client, keySvc *OAuthKeyService, deviceSvc *OAuthDeviceService, refreshCache RefreshTokenCache, userRepo OAuthUserLookup, issuer string) *OAuthTokenService {
 	return &OAuthTokenService{
 		entClient:    entClient,
 		keySvc:       keySvc,
 		deviceSvc:    deviceSvc,
 		refreshCache: refreshCache,
+		userRepo:     userRepo,
 		issuer:       issuer,
 	}
 }
@@ -164,9 +176,11 @@ func (s *OAuthTokenService) issueRefreshToken(ctx context.Context, userID int64,
 	}
 	// Shares the user's token set with panel sessions: a password-change /
 	// logout-all-devices revocation (AuthService.RevokeAllUserSessions) kills
-	// agent-issued OAuth sessions too, not just browser sessions.
+	// agent-issued OAuth sessions too, not just browser sessions. Fatal, not
+	// just logged: a token silently missing from the user set would survive
+	// exactly that kind of revocation for the rest of its 30-day life.
 	if err := s.refreshCache.AddToUserTokenSet(ctx, userID, tokenHash, oauthRefreshTokenTTL); err != nil {
-		slog.Warn("oauth: failed to add refresh token to user set", "client_id", clientID, "error", err)
+		return "", fmt.Errorf("add refresh token to user set: %w", err)
 	}
 	if err := s.refreshCache.AddToFamilyTokenSet(ctx, familyID, tokenHash, oauthRefreshTokenTTL); err != nil {
 		return "", fmt.Errorf("add refresh token to family: %w", err)
@@ -264,12 +278,24 @@ func (s *OAuthTokenService) ExchangeDeviceCode(ctx context.Context, clientID, de
 // ExchangeRefreshToken implements the refresh_token grant (RFC 6749 §6),
 // with rotation and family-wide reuse detection.
 //
-// On success the presented token is NOT deleted — it is re-stored under the
-// same hash with Rotated set, for the remainder of its original lifetime.
-// This is deliberate: a hard delete would make a later replay of that exact
-// raw token indistinguishable from "never existed", which loses the
-// FamilyID needed to revoke the rest of the session. Keeping a tombstone is
-// what makes the reuse branch below possible at all.
+// The rotation itself is a SINGLE atomic Redis operation
+// (RefreshTokenCache.MarkRotated) done BEFORE any minting, not a separate
+// Go-side read-then-write. Two concurrent presentations of the exact same
+// refresh token — an attacker replaying a stolen token at the same moment
+// the legitimate client refreshes on schedule — must not both be able to
+// observe "not yet rotated" and both mint a token pair from it: that would
+// fork the family into two live, independently-rotating branches that never
+// again present an already-rotated token to each other, so the reuse
+// detector below would never fire. MarkRotated is the single serialization
+// point that prevents that: exactly one caller can ever be told it won: see
+// TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins.
+//
+// The presented token is NOT deleted on success — MarkRotated re-stores it
+// under the same hash with Rotated set, for the remainder of its original
+// lifetime. This is deliberate: a hard delete would make a later replay of
+// that exact raw token indistinguishable from "never existed", which loses
+// the FamilyID needed to revoke the rest of the session. Keeping a
+// tombstone is what makes the reuse branch below possible at all.
 func (s *OAuthTokenService) ExchangeRefreshToken(ctx context.Context, clientID, refreshToken string) (*OAuthTokens, error) {
 	if clientID == "" || !strings.HasPrefix(refreshToken, oauthRefreshTokenPrefix) {
 		return nil, ErrInvalidGrant
@@ -284,54 +310,87 @@ func (s *OAuthTokenService) ExchangeRefreshToken(ctx context.Context, clientID, 
 		return nil, fmt.Errorf("get refresh token: %w", err)
 	}
 
+	// Checked BEFORE any mutation: a caller presenting the right raw token
+	// value but the wrong client_id (or an expired one) must not be able to
+	// trigger a rotation attempt at all — doing so would let it tombstone
+	// (or expire-delete) the real owner's still-live token as a side effect
+	// of a request that was never going to succeed for it, denying service
+	// to the legitimate client.
 	if data.ClientID != clientID {
 		return nil, ErrInvalidGrant
 	}
-
 	if time.Now().After(data.ExpiresAt) {
 		_ = s.refreshCache.DeleteRefreshToken(ctx, tokenHash)
 		return nil, ErrInvalidGrant
 	}
 
-	if data.Rotated {
-		// REPLAY: this exact token was already redeemed once. The
-		// legitimate client has a newer token from that rotation, in the
-		// same family — kill the whole family so that token dies too and
-		// the legitimate client is forced to notice and re-authenticate,
-		// rather than an attacker silently riding along on a stolen token.
+	// Re-validate the account on every refresh, mirroring
+	// AuthService.RefreshTokenPair (auth_service.go:1779-1802): a banned or
+	// deleted user must not keep minting fresh 15-minute access tokens off a
+	// refresh token issued before the ban, for the rest of that token
+	// family's 30-day life — UserService.UpdateStatus/Delete invalidate an
+	// auth cache but never call RevokeAllUserSessions, so nothing else stops
+	// this token family on its own.
+	user, err := s.userRepo.GetByID(ctx, data.UserID)
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			_ = s.refreshCache.DeleteTokenFamily(ctx, data.FamilyID)
+			return nil, ErrInvalidGrant
+		}
+		return nil, fmt.Errorf("load user for refresh: %w", err)
+	}
+	if !user.IsActive() {
+		_ = s.refreshCache.DeleteTokenFamily(ctx, data.FamilyID)
+		return nil, ErrInvalidGrant
+	}
+
+	// Atomically claim the right to rotate THIS token, before minting
+	// anything: a crash between here and the end of this function costs at
+	// most the one token being rotated (the client must re-authenticate),
+	// never a forked family with two live tokens.
+	tomb := *data
+	tomb.Rotated = true
+	winner, alreadyRotated, err := s.refreshCache.MarkRotated(ctx, tokenHash, &tomb)
+	if err != nil {
+		if errors.Is(err, ErrRefreshTokenNotFound) {
+			// Deleted between the GetRefreshToken above and here (e.g. a
+			// concurrent expiry sweep) — same outward behavior as "never
+			// existed".
+			return nil, ErrInvalidGrant
+		}
+		return nil, fmt.Errorf("mark refresh token rotated: %w", err)
+	}
+	if alreadyRotated {
+		// REPLAY, or the loser of a concurrent double-presentation of this
+		// exact token: someone else's mint may already be complete, or
+		// still in flight. Either way, kill the whole family so whatever
+		// token that caller receives (or received) also dies — the
+		// legitimate client is forced to notice and re-authenticate rather
+		// than an attacker silently riding along on a stolen token.
 		slog.Warn("oauth: refresh token reuse detected, revoking family", "client_id", clientID)
-		if delErr := s.refreshCache.DeleteTokenFamily(ctx, data.FamilyID); delErr != nil {
+		if delErr := s.refreshCache.DeleteTokenFamily(ctx, winner.FamilyID); delErr != nil {
 			return nil, fmt.Errorf("revoke token family after reuse: %w", delErr)
 		}
 		return nil, ErrRefreshTokenReused
 	}
 
 	// Scope is carried forward unchanged — a refresh must never silently
-	// widen (privilege escalation) or narrow (surprise downgrade) it.
-	access, err := s.mintAccessToken(ctx, data.UserID, clientID, data.Scope)
+	// widen (privilege escalation) or narrow (surprise downgrade) it. Uses
+	// winner (the value MarkRotated observed atomically), not the earlier
+	// data read, though in practice they agree — winner is simply the freshest.
+	access, err := s.mintAccessToken(ctx, winner.UserID, clientID, winner.Scope)
 	if err != nil {
 		return nil, err
 	}
-	newRefresh, err := s.issueRefreshToken(ctx, data.UserID, clientID, data.Scope, data.FamilyID)
+	newRefresh, err := s.issueRefreshToken(ctx, winner.UserID, clientID, winner.Scope, winner.FamilyID)
 	if err != nil {
 		return nil, err
-	}
-
-	remaining := time.Until(data.ExpiresAt)
-	if remaining > 0 {
-		tomb := *data
-		tomb.Rotated = true
-		if err := s.refreshCache.StoreRefreshToken(ctx, tokenHash, &tomb, remaining); err != nil {
-			return nil, fmt.Errorf("tombstone rotated refresh token: %w", err)
-		}
-	} else {
-		_ = s.refreshCache.DeleteRefreshToken(ctx, tokenHash)
 	}
 
 	return &OAuthTokens{
 		AccessToken:  access,
 		RefreshToken: newRefresh,
-		Scope:        data.Scope,
+		Scope:        winner.Scope,
 		ExpiresIn:    int(oauthAccessTokenTTL.Seconds()),
 	}, nil
 }

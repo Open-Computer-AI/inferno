@@ -167,6 +167,12 @@ backend/internal/service/wire.go
 backend/cmd/server/wire_gen.go
 backend/internal/handler/oauth_handler.go
 backend/internal/server/routes/oauth.go
+# D5 -- OAuth AS (Task 5 review fixes: atomic refresh-token rotation,
+# account re-validation on refresh, 500-on-internal-error, wire contract tests)
+backend/internal/repository/refresh_token_cache.go
+backend/internal/repository/refresh_token_cache_test.go
+backend/internal/handler/oauth_handler_test.go
+backend/internal/server/routes/oauth_token_route_test.go
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }

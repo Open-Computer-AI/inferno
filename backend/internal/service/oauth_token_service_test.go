@@ -124,14 +124,77 @@ func (f *fakeRefreshTokenCache) IsTokenInFamily(_ context.Context, familyID, tok
 	return ok, nil
 }
 
-func newDeviceFlowFixture(t *testing.T) (context.Context, *OAuthTokenService, *OAuthDeviceService, string, string) {
+// MarkRotated mirrors the real Redis Lua script's atomicity: the whole
+// get-decide-set happens while holding f.mu, so exactly one concurrent
+// caller ever observes alreadyRotated=false for a given token. This is what
+// makes TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins a
+// meaningful test of OAuthTokenService.ExchangeRefreshToken's own locking
+// (or lack of it) rather than of this fake's.
+func (f *fakeRefreshTokenCache) MarkRotated(_ context.Context, tokenHash string, tombstoned *RefreshTokenData) (*RefreshTokenData, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	data, ok := f.tokens[tokenHash]
+	if !ok {
+		return nil, false, ErrRefreshTokenNotFound
+	}
+	cloned := *data
+	if data.Rotated {
+		return &cloned, true, nil
+	}
+	tomb := *tombstoned
+	f.tokens[tokenHash] = &tomb
+	return &cloned, false, nil
+}
+
+// userLookupStub is a minimal OAuthUserLookup for tests: every ID not
+// explicitly marked inactive/missing resolves to an active user, which is
+// enough for tests that aren't specifically about account-status
+// re-validation.
+type userLookupStub struct {
+	mu       sync.Mutex
+	inactive map[int64]bool
+	missing  map[int64]bool
+}
+
+func newUserLookupStub() *userLookupStub {
+	return &userLookupStub{inactive: map[int64]bool{}, missing: map[int64]bool{}}
+}
+
+func (u *userLookupStub) GetByID(_ context.Context, id int64) (*User, error) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.missing[id] {
+		return nil, ErrUserNotFound
+	}
+	status := StatusActive
+	if u.inactive[id] {
+		status = "banned"
+	}
+	return &User{ID: id, Status: status}, nil
+}
+
+func (u *userLookupStub) setInactive(id int64) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.inactive[id] = true
+}
+
+func (u *userLookupStub) setMissing(id int64) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.missing[id] = true
+}
+
+func newDeviceFlowFixtureWithDeps(t *testing.T) (context.Context, *OAuthTokenService, *OAuthDeviceService, string, string, *fakeRefreshTokenCache, *userLookupStub) {
 	t.Helper()
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)
 	clients := NewOAuthClientService(client)
 	keys := NewOAuthKeyService(client)
 	devices := NewOAuthDeviceService(client, "https://portal.example.com")
-	tokens := NewOAuthTokenService(client, keys, devices, newFakeRefreshTokenCache(), "https://portal.example.com")
+	cache := newFakeRefreshTokenCache()
+	users := newUserLookupStub()
+	tokens := NewOAuthTokenService(client, keys, devices, cache, users, "https://portal.example.com")
 
 	oc, err := clients.RegisterSelfHosted(ctx, 1, 42, "https://agent.example.com", "")
 	if err != nil {
@@ -141,7 +204,13 @@ func newDeviceFlowFixture(t *testing.T) (context.Context, *OAuthTokenService, *O
 	if err != nil {
 		t.Fatalf("RequestCode: %v", err)
 	}
-	return ctx, tokens, devices, oc.ClientID, grant.DeviceCode
+	return ctx, tokens, devices, oc.ClientID, grant.DeviceCode, cache, users
+}
+
+func newDeviceFlowFixture(t *testing.T) (context.Context, *OAuthTokenService, *OAuthDeviceService, string, string) {
+	t.Helper()
+	ctx, tokens, devices, clientID, deviceCode, _, _ := newDeviceFlowFixtureWithDeps(t)
+	return ctx, tokens, devices, clientID, deviceCode
 }
 
 func TestExchangeReturnsAuthorizationPendingBeforeApproval(t *testing.T) {
@@ -272,9 +341,13 @@ func TestRefreshTokenReuseIsRejected(t *testing.T) {
 
 	// The token the LEGITIMATE client received from the rotation must also
 	// be dead now — reuse detection revokes the whole family, not just the
-	// replayed token.
-	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, rotated.RefreshToken); err == nil {
-		t.Fatal("(b) the legitimately-rotated token must also be revoked after reuse is detected")
+	// replayed token. Checking the exact sentinel (not just "any error")
+	// matters: an unrelated failure (e.g. a broken test double) must not be
+	// able to masquerade as successful family revocation. A dead family
+	// means the token's cache entry is gone entirely, so the correct
+	// outcome is ErrInvalidGrant (not found), not ErrRefreshTokenReused.
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, rotated.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("(b) expected ErrInvalidGrant for the legitimately-rotated token after reuse revoked its family, got %v", err)
 	}
 }
 
@@ -376,5 +449,165 @@ func TestRefreshTokenRawValueIsNeverStored(t *testing.T) {
 	}
 	if len(cache.tokens) != 1 {
 		t.Fatalf("expected exactly one stored refresh token record, got %d", len(cache.tokens))
+	}
+}
+
+// TestRefreshRejectsInactiveUser proves a banned/disabled user's already-
+// issued refresh token stops minting new access tokens immediately, not
+// just at its natural 30-day expiry. UserService.UpdateStatus invalidates an
+// auth cache but never calls RevokeAllUserSessions, so this re-validation on
+// every refresh is the only thing that closes that gap for OAuth sessions.
+func TestRefreshRejectsInactiveUser(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, _, users := newDeviceFlowFixtureWithDeps(t)
+
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	original, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+
+	users.setInactive(42)
+
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected ErrInvalidGrant for a refresh token belonging to an inactive user, got %v", err)
+	}
+}
+
+// TestRefreshRejectsMissingUser covers the deleted-user case separately from
+// inactive: GetByID returns ErrUserNotFound, not an active-but-banned User.
+func TestRefreshRejectsMissingUser(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, _, users := newDeviceFlowFixtureWithDeps(t)
+
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	original, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+
+	users.setMissing(42)
+
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected ErrInvalidGrant for a refresh token belonging to a deleted user, got %v", err)
+	}
+}
+
+// TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins is C1's
+// verification: N goroutines present the SAME refresh token at once. Without
+// an atomic claim (RefreshTokenCache.MarkRotated), a read-then-write
+// ExchangeRefreshToken lets multiple goroutines all observe "not yet
+// rotated" before any of them writes, so multiple would succeed — forking
+// the family into live, independently-rotating branches that never again
+// trip the reuse detector. Exactly one must succeed; every other caller must
+// see ErrRefreshTokenReused, and the family must have been revoked exactly
+// once (not once per loser).
+//
+// Run with -race; see task-5-report.md for the before/after mutation
+// evidence proving this test actually discriminates the fix from the race
+// it replaces.
+func TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, cache, _ := newDeviceFlowFixtureWithDeps(t)
+
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	original, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+
+	// Captured BEFORE the race: once reuse detection fires, DeleteTokenFamily
+	// removes every token in the family from the cache, so there is nothing
+	// left to recover FamilyID from afterward.
+	originalHash := hashToken(original.RefreshToken)
+	cache.mu.Lock()
+	familyID := cache.tokens[originalHash].FamilyID
+	cache.mu.Unlock()
+	if familyID == "" {
+		t.Fatal("expected the original token's cache record to carry a family id")
+	}
+
+	const n = 20
+	var (
+		wg          sync.WaitGroup
+		mu          sync.Mutex
+		successes   int
+		losers      int
+		otherErrors []error
+	)
+	start := make(chan struct{})
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
+			<-start
+			got, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case err == nil && got != nil:
+				successes++
+			case errors.Is(err, ErrRefreshTokenReused):
+				// This goroutine's own MarkRotated call was the one that
+				// observed alreadyRotated=true.
+				losers++
+			case errors.Is(err, ErrInvalidGrant):
+				// Also a legitimate loser outcome: by the time this
+				// goroutine reached MarkRotated, an EARLIER loser's
+				// DeleteTokenFamily had already removed the cache entry
+				// entirely, so this call sees "not found" rather than
+				// "already rotated". Which of the two a given loser sees is
+				// a race between its own MarkRotated and another loser's
+				// cleanup — both mean "you did not win", which is the
+				// invariant this test actually cares about.
+				losers++
+			default:
+				otherErrors = append(otherErrors, err)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	if len(otherErrors) != 0 {
+		t.Fatalf("unexpected errors (want only nil, ErrRefreshTokenReused, or ErrInvalidGrant): %v", otherErrors)
+	}
+	if successes != 1 {
+		t.Fatalf("expected exactly 1 winner out of %d concurrent presentations of one refresh token, got %d", n, successes)
+	}
+	if losers != n-1 {
+		t.Fatalf("expected %d losers, got %d", n-1, losers)
+	}
+
+	// A real DeleteTokenFamily call must actually have fired (revoked, not
+	// merely reported as revoked) — otherwise a loser observing
+	// ErrRefreshTokenReused without any real cleanup would still pass the
+	// assertions above. Checking specifically for the ORIGINAL token's entry
+	// is deliberate and race-free: unlike the winner's newly-minted token
+	// (whose own AddToFamilyTokenSet call can interleave with a loser's
+	// DeleteTokenFamily in either order — a narrower, separate ordering
+	// hazard noted in task-5-report.md and out of scope for this test),
+	// nothing ever re-adds the original hash once MarkRotated tombstones it,
+	// so its presence/absence unambiguously reflects whether revocation ran.
+	cache.mu.Lock()
+	_, originalStillPresent := cache.tokens[originalHash]
+	cache.mu.Unlock()
+	if originalStillPresent {
+		t.Fatal("expected DeleteTokenFamily to have actually removed the original token's cache entry")
 	}
 }

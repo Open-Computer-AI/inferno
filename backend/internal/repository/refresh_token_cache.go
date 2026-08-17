@@ -31,6 +31,40 @@ func tokenFamilyKey(familyID string) string {
 	return tokenFamilyPrefix + familyID
 }
 
+// refreshTokenMarkRotatedScript atomically flips a refresh-token record's
+// "rotated" flag exactly once. This exists because two concurrent
+// presentations of the SAME refresh token (an attacker replaying a stolen
+// token at the same instant the legitimate client refreshes on schedule)
+// must not both be able to mint a token pair from it — a Go-side
+// GetRefreshToken() followed by a separate StoreRefreshToken() is two Redis
+// round trips with a window in between where both callers can observe
+// Rotated=false. This script's GET-decide-SET happen inside one Redis
+// command, so only one of two simultaneous callers can ever be told it won.
+//
+// KEEPTTL (Redis >= 6.0) preserves the record's exact remaining lifetime —
+// no separate PTTL-read-then-SET-PX window to race on.
+//
+// KEYS[1] = refresh_token:{hash}
+// ARGV[1] = the tombstoned JSON value to store if this call wins
+//
+// Returns:
+//   - {-1, ”}  if the key does not exist
+//   - {1, raw}  if it was already rotated (raw = the value as found, unchanged)
+//   - {0, raw}  if this call won (raw = the value as it stood immediately
+//     before the SET below — i.e. pre-rotation)
+var refreshTokenMarkRotatedScript = redis.NewScript(`
+local raw = redis.call('GET', KEYS[1])
+if not raw then
+  return {-1, ''}
+end
+local decoded = cjson.decode(raw)
+if decoded.rotated then
+  return {1, raw}
+end
+redis.call('SET', KEYS[1], ARGV[1], 'KEEPTTL')
+return {0, raw}
+`)
+
 type refreshTokenCache struct {
 	rdb *redis.Client
 }
@@ -63,6 +97,41 @@ func (c *refreshTokenCache) GetRefreshToken(ctx context.Context, tokenHash strin
 		return nil, fmt.Errorf("unmarshal refresh token data: %w", err)
 	}
 	return &data, nil
+}
+
+func (c *refreshTokenCache) MarkRotated(ctx context.Context, tokenHash string, tombstoned *service.RefreshTokenData) (*service.RefreshTokenData, bool, error) {
+	key := refreshTokenKey(tokenHash)
+	tombVal, err := json.Marshal(tombstoned)
+	if err != nil {
+		return nil, false, fmt.Errorf("marshal tombstoned refresh token data: %w", err)
+	}
+
+	res, err := refreshTokenMarkRotatedScript.Run(ctx, c.rdb, []string{key}, tombVal).Result()
+	if err != nil {
+		return nil, false, fmt.Errorf("mark refresh token rotated: %w", err)
+	}
+
+	arr, ok := res.([]any)
+	if !ok || len(arr) != 2 {
+		return nil, false, fmt.Errorf("mark refresh token rotated: unexpected script result %#v", res)
+	}
+	flag, ok := arr[0].(int64)
+	if !ok {
+		return nil, false, fmt.Errorf("mark refresh token rotated: unexpected flag type %#v", arr[0])
+	}
+	if flag == -1 {
+		return nil, false, service.ErrRefreshTokenNotFound
+	}
+	rawStr, ok := arr[1].(string)
+	if !ok {
+		return nil, false, fmt.Errorf("mark refresh token rotated: unexpected payload type %#v", arr[1])
+	}
+
+	var data service.RefreshTokenData
+	if err := json.Unmarshal([]byte(rawStr), &data); err != nil {
+		return nil, false, fmt.Errorf("unmarshal refresh token data: %w", err)
+	}
+	return &data, flag == 1, nil
 }
 
 func (c *refreshTokenCache) DeleteRefreshToken(ctx context.Context, tokenHash string) error {

@@ -111,8 +111,10 @@ func ProvideOAuthDeviceService(entClient *dbent.Client, cfg *config.Config) *OAu
 // resolve the signing key from the "iss" claim alone. refreshTokenCache is
 // the SAME Redis-backed store panel sessions use (repository.NewRefreshTokenCache)
 // — OAuth refresh tokens are extra rows in that store, not a parallel one.
-func ProvideOAuthTokenService(entClient *dbent.Client, keySvc *OAuthKeyService, deviceSvc *OAuthDeviceService, refreshTokenCache RefreshTokenCache, cfg *config.Config) *OAuthTokenService {
-	return NewOAuthTokenService(entClient, keySvc, deviceSvc, refreshTokenCache, cfg.Server.FrontendURL)
+// userRepo is the same UserRepository AuthService uses; it satisfies
+// OAuthUserLookup structurally, no adapter needed.
+func ProvideOAuthTokenService(entClient *dbent.Client, keySvc *OAuthKeyService, deviceSvc *OAuthDeviceService, refreshTokenCache RefreshTokenCache, userRepo UserRepository, cfg *config.Config) *OAuthTokenService {
+	return NewOAuthTokenService(entClient, keySvc, deviceSvc, refreshTokenCache, userRepo, cfg.Server.FrontendURL)
 }
 
 // ProvideOAuthRefreshAPI creates OAuthRefreshAPI with the default lock TTL.

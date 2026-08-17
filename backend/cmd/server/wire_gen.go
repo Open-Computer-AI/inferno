@@ -313,7 +313,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	oAuthKeyService := service.NewOAuthKeyService(client)
 	oAuthClientService := service.NewOAuthClientService(client)
 	oAuthDeviceService := service.ProvideOAuthDeviceService(client, configConfig)
-	oAuthTokenService := service.ProvideOAuthTokenService(client, oAuthKeyService, oAuthDeviceService, refreshTokenCache, configConfig)
+	oAuthTokenService := service.ProvideOAuthTokenService(client, oAuthKeyService, oAuthDeviceService, refreshTokenCache, userRepository, configConfig)
 	handlerOAuthHandler := handler.NewOAuthHandler(oAuthKeyService, oAuthClientService, orgService, oAuthDeviceService, oAuthTokenService)
 	idempotencyCoordinator := service.ProvideIdempotencyCoordinator(idempotencyRepository, configConfig)
 	idempotencyCleanupService := service.ProvideIdempotencyCleanupService(idempotencyRepository, configConfig)

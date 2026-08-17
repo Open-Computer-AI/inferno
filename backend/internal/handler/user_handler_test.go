@@ -459,6 +459,10 @@ func (s *userHandlerRefreshTokenCacheStub) IsTokenInFamily(context.Context, stri
 	return false, nil
 }
 
+func (s *userHandlerRefreshTokenCacheStub) MarkRotated(context.Context, string, *service.RefreshTokenData) (*service.RefreshTokenData, bool, error) {
+	return nil, false, service.ErrRefreshTokenNotFound
+}
+
 func (s *userHandlerEmailCacheStub) GetVerificationCode(context.Context, string) (*service.VerificationCodeData, error) {
 	return s.data, nil
 }

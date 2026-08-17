@@ -130,8 +130,13 @@ func (h *OAuthHandler) DeviceCode(c *gin.Context) {
 }
 
 // tokenResponse writes a bare RFC 6749 §5.1 token response — NOT wrapped by
-// internal/pkg/response.
+// internal/pkg/response. §5.1 also requires Cache-Control: no-store and
+// Pragma: no-cache on every token response: the body carries a bearer
+// credential, and an intermediary caching it would hand that credential to
+// the next requester on the same cache path.
 func tokenResponse(c *gin.Context, tokens *service.OAuthTokens) {
+	c.Header("Cache-Control", "no-store")
+	c.Header("Pragma", "no-cache")
 	c.JSON(http.StatusOK, gin.H{
 		"access_token":  tokens.AccessToken,
 		"refresh_token": tokens.RefreshToken,
@@ -145,6 +150,16 @@ func tokenResponse(c *gin.Context, tokens *service.OAuthTokens) {
 // the credential-issuance step; a caller with a valid session wouldn't need
 // it. Form-encoded per RFC 6749/8628. Never logs device_code, refresh_token,
 // or access_token — client_id only.
+//
+// Every branch below matches known sentinels explicitly and falls through to
+// a logged 500 server_error for anything else (a Redis outage, a signing-key
+// read failure, ...). Folding an unmatched internal error into an OAuth
+// error code — e.g. treating a transient backend fault as expired_token or
+// invalid_grant — would tell every agent hitting it "your credential is
+// dead, re-run the device flow", turning a blip into a fleet-wide forced
+// re-auth, silently: nothing about that response distinguishes it from a
+// real expired/invalid credential, and nothing gets logged for an operator
+// to notice. See DeviceCode above for the same pattern already in use here.
 func (h *OAuthHandler) Token(c *gin.Context) {
 	grantType := c.PostForm("grant_type")
 	clientID := c.PostForm("client_id")
@@ -155,8 +170,8 @@ func (h *OAuthHandler) Token(c *gin.Context) {
 		if err != nil {
 			// RFC 8628 §3.5: authorization_pending/slow_down are the normal
 			// poll-loop responses, not failures — the hermes client branches
-			// on these exact strings. All are 400s; the OAuth error body,
-			// not the HTTP status, carries the meaning.
+			// on these exact strings. All matched cases are 400s; the OAuth
+			// error body, not the HTTP status, carries the meaning.
 			switch {
 			case errors.Is(err, service.ErrAuthorizationPending):
 				c.JSON(http.StatusBadRequest, gin.H{"error": "authorization_pending"})
@@ -164,8 +179,13 @@ func (h *OAuthHandler) Token(c *gin.Context) {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "slow_down"})
 			case errors.Is(err, service.ErrAccessDenied):
 				c.JSON(http.StatusBadRequest, gin.H{"error": "access_denied"})
-			default:
+			case errors.Is(err, service.ErrExpiredToken),
+				errors.Is(err, service.ErrDeviceCodeNotFound),
+				errors.Is(err, service.ErrDeviceCodeExpired):
 				c.JSON(http.StatusBadRequest, gin.H{"error": "expired_token"})
+			default:
+				slog.Error("oauth: device_code token exchange failed", "client_id", clientID, "error", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
 			}
 			return
 		}
@@ -174,12 +194,18 @@ func (h *OAuthHandler) Token(c *gin.Context) {
 	case "refresh_token":
 		tokens, err := h.tokenSvc.ExchangeRefreshToken(c.Request.Context(), clientID, c.PostForm("refresh_token"))
 		if err != nil {
-			// RFC 6749 §5.2: invalid_grant covers unknown/expired/wrong-client
-			// tokens AND detected reuse — the wire response deliberately does
-			// not distinguish reuse from an ordinary invalid token (that
-			// would tell a prober which case it hit); the reuse case is
-			// logged server-side instead (see ExchangeRefreshToken).
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant"})
+			switch {
+			case errors.Is(err, service.ErrInvalidGrant), errors.Is(err, service.ErrRefreshTokenReused):
+				// RFC 6749 §5.2: invalid_grant covers unknown/expired/wrong-client
+				// tokens AND detected reuse — the wire response deliberately
+				// does not distinguish reuse from an ordinary invalid token
+				// (that would tell a prober which case it hit); the reuse
+				// case is logged server-side instead (see ExchangeRefreshToken).
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant"})
+			default:
+				slog.Error("oauth: refresh_token token exchange failed", "client_id", clientID, "error", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+			}
 			return
 		}
 		tokenResponse(c, tokens)

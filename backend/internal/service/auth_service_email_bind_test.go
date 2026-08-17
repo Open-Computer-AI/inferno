@@ -854,6 +854,22 @@ func (s *emailBindRefreshTokenCacheStub) IsTokenInFamily(_ context.Context, fami
 	return ok, nil
 }
 
+func (s *emailBindRefreshTokenCacheStub) MarkRotated(_ context.Context, tokenHash string, tombstoned *service.RefreshTokenData) (*service.RefreshTokenData, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	data, ok := s.tokens[tokenHash]
+	if !ok {
+		return nil, false, service.ErrRefreshTokenNotFound
+	}
+	cloned := *data
+	if data.Rotated {
+		return &cloned, true, nil
+	}
+	tomb := *tombstoned
+	s.tokens[tokenHash] = &tomb
+	return &cloned, false, nil
+}
+
 type emailBindUserRepoStub struct {
 	mu           sync.Mutex
 	usersByID    map[int64]*service.User
