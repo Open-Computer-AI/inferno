@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -66,8 +67,12 @@ func (h *OAuthHandler) RegisterSelfHostedClient(c *gin.Context) {
 		return
 	}
 
-	created, err := h.clientSvc.RegisterSelfHosted(ctx, orgs[0].ID, uid, req.RedirectOrigin)
+	created, err := h.clientSvc.RegisterSelfHosted(ctx, orgs[0].ID, uid, req.RedirectOrigin, req.Name)
 	if err != nil {
+		if errors.Is(err, service.ErrClientNameTooLong) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
+			return
+		}
 		slog.Error("oauth: self-hosted client registration failed", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
 		return
