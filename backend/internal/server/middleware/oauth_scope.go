@@ -63,7 +63,15 @@ func RequireOAuthScope(keySvc *service.OAuthKeyService, required string) gin.Han
 		}
 
 		claims := jwt.MapClaims{}
-		parser := jwt.NewParser(jwt.WithValidMethods([]string{"ES256"}))
+		// WithExpirationRequired: golang-jwt/v5 only validates exp when the
+		// claim is PRESENT (validator.go's verifyExpiresAt defaults
+		// `required=false`) — a validly ES256-signed token that simply omits
+		// exp would otherwise be accepted as non-expiring forever. Today's
+		// only signer, mintAccessToken (oauth_token_service.go), always sets
+		// exp, but that is a fact about one caller, not a property this
+		// middleware enforces; a future ES256-signing path that forgets exp
+		// must fail closed here, not mint an eternal credential.
+		parser := jwt.NewParser(jwt.WithValidMethods([]string{"ES256"}), jwt.WithExpirationRequired())
 		token, err := parser.ParseWithClaims(raw, claims, func(t *jwt.Token) (any, error) {
 			if _, ok := t.Method.(*jwt.SigningMethodECDSA); !ok {
 				return nil, errors.New("unexpected signing method")

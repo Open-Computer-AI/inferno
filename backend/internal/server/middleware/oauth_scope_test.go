@@ -209,6 +209,35 @@ func TestRequireOAuthScopeRejectsHMACSignedToken(t *testing.T) {
 	require.JSONEq(t, `{"error":"invalid_token"}`, w.Body.String())
 }
 
+// TestRequireOAuthScopeRejectsTokenWithNoExpClaim is the fix for the review
+// finding: golang-jwt/v5 only validates exp when the claim is PRESENT
+// (validator.go's verifyExpiresAt defaults required=false), so without
+// jwt.WithExpirationRequired() a validly ES256-signed token that simply
+// omits exp would be accepted as non-expiring forever. Signed with the real
+// active ES256 key and otherwise-valid claims — only exp is missing — so
+// this fails for the right reason (the missing-exp check) and not because
+// the signature or any other claim is wrong.
+func TestRequireOAuthScopeRejectsTokenWithNoExpClaim(t *testing.T) {
+	keySvc := newOAuthScopeTestKeyService(t)
+	claims := jwt.MapClaims{
+		"iss":   "https://portal.example.com",
+		"sub":   "42",
+		"aud":   "agent:abc123",
+		"scope": "inference",
+		"iat":   time.Now().Unix(),
+		// no "exp" claim at all.
+	}
+	tok := mintTestES256Token(t, keySvc, claims)
+
+	r, w := newOAuthScopeTestRouter(keySvc, "inference")
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+	require.JSONEq(t, `{"error":"invalid_token"}`, w.Body.String())
+}
+
 func TestRequireOAuthScopeRejectsExpiredToken(t *testing.T) {
 	keySvc := newOAuthScopeTestKeyService(t)
 	claims := baseTestClaims(42, "agent:abc123", "inference", time.Now().Add(-time.Hour))

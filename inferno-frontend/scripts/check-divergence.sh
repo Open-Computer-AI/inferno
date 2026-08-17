@@ -174,12 +174,10 @@ backend/internal/repository/refresh_token_cache_test.go
 backend/internal/handler/oauth_handler_test.go
 backend/internal/server/routes/oauth_token_route_test.go
 # D5 -- OAuth AS (Task 6: scope-enforcement middleware + GET /api/oauth/account)
+# oauth_handler.go, oauth_handler_test.go, routes/oauth.go, and router.go are
+# already declared above (Tasks 2/3/5) -- not re-listed here, same files.
 backend/internal/server/middleware/oauth_scope.go
 backend/internal/server/middleware/oauth_scope_test.go
-backend/internal/handler/oauth_handler.go
-backend/internal/handler/oauth_handler_test.go
-backend/internal/server/routes/oauth.go
-backend/internal/server/router.go
 backend/internal/server/routes/oauth_account_route_test.go
 "
 
