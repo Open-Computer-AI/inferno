@@ -126,6 +126,57 @@ func TestEnsurePersonalOrgIsRaceSafe(t *testing.T) {
 	}
 }
 
+// TestEnsurePersonalOrgSelfHealsMissingOwnerMembership simulates the
+// permanent-lockout state a crash between the org insert and the membership
+// insert would leave behind: an Org row with personal_user_id set, but NO
+// matching OrgMember row. Before the self-healing lookup path existed,
+// EnsurePersonalOrg's short-circuit on personal_user_id returned that org
+// immediately without ever creating the membership — so OrgsForUser kept
+// coming up empty for that user forever, a permanent regression from the
+// prior (merely duplicate-prone) membership-based lookup. Asserts
+// EnsurePersonalOrg both returns the existing org AND repairs the missing
+// OWNER membership.
+func TestEnsurePersonalOrgSelfHealsMissingOwnerMembership(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := NewOrgService(client)
+
+	const userID = int64(9001)
+
+	orphan, err := client.Org.Create().
+		SetSlug("orphan-org").
+		SetName("orphan").
+		SetIsPersonal(true).
+		SetPersonalUserID(userID).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed orphaned org: %v", err)
+	}
+
+	// Sanity check the fixture actually has no membership yet.
+	if role, err := svc.RoleIn(ctx, orphan.ID, userID); err != nil {
+		t.Fatalf("RoleIn (pre-check): %v", err)
+	} else if role != "" {
+		t.Fatalf("fixture setup bug: expected no membership yet, got role %q", role)
+	}
+
+	got, err := svc.EnsurePersonalOrg(ctx, userID, "orphan")
+	if err != nil {
+		t.Fatalf("EnsurePersonalOrg: %v", err)
+	}
+	if got.ID != orphan.ID {
+		t.Fatalf("expected the existing orphaned org %d to be returned, got a different org %d", orphan.ID, got.ID)
+	}
+
+	role, err := svc.RoleIn(ctx, orphan.ID, userID)
+	if err != nil {
+		t.Fatalf("RoleIn (post-check): %v", err)
+	}
+	if role != OrgRoleOwner {
+		t.Fatalf("expected repaired membership with role %q, got %q", OrgRoleOwner, role)
+	}
+}
+
 func TestRoleInReturnsEmptyForNonMember(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)
