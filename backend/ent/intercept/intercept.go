@@ -28,6 +28,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
 	"github.com/Wei-Shaw/sub2api/ent/oauthclient"
+	"github.com/Wei-Shaw/sub2api/ent/oauthdeviceauthorization"
 	"github.com/Wei-Shaw/sub2api/ent/org"
 	"github.com/Wei-Shaw/sub2api/ent/orgmember"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
@@ -647,6 +648,33 @@ func (f TraverseOAuthClient) Traverse(ctx context.Context, q ent.Query) error {
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *ent.OAuthClientQuery", q)
+}
+
+// The OAuthDeviceAuthorizationFunc type is an adapter to allow the use of ordinary function as a Querier.
+type OAuthDeviceAuthorizationFunc func(context.Context, *ent.OAuthDeviceAuthorizationQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f OAuthDeviceAuthorizationFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.OAuthDeviceAuthorizationQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.OAuthDeviceAuthorizationQuery", q)
+}
+
+// The TraverseOAuthDeviceAuthorization type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseOAuthDeviceAuthorization func(context.Context, *ent.OAuthDeviceAuthorizationQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseOAuthDeviceAuthorization) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseOAuthDeviceAuthorization) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.OAuthDeviceAuthorizationQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.OAuthDeviceAuthorizationQuery", q)
 }
 
 // The OrgFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -1286,6 +1314,8 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.IdentityAdoptionDecisionQuery, predicate.IdentityAdoptionDecision, identityadoptiondecision.OrderOption]{typ: ent.TypeIdentityAdoptionDecision, tq: q}, nil
 	case *ent.OAuthClientQuery:
 		return &query[*ent.OAuthClientQuery, predicate.OAuthClient, oauthclient.OrderOption]{typ: ent.TypeOAuthClient, tq: q}, nil
+	case *ent.OAuthDeviceAuthorizationQuery:
+		return &query[*ent.OAuthDeviceAuthorizationQuery, predicate.OAuthDeviceAuthorization, oauthdeviceauthorization.OrderOption]{typ: ent.TypeOAuthDeviceAuthorization, tq: q}, nil
 	case *ent.OrgQuery:
 		return &query[*ent.OrgQuery, predicate.Org, org.OrderOption]{typ: ent.TypeOrg, tq: q}, nil
 	case *ent.OrgMemberQuery:

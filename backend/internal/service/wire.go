@@ -93,6 +93,17 @@ func ProvideAuthService(
 	return svc
 }
 
+// ProvideOAuthDeviceService wires OAuthDeviceService's portalBaseURL from
+// cfg.Server.FrontendURL — the browser-facing base URL already validated at
+// config load (rejects query strings and userinfo, warns on insecure
+// schemes), which is exactly the "human opens this in a browser" semantics
+// verification_uri needs. It defaults to "" for deployments that never set
+// it; RequestCode refuses to run in that case (service.ErrPortalNotConfigured)
+// rather than silently emitting a relative, unusable verification_uri.
+func ProvideOAuthDeviceService(entClient *dbent.Client, cfg *config.Config) *OAuthDeviceService {
+	return NewOAuthDeviceService(entClient, cfg.Server.FrontendURL)
+}
+
 // ProvideOAuthRefreshAPI creates OAuthRefreshAPI with the default lock TTL.
 func ProvideOAuthRefreshAPI(accountRepo AccountRepository, tokenCache GeminiTokenCache) *OAuthRefreshAPI {
 	return NewOAuthRefreshAPI(accountRepo, tokenCache)
@@ -756,6 +767,7 @@ var ProviderSet = wire.NewSet(
 	NewOrgService,
 	NewOAuthKeyService,
 	NewOAuthClientService,
+	ProvideOAuthDeviceService,
 	NewPasskeyService,
 	NewUserService,
 	ProvideAPIKeyService,

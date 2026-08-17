@@ -66,6 +66,9 @@ type IdentityAdoptionDecision func(*sql.Selector)
 // OAuthClient is the predicate function for oauthclient builders.
 type OAuthClient func(*sql.Selector)
 
+// OAuthDeviceAuthorization is the predicate function for oauthdeviceauthorization builders.
+type OAuthDeviceAuthorization func(*sql.Selector)
+
 // Org is the predicate function for org builders.
 type Org func(*sql.Selector)
 

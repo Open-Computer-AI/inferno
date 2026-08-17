@@ -25,3 +25,17 @@ func RegisterOAuthAPIRoutes(r gin.IRouter, h *handler.OAuthHandler, jwtAuth midd
 		authenticated.POST("/self-hosted-client", h.RegisterSelfHostedClient)
 	}
 }
+
+// RegisterOAuthDeviceRoutes mounts the UNAUTHENTICATED /api/oauth device-flow
+// endpoints. Deliberately a separate group from RegisterOAuthAPIRoutes (which
+// requires jwtAuth): a headless CLI calling POST /api/oauth/device/code has
+// no session yet — client_id is the identity for this request, not a bearer
+// token. Both groups share the /api/oauth prefix; gin allows two distinct
+// *gin.RouterGroup values rooted at the same path as long as their route
+// patterns don't collide.
+func RegisterOAuthDeviceRoutes(r gin.IRouter, h *handler.OAuthHandler) {
+	unauthenticated := r.Group("/api/oauth")
+	{
+		unauthenticated.POST("/device/code", h.DeviceCode)
+	}
+}

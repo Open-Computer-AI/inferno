@@ -25,6 +25,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
 	"github.com/Wei-Shaw/sub2api/ent/oauthclient"
+	"github.com/Wei-Shaw/sub2api/ent/oauthdeviceauthorization"
 	"github.com/Wei-Shaw/sub2api/ent/org"
 	"github.com/Wei-Shaw/sub2api/ent/orgmember"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
@@ -1363,6 +1364,87 @@ func init() {
 			return nil
 		}
 	}()
+	oauthdeviceauthorizationMixin := schema.OAuthDeviceAuthorization{}.Mixin()
+	oauthdeviceauthorizationMixinFields0 := oauthdeviceauthorizationMixin[0].Fields()
+	_ = oauthdeviceauthorizationMixinFields0
+	oauthdeviceauthorizationFields := schema.OAuthDeviceAuthorization{}.Fields()
+	_ = oauthdeviceauthorizationFields
+	// oauthdeviceauthorizationDescCreatedAt is the schema descriptor for created_at field.
+	oauthdeviceauthorizationDescCreatedAt := oauthdeviceauthorizationMixinFields0[0].Descriptor()
+	// oauthdeviceauthorization.DefaultCreatedAt holds the default value on creation for the created_at field.
+	oauthdeviceauthorization.DefaultCreatedAt = oauthdeviceauthorizationDescCreatedAt.Default.(func() time.Time)
+	// oauthdeviceauthorizationDescUpdatedAt is the schema descriptor for updated_at field.
+	oauthdeviceauthorizationDescUpdatedAt := oauthdeviceauthorizationMixinFields0[1].Descriptor()
+	// oauthdeviceauthorization.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	oauthdeviceauthorization.DefaultUpdatedAt = oauthdeviceauthorizationDescUpdatedAt.Default.(func() time.Time)
+	// oauthdeviceauthorization.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	oauthdeviceauthorization.UpdateDefaultUpdatedAt = oauthdeviceauthorizationDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// oauthdeviceauthorizationDescDeviceCode is the schema descriptor for device_code field.
+	oauthdeviceauthorizationDescDeviceCode := oauthdeviceauthorizationFields[0].Descriptor()
+	// oauthdeviceauthorization.DeviceCodeValidator is a validator for the "device_code" field. It is called by the builders before save.
+	oauthdeviceauthorization.DeviceCodeValidator = func() func(string) error {
+		validators := oauthdeviceauthorizationDescDeviceCode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(device_code string) error {
+			for _, fn := range fns {
+				if err := fn(device_code); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// oauthdeviceauthorizationDescUserCode is the schema descriptor for user_code field.
+	oauthdeviceauthorizationDescUserCode := oauthdeviceauthorizationFields[1].Descriptor()
+	// oauthdeviceauthorization.UserCodeValidator is a validator for the "user_code" field. It is called by the builders before save.
+	oauthdeviceauthorization.UserCodeValidator = func() func(string) error {
+		validators := oauthdeviceauthorizationDescUserCode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(user_code string) error {
+			for _, fn := range fns {
+				if err := fn(user_code); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// oauthdeviceauthorizationDescClientID is the schema descriptor for client_id field.
+	oauthdeviceauthorizationDescClientID := oauthdeviceauthorizationFields[2].Descriptor()
+	// oauthdeviceauthorization.ClientIDValidator is a validator for the "client_id" field. It is called by the builders before save.
+	oauthdeviceauthorization.ClientIDValidator = func() func(string) error {
+		validators := oauthdeviceauthorizationDescClientID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(client_id string) error {
+			for _, fn := range fns {
+				if err := fn(client_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// oauthdeviceauthorizationDescScope is the schema descriptor for scope field.
+	oauthdeviceauthorizationDescScope := oauthdeviceauthorizationFields[3].Descriptor()
+	// oauthdeviceauthorization.DefaultScope holds the default value on creation for the scope field.
+	oauthdeviceauthorization.DefaultScope = oauthdeviceauthorizationDescScope.Default.(string)
+	// oauthdeviceauthorization.ScopeValidator is a validator for the "scope" field. It is called by the builders before save.
+	oauthdeviceauthorization.ScopeValidator = oauthdeviceauthorizationDescScope.Validators[0].(func(string) error)
+	// oauthdeviceauthorizationDescStatus is the schema descriptor for status field.
+	oauthdeviceauthorizationDescStatus := oauthdeviceauthorizationFields[4].Descriptor()
+	// oauthdeviceauthorization.DefaultStatus holds the default value on creation for the status field.
+	oauthdeviceauthorization.DefaultStatus = oauthdeviceauthorizationDescStatus.Default.(string)
+	// oauthdeviceauthorization.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	oauthdeviceauthorization.StatusValidator = oauthdeviceauthorizationDescStatus.Validators[0].(func(string) error)
 	orgMixin := schema.Org{}.Mixin()
 	orgMixinFields0 := orgMixin[0].Fields()
 	_ = orgMixinFields0

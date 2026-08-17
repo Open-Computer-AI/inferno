@@ -1123,6 +1123,38 @@ var (
 			},
 		},
 	}
+	// OauthDeviceAuthorizationsColumns holds the columns for the "oauth_device_authorizations" table.
+	OauthDeviceAuthorizationsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "device_code", Type: field.TypeString, Unique: true, Size: 128},
+		{Name: "user_code", Type: field.TypeString, Unique: true, Size: 16},
+		{Name: "client_id", Type: field.TypeString, Size: 128},
+		{Name: "scope", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "status", Type: field.TypeString, Size: 16, Default: "pending"},
+		{Name: "approved_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "expires_at", Type: field.TypeTime},
+		{Name: "last_polled_at", Type: field.TypeTime, Nullable: true},
+	}
+	// OauthDeviceAuthorizationsTable holds the schema information for the "oauth_device_authorizations" table.
+	OauthDeviceAuthorizationsTable = &schema.Table{
+		Name:       "oauth_device_authorizations",
+		Columns:    OauthDeviceAuthorizationsColumns,
+		PrimaryKey: []*schema.Column{OauthDeviceAuthorizationsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "oauthdeviceauthorization_status",
+				Unique:  false,
+				Columns: []*schema.Column{OauthDeviceAuthorizationsColumns[7]},
+			},
+			{
+				Name:    "oauthdeviceauthorization_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{OauthDeviceAuthorizationsColumns[9]},
+			},
+		},
+	}
 	// OrgsColumns holds the columns for the "orgs" table.
 	OrgsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -2177,6 +2209,7 @@ var (
 		IdempotencyRecordsTable,
 		IdentityAdoptionDecisionsTable,
 		OauthClientsTable,
+		OauthDeviceAuthorizationsTable,
 		OrgsTable,
 		OrgMembersTable,
 		PaymentAuditLogsTable,
@@ -2278,6 +2311,9 @@ func init() {
 	}
 	OauthClientsTable.Annotation = &entsql.Annotation{
 		Table: "oauth_clients",
+	}
+	OauthDeviceAuthorizationsTable.Annotation = &entsql.Annotation{
+		Table: "oauth_device_authorizations",
 	}
 	OrgsTable.Annotation = &entsql.Annotation{
 		Table: "orgs",

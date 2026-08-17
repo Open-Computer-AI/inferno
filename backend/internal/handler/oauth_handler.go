@@ -21,10 +21,11 @@ type OAuthHandler struct {
 	keySvc    *service.OAuthKeyService
 	clientSvc *service.OAuthClientService
 	orgSvc    *service.OrgService
+	deviceSvc *service.OAuthDeviceService
 }
 
-func NewOAuthHandler(keySvc *service.OAuthKeyService, clientSvc *service.OAuthClientService, orgSvc *service.OrgService) *OAuthHandler {
-	return &OAuthHandler{keySvc: keySvc, clientSvc: clientSvc, orgSvc: orgSvc}
+func NewOAuthHandler(keySvc *service.OAuthKeyService, clientSvc *service.OAuthClientService, orgSvc *service.OrgService, deviceSvc *service.OAuthDeviceService) *OAuthHandler {
+	return &OAuthHandler{keySvc: keySvc, clientSvc: clientSvc, orgSvc: orgSvc, deviceSvc: deviceSvc}
 }
 
 // JWKS handles GET /.well-known/jwks.json
@@ -84,5 +85,43 @@ func (h *OAuthHandler) RegisterSelfHostedClient(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.SelfHostedClientResponse{
 		ClientID: created.ClientID,
 		Name:     created.Name,
+	})
+}
+
+// DeviceCode handles POST /api/oauth/device/code.
+// Form-encoded per RFC 8628. Unauthenticated — the client_id is the caller's
+// identity and it has no session yet at this point in the flow.
+func (h *OAuthHandler) DeviceCode(c *gin.Context) {
+	clientID := c.PostForm("client_id")
+	if clientID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
+		return
+	}
+	scope := c.PostForm("scope")
+
+	grant, err := h.deviceSvc.RequestCode(c.Request.Context(), clientID, scope)
+	if err != nil {
+		if errors.Is(err, service.ErrPortalNotConfigured) {
+			slog.Error("oauth: device code request failed, server misconfigured", "client_id", clientID)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+			return
+		}
+		// Deliberately no error detail here beyond client_id — never log a
+		// user-supplied value verbatim, and this path also covers "unknown
+		// client_id", which must not distinguish itself from other request
+		// shapes an attacker could use to probe registered client_ids.
+		slog.Warn("oauth: device code request rejected", "client_id", clientID)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_client"})
+		return
+	}
+
+	// Bare RFC 8628 body — NOT wrapped by internal/pkg/response.
+	c.JSON(http.StatusOK, gin.H{
+		"device_code":               grant.DeviceCode,
+		"user_code":                 grant.UserCode,
+		"verification_uri":          grant.VerificationURI,
+		"verification_uri_complete": grant.VerificationURIComplete,
+		"expires_in":                grant.ExpiresIn,
+		"interval":                  grant.Interval,
 	})
 }

@@ -121,6 +121,10 @@ func registerRoutes(
 	// /api/oauth — not under /api/v1, see RegisterOAuthAPIRoutes.
 	routes.RegisterOAuthAPIRoutes(r, h.OAuth, jwtAuth)
 
+	// OAuth 2.0 device authorization flow (UNAUTHENTICATED — client_id is
+	// the identity), also under /api/oauth. See RegisterOAuthDeviceRoutes.
+	routes.RegisterOAuthDeviceRoutes(r, h.OAuth)
+
 	// API v1
 	v1 := r.Group("/api/v1")
 

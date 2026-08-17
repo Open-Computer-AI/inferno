@@ -249,6 +249,18 @@ func (f OAuthClientFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value,
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.OAuthClientMutation", m)
 }
 
+// The OAuthDeviceAuthorizationFunc type is an adapter to allow the use of ordinary
+// function as OAuthDeviceAuthorization mutator.
+type OAuthDeviceAuthorizationFunc func(context.Context, *ent.OAuthDeviceAuthorizationMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f OAuthDeviceAuthorizationFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.OAuthDeviceAuthorizationMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.OAuthDeviceAuthorizationMutation", m)
+}
+
 // The OrgFunc type is an adapter to allow the use of ordinary
 // function as Org mutator.
 type OrgFunc func(context.Context, *ent.OrgMutation) (ent.Value, error)

@@ -54,6 +54,8 @@ type Tx struct {
 	IdentityAdoptionDecision *IdentityAdoptionDecisionClient
 	// OAuthClient is the client for interacting with the OAuthClient builders.
 	OAuthClient *OAuthClientClient
+	// OAuthDeviceAuthorization is the client for interacting with the OAuthDeviceAuthorization builders.
+	OAuthDeviceAuthorization *OAuthDeviceAuthorizationClient
 	// Org is the client for interacting with the Org builders.
 	Org *OrgClient
 	// OrgMember is the client for interacting with the OrgMember builders.
@@ -249,6 +251,7 @@ func (tx *Tx) init() {
 	tx.IdempotencyRecord = NewIdempotencyRecordClient(tx.config)
 	tx.IdentityAdoptionDecision = NewIdentityAdoptionDecisionClient(tx.config)
 	tx.OAuthClient = NewOAuthClientClient(tx.config)
+	tx.OAuthDeviceAuthorization = NewOAuthDeviceAuthorizationClient(tx.config)
 	tx.Org = NewOrgClient(tx.config)
 	tx.OrgMember = NewOrgMemberClient(tx.config)
 	tx.PaymentAuditLog = NewPaymentAuditLogClient(tx.config)

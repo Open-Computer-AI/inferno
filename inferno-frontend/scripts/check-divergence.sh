@@ -147,6 +147,18 @@ backend/internal/service/oauth_client_service_test.go
 backend/internal/service/wire.go
 backend/internal/handler/dto/oauth.go
 backend/cmd/server/wire_gen.go
+# D5 -- OAuth AS (Task 4: RFC 8628 device authorization request)
+backend/ent/schema/oauth_device_authorization.go
+backend/ent/oauthdeviceauthorization.go
+backend/ent/oauthdeviceauthorization/oauthdeviceauthorization.go
+backend/ent/oauthdeviceauthorization/where.go
+backend/ent/oauthdeviceauthorization_create.go
+backend/ent/oauthdeviceauthorization_delete.go
+backend/ent/oauthdeviceauthorization_query.go
+backend/ent/oauthdeviceauthorization_update.go
+backend/migrations/903_oauth_device_authorization.sql
+backend/internal/service/oauth_device_service.go
+backend/internal/service/oauth_device_service_test.go
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }
