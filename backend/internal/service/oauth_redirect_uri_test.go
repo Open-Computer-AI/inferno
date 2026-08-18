@@ -21,8 +21,16 @@ func TestValidateRedirectURI(t *testing.T) {
 		"http://agent.example.com/auth/callback":          "plaintext http",
 		"https://127.0.0.1:8765/auth/callback":            "loopback — this is exactly why the desktop must broker through its gateway",
 		"https://localhost:8765/auth/callback":            "loopback by name",
+		"https://LOCALHOST:8765/auth/callback":            "loopback by name, mixed case",
+		"https://localhost./auth/callback":                "loopback by name, trailing dot",
+		"https://127.0.0.1./auth/callback":                "loopback IPv4, trailing dot",
 		"https://[::1]:8765/auth/callback":                "loopback v6",
+		"https://0.0.0.0/auth/callback":                   "unspecified IPv4 — kernel-delivered to 127.0.0.1 on Linux",
+		"https://[::]/auth/callback":                      "unspecified IPv6",
+		"https://[::ffff:127.0.0.1]/auth/callback":        "IPv4-mapped loopback",
 		"https://agent.example.com/callback":              "does not end in /auth/callback",
+		"https://agent.example.com/auth/callbackXYZ":      "suffix trick — extra chars after callback",
+		"https://agent.example.com/notauth/callback":      "suffix trick — wrong prefix segment",
 		"https://agent.example.com/auth/callback?x=1":     "query string",
 		"https://agent.example.com/auth/callback#f":       "fragment",
 		"https://user:pw@agent.example.com/auth/callback": "userinfo",
@@ -86,9 +94,13 @@ func TestValidateRedirectOrigin(t *testing.T) {
 		"http://agent.example.com":                "plaintext http",
 		"https://127.0.0.1:8765":                  "loopback",
 		"https://localhost:8765":                  "loopback by name",
+		"https://localhost.":                      "loopback by name, trailing dot",
+		"https://127.0.0.1.":                      "loopback IPv4, trailing dot",
 		"https://[::1]:8765":                      "loopback v6",
+		"https://0.0.0.0":                         "unspecified IPv4 — kernel-delivered to 127.0.0.1 on Linux",
+		"https://[::]":                            "unspecified IPv6",
 		"https://agent.example.com/auth/callback": "origin must not include a path",
-		"https://agent.example.com/":              "origin must not include a path (even bare slash)",
+		"https://agent.example.com/foo":           "origin must not include a non-trivial path",
 		"https://agent.example.com?x=1":           "query string",
 		"https://agent.example.com#f":             "fragment",
 		"https://user:pw@agent.example.com":       "userinfo",
@@ -99,6 +111,43 @@ func TestValidateRedirectOrigin(t *testing.T) {
 	for u, why := range bad {
 		if err := ValidateRedirectOrigin(u); !errors.Is(err, ErrInvalidRedirectURI) {
 			t.Errorf("%q must be rejected (%s), got %v", u, why, err)
+		}
+	}
+}
+
+// TestNormalizeRedirectOriginAcceptsAndNormalisesTrailingSlash covers fix 3
+// from the security review: a bare trailing slash is semantically identical
+// to no path (RedirectURIMatchesClient compares only Scheme+Host, never
+// Path), so a human pasting a browser-address-bar URL should not be
+// rejected for it — but the stored form must be canonical, not verbatim,
+// so the column never accumulates two spellings of one origin.
+func TestNormalizeRedirectOriginAcceptsAndNormalisesTrailingSlash(t *testing.T) {
+	got, err := NormalizeRedirectOrigin("https://x.example.com/")
+	if err != nil {
+		t.Fatalf("trailing slash must be accepted, got %v", err)
+	}
+	if got != "https://x.example.com" {
+		t.Fatalf("expected the trailing slash normalised away, got %q", got)
+	}
+
+	// Any other non-empty path is still rejected outright.
+	if _, err := NormalizeRedirectOrigin("https://x.example.com/foo"); !errors.Is(err, ErrInvalidRedirectURI) {
+		t.Fatalf("a real path must still be rejected, got %v", err)
+	}
+}
+
+// TestValidateRedirectURIRejectsUnspecifiedAddress pins fix 1: 0.0.0.0 and
+// the IPv6 unspecified address are a DIFFERENT net.IP predicate
+// (IsUnspecified, not IsLoopback) and were not covered before this fix,
+// despite 0.0.0.0 being kernel-delivered to 127.0.0.1 on Linux — the same
+// loopback-delivery vector this validator exists to close.
+func TestValidateRedirectURIRejectsUnspecifiedAddress(t *testing.T) {
+	for _, u := range []string{
+		"https://0.0.0.0/auth/callback",
+		"https://[::]/auth/callback",
+	} {
+		if err := ValidateRedirectURI(u); !errors.Is(err, ErrInvalidRedirectURI) {
+			t.Errorf("%q must be rejected as unspecified, got %v", u, err)
 		}
 	}
 }
@@ -132,10 +181,30 @@ func TestRegisterSelfHostedRejectsLoopbackOrigin(t *testing.T) {
 	for _, origin := range []string{
 		"https://127.0.0.1",
 		"https://localhost",
+		"https://0.0.0.0",
 		"http://agent.example.com", // plaintext, not loopback, but must also be rejected here
 	} {
 		if _, err := svc.RegisterSelfHosted(ctx, 1, 42, origin, ""); !errors.Is(err, ErrInvalidRedirectURI) {
 			t.Errorf("RegisterSelfHosted(origin=%q): expected ErrInvalidRedirectURI, got %v", origin, err)
 		}
+	}
+}
+
+// TestRegisterSelfHostedNormalizesTrailingSlashOrigin covers fix 3: a
+// registrant pasting a browser-address-bar URL (trailing slash included)
+// must be accepted, and the row must store the canonical spelling, not the
+// verbatim input, so the column never accumulates two spellings of one
+// origin.
+func TestRegisterSelfHostedNormalizesTrailingSlashOrigin(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := NewOAuthClientService(client)
+
+	got, err := svc.RegisterSelfHosted(ctx, 1, 42, "https://agent-abc.example.com/", "")
+	if err != nil {
+		t.Fatalf("RegisterSelfHosted: %v", err)
+	}
+	if got.RedirectURIOrigin != "https://agent-abc.example.com" {
+		t.Fatalf("expected the stored origin to be normalised (no trailing slash), got %q", got.RedirectURIOrigin)
 	}
 }

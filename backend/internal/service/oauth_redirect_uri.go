@@ -49,7 +49,8 @@ func IsOOBOrigin(origin string) bool {
 // parsedCandidate is the set of checks shared by both an ORIGIN (registration
 // time) and a full redirect URI (authorize time): must parse, must be https,
 // must have a non-empty host, no userinfo, no query, no fragment, and the
-// host must not be loopback in any of its three forms.
+// host must not resolve to loopback or unspecified delivery — see
+// isLoopbackHost for exactly what that covers.
 func parsedCandidate(raw string) (*url.URL, error) {
 	if raw == "" {
 		return nil, fmt.Errorf("%w: empty", ErrInvalidRedirectURI)
@@ -81,26 +82,40 @@ func parsedCandidate(raw string) (*url.URL, error) {
 	return u, nil
 }
 
-// isLoopbackHost covers all three forms a loopback host can take:
+// isLoopbackHost covers every form of "this resolves to the local machine,
+// not a real remote redirect target" that this codebase has found a real
+// exploitation path for:
 //   - an IPv4 literal anywhere in 127.0.0.0/8 (not just 127.0.0.1),
-//   - the IPv6 loopback literal ::1,
-//   - the literal name "localhost", compared case-insensitively.
+//   - the IPv6 loopback literal ::1 (and the IPv4-mapped ::ffff:127.0.0.1
+//     form — net.IP.IsLoopback calls To4() first, so this is covered by
+//     the same check),
+//   - 0.0.0.0/the IPv6 unspecified address ::, via IsUnspecified rather
+//     than IsLoopback (a DIFFERENT net package predicate — IsLoopback is
+//     false for 0.0.0.0). This matters here because on Linux a client that
+//     connects to destination 0.0.0.0 is delivered to 127.0.0.1 by the
+//     kernel: it is the same loopback-delivery vector this check exists to
+//     close, not a separate concern,
+//   - the literal name "localhost", compared case-insensitively, tolerant
+//     of a single trailing dot (the DNS root label — "localhost." and
+//     "127.0.0.1." are the same host as their dot-free spellings).
 //
 // host is u.Hostname() — net/url already strips brackets from an IPv6
 // literal and any port, so net.ParseIP sees a bare address either way.
 func isLoopbackHost(host string) bool {
+	host = strings.TrimSuffix(host, ".")
 	if strings.EqualFold(host, "localhost") {
 		return true
 	}
 	if ip := net.ParseIP(host); ip != nil {
-		return ip.IsLoopback()
+		return ip.IsLoopback() || ip.IsUnspecified()
 	}
 	return false
 }
 
-// ValidateRedirectOrigin validates a redirect_uri ORIGIN at client
-// REGISTRATION time (RegisterSelfHosted, before the insert): https scheme,
-// non-empty host, no userinfo/path/query/fragment, not loopback.
+// NormalizeRedirectOrigin validates a redirect_uri ORIGIN at client
+// REGISTRATION time (RegisterSelfHosted, before the insert) and returns its
+// canonical form: https scheme, non-empty host, no userinfo/query/fragment,
+// not loopback/unspecified.
 //
 // The column this feeds, oauth_client.redirect_uri_origin, stores an
 // ORIGIN, not a full redirect URI — every existing registration fixture
@@ -110,20 +125,38 @@ func isLoopbackHost(host string) bool {
 // ValidateRedirectURI's "/auth/callback" suffix requirement here would
 // reject every one of those legitimate registrations.
 //
+// A path of exactly "/" is accepted as equivalent to no path at all — a URL
+// pasted from a browser's address bar naturally carries a trailing slash —
+// and is normalised away in the returned string, so the column only ever
+// holds one spelling of a given origin. This does not weaken matching:
+// RedirectURIMatchesClient compares only Scheme and Host, never Path, so a
+// stored "https://x.com/" would have matched identically to "https://x.com"
+// even before this normalisation existed — the point here is purely to
+// avoid two spellings of one origin sitting in the table. Any other
+// non-empty path is still rejected.
+//
 // This validates INPUT at registration time only — it must never be run
 // retroactively against rows already in the table. The migration-seeded
 // hermes-cli row (redirect_uri_origin = the OOB placeholder, see
 // IsOOBOrigin) legitimately fails this validator and is not drift: it was
 // never passed through RegisterSelfHosted.
-func ValidateRedirectOrigin(raw string) error {
+func NormalizeRedirectOrigin(raw string) (string, error) {
 	u, err := parsedCandidate(raw)
 	if err != nil {
-		return err
+		return "", err
 	}
-	if u.Path != "" {
-		return fmt.Errorf("%w: origin must not include a path", ErrInvalidRedirectURI)
+	if u.Path != "" && u.Path != "/" {
+		return "", fmt.Errorf("%w: origin must not include a path", ErrInvalidRedirectURI)
 	}
-	return nil
+	return u.Scheme + "://" + u.Host, nil
+}
+
+// ValidateRedirectOrigin is NormalizeRedirectOrigin for callers that only
+// need pass/fail, not the canonical string (e.g. tests, and any future
+// validate-without-storing call site).
+func ValidateRedirectOrigin(raw string) error {
+	_, err := NormalizeRedirectOrigin(raw)
+	return err
 }
 
 // ValidateRedirectURI validates a FULL redirect_uri presented at
