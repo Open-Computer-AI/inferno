@@ -64,6 +64,8 @@ docs/superpowers/specs/2026-08-17-inferno-oauth-authorization-server-design.md
 docs/superpowers/plans/2026-08-17-inferno-oauth-authorization-server.md
 docs/superpowers/specs/2026-08-18-authorization-code-pkce-design.md
 docs/superpowers/plans/2026-08-18-authorization-code-pkce.md
+docs/superpowers/specs/2026-08-19-oauth-bearer-inference-design.md
+docs/superpowers/plans/2026-08-19-oauth-bearer-inference.md
 # D5 -- org tenancy (Task 1: org + org_member tables, personal org on signup)
 backend/ent/schema/org.go
 backend/ent/schema/org_member.go
