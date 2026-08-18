@@ -136,21 +136,21 @@ func registerRoutes(
 	routes.RegisterOAuthDeviceRoutes(r, h.OAuth)
 
 	// OAuth resource-server surface: GET /api/oauth/account, authenticated
-	// by Task 6's ES256 bearer middleware (NOT jwtAuth). See
+	// by Task 6's RS256 bearer middleware (NOT jwtAuth). See
 	// RegisterOAuthAccountRoutes.
 	routes.RegisterOAuthAccountRoutes(r, h.OAuth)
 
 	// GET/POST /oauth/authorize (Task 4): the browser-facing authorization
 	// endpoint, mounted at the server root -- not under /api -- and NOT
 	// bypassed to the embedded frontend by web.FrontendServer (see
-	// shouldBypassEmbeddedFrontend in internal/web/embed_on.go), since it
+	// shouldBypassEmbeddedFrontend in internal/web/bypass.go), since it
 	// is a real backend endpoint the hermes client's system browser
-	// navigates to directly, not a Vue route. panelRateLimiter.PublicIP()
-	// (Task 4 fix round 1, F15): every hit -- including an unauthenticated
-	// one, which performs a DB client lookup before any auth check runs --
-	// was previously unbounded; PublicIP is the same choice
-	// RegisterModelPlazaRoutes makes for its own pre-auth-reachable public
-	// group, for the same reason.
+	// navigates to directly, not a Vue route. panelRateLimiter passed
+	// through so RegisterOAuthAuthorizeRoute can apply
+	// PublicIPScoped("oauth_authorize") (Task 4 fix round 1, F15; scoped
+	// key added in fix round 2, review NEW-4 -- see that method's own doc
+	// comment for why a scoped key, not the bare PublicIP()
+	// RegisterModelPlazaRoutes uses, was needed here).
 	routes.RegisterOAuthAuthorizeRoute(r, h.OAuth, optionalJWTAuth, panelRateLimiter)
 
 	// API v1

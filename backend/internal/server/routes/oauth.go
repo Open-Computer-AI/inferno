@@ -77,20 +77,28 @@ func RegisterOAuthDeviceRoutes(r gin.IRouter, h *handler.OAuthHandler) {
 // header on a still-valid session resolves the AuthSubject the handler
 // needs for the ownership check, and a header on an EXPIRED/invalid session
 // is rejected by that shared middleware before the handler runs -- see
-// OAuthHandler.Authorize's doc comment for why that one case is this
-// otherwise-bare endpoint's sole JSON exception.
+// OAuthHandler.Authorize's doc comment for why that is one of this
+// otherwise-bare endpoint's two documented JSON exceptions (the rate
+// limiter below is the other).
 //
-// rateLimiter.PublicIP() (Task 4 fix round 1, F15) -- every hit performs a
-// DB client lookup BEFORE any auth check runs (client_id/redirect_uri are
+// rateLimiter.PublicIPScoped("oauth_authorize") (Task 4 fix round 1, F15;
+// scoped key added in fix round 2, review NEW-4) -- every hit performs a DB
+// client lookup BEFORE any auth check runs (client_id/redirect_uri are
 // validated first, deliberately, since they gate the MUST-NOT-REDIRECT
 // decision), so an unauthenticated caller could otherwise drive unbounded
 // lookups. Per-IP, not per-user, for the same reason
-// RegisterModelPlazaRoutes uses PublicIP() for its own pre-auth-reachable
-// public group: there is no session to key on until AFTER the checks this
-// limiter needs to bound.
+// RegisterModelPlazaRoutes uses a PublicIP-family method for its own
+// pre-auth-reachable public group: there is no session to key on until
+// AFTER the checks this limiter needs to bound. Scoped, not the bare
+// PublicIP() RegisterModelPlazaRoutes uses, so a burst of Model Plaza
+// traffic from one IP cannot exhaust this endpoint's budget and vice versa
+// -- see PublicIPScoped's doc comment for why that sharing was a real gap,
+// not a hypothetical one. A rate-limited hit gets the panel JSON envelope
+// at 429 -- see OAuthHandler.Authorize's doc comment for the full,
+// now-two-item list of this otherwise-bare endpoint's JSON exceptions.
 func RegisterOAuthAuthorizeRoute(r gin.IRouter, h *handler.OAuthHandler, optionalJWTAuth middleware.OptionalJWTAuthMiddleware, rateLimiter *middleware.PanelRateLimiter) {
-	r.GET("/oauth/authorize", rateLimiter.PublicIP(), gin.HandlerFunc(optionalJWTAuth), h.Authorize)
-	r.POST("/oauth/authorize", rateLimiter.PublicIP(), gin.HandlerFunc(optionalJWTAuth), h.Authorize)
+	r.GET("/oauth/authorize", rateLimiter.PublicIPScoped("oauth_authorize"), gin.HandlerFunc(optionalJWTAuth), h.Authorize)
+	r.POST("/oauth/authorize", rateLimiter.PublicIPScoped("oauth_authorize"), gin.HandlerFunc(optionalJWTAuth), h.Authorize)
 }
 
 // RegisterOAuthAccountRoutes mounts GET /api/oauth/account behind Task 6's

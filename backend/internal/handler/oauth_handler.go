@@ -311,7 +311,7 @@ func (h *OAuthHandler) Token(c *gin.Context) {
 
 // Account handles GET /api/oauth/account — the account/entitlement summary the
 // hermes CLI reads. Authenticated by middleware.RequireOAuthScope (Task 6,
-// ES256 OAuth bearer), NOT jwtAuth: a headless agent presents an OAuth-issued
+// RS256 OAuth bearer), NOT jwtAuth: a headless agent presents an OAuth-issued
 // access token here, not an Inferno panel session, so it is registered on its
 // own route group in server/routes/oauth.go rather than under
 // RegisterOAuthAPIRoutes.

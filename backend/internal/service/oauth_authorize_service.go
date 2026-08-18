@@ -198,28 +198,75 @@ func (s *OAuthAuthorizeService) IssueCode(ctx context.Context, in IssueCodeInput
 		return "", err
 	}
 
-	// Invalidate any still-pending code already issued for this exact
-	// (client, user) pair before minting a new one. Without this, every
-	// call to this function -- a remount of AuthorizeConsentView.vue
-	// (Back-navigation, a refresh, a duplicated mount), or a repeat
-	// auto-approve GET -- adds ANOTHER independently redeemable
-	// credential on top of whatever is already outstanding, rather than
-	// replacing it: N calls means N live codes, each good for its own
-	// token exchange, not one. Task 3's single-use/replay-revocation
-	// logic (ExchangeAuthorizationCode) operates per-code and does
-	// nothing to bound that count.
+	// SUPERSESSION: invalidates any still-pending code already issued for
+	// this exact (client, user) pair before minting a new one -- a second
+	// IssueCode call for the same pair does not just add a code, it
+	// REPLACES the previous one. Without this, every call to this
+	// function -- a remount of AuthorizeConsentView.vue (Back-navigation,
+	// a refresh, a duplicated mount), or a repeat auto-approve GET --
+	// added ANOTHER independently redeemable credential on top of
+	// whatever was already outstanding: N calls meant N live codes, each
+	// good for its own token exchange, not one. Task 3's
+	// single-use/replay-revocation logic (ExchangeAuthorizationCode)
+	// operates per-code and does nothing to bound that count.
+	//
+	// USER-VISIBLE CONSEQUENCE, worth knowing before "fixing" a bug
+	// report: a genuinely parallel authorize for the same (client, user)
+	// -- e.g. two browser tabs, or a person clicking a desktop app's
+	// login button twice before the first attempt finishes -- now leaves
+	// only the SECOND code redeemable; the first fails at
+	// ExchangeAuthorizationCode with a plain invalid_grant, not a
+	// distinguishable "superseded" error (RFC 6749 has no such code, and
+	// this schema's replay-revocation path correctly does nothing extra
+	// here -- see below). In practice this is low-impact: client_id is
+	// per-registration (`agent:` + 16 random bytes,
+	// OAuthClientService.RegisterSelfHosted), so one device/install is
+	// one client_id, and two tabs of the SAME device racing the SAME
+	// authorize is the only realistic way to hit this, not two different
+	// people or devices.
 	//
 	// Marked "consumed" with issued_token_family left nil -- the exact
 	// state this schema already defines for "a presentation that failed
 	// validation, so nothing was ever issued and a later replay has
 	// nothing to revoke" (see the field's doc comment on
 	// ent/schema/oauth_authorization_code.go). A superseded-but-never-
-	// redeemed code fits that same description. Deliberately not wrapped
-	// in a transaction with the Create below: the invalidation window is
-	// a few milliseconds against a 10-minute TTL, and the property this
-	// closes is "how many codes can be outstanding at once", not
-	// single-use (which the CAS in ExchangeAuthorizationCode already
-	// guarantees regardless).
+	// redeemed code fits that same description, which is what makes the
+	// "no distinguishable error" consequence above correct rather than a
+	// bug: handleAuthorizationCodeReplay (oauth_token_service.go) reads
+	// exactly this state and takes the "nothing to revoke" branch, not a
+	// family-revocation branch that would (wrongly) kill the second,
+	// still-valid code.
+	//
+	// RESIDUAL RACE, DELIBERATELY NOT CLOSED (review NEW-2): the
+	// invalidate above and the Create below are NOT wrapped in one
+	// transaction. This is not an oversight -- a transaction was
+	// evaluated and rejected as insufficient, not merely skipped for
+	// convenience. Postgres row-level locking only serializes an UPDATE
+	// against rows that already exist: if two truly concurrent calls for
+	// the same (client, user) both run this UPDATE while NEITHER pending
+	// row exists yet (the common "no prior code" case -- e.g. two tabs
+	// opening the SAME first-ever login), both UPDATEs match zero rows,
+	// neither blocks the other, and both proceed to Create -- a classic
+	// phantom-read gap that READ COMMITTED (Postgres's default, and this
+	// codebase does not override it) does not close by wrapping in a
+	// transaction alone. Actually closing it needs a stronger primitive --
+	// a Postgres advisory lock keyed on (client_id, user_id), or
+	// SERIALIZABLE isolation with retry-on-conflict -- and the result
+	// would only ever be "at most one pending code," never "exactly the
+	// right one wins," since both callers are, by definition, the same
+	// user's own concurrent requests with no way to know which should be
+	// authoritative. Given the worst case today is two independently
+	// redeemable codes (still governed by Task 3's per-code single-use
+	// CAS at redemption -- not a security hole, a narrowed-but-nonzero
+	// window) and the realistic trigger is one person's own double-click
+	// or two-tab race, not a two-attacker or cross-user scenario, adding
+	// advisory-lock or serializable-retry machinery here was judged a
+	// worse trade than documenting the residual. The SEQUENTIAL case F9
+	// targeted -- a remount, refresh, or repeat GET that runs this
+	// function again only after the previous call already returned -- has
+	// no such race and is fully closed by the UPDATE above regardless of
+	// the transaction question, since by the time call 2 starts, call 1's
+	// row is already committed and visible.
 	if _, err := s.entClient.OAuthAuthorizationCode.Update().
 		Where(
 			oauthauthorizationcode.ClientID(in.ClientID),

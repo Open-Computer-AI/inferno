@@ -400,6 +400,12 @@ func TestAuthorizePostApproveIssuesCodeAfterConsent(t *testing.T) {
 	// ...then explicit approval mints the code.
 	rec := f.post(t, q, "approve", 42)
 	require.Equal(t, http.StatusOK, rec.Code)
+	// F5 (review NEW-10): POST approve was one of respondWithTarget's arms
+	// left unasserted for Cache-Control/Pragma -- this response carries an
+	// authorization code exactly like the GET auto-approve success body
+	// already covered, so it needs the same RFC 6749 §5.1 headers.
+	require.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+	require.Equal(t, "no-cache", rec.Header().Get("Pragma"))
 	body := rec.Body.String()
 	require.Contains(t, body, "code=")
 	require.Contains(t, body, "state=s2")
@@ -591,4 +597,31 @@ func TestPendingAuthorizationRevokedClientReturnsNotFoundNotTheName(t *testing.T
 	rec := f.pending(t, clientID, 42)
 	require.Equal(t, http.StatusNotFound, rec.Code)
 	require.NotContains(t, rec.Body.String(), "test-agent")
+}
+
+// ---- F5 (review NEW-10): respondWithTarget's headers, asserted directly --
+
+// TestRespondWithTargetSetsNoStoreHeaders covers respondWithTarget itself
+// rather than one specific call site. Auto-approve success and POST deny
+// already assert this end to end; this closes the gap for the arms that
+// are NOT independently reachable through a normal request (IssueCode's
+// own invalid_request/invalid_scope redirect-class bodies -- the handler's
+// own pre-checks already reject those inputs before ever calling
+// IssueCode, so those two branches are defense-in-depth against a TOCTOU,
+// not a path a test can drive end to end). Every arm that calls
+// respondWithTarget shares this one function, so asserting it here is a
+// direct, not a structural, guarantee for all of them.
+func TestRespondWithTargetSetsNoStoreHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/oauth/authorize", nil)
+
+	respondWithTarget(c, "https://agent.example.com/auth/callback?code=abc&state=s1")
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+	require.Equal(t, "no-cache", rec.Header().Get("Pragma"))
+	require.Contains(t, rec.Header().Get("Content-Type"), "text/plain")
+	require.Equal(t, "https://agent.example.com/auth/callback?code=abc&state=s1", rec.Body.String())
 }

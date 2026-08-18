@@ -12,6 +12,7 @@ import { useNavigationLoadingState } from '@/composables/useNavigationLoading'
 import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { getSetupStatus } from '@/api/setup'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
+import { resolveAuthenticatedLoginRedirect } from './loginRedirect'
 import { resolveRouteDocumentTitle } from './title'
 import { isSettingsSectionKey } from '@/components/admin/settings/settingsRegistry'
 
@@ -433,7 +434,7 @@ const routes: RouteRecordRaw[] = [
     // directly to backend/internal/handler/oauth_authorize_handler.go's
     // GET/POST /oauth/authorize -- that handler is bypassed out of the
     // embedded-frontend SPA fallback (see shouldBypassEmbeddedFrontend in
-    // internal/web/embed_on.go) precisely so it runs before this route ever
+    // internal/web/bypass.go) precisely so it runs before this route ever
     // could. This route only starts rendering once that handler has already
     // sent an unauthenticated visitor to /login?redirect=/oauth/authorize?...
     // and LoginView has pushed back here client-side (see LoginView.vue's
@@ -898,21 +899,10 @@ router.beforeEach(async (to, _from, next) => {
         next()
         return
       }
-      // GET /oauth/authorize (backend/internal/handler/oauth_authorize_handler.go)
-      // bounces an unauthenticated browser to /login?redirect=<original
-      // oauth path+query> -- but that backend redirect is issued for EVERY
-      // bearer-less hit, including one from a browser that is already
-      // signed in (Inferno has no session cookie, so the backend cannot
-      // tell the difference). Without honoring `redirect` here too, an
-      // already-authenticated user hitting /login this way is bounced to
-      // /dashboard and the OAuth request silently evaporates -- this is
-      // the common case, not an edge case, since a desktop app's login
-      // link is opened in whatever browser profile the person already
-      // uses daily. Mirrors LoginView.vue's own post-submit
-      // `router.currentRoute.value.query.redirect` handling exactly.
-      const redirectTarget = to.path === '/login' && typeof to.query.redirect === 'string'
-        ? to.query.redirect
-        : ''
+      // See loginRedirect.ts's doc comment for the full reasoning (why
+      // this exists, and why it is a separate importable function rather
+      // than inline logic here -- Task 4 fix round 2, review NEW-1).
+      const redirectTarget = resolveAuthenticatedLoginRedirect(to.path, to.query)
       if (redirectTarget) {
         next(redirectTarget)
         return

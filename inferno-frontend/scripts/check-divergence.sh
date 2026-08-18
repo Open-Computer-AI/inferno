@@ -272,6 +272,18 @@ backend/internal/web/embed_on.go
 backend/internal/web/embed_test.go
 backend/internal/web/bypass.go
 backend/internal/web/bypass_test.go
+# D5 -- OAuth AS (authorization_code + PKCE plan, Task 4 fix round 2:
+# NEW-4, NEW-8, from task-4-rereview.md). oauth_authorize_handler.go,
+# oauth_authorize_handler_test.go, oauth_authorize_service.go, server/router.go,
+# server/routes/oauth.go, and handler/oauth_handler.go are already declared
+# above (Tasks 1-4) -- not re-listed here, same files. NEW-4 gave
+# /oauth/authorize its own rate-limit bucket key (PublicIPScoped, alongside the
+# existing PublicIP) instead of sharing one counter with Model Plaza's public
+# group; NEW-8 removed the duplicate package doc comment embed_off.go picked up
+# once bypass.go (fix round 1) also carried one.
+backend/internal/server/middleware/panel_rate_limit.go
+backend/internal/server/middleware/panel_rate_limit_test.go
+backend/internal/web/embed_off.go
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }

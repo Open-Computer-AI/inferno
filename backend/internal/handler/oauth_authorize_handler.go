@@ -22,16 +22,34 @@ import (
 // THIS IS NOT A JSON ENDPOINT. It is reached by a real browser (the hermes
 // client opens the system browser here directly), so every response is
 // either a real HTTP redirect or a small bare HTML/text page -- never
-// internal/pkg/response, never gin.H JSON. The one narrow exception is auth
-// failure: this route sits behind middleware.OptionalJWTAuthMiddleware
-// (already wired for every other panel endpoint), and a PRESENT-but-invalid
-// Authorization header is rejected by that shared middleware with its
-// existing JSON 401 body before this handler ever runs. That is deliberately
-// NOT reimplemented here: this handler only ever sees "no bearer" (raw
-// browser navigation never carries one) or "valid bearer" (an authenticated
-// fetch from AuthorizeConsentView.vue always does), and duplicating
-// TokenVersion/session-binding revocation logic to preserve a "no JSON, ever"
-// purity would trade a real security check for a cosmetic one.
+// internal/pkg/response, never gin.H JSON. There are exactly two narrow,
+// documented exceptions (Task 4 fix round 2, review NEW-4 -- previously
+// only the first of these was written down):
+//
+//  1. Auth failure. This route sits behind
+//     middleware.OptionalJWTAuthMiddleware (already wired for every other
+//     panel endpoint), and a PRESENT-but-invalid Authorization header is
+//     rejected by that shared middleware with its existing JSON 401 body
+//     before this handler ever runs. That is deliberately NOT
+//     reimplemented here: this handler only ever sees "no bearer" (raw
+//     browser navigation never carries one) or "valid bearer" (an
+//     authenticated fetch from AuthorizeConsentView.vue always does), and
+//     duplicating TokenVersion/session-binding revocation logic to
+//     preserve a "no JSON, ever" purity would trade a real security check
+//     for a cosmetic one.
+//  2. Rate limiting. RegisterOAuthAuthorizeRoute attaches
+//     panelRateLimiter.PublicIPScoped("oauth_authorize") ahead of this
+//     handler; a limited request never reaches this function at all and
+//     gets abortPanelRateLimited's panel JSON envelope at 429 instead
+//     (see internal/server/middleware/panel_rate_limit.go). Same
+//     reasoning as (1): this is shared, already-correct infrastructure
+//     every other panel-adjacent route uses, and reimplementing it as a
+//     bare 429 here to preserve JSON purity would trade working rate
+//     limiting for a cosmetic rule.
+//
+// Both exceptions are auth/infrastructure middleware running BEFORE this
+// function, never something Authorize itself emits -- everything this
+// function's own body writes stays on the bare protocol below.
 //
 // THE ERROR SPLIT IS THE SECURITY PROPERTY (RFC 6749 §4.1.2.1):
 //
@@ -127,6 +145,25 @@ import (
 //     which this codebase does not have) but "delete the SPA consent
 //     screen and force every scope through the narrow auto-approve path",
 //     which is a worse trade.
+//   - The two MUST-NOT-REDIRECT error pages have different copy, and an
+//     UNAUTHENTICATED caller holding a candidate client_id can therefore
+//     tell "unregistered" apart from "redirect_uri doesn't match" (see
+//     renderAuthorizeErrorPage's two call sites above: "This application
+//     is not registered, or is no longer active." vs "The redirect
+//     address for this request does not match what this application
+//     registered."). This IS an existence-ish oracle, distinct from --
+//     and deliberately less collapsed than -- the unknown-vs-revoked
+//     collapse in the UsableByClientID branch just above (which does NOT
+//     tell those two apart, on purpose: revealing a client's revoked
+//     status to a caller who doesn't already know the client exists is a
+//     real leak).
+//     Accepted because client_id is "agent:" + 16 random bytes
+//     (OAuthClientService.RegisterSelfHosted) -- 128 bits, nobody is
+//     enumerating that space to FIND a valid id in the first place -- so
+//     this only ever informs someone who already holds a real client_id
+//     (from a shared authorize URL, a screenshot, a support ticket), and
+//     for that caller the distinction is the single most useful thing a
+//     legitimate integrator debugging their own redirect_uri can be told.
 func (h *OAuthHandler) Authorize(c *gin.Context) {
 	q := c.Request.URL.Query()
 	clientID := strings.TrimSpace(q.Get("client_id"))

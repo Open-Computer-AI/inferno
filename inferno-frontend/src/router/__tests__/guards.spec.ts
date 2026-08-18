@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { resolveCompletedSetupRedirectPath } from '@/router/setupRedirect'
+import { resolveAuthenticatedLoginRedirect } from '@/router/loginRedirect'
+import type { LocationQuery } from 'vue-router'
 
 // Mock 导航加载状态
 vi.mock('@/composables/useNavigationLoading', () => {
@@ -71,7 +73,7 @@ function simulateGuard(
   toPath: string,
   toMeta: Record<string, any>,
   authState: MockAuthState,
-  toQuery: Record<string, unknown> = {}
+  toQuery: LocationQuery = {}
 ): string | null {
   const requiresAuth = toMeta.requiresAuth !== false
   const requiresAdmin = toMeta.requiresAdmin === true
@@ -89,9 +91,12 @@ function simulateGuard(
       if (authState.backendModeEnabled && !authState.isAdmin) {
         return null
       }
-      const redirectTarget = toPath === '/login' && typeof toQuery.redirect === 'string'
-        ? toQuery.redirect
-        : ''
+      // Task 4 fix round 2 (review NEW-1): calls the REAL function
+      // router/index.ts's guard calls, not a hand-copied re-implementation
+      // -- reverting router/index.ts's use of resolveAuthenticatedLoginRedirect
+      // now makes this assertion fail, because there is only one
+      // definition of the branch left to disagree with.
+      const redirectTarget = resolveAuthenticatedLoginRedirect(toPath, toQuery)
       if (redirectTarget) {
         return redirectTarget
       }
