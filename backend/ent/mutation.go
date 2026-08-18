@@ -126,6 +126,7 @@ type APIKeyMutation struct {
 	deleted_at         *time.Time
 	key                *string
 	name               *string
+	oauth_client_id    *string
 	status             *string
 	last_used_at       *time.Time
 	ip_whitelist       *[]string
@@ -539,6 +540,55 @@ func (m *APIKeyMutation) GroupIDCleared() bool {
 func (m *APIKeyMutation) ResetGroupID() {
 	m.group = nil
 	delete(m.clearedFields, apikey.FieldGroupID)
+}
+
+// SetOauthClientID sets the "oauth_client_id" field.
+func (m *APIKeyMutation) SetOauthClientID(s string) {
+	m.oauth_client_id = &s
+}
+
+// OauthClientID returns the value of the "oauth_client_id" field in the mutation.
+func (m *APIKeyMutation) OauthClientID() (r string, exists bool) {
+	v := m.oauth_client_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOauthClientID returns the old "oauth_client_id" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldOauthClientID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOauthClientID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOauthClientID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOauthClientID: %w", err)
+	}
+	return oldValue.OauthClientID, nil
+}
+
+// ClearOauthClientID clears the value of the "oauth_client_id" field.
+func (m *APIKeyMutation) ClearOauthClientID() {
+	m.oauth_client_id = nil
+	m.clearedFields[apikey.FieldOauthClientID] = struct{}{}
+}
+
+// OauthClientIDCleared returns if the "oauth_client_id" field was cleared in this mutation.
+func (m *APIKeyMutation) OauthClientIDCleared() bool {
+	_, ok := m.clearedFields[apikey.FieldOauthClientID]
+	return ok
+}
+
+// ResetOauthClientID resets all changes to the "oauth_client_id" field.
+func (m *APIKeyMutation) ResetOauthClientID() {
+	m.oauth_client_id = nil
+	delete(m.clearedFields, apikey.FieldOauthClientID)
 }
 
 // SetStatus sets the "status" field.
@@ -1542,7 +1592,7 @@ func (m *APIKeyMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *APIKeyMutation) Fields() []string {
-	fields := make([]string, 0, 23)
+	fields := make([]string, 0, 24)
 	if m.created_at != nil {
 		fields = append(fields, apikey.FieldCreatedAt)
 	}
@@ -1563,6 +1613,9 @@ func (m *APIKeyMutation) Fields() []string {
 	}
 	if m.group != nil {
 		fields = append(fields, apikey.FieldGroupID)
+	}
+	if m.oauth_client_id != nil {
+		fields = append(fields, apikey.FieldOauthClientID)
 	}
 	if m.status != nil {
 		fields = append(fields, apikey.FieldStatus)
@@ -1634,6 +1687,8 @@ func (m *APIKeyMutation) Field(name string) (ent.Value, bool) {
 		return m.Name()
 	case apikey.FieldGroupID:
 		return m.GroupID()
+	case apikey.FieldOauthClientID:
+		return m.OauthClientID()
 	case apikey.FieldStatus:
 		return m.Status()
 	case apikey.FieldLastUsedAt:
@@ -1689,6 +1744,8 @@ func (m *APIKeyMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldName(ctx)
 	case apikey.FieldGroupID:
 		return m.OldGroupID(ctx)
+	case apikey.FieldOauthClientID:
+		return m.OldOauthClientID(ctx)
 	case apikey.FieldStatus:
 		return m.OldStatus(ctx)
 	case apikey.FieldLastUsedAt:
@@ -1778,6 +1835,13 @@ func (m *APIKeyMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetGroupID(v)
+		return nil
+	case apikey.FieldOauthClientID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOauthClientID(v)
 		return nil
 	case apikey.FieldStatus:
 		v, ok := value.(string)
@@ -2026,6 +2090,9 @@ func (m *APIKeyMutation) ClearedFields() []string {
 	if m.FieldCleared(apikey.FieldGroupID) {
 		fields = append(fields, apikey.FieldGroupID)
 	}
+	if m.FieldCleared(apikey.FieldOauthClientID) {
+		fields = append(fields, apikey.FieldOauthClientID)
+	}
 	if m.FieldCleared(apikey.FieldLastUsedAt) {
 		fields = append(fields, apikey.FieldLastUsedAt)
 	}
@@ -2066,6 +2133,9 @@ func (m *APIKeyMutation) ClearField(name string) error {
 		return nil
 	case apikey.FieldGroupID:
 		m.ClearGroupID()
+		return nil
+	case apikey.FieldOauthClientID:
+		m.ClearOauthClientID()
 		return nil
 	case apikey.FieldLastUsedAt:
 		m.ClearLastUsedAt()
@@ -2116,6 +2186,9 @@ func (m *APIKeyMutation) ResetField(name string) error {
 		return nil
 	case apikey.FieldGroupID:
 		m.ResetGroupID()
+		return nil
+	case apikey.FieldOauthClientID:
+		m.ResetOauthClientID()
 		return nil
 	case apikey.FieldStatus:
 		m.ResetStatus()

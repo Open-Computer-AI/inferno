@@ -44,6 +44,11 @@ func (APIKey) Fields() []ent.Field {
 		field.Int64("group_id").
 			Optional().
 			Nillable(),
+		field.String("oauth_client_id").
+			Optional().
+			Nillable().
+			Comment("OAuth client_id this key backs. NULL for ordinary user-created keys. " +
+				"Non-NULL marks an internal backing row: never listed, never returned, never hard-deleted."),
 		field.String("status").
 			MaxLen(20).
 			Default(domain.StatusActive),

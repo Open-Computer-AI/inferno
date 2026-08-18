@@ -287,6 +287,24 @@ backend/internal/web/bypass_test.go
 backend/internal/server/middleware/panel_rate_limit.go
 backend/internal/server/middleware/panel_rate_limit_test.go
 backend/internal/web/embed_off.go
+# D5 -- OAuth AS (oauth-bearer-inference plan, Task 2: api_keys.oauth_client_id
+# and its partial unique index -- the backing-row column and constraint that
+# let an OAuth access token resolve to a real api_keys row to meter against).
+# ent/schema/api_key.go's 3-line field addition regenerated 8 shared ent
+# files (apikey.go, apikey/{apikey,where}.go, apikey_{create,update}.go,
+# migrate/schema.go, mutation.go, runtime/runtime.go); apikey_query.go and
+# apikey_delete.go were untouched by this run.
+backend/ent/schema/api_key.go
+backend/ent/apikey.go
+backend/ent/apikey/apikey.go
+backend/ent/apikey/where.go
+backend/ent/apikey_create.go
+backend/ent/apikey_update.go
+backend/ent/migrate/schema.go
+backend/ent/mutation.go
+backend/ent/runtime/runtime.go
+backend/migrations/909_api_key_oauth_client_id.sql
+backend/internal/repository/api_key_oauth_client_id_integration_test.go
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }
