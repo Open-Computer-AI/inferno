@@ -182,10 +182,14 @@ func (c *oauthHandlerTestRefreshCache) MarkRotated(_ context.Context, hash strin
 	cloned := *data
 	if data.Rotated {
 		stored, inGrace := c.replays[hash]
-		if inGrace && data.RotatedAtUnix > 0 && now.Unix()-data.RotatedAtUnix <= int64(service.RefreshReuseGracePeriod/time.Second) {
+		superseded := inGrace && string(stored) == service.RefreshReplaySupersededMarker
+		if inGrace && !superseded && data.RotatedAtUnix > 0 && now.Unix()-data.RotatedAtUnix <= int64(service.RefreshReuseGracePeriod/time.Second) {
 			return &service.RefreshRotationResult{Data: &cloned, Outcome: service.RefreshRotationGraceReplay, SealedReplay: stored}, nil
 		}
 		return &service.RefreshRotationResult{Data: &cloned, Outcome: service.RefreshRotationReuse}, nil
+	}
+	if len(sealedReplay) == 0 {
+		return nil, fmt.Errorf("mark refresh token rotated: refused to claim an un-rotated record without a replay pair")
 	}
 	tomb := *tombstoned
 	c.tokens[hash] = &tomb
@@ -193,6 +197,9 @@ func (c *oauthHandlerTestRefreshCache) MarkRotated(_ context.Context, hash strin
 		c.replays = make(map[string][]byte)
 	}
 	c.replays[hash] = sealedReplay
+	if tombstoned.PredecessorHash != "" {
+		c.replays[tombstoned.PredecessorHash] = []byte(service.RefreshReplaySupersededMarker)
+	}
 	return &service.RefreshRotationResult{Data: &cloned, Outcome: service.RefreshRotationClaimed}, nil
 }
 

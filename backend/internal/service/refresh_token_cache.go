@@ -49,6 +49,20 @@ type RefreshTokenData struct {
 	// before this field existed — both are treated as "outside the grace",
 	// which is the fail-secure direction.
 	RotatedAtUnix int64 `json:"rotated_at_unix,omitempty"`
+	// PredecessorHash is the hash of the refresh token this one replaced, or
+	// empty for a token issued by a device_code / authorization_code grant
+	// (the root of a family).
+	//
+	// It exists so a rotation can close its predecessor's grace window. The
+	// grace forgives the IMMEDIATELY previous token, and "immediately
+	// previous" stops being true the moment the chain moves on: rotating
+	// N1 -> N2 makes N0 two generations stale, and N0 must from then on be
+	// treated as reuse even if its own 60 seconds have not elapsed.
+	// Without this, a thief holding N0 could be handed N1 and walk it
+	// forward to the live N2 in silence whenever a family rotated twice
+	// inside a minute — which is exactly the chatty-client population the
+	// grace was written for.
+	PredecessorHash string `json:"predecessor_hash,omitempty"`
 }
 
 const (
@@ -83,7 +97,38 @@ const (
 	// — but a short life on a blob nobody will ever open again is still the
 	// right hygiene.
 	RefreshReplayRetention = 2 * RefreshReuseGracePeriod
+
+	// RefreshGraceClockSkewAllowance is how far a replay may appear to
+	// arrive BEFORE the rotation it is replaying.
+	//
+	// rotated_at_unix is stamped by whichever instance won the rotation and
+	// `now` is supplied by whichever instance handles the replay. On a
+	// multi-replica deployment with ordinary NTP skew those are different
+	// clocks, so a perfectly benign retry can look like it happened a second
+	// before the rotation. Without an allowance that lands on the reuse arm
+	// and kills a healthy session — the precise failure this grace exists to
+	// remove, reintroduced by a different route.
+	//
+	// It does not widen the window in the direction that matters: the
+	// forward edge is still exactly RefreshReuseGracePeriod.
+	RefreshGraceClockSkewAllowance = 5 * time.Second
 )
+
+// RefreshReplaySupersededMarker is written over a token's replay pair when
+// its successor is itself rotated, replacing the ciphertext with a tombstone
+// that says "this token is no longer the immediately previous one".
+//
+// A marker rather than a plain delete because absence and supersession must
+// mean different things: an absent pair inside the window means the blob was
+// evicted and the request cannot be answered (an infrastructure fault, 500),
+// while a marker means the chain moved on and the presentation is reuse
+// (revoke the family). Deleting would collapse the two and make eviction
+// look like theft.
+//
+// Never confusable with a sealed pair: those are AES-GCM outputs of at least
+// 12 (nonce) + 16 (tag) bytes with a random prefix, compared here for exact
+// equality.
+const RefreshReplaySupersededMarker = "superseded:v1"
 
 // RefreshReplayPair is the token pair minted by a rotation, stashed so that a
 // replay of the rotated token inside RefreshReuseGracePeriod can be answered
@@ -125,10 +170,23 @@ const (
 	// minted is still stored. Nothing was written. The caller must unseal it
 	// and return that pair verbatim.
 	RefreshRotationGraceReplay
-	// RefreshRotationReuse: the record was already rotated, outside the
-	// grace (or with no stored pair). Nothing was written. This is the
-	// reuse signal: the caller must revoke the family.
+	// RefreshRotationReuse: the record was already rotated, and either the
+	// window has passed or the chain has moved on past this token (its
+	// replay slot holds RefreshReplaySupersededMarker). Nothing was
+	// written. This is the reuse signal: the caller must revoke the family.
 	RefreshRotationReuse
+	// RefreshRotationGraceUnavailable: the record was already rotated,
+	// inside the window, and the chain has NOT moved on — but the sealed
+	// pair is gone. Since RefreshReplayRetention is strictly longer than
+	// RefreshReuseGracePeriod this cannot be natural expiry; it means
+	// eviction (Redis maxmemory with an allkeys-* policy) or corruption.
+	//
+	// It is deliberately NOT reuse. Everything known about this
+	// presentation says benign — a token rotated seconds ago, still the
+	// immediately previous one — so revoking the family on the strength of
+	// a missing cache entry would kill a healthy session over an
+	// infrastructure event. The caller must surface it as a 500.
+	RefreshRotationGraceUnavailable
 )
 
 // RefreshRotationResult is MarkRotated's single return value.
@@ -229,6 +287,18 @@ type RefreshTokenCache interface {
 	// rotated record with no pair to hand back and would revoke the family —
 	// exactly the healthy-session kill the grace exists to prevent. It must
 	// not be empty.
+	//
+	// sealedReplay may be empty ONLY when the caller already knows the
+	// record is rotated (so the claim branch is unreachable and no pair
+	// could be stored). Implementations MUST refuse to claim an un-rotated
+	// record without a pair rather than tombstoning it with nothing to hand
+	// back — that would burn the caller's token and leave every replay
+	// inside the window looking like theft.
+	//
+	// tombstoned.PredecessorHash, when set, names the token this rotation
+	// supersedes. On a successful claim the implementation MUST close that
+	// predecessor's grace by overwriting its replay slot with
+	// RefreshReplaySupersededMarker, in the SAME atomic operation.
 	//
 	// now is the caller's clock reading, and MUST be the same instant
 	// stamped into tombstoned.RotatedAtUnix. It is passed in rather than read

@@ -216,7 +216,9 @@ func newFamilyID() (string, error) {
 // in-app password or email change kill an OAuth agent credential, exactly as
 // AuthService.RefreshTokenPair does for panel sessions.
 func (s *OAuthTokenService) issueRefreshToken(ctx context.Context, userID int64, clientID, scope, familyID string, tokenVersion int64) (string, error) {
-	prepared, err := s.prepareRefreshToken(userID, clientID, scope, familyID, tokenVersion)
+	// No predecessor: this is the root of a new family, issued by the
+	// device_code or authorization_code grant.
+	prepared, err := s.prepareRefreshToken(userID, clientID, scope, familyID, tokenVersion, "")
 	if err != nil {
 		return "", err
 	}
@@ -240,7 +242,10 @@ type preparedRefreshToken struct {
 
 // prepareRefreshToken mints a raw refresh token and the record that would
 // describe it, without writing anything anywhere.
-func (s *OAuthTokenService) prepareRefreshToken(userID int64, clientID, scope, familyID string, tokenVersion int64) (*preparedRefreshToken, error) {
+// predecessorHash is the hash of the token being rotated, or "" for the root
+// of a family. It is what later lets that predecessor's grace window be
+// closed the moment THIS token is itself rotated.
+func (s *OAuthTokenService) prepareRefreshToken(userID int64, clientID, scope, familyID string, tokenVersion int64, predecessorHash string) (*preparedRefreshToken, error) {
 	raw, err := newOAuthRefreshToken()
 	if err != nil {
 		return nil, fmt.Errorf("refresh token entropy: %w", err)
@@ -250,13 +255,14 @@ func (s *OAuthTokenService) prepareRefreshToken(userID int64, clientID, scope, f
 		raw:  raw,
 		hash: hashToken(raw),
 		data: &RefreshTokenData{
-			UserID:       userID,
-			TokenVersion: tokenVersion,
-			FamilyID:     familyID,
-			ClientID:     clientID,
-			Scope:        scope,
-			CreatedAt:    now,
-			ExpiresAt:    now.Add(oauthRefreshTokenTTL),
+			UserID:          userID,
+			TokenVersion:    tokenVersion,
+			FamilyID:        familyID,
+			ClientID:        clientID,
+			Scope:           scope,
+			CreatedAt:       now,
+			ExpiresAt:       now.Add(oauthRefreshTokenTTL),
+			PredecessorHash: predecessorHash,
 		},
 	}, nil
 }
@@ -324,7 +330,10 @@ func (s *OAuthTokenService) ExchangeDeviceCode(ctx context.Context, clientID, de
 		// a poll that is NOT rejected as slow_down advances LastPolledAt —
 		// resetting it on every attempt would let a client evade the
 		// backoff by polling continuously.
-		if row.LastPolledAt != nil && time.Since(*row.LastPolledAt) < time.Duration(devicePollInterval)*time.Second {
+		// s.now(), not time.Since: LastPolledAt is WRITTEN with s.now() a few
+		// lines below, so reading it against the wall clock would compare two
+		// different clocks the moment a test freezes one of them.
+		if row.LastPolledAt != nil && s.now().Sub(*row.LastPolledAt) < time.Duration(devicePollInterval)*time.Second {
 			return nil, ErrSlowDown
 		}
 		if _, uerr := row.Update().SetLastPolledAt(s.now()).Save(ctx); uerr != nil {
@@ -409,8 +418,10 @@ func (s *OAuthTokenService) ExchangeDeviceCode(ctx context.Context, clientID, de
 // with rotation and family-wide reuse detection.
 //
 // The rotation itself is a SINGLE atomic Redis operation
-// (RefreshTokenCache.MarkRotated) done BEFORE any minting, not a separate
-// Go-side read-then-write. Two concurrent presentations of the exact same
+// (RefreshTokenCache.MarkRotated), not a Go-side read-then-write. The
+// successor pair is minted just before that call — see the comment at the
+// mint site for why it has to be, and why minting early is not the same as
+// committing early — but nothing is STORED until the claim has been won. Two concurrent presentations of the exact same
 // refresh token — an attacker replaying a stolen token at the same moment
 // the legitimate client refreshes on schedule — must not both be able to
 // observe "not yet rotated" and both mint a token pair from it: that would
@@ -524,7 +535,7 @@ func (s *OAuthTokenService) ExchangeRefreshToken(ctx context.Context, clientID, 
 	}
 
 	// Mint the successor pair BEFORE claiming the rotation — but store
-	// nothing yet.
+	// nothing yet, and only when a claim is actually possible.
 	//
 	// The claim below has to carry the pair with it: a replay that lands
 	// inside the grace window is answered with the pair the rotation already
@@ -549,30 +560,47 @@ func (s *OAuthTokenService) ExchangeRefreshToken(ctx context.Context, clientID, 
 	// observed: a non-rotated record is only ever written by a rotation, and
 	// there can be only one of those.
 	now := s.now()
-	access, err := s.mintAccessToken(ctx, data.UserID, clientID, data.Scope)
-	if err != nil {
-		return nil, err
-	}
-	successor, err := s.prepareRefreshToken(data.UserID, clientID, data.Scope, data.FamilyID, resolvedTokenVersion(user))
-	if err != nil {
-		return nil, err
+
+	// A record that is ALREADY rotated can only produce a replay verdict —
+	// records never un-rotate — so there is nothing to mint for it, and
+	// minting anyway would put the signing key on the path of every
+	// presentation of a stolen token. If keySvc.Active were unavailable
+	// (DB blip, key rotation window), reuse detection would return 500 with
+	// the family unrevoked and nothing logged, and an attacker could simply
+	// retry later. Theft response must not depend on the availability of the
+	// minting path, so this branch skips it entirely; MarkRotated refuses to
+	// claim without a pair, so the skip cannot turn into a silent claim.
+	var (
+		access    string
+		successor *preparedRefreshToken
+		sealed    []byte
+	)
+	if !data.Rotated {
+		access, err = s.mintAccessToken(ctx, data.UserID, clientID, data.Scope)
+		if err != nil {
+			return nil, err
+		}
+		successor, err = s.prepareRefreshToken(data.UserID, clientID, data.Scope, data.FamilyID, resolvedTokenVersion(user), tokenHash)
+		if err != nil {
+			return nil, err
+		}
+		// Sealed under the token being rotated, so the cache stores
+		// ciphertext rather than a live token pair — see sealRefreshReplay
+		// for why the presented token is the right key.
+		sealed, err = sealRefreshReplay(refreshToken, &RefreshReplayPair{
+			AccessToken:         access,
+			RefreshToken:        successor.raw,
+			Scope:               data.Scope,
+			AccessExpiresAtUnix: now.Add(oauthAccessTokenTTL).Unix(),
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	tomb := *data
 	tomb.Rotated = true
 	tomb.RotatedAtUnix = now.Unix()
-	// Sealed under the token being rotated, so the cache stores ciphertext
-	// rather than a live token pair — see sealRefreshReplay for why the
-	// presented token is the right key.
-	sealed, err := sealRefreshReplay(refreshToken, &RefreshReplayPair{
-		AccessToken:         access,
-		RefreshToken:        successor.raw,
-		Scope:               data.Scope,
-		AccessExpiresAtUnix: now.Add(oauthAccessTokenTTL).Unix(),
-	})
-	if err != nil {
-		return nil, err
-	}
 
 	// The single serialization point: exactly one caller is told it claimed
 	// the rotation, and every other caller is told, in the same round trip,
@@ -590,7 +618,13 @@ func (s *OAuthTokenService) ExchangeRefreshToken(ctx context.Context, clientID, 
 
 	switch res.Outcome {
 	case RefreshRotationClaimed:
-		// Fall through to the mint-and-persist below.
+		if successor == nil {
+			// Unreachable: the script refuses to claim without a pair, and a
+			// pair only exists when a successor was prepared. Guarded so a
+			// future reordering cannot silently return an empty token.
+			return nil, fmt.Errorf("mark refresh token rotated: claimed a rotation with no prepared successor")
+		}
+		// Fall through to the persist below.
 	case RefreshRotationGraceReplay:
 		// A replay of a token rotated less than RefreshReuseGracePeriod ago:
 		// an agent retrying a refresh whose response never arrived, or a
@@ -627,6 +661,15 @@ func (s *OAuthTokenService) ExchangeRefreshToken(ctx context.Context, clientID, 
 			// believes is live for longer than it is.
 			ExpiresIn: remainingSeconds(pair.AccessExpiresAtUnix, now),
 		}, nil
+	case RefreshRotationGraceUnavailable:
+		// Inside the window, the chain has not moved on, and yet the sealed
+		// pair is gone. The slot's TTL is strictly longer than the window,
+		// so this is not expiry — it is eviction or corruption. Everything
+		// observable about this presentation says benign, so it must NOT be
+		// treated as theft: revoking a family because a cache entry
+		// disappeared would kill a healthy session over an infrastructure
+		// event. Surfaces as a 500, which is what it is.
+		return nil, fmt.Errorf("refresh token replay inside the reuse grace, but the sealed pair is no longer in cache")
 	case RefreshRotationReuse:
 		// REPLAY outside the grace: someone else's mint completed more than
 		// a minute ago, and this presentation is either an attacker with a

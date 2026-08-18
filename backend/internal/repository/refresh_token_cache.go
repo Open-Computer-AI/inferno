@@ -71,27 +71,45 @@ func refreshReplayKey(tokenHash string) string {
 // its own short EX instead: nothing will ever open it again once the grace
 // has passed, so it should not inherit the tombstone's 30-day life.
 //
-// KEYS[1] = refresh_token:{hash}
-// KEYS[2] = refresh_replay:{hash}
+// KEYS[1] = refresh_token:{hash}          the record / tombstone
+// KEYS[2] = refresh_replay:{hash}         this token's replay slot
+// KEYS[3] = refresh_replay:{predecessor}  the slot this rotation supersedes
 // ARGV[1] = the tombstoned JSON value to store if this call wins
 // ARGV[2] = the sealed replay pair to store if this call wins — opaque
 // ciphertext, never decoded here, binary-safe
 // ARGV[3] = the caller's clock, unix seconds
 // ARGV[4] = the grace window, seconds
-// ARGV[5] = the replay key's TTL, seconds
+// ARGV[5] = the replay slot's TTL, seconds
+// ARGV[6] = how far a replay may appear to precede its rotation, seconds
+// ARGV[7] = the supersession marker
+// ARGV[8] = "1" if the caller supplied a replay pair, "0" if not
+// ARGV[9] = "1" if KEYS[3] names a real predecessor, "0" if this is a root
 //
 // Returns a {flag, raw, replay} table, where raw and replay are the empty
 // string when they do not apply:
+//   - flag -2: the caller brought no pair and the record is NOT rotated, so
+//     claiming would tombstone the token with nothing to hand back. Refused.
 //   - flag -1: the key does not exist
 //   - flag 0:  this call won (raw = the value as it stood immediately before
 //     the SET below — i.e. pre-rotation)
-//   - flag 1:  already rotated, OUTSIDE the grace: reuse
-//   - flag 2:  already rotated, INSIDE the grace, and replay = the sealed pair
-//     that rotation minted, still stored
+//   - flag 1:  reuse — either the window has passed, or the chain has moved
+//     on past this token and its slot holds the marker
+//   - flag 2:  inside the grace, and replay = the sealed pair that rotation
+//     minted, still stored
+//   - flag 3:  inside the grace, chain has NOT moved on, but the pair is
+//     gone (eviction — not natural expiry, since the slot's TTL is strictly
+//     longer than the window). Not reuse; the caller must 500.
 //
-// Note the grace is never extended: nothing on the already-rotated branch
-// writes, so neither the tombstone's rotated_at_unix nor the replay key's
-// TTL moves when a replay arrives.
+// WHY THE SUPERSESSION WRITE IS HERE and not a separate call: "the
+// immediately previous token" is a property of the whole chain, and the
+// instant that stops being true of N0 is the instant N1 is claimed. Closing
+// N0's window in the same EVAL that claims N1 means there is no interval in
+// which both N0 and N1 are forgivable — which is what stops a thief holding
+// a stale N0 from being handed N1 and walking it forward to the live token
+// whenever a family rotates twice inside a minute.
+//
+// Note the already-rotated branch still writes NOTHING, so a replay can
+// neither restart nor extend its own window.
 var refreshTokenMarkRotatedScript = redis.NewScript(`
 local raw = redis.call('GET', KEYS[1])
 if not raw then
@@ -105,16 +123,27 @@ if decoded.rotated then
   end
   local now = tonumber(ARGV[3])
   local grace = tonumber(ARGV[4])
-  if rotatedAt > 0 and now >= rotatedAt and (now - rotatedAt) <= grace then
+  local skew = tonumber(ARGV[6])
+  if rotatedAt > 0 and (now - rotatedAt) <= grace and (rotatedAt - now) <= skew then
     local replay = redis.call('GET', KEYS[2])
+    if replay == ARGV[7] then
+      return {1, raw, ''}
+    end
     if replay then
       return {2, raw, replay}
     end
+    return {3, raw, ''}
   end
   return {1, raw, ''}
 end
+if ARGV[8] ~= '1' then
+  return {-2, raw, ''}
+end
 redis.call('SET', KEYS[1], ARGV[1], 'KEEPTTL')
 redis.call('SET', KEYS[2], ARGV[2], 'EX', ARGV[5])
+if ARGV[9] == '1' then
+  redis.call('SET', KEYS[3], ARGV[7], 'EX', ARGV[5])
+end
 return {0, raw, ''}
 `)
 
@@ -153,25 +182,44 @@ func (c *refreshTokenCache) GetRefreshToken(ctx context.Context, tokenHash strin
 }
 
 func (c *refreshTokenCache) MarkRotated(ctx context.Context, tokenHash string, tombstoned *service.RefreshTokenData, sealedReplay []byte, now time.Time) (*service.RefreshRotationResult, error) {
-	if len(sealedReplay) == 0 {
-		// Not defensive padding: without a stored pair every concurrent
-		// presentation inside the grace would be classified as reuse and
-		// would revoke a healthy family, which is exactly the failure this
-		// whole mechanism exists to remove.
-		return nil, fmt.Errorf("mark refresh token rotated: sealed replay pair is required")
+	// An empty sealedReplay is allowed only because the caller may already
+	// know this record is rotated (a replay never needs a pair, and minting
+	// one for it would put the signing key on the theft-detection path). The
+	// script refuses to CLAIM without one, so the dangerous combination —
+	// tombstoning a live token with nothing to hand back — cannot happen
+	// here or in any future caller.
+	hasPair := "0"
+	if len(sealedReplay) > 0 {
+		hasPair = "1"
+	}
+	hasPredecessor := "0"
+	if tombstoned.PredecessorHash != "" {
+		hasPredecessor = "1"
 	}
 	tombVal, err := json.Marshal(tombstoned)
 	if err != nil {
 		return nil, fmt.Errorf("marshal tombstoned refresh token data: %w", err)
 	}
 
-	keys := []string{refreshTokenKey(tokenHash), refreshReplayKey(tokenHash)}
+	// KEYS[3] is the predecessor's replay slot. When there is no predecessor
+	// it degenerates to the bare prefix, a key nothing ever writes, and the
+	// script is told not to touch it (ARGV[9]) — declared rather than
+	// omitted so every key the script can reach is named up front.
+	keys := []string{
+		refreshTokenKey(tokenHash),
+		refreshReplayKey(tokenHash),
+		refreshReplayKey(tombstoned.PredecessorHash),
+	}
 	res, err := refreshTokenMarkRotatedScript.Run(ctx, c.rdb, keys,
 		tombVal,
 		sealedReplay,
 		now.Unix(),
 		int64(service.RefreshReuseGracePeriod/time.Second),
 		int64(service.RefreshReplayRetention/time.Second),
+		int64(service.RefreshGraceClockSkewAllowance/time.Second),
+		service.RefreshReplaySupersededMarker,
+		hasPair,
+		hasPredecessor,
 	).Result()
 	if err != nil {
 		return nil, fmt.Errorf("mark refresh token rotated: %w", err)
@@ -187,6 +235,9 @@ func (c *refreshTokenCache) MarkRotated(ctx context.Context, tokenHash string, t
 	}
 	if flag == -1 {
 		return nil, service.ErrRefreshTokenNotFound
+	}
+	if flag == -2 {
+		return nil, fmt.Errorf("mark refresh token rotated: refused to claim an un-rotated record without a replay pair")
 	}
 	rawStr, ok := arr[1].(string)
 	if !ok {
@@ -213,6 +264,8 @@ func (c *refreshTokenCache) MarkRotated(ctx context.Context, tokenHash string, t
 		// this layer has no key with which to interpret the blob anyway.
 		out.Outcome = service.RefreshRotationGraceReplay
 		out.SealedReplay = []byte(replayStr)
+	case 3:
+		out.Outcome = service.RefreshRotationGraceUnavailable
 	default:
 		return nil, fmt.Errorf("mark refresh token rotated: unexpected script flag %d", flag)
 	}

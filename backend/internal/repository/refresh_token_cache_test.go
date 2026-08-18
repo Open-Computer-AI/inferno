@@ -112,31 +112,6 @@ func TestRefreshTokenCache_MarkRotatedGraceReplay(t *testing.T) {
 	require.Empty(t, outside.SealedReplay)
 }
 
-// TestRefreshTokenCache_MarkRotatedRejectsEmptySeal covers the guard: a
-// rotation stored without a replay pair would classify every subsequent
-// presentation inside the grace as reuse and revoke a healthy family, so the
-// call is refused rather than half-performed.
-func TestRefreshTokenCache_MarkRotatedRejectsEmptySeal(t *testing.T) {
-	c, mr := newRefreshTokenTestCache(t)
-	ctx := context.Background()
-	now := time.Now()
-
-	hash := "token-hash-empty-seal"
-	data, tomb, _ := markRotatedFixture(now)
-	require.NoError(t, c.StoreRefreshToken(ctx, hash, data, time.Hour))
-
-	_, err := c.MarkRotated(ctx, hash, tomb, nil, now)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "sealed replay pair is required")
-
-	// And nothing was written: the record must still be un-rotated, or the
-	// refusal would have cost the caller its token anyway.
-	stored, err := c.GetRefreshToken(ctx, hash)
-	require.NoError(t, err)
-	require.False(t, stored.Rotated)
-	require.False(t, mr.Exists(refreshReplayKey(hash)))
-}
-
 // TestRefreshTokenCache_MarkRotatedGraceIsNotExtended asserts the
 // already-rotated branch writes NOTHING: neither the tombstone's
 // rotated_at_unix nor the replay key's TTL may move when a replay lands, or a
@@ -154,7 +129,11 @@ func TestRefreshTokenCache_MarkRotatedGraceIsNotExtended(t *testing.T) {
 
 	ttlBefore := mr.TTL(refreshReplayKey(hash))
 	require.Greater(t, ttlBefore, time.Duration(0))
-	require.LessOrEqual(t, ttlBefore, service.RefreshReplayRetention)
+	// Literal, not service.RefreshReplayRetention: an expectation written in
+	// terms of the constant it is checking slides with that constant and
+	// asserts nothing about its value. The value itself is pinned once, in
+	// TestRefreshGraceConstants.
+	require.LessOrEqual(t, ttlBefore, 2*time.Minute)
 
 	inside, err := c.MarkRotated(ctx, hash, tomb, replay, now.Add(30*time.Second))
 	require.NoError(t, err)
@@ -183,14 +162,176 @@ func TestRefreshTokenCache_MarkRotatedReplayKeyExpires(t *testing.T) {
 	_, err := c.MarkRotated(ctx, hash, tomb, replay, now)
 	require.NoError(t, err)
 
-	mr.FastForward(service.RefreshReplayRetention + time.Second)
-	require.False(t, mr.Exists(refreshReplayKey(hash)), "the raw replay pair must not outlive its retention")
+	// 3 minutes as a literal, against a 2-minute retention. Written as
+	// service.RefreshReplayRetention+1s this proved only "the key expires at
+	// whatever the retention happens to be" — the review demonstrated that a
+	// 5x widening of the retention was invisible to the entire suite.
+	mr.FastForward(3 * time.Minute)
+	require.False(t, mr.Exists(refreshReplayKey(hash)), "the sealed replay pair must not outlive its retention")
 
 	// The tombstone itself survives, so a much later replay is still
 	// traceable to its family.
 	stored, err := c.GetRefreshToken(ctx, hash)
 	require.NoError(t, err)
 	require.True(t, stored.Rotated)
+}
+
+// TestRefreshTokenCache_SupersessionClosesPredecessorWindow drives F1's fix
+// through the real Lua: claiming a rotation must, in the SAME EVAL,
+// overwrite its predecessor's replay slot with the supersession marker, and
+// a later replay of that predecessor must then read as reuse even though its
+// own 60 seconds have not elapsed.
+func TestRefreshTokenCache_SupersessionClosesPredecessorWindow(t *testing.T) {
+	c, mr := newRefreshTokenTestCache(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	ancestor := "token-hash-n0"
+	current := "token-hash-n1"
+
+	// N0 is rotated first: it has no predecessor, so nothing is superseded.
+	n0Data, n0Tomb, _ := markRotatedFixture(now)
+	require.NoError(t, c.StoreRefreshToken(ctx, ancestor, n0Data, time.Hour))
+	res, err := c.MarkRotated(ctx, ancestor, n0Tomb, sealedReplayFixture, now)
+	require.NoError(t, err)
+	require.Equal(t, service.RefreshRotationClaimed, res.Outcome)
+	require.Equal(t, sealedReplayFixture, mustGet(t, mr, refreshReplayKey(ancestor)))
+
+	// N1 is stored with N0 recorded as its predecessor, then rotated 10s later.
+	n1Data, n1Tomb, _ := markRotatedFixture(now.Add(10 * time.Second))
+	n1Data.PredecessorHash = ancestor
+	n1Tomb.PredecessorHash = ancestor
+	require.NoError(t, c.StoreRefreshToken(ctx, current, n1Data, time.Hour))
+	res, err = c.MarkRotated(ctx, current, n1Tomb, sealedReplayFixture, now.Add(10*time.Second))
+	require.NoError(t, err)
+	require.Equal(t, service.RefreshRotationClaimed, res.Outcome)
+
+	// N0's slot now holds the marker, not the ciphertext: the secret is gone
+	// AND the slot still distinguishes supersession from eviction.
+	require.Equal(t, []byte(service.RefreshReplaySupersededMarker), mustGet(t, mr, refreshReplayKey(ancestor)))
+
+	// t0+30s: inside N0's own window, but N0 is two generations stale.
+	superseded, err := c.MarkRotated(ctx, ancestor, n0Tomb, sealedReplayFixture, now.Add(30*time.Second))
+	require.NoError(t, err)
+	require.Equal(t, service.RefreshRotationReuse, superseded.Outcome,
+		"a superseded ancestor must read as reuse, not as a forgivable replay")
+	require.Empty(t, superseded.SealedReplay)
+
+	// N1, the token that IS immediately previous, keeps its window.
+	stillCurrent, err := c.MarkRotated(ctx, current, n1Tomb, sealedReplayFixture, now.Add(30*time.Second))
+	require.NoError(t, err)
+	require.Equal(t, service.RefreshRotationGraceReplay, stillCurrent.Outcome)
+	require.Equal(t, sealedReplayFixture, stillCurrent.SealedReplay)
+}
+
+// TestRefreshTokenCache_MissingPairInsideWindowIsNotReuse covers the
+// eviction arm: the slot's TTL is strictly longer than the window, so a slot
+// that is absent inside the window means Redis dropped it, not that it
+// expired. That must not be reported as theft.
+func TestRefreshTokenCache_MissingPairInsideWindowIsNotReuse(t *testing.T) {
+	c, mr := newRefreshTokenTestCache(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	hash := "token-hash-evicted"
+	data, tomb, replay := markRotatedFixture(now)
+	require.NoError(t, c.StoreRefreshToken(ctx, hash, data, time.Hour))
+	_, err := c.MarkRotated(ctx, hash, tomb, replay, now)
+	require.NoError(t, err)
+
+	mr.Del(refreshReplayKey(hash)) // maxmemory eviction
+
+	evicted, err := c.MarkRotated(ctx, hash, tomb, replay, now.Add(30*time.Second))
+	require.NoError(t, err)
+	require.Equal(t, service.RefreshRotationGraceUnavailable, evicted.Outcome,
+		"an evicted slot inside the window is an infrastructure fault, not reuse")
+
+	// Outside the window it is reuse again, evicted or not.
+	late, err := c.MarkRotated(ctx, hash, tomb, replay, now.Add(90*time.Second))
+	require.NoError(t, err)
+	require.Equal(t, service.RefreshRotationReuse, late.Outcome)
+}
+
+// TestRefreshTokenCache_ToleratesNegativeSkew asserts the replica-skew
+// allowance: a replay that appears to arrive a couple of seconds before the
+// rotation it replays is still forgiven, but a wildly backwards clock is not.
+func TestRefreshTokenCache_ToleratesNegativeSkew(t *testing.T) {
+	c, _ := newRefreshTokenTestCache(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	hash := "token-hash-skew"
+	data, tomb, replay := markRotatedFixture(now)
+	require.NoError(t, c.StoreRefreshToken(ctx, hash, data, time.Hour))
+	_, err := c.MarkRotated(ctx, hash, tomb, replay, now)
+	require.NoError(t, err)
+
+	behind, err := c.MarkRotated(ctx, hash, tomb, replay, now.Add(-2*time.Second))
+	require.NoError(t, err)
+	require.Equal(t, service.RefreshRotationGraceReplay, behind.Outcome,
+		"2s of replica clock skew must not turn a benign replay into a revocation")
+
+	wild, err := c.MarkRotated(ctx, hash, tomb, replay, now.Add(-10*time.Minute))
+	require.NoError(t, err)
+	require.Equal(t, service.RefreshRotationReuse, wild.Outcome)
+}
+
+// TestRefreshTokenCache_RefusesToClaimWithoutPair is the guard that makes it
+// safe for the service to skip minting when it already knows the record is
+// rotated: an un-rotated record must never be tombstoned with nothing to
+// hand back, since that would burn a live token and make every subsequent
+// replay inside the window look like theft.
+func TestRefreshTokenCache_RefusesToClaimWithoutPair(t *testing.T) {
+	c, mr := newRefreshTokenTestCache(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	hash := "token-hash-no-pair"
+	data, tomb, _ := markRotatedFixture(now)
+	require.NoError(t, c.StoreRefreshToken(ctx, hash, data, time.Hour))
+
+	_, err := c.MarkRotated(ctx, hash, tomb, nil, now)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "refused to claim")
+
+	stored, err := c.GetRefreshToken(ctx, hash)
+	require.NoError(t, err)
+	require.False(t, stored.Rotated, "the refusal must not have tombstoned the record")
+	require.False(t, mr.Exists(refreshReplayKey(hash)))
+
+	// But a caller that already knows the record is rotated may pass no pair
+	// and still get its verdict -- that is what keeps theft detection off the
+	// signing-key path.
+	_, err = c.MarkRotated(ctx, hash, tomb, sealedReplayFixture, now)
+	require.NoError(t, err)
+	verdict, err := c.MarkRotated(ctx, hash, tomb, nil, now.Add(90*time.Second))
+	require.NoError(t, err)
+	require.Equal(t, service.RefreshRotationReuse, verdict.Outcome)
+}
+
+func mustGet(t *testing.T, mr *miniredis.Miniredis, key string) []byte {
+	t.Helper()
+	v, err := mr.Get(key)
+	require.NoError(t, err)
+	return []byte(v)
+}
+
+// TestRefreshGraceConstants pins the three timing values in one place, so
+// that every other test can express its clock in literals without any of
+// them silently tracking a changed constant.
+//
+// The last assertion is the load-bearing one, not decoration: because the
+// replay slot outlives the window, a slot that is MISSING inside the window
+// cannot be natural expiry — which is what lets the script treat that case
+// as eviction (an infrastructure fault, 500) instead of as theft. Invert
+// this relationship and every late replay silently becomes a 500 instead of
+// revoking a stolen token.
+func TestRefreshGraceConstants(t *testing.T) {
+	require.Equal(t, 60*time.Second, service.RefreshReuseGracePeriod)
+	require.Equal(t, 2*time.Minute, service.RefreshReplayRetention)
+	require.Equal(t, 5*time.Second, service.RefreshGraceClockSkewAllowance)
+	require.Greater(t, service.RefreshReplayRetention, service.RefreshReuseGracePeriod,
+		"the replay slot must outlive the grace window, or a missing slot inside the window becomes ambiguous between expiry and eviction")
 }
 
 // TestRefreshTokenCache_DeleteDropsReplayPair asserts a revocation takes the

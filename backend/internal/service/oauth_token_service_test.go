@@ -3,6 +3,11 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/hkdf"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -145,11 +150,12 @@ func (f *fakeRefreshTokenCache) IsTokenInFamily(_ context.Context, familyID, tok
 // MarkRotated mirrors the real Redis Lua script
 // (repository.refreshTokenMarkRotatedScript) statement for statement: the
 // whole read-decide-write happens while holding f.mu, so exactly one
-// concurrent caller ever claims a given token, and the grace verdict is
-// reached in the same critical section from the same injected clock. That is
-// what makes TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins a
-// meaningful test of OAuthTokenService.ExchangeRefreshToken's own
-// serialization rather than of this fake's.
+// concurrent caller ever claims a given token, and the grace verdict — the
+// window, the supersession marker, the skew tolerance — is reached in the
+// same critical section from the same injected clock. That is what makes
+// TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins a meaningful
+// test of OAuthTokenService.ExchangeRefreshToken's own serialization rather
+// than of this fake's.
 func (f *fakeRefreshTokenCache) MarkRotated(_ context.Context, tokenHash string, tombstoned *RefreshTokenData, sealedReplay []byte, now time.Time) (*RefreshRotationResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -160,16 +166,35 @@ func (f *fakeRefreshTokenCache) MarkRotated(_ context.Context, tokenHash string,
 	cloned := *data
 	if data.Rotated {
 		graceSeconds := int64(RefreshReuseGracePeriod / time.Second)
-		if data.RotatedAtUnix > 0 && now.Unix() >= data.RotatedAtUnix && now.Unix()-data.RotatedAtUnix <= graceSeconds {
-			if entry, stored := f.replays[tokenHash]; stored && now.Before(entry.expiresAt) {
+		skewSeconds := int64(RefreshGraceClockSkewAllowance / time.Second)
+		age := now.Unix() - data.RotatedAtUnix
+		if data.RotatedAtUnix > 0 && age <= graceSeconds && -age <= skewSeconds {
+			entry, stored := f.replays[tokenHash]
+			switch {
+			case stored && string(entry.sealed) == RefreshReplaySupersededMarker:
+				// The chain moved on: no longer the immediately previous token.
+				return &RefreshRotationResult{Data: &cloned, Outcome: RefreshRotationReuse}, nil
+			case stored && now.Before(entry.expiresAt):
 				return &RefreshRotationResult{Data: &cloned, Outcome: RefreshRotationGraceReplay, SealedReplay: entry.sealed}, nil
+			default:
+				return &RefreshRotationResult{Data: &cloned, Outcome: RefreshRotationGraceUnavailable}, nil
 			}
 		}
 		return &RefreshRotationResult{Data: &cloned, Outcome: RefreshRotationReuse}, nil
 	}
+	if len(sealedReplay) == 0 {
+		return nil, fmt.Errorf("mark refresh token rotated: refused to claim an un-rotated record without a replay pair")
+	}
 	tomb := *tombstoned
 	f.tokens[tokenHash] = &tomb
 	f.replays[tokenHash] = fakeReplayEntry{sealed: sealedReplay, expiresAt: now.Add(RefreshReplayRetention)}
+	if tombstoned.PredecessorHash != "" {
+		// Close the predecessor's window in the same critical section.
+		f.replays[tombstoned.PredecessorHash] = fakeReplayEntry{
+			sealed:    []byte(RefreshReplaySupersededMarker),
+			expiresAt: now.Add(RefreshReplayRetention),
+		}
+	}
 	return &RefreshRotationResult{Data: &cloned, Outcome: RefreshRotationClaimed}, nil
 }
 
@@ -472,6 +497,23 @@ func TestRefreshTokenReuseIsRejected(t *testing.T) {
 	}
 }
 
+// secondDeviceFlow registers an independent client and device authorization
+// on the same services, for tests that need two families whose fates are
+// unrelated.
+func secondDeviceFlow(t *testing.T, ctx context.Context, tokens *OAuthTokenService, devices *OAuthDeviceService) (string, string) {
+	t.Helper()
+	clients := NewOAuthClientService(tokens.entClient)
+	oc, err := clients.RegisterSelfHosted(ctx, 1, 43, "https://other.example.com", "")
+	if err != nil {
+		t.Fatalf("RegisterSelfHosted: %v", err)
+	}
+	grant, err := devices.RequestCode(ctx, oc.ClientID, "inference:invoke")
+	if err != nil {
+		t.Fatalf("RequestCode: %v", err)
+	}
+	return oc.ClientID, grant.DeviceCode
+}
+
 // grantedTokens runs the device flow to completion and returns the first
 // token pair, so the refresh tests can start from a real issued credential.
 func grantedTokens(t *testing.T, ctx context.Context, tokens *OAuthTokenService, devices *OAuthDeviceService, clientID, deviceCode string) *OAuthTokens {
@@ -641,6 +683,74 @@ func TestRefreshReplayPairIsNeverStoredInPlaintext(t *testing.T) {
 	}
 }
 
+// TestRefreshReplayKeyIsDomainSeparatedFromTheLookupHash is the guard the
+// review found missing (F3), and it is the one test holding up the entire
+// justification for storing replay pairs at all.
+//
+// The sealing key and the Redis key name are derived from the SAME secret:
+// the raw refresh token. That is safe only while the two derivations are
+// structurally separated — HKDF-Extract-then-Expand with a domain string on
+// one side, plain SHA-256 on the other. Collapse the derivation to
+// sha256(token) and the AES-256-GCM key becomes byte-for-byte the value
+// whose hex encoding IS the Redis key name: anyone who can read the
+// keyspace can decrypt every blob in it by un-hexing the key they are
+// already looking at. Escalation #1 reopens in full, silently, with a green
+// suite — the reviewer proved that mutation passes everything else.
+//
+// So: assert the separation directly, not the behaviour that depends on it.
+func TestRefreshReplayKeyIsDomainSeparatedFromTheLookupHash(t *testing.T) {
+	token := "art_" + strings.Repeat("9f", 32)
+
+	key, err := hkdf.Key(sha256.New, []byte(token), nil, refreshReplaySealInfo, 32)
+	if err != nil {
+		t.Fatalf("derive: %v", err)
+	}
+	if len(key) != 32 {
+		t.Fatalf("expected a 32-byte AES-256 key, got %d", len(key))
+	}
+
+	// (a) Not the bare hash of the token.
+	sum := sha256.Sum256([]byte(token))
+	if bytes.Equal(key, sum[:]) {
+		t.Fatal("the sealing key must not be sha256(token) — that value's hex form is the Redis key name")
+	}
+	// (b) Not the lookup hash this record is stored under, in any encoding.
+	if hex.EncodeToString(key) == hashToken(token) {
+		t.Fatal("the sealing key must not encode to the record's own cache key")
+	}
+	// (c) The domain string is load-bearing: a different info must yield a
+	// different key, or the "separation" is not coming from where the doc
+	// comment claims it is.
+	other, err := hkdf.Key(sha256.New, []byte(token), nil, refreshReplaySealInfo+"/other", 32)
+	if err != nil {
+		t.Fatalf("derive: %v", err)
+	}
+	if bytes.Equal(key, other) {
+		t.Fatal("changing the HKDF info string must change the derived key")
+	}
+
+	// (d) End-to-end: a blob sealed with the real derivation must not open
+	// under the collapsed one. This is the assertion that fails if someone
+	// swaps hkdf.Key for sha256 inside refreshReplayAEAD.
+	sealed, err := sealRefreshReplay(token, &RefreshReplayPair{RefreshToken: "art_successor"})
+	if err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	block, err := aes.NewCipher(sum[:])
+	if err != nil {
+		t.Fatalf("cipher: %v", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		t.Fatalf("gcm: %v", err)
+	}
+	if len(sealed) > gcm.NonceSize() {
+		if _, err := gcm.Open(nil, sealed[:gcm.NonceSize()], sealed[gcm.NonceSize():], nil); err == nil {
+			t.Fatal("the sealed pair opened under sha256(token) — the key derivation has lost its domain separation")
+		}
+	}
+}
+
 // TestSealedRefreshReplayIsNonDeterministic guards the nonce: sealing the
 // same pair under the same token twice must not produce the same bytes, or
 // an observer of the store could tell that two rotations carried identical
@@ -686,6 +796,195 @@ func TestSealedRefreshReplayIsNonDeterministic(t *testing.T) {
 	tampered[len(tampered)-1] ^= 0x01
 	if _, err := openRefreshReplay(token, tampered); err == nil {
 		t.Fatal("a tampered blob must not open — the auth tag must be checked")
+	}
+}
+
+// TestSupersededAncestorIsNotForgiven is the regression test for the review
+// finding that rejected the first cut of this task (F1).
+//
+// It is the reviewer's exact probe. The grace forgives the IMMEDIATELY
+// previous token. Anchoring the window only to each record's own rotation
+// instant satisfied that for a chain of length one, but not for a family
+// that rotates twice inside 60 seconds — and that is precisely the
+// population the grace was written for (a chatty desktop agent, several
+// windows of one session). The observed behaviour was:
+//
+//	rotate N0 -> N1 at t0
+//	rotate N1 -> N2 at t0+10s
+//	replay N0 at t0+30s  ->  SUCCEEDED, returned N1
+//	present N1           ->  yielded the live N2
+//
+// A thief holding a two-generations-stale token walked the chain to the live
+// credential, reuse never fired, and nothing was logged. That is the exact
+// attack rotation exists to catch.
+//
+// Now: rotating N1 closes N0's window in the same EVAL, so the replay of N0
+// is reuse and the whole family dies — which is the pre-Task-5 behaviour,
+// and the safe direction.
+func TestSupersededAncestorIsNotForgiven(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode := newDeviceFlowFixture(t)
+	n0 := grantedTokens(t, ctx, tokens, devices, clientID, deviceCode)
+
+	clock := freezeClock(tokens)
+	n1, err := tokens.ExchangeRefreshToken(ctx, clientID, n0.RefreshToken)
+	if err != nil {
+		t.Fatalf("rotate N0 -> N1: %v", err)
+	}
+
+	clock.advance(10 * time.Second)
+	n2, err := tokens.ExchangeRefreshToken(ctx, clientID, n1.RefreshToken)
+	if err != nil {
+		t.Fatalf("rotate N1 -> N2: %v", err)
+	}
+
+	// t+30s: inside N0's OWN 60-second window, but N0 has not been the
+	// immediately previous token since t+10s.
+	clock.advance(20 * time.Second)
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, n0.RefreshToken); !errors.Is(err, ErrRefreshTokenReused) {
+		t.Fatalf("a two-generations-stale token must be reuse, not forgiven; got %v", err)
+	}
+
+	// And the revocation was real: the live credential is dead too, so the
+	// chain-walk that made this a finding is closed at both ends.
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, n2.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("the family must be revoked, so the live token must be dead; got %v", err)
+	}
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, n1.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("the intermediate token must be dead too; got %v", err)
+	}
+}
+
+// TestImmediatelyPreviousTokenIsStillForgivenAfterSupersessionOfAnother
+// pins the other side of F1: closing an ancestor's window must not close the
+// window of the token that IS immediately previous. Without this, the fix
+// could pass TestSupersededAncestorIsNotForgiven by simply disabling the
+// grace after the second rotation.
+func TestImmediatelyPreviousTokenIsStillForgivenAfterSupersessionOfAnother(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode := newDeviceFlowFixture(t)
+	n0 := grantedTokens(t, ctx, tokens, devices, clientID, deviceCode)
+
+	clock := freezeClock(tokens)
+	n1, err := tokens.ExchangeRefreshToken(ctx, clientID, n0.RefreshToken)
+	if err != nil {
+		t.Fatalf("rotate N0 -> N1: %v", err)
+	}
+	clock.advance(10 * time.Second)
+	n2, err := tokens.ExchangeRefreshToken(ctx, clientID, n1.RefreshToken)
+	if err != nil {
+		t.Fatalf("rotate N1 -> N2: %v", err)
+	}
+
+	// N1 is now the immediately previous token, and its own window is open.
+	clock.advance(20 * time.Second)
+	replayed, err := tokens.ExchangeRefreshToken(ctx, clientID, n1.RefreshToken)
+	if err != nil {
+		t.Fatalf("the immediately previous token must still be forgiven: %v", err)
+	}
+	if replayed.RefreshToken != n2.RefreshToken {
+		t.Fatal("the forgiven replay must return the current pair")
+	}
+}
+
+// TestGraceToleratesSmallNegativeClockSkew covers the multi-replica case:
+// rotated_at_unix is stamped by whichever instance won the rotation, `now`
+// comes from whichever instance handles the replay, and with ordinary NTP
+// skew the replay can appear to arrive slightly BEFORE the rotation.
+// Without a tolerance that lands on the reuse arm and kills a healthy
+// session — the very failure this grace exists to remove.
+func TestGraceToleratesSmallNegativeClockSkew(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode := newDeviceFlowFixture(t)
+	original := grantedTokens(t, ctx, tokens, devices, clientID, deviceCode)
+
+	clock := freezeClock(tokens)
+	rotated, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err != nil {
+		t.Fatalf("legitimate rotation: %v", err)
+	}
+
+	// The replaying instance's clock is 2s behind the rotating instance's.
+	clock.advance(-2 * time.Second)
+	replayed, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err != nil {
+		t.Fatalf("a replay 2s of clock skew before the rotation must still be forgiven, got %v", err)
+	}
+	if replayed.RefreshToken != rotated.RefreshToken {
+		t.Fatal("expected the current pair")
+	}
+
+	// Far enough back to be nonsense rather than skew: reuse.
+	clock.advance(-10 * time.Minute)
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); !errors.Is(err, ErrRefreshTokenReused) {
+		t.Fatalf("a wildly backwards clock must not open the window; got %v", err)
+	}
+}
+
+// TestGraceWithEvictedPairIsNotTreatedAsTheft covers the other fail-toward-
+// benign case. The replay slot's TTL is strictly longer than the window, so
+// a missing pair inside the window is never natural expiry — it means Redis
+// evicted it. Everything else about the presentation says benign, so it must
+// surface as an infrastructure fault, NOT as reuse: killing a family because
+// a cache entry disappeared would be the same healthy-session kill in a new
+// costume.
+func TestGraceWithEvictedPairIsNotTreatedAsTheft(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, cache, _ := newDeviceFlowFixtureWithDeps(t)
+	original := grantedTokens(t, ctx, tokens, devices, clientID, deviceCode)
+
+	clock := freezeClock(tokens)
+	rotated, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err != nil {
+		t.Fatalf("legitimate rotation: %v", err)
+	}
+
+	// Simulate maxmemory eviction of the replay slot only.
+	cache.mu.Lock()
+	delete(cache.replays, hashToken(original.RefreshToken))
+	cache.mu.Unlock()
+
+	clock.advance(30 * time.Second)
+	_, err = tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err == nil {
+		t.Fatal("expected an error when the sealed pair is gone")
+	}
+	if errors.Is(err, ErrRefreshTokenReused) || errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("an evicted pair must be an infrastructure fault (500), not an OAuth rejection; got %v", err)
+	}
+
+	// The family must still be alive: that is the whole point.
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, rotated.RefreshToken); err != nil {
+		t.Fatalf("the family must survive an evicted replay slot, got %v", err)
+	}
+}
+
+// TestReplayOfRotatedTokenDoesNotTouchTheSigningKey is the regression test
+// for F6.
+//
+// Minting moved ahead of the atomic claim so the sealed pair could be
+// written by the same EVAL. That put keySvc.Active on the path of EVERY
+// presentation — including a stolen, already-rotated token. A signing-key
+// outage would then mean genuine theft returned 500 with the family
+// unrevoked and no slog.Warn, and the attacker could simply retry later.
+// Theft response must not depend on the minting path being healthy.
+func TestReplayOfRotatedTokenDoesNotTouchTheSigningKey(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode := newDeviceFlowFixture(t)
+	original := grantedTokens(t, ctx, tokens, devices, clientID, deviceCode)
+
+	clock := freezeClock(tokens)
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); err != nil {
+		t.Fatalf("legitimate rotation: %v", err)
+	}
+	clock.advance(90 * time.Second)
+
+	// Break the signing path the way a DB blip or an empty key table would,
+	// via a SEPARATE closed client so only minting fails — the shared client
+	// still has to serve assertClientUsable, which runs earlier.
+	broken := newPaymentConfigServiceTestClient(t)
+	if err := broken.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	tokens.keySvc = NewOAuthKeyService(broken)
+
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); !errors.Is(err, ErrRefreshTokenReused) {
+		t.Fatalf("reuse must be detected and the family revoked even with the signing key unavailable; got %v", err)
 	}
 }
 
@@ -1113,11 +1412,11 @@ func TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins(t *testing.T) {
 // have, which is how a flaky test gets born.
 func TestConcurrentReuseRevocationAndRotationErrorClasses(t *testing.T) {
 	ctx, tokens, devices, clientID, deviceCode := newDeviceFlowFixture(t)
+	otherClientID, otherDeviceCode := secondDeviceFlow(t, ctx, tokens, devices)
 	original := grantedTokens(t, ctx, tokens, devices, clientID, deviceCode)
 
 	clock := freezeClock(tokens)
-	rotated, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
-	if err != nil {
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); err != nil {
 		t.Fatalf("legitimate rotation: %v", err)
 	}
 	clock.advance(90 * time.Second)
@@ -1151,18 +1450,27 @@ func TestConcurrentReuseRevocationAndRotationErrorClasses(t *testing.T) {
 		}()
 	}
 
-	// The legitimate client, rotating at the same moment its family is being
-	// torn down. Either outcome is correct; a third would not be.
+	// A rotation running concurrently with the tear-down, in a SEPARATE
+	// family so that its writes are guaranteed to happen on every run.
+	//
+	// The first version of this test rotated a token in the family being
+	// revoked, and accepted success OR rejection — which meant a run where
+	// the rotator was rejected at its initial lookup, before it ever reached
+	// StoreRefreshToken/AddToFamilyTokenSet, exercised no interleaving at
+	// all. The coverage was probabilistic where the test it replaced was
+	// per-run. Using an unrelated family makes the rotator's success
+	// deterministic (asserted below), so DeleteTokenFamily and the write
+	// path genuinely overlap on every run, under -race.
+	other := grantedTokens(t, ctx, tokens, devices, otherClientID, otherDeviceCode)
+	var rotatorErr error
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		<-start
-		_, err := tokens.ExchangeRefreshToken(ctx, clientID, rotated.RefreshToken)
+		_, err := tokens.ExchangeRefreshToken(ctx, otherClientID, other.RefreshToken)
 		mu.Lock()
 		defer mu.Unlock()
-		if err != nil && !errors.Is(err, ErrInvalidGrant) && !errors.Is(err, ErrRefreshTokenReused) {
-			otherErrors = append(otherErrors, fmt.Errorf("rotator: %w", err))
-		}
+		rotatorErr = err
 	}()
 
 	close(start)
@@ -1176,6 +1484,11 @@ func TestConcurrentReuseRevocationAndRotationErrorClasses(t *testing.T) {
 	// to restore.
 	if reuseSeen == 0 {
 		t.Fatal("expected at least one replayer to take the reuse branch and revoke the family")
+	}
+	// Per-run, not probabilistic: the concurrent writer is in an unrelated
+	// family, so nothing the replayers revoke can touch it.
+	if rotatorErr != nil {
+		t.Fatalf("the concurrent rotation of an unrelated family must succeed, got %v", rotatorErr)
 	}
 }
 
