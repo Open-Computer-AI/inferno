@@ -119,6 +119,36 @@ func (f *authCodeFixture) issue(t *testing.T) (code, verifier string) {
 	return code, verifier
 }
 
+// assertCodeStillConsumed re-reads code's row and fails the test unless its
+// status is still "consumed". Shared by every
+// TestAuthorizationCodeRejects* test that follows a credential-rejecting
+// ExchangeAuthorizationCode call: the property under test is not merely
+// "that call returned an error" (every one of these tests already checks
+// that) but "the code was not silently rolled back by it" — a rollback on
+// any of these branches would make the code retryable, defeating the
+// single-use guarantee ExchangeAuthorizationCode's docs describe at length.
+// Without a re-read here, a mutant that adds rollbackConsumedCode to a
+// validation branch passes the surrounding assertion unnoticed; see
+// TestAuthorizationCodeRejectsWrongVerifier's and
+// TestAuthorizationCodeRejectsRevokedClientWithoutRollback's doc comments
+// for the mutation evidence this pattern is built to catch, and
+// task-3-report.md's round-3 section for a newly-covered branch
+// specifically re-verified this way.
+func (f *authCodeFixture) assertCodeStillConsumed(t *testing.T, code string) {
+	t.Helper()
+	row, err := f.entClient.OAuthAuthorizationCode.Query().
+		Where(oauthauthorizationcode.Code(code)).
+		Only(f.ctx)
+	if err != nil {
+		t.Fatalf("query authorization code row: %v", err)
+	}
+	if row.Status != authCodeStatusConsumed {
+		t.Fatalf("a credential-rejecting validation failure must NOT roll the code back — "+
+			"expected status %q, got %q; a rolled-back code here would be retryable, defeating the single-use guarantee",
+			authCodeStatusConsumed, row.Status)
+	}
+}
+
 // TestAuthorizationCodeRoundTrip is the happy path: issue with a challenge,
 // redeem with the matching verifier.
 func TestAuthorizationCodeRoundTrip(t *testing.T) {
@@ -203,18 +233,7 @@ func TestAuthorizationCodeRejectsWrongVerifier(t *testing.T) {
 	if _, err := f.tokens.ExchangeAuthorizationCode(f.ctx, f.clientID, code, f.redirectURI, "a-completely-different-verifier-value"); !errors.Is(err, ErrInvalidGrant) {
 		t.Fatalf("expected ErrInvalidGrant for a mismatched code_verifier, got %v", err)
 	}
-
-	row, err := f.entClient.OAuthAuthorizationCode.Query().
-		Where(oauthauthorizationcode.Code(code)).
-		Only(f.ctx)
-	if err != nil {
-		t.Fatalf("query authorization code row: %v", err)
-	}
-	if row.Status != authCodeStatusConsumed {
-		t.Fatalf("a credential-rejecting validation failure (wrong PKCE verifier) must NOT roll the code back — "+
-			"expected status %q, got %q; a rolled-back code here would be infinitely retryable against a guessed verifier",
-			authCodeStatusConsumed, row.Status)
-	}
+	f.assertCodeStillConsumed(t, code)
 
 	// Retrying with the CORRECT verifier must still fail: the code is
 	// burned, full stop, regardless of which verifier is presented next.
@@ -232,6 +251,7 @@ func TestAuthorizationCodeRejectsRedirectURIMismatch(t *testing.T) {
 	if _, err := f.tokens.ExchangeAuthorizationCode(f.ctx, f.clientID, code, "https://attacker.example.com/auth/callback", verifier); !errors.Is(err, ErrInvalidGrant) {
 		t.Fatalf("expected ErrInvalidGrant for a mismatched redirect_uri, got %v", err)
 	}
+	f.assertCodeStillConsumed(t, code)
 }
 
 // TestAuthorizationCodeRejectsPlainChallengeMethod: code_challenge_method
@@ -294,6 +314,7 @@ func TestAuthorizationCodeRejectsForeignClient(t *testing.T) {
 	if _, err := f.tokens.ExchangeAuthorizationCode(f.ctx, other.ClientID, code, f.redirectURI, verifier); !errors.Is(err, ErrInvalidGrant) {
 		t.Fatalf("expected ErrInvalidGrant for a code redeemed by a different client, got %v", err)
 	}
+	f.assertCodeStillConsumed(t, code)
 }
 
 // TestAuthorizationCodeInternalFailureRollsBackAndFamilyIsRecordedBeforeMint
@@ -464,9 +485,18 @@ func TestAuthorizationCodeExpires(t *testing.T) {
 		t.Fatalf("expected ErrInvalidGrant for an expired code, got %v", err)
 	}
 
-	// No tokens must have been minted: the row was consumed (single-use is
-	// unconditional, see ExchangeAuthorizationCode's docs) but never got a
-	// family recorded.
+	// Two DIFFERENT properties, and both matter: the code must not have
+	// rolled back (assertCodeStillConsumed — status is still "consumed",
+	// not silently made retryable), AND no tokens were minted from it
+	// (IssuedTokenFamily is nil). These are not redundant: a rollback
+	// clears IssuedTokenFamily as part of reverting the row (see
+	// rollbackConsumedCode's ClearIssuedTokenFamily), so a family-only
+	// check here is satisfied by BOTH the correct behavior (never minted,
+	// so never recorded) AND the exact bug this test exists to catch (rolled
+	// back, which also clears any stale family) — it cannot tell the two
+	// apart. The status check is what actually discriminates them.
+	f.assertCodeStillConsumed(t, code)
+
 	row, err := f.entClient.OAuthAuthorizationCode.Query().
 		Where(oauthauthorizationcode.Code(code)).
 		Only(f.ctx)

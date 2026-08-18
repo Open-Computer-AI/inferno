@@ -51,8 +51,15 @@ const (
 	// best-effort UPDATE — long enough for an ordinary write under load,
 	// short enough that a rollback attempt against a genuinely wedged
 	// database does not linger indefinitely after the request that
-	// triggered it is long gone.
-	rollbackConsumedCodeTimeout = 5 * time.Second
+	// triggered it is long gone. 2s, not longer: this runs on the
+	// synchronous request path (every rollback call site blocks its
+	// goroutine on this call), so during a database outage every failed
+	// redemption would otherwise hold a request goroutine and a pool
+	// connection for the full timeout. Matches the precedent this idiom was
+	// borrowed from, accountRepository.syncSchedulerAccountSnapshotDetached
+	// (internal/repository/account_repo.go), which uses the same 2s bound
+	// for the same reason.
+	rollbackConsumedCodeTimeout = 2 * time.Second
 
 	// oauthRefreshTokenPrefix distinguishes OAuth-issued refresh tokens from
 	// Inferno's panel-session refresh tokens (which use refreshTokenPrefix,

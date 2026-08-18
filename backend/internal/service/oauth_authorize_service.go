@@ -67,6 +67,19 @@ var ErrMissingCodeChallenge = errors.New("oauth: code_challenge is required and 
 // alongside an attacker-controlled redirect_uri and the browser gets
 // bounced there. Task 4 MUST treat ErrUnknownClient the same as
 // ErrInvalidRedirectURI: render an error page, never redirect.
+//
+// IssueCode wraps this with BOTH the sentinel and the underlying
+// UsableByClientID error via two %w verbs — never %v for the inner error —
+// so the cause chain survives and Task 4 can tell "genuinely unknown/
+// revoked" apart from "the client lookup itself failed" (a transient DB
+// fault) without a second round trip: errors.Is(err, ErrClientNotUsable)
+// is the deliberate policy collapse (stays an error page, no distinction on
+// the wire — revoked and unknown read the same to the caller on purpose);
+// anything else wrapped here that is NOT ErrClientNotUsable is an
+// infrastructure fault and belongs on a logged 500, not silently rendered
+// as "unknown client" — the same misclassification this sentinel was
+// introduced to prevent for the redirect-uri case, and the reason it is a
+// distinct check from the collapsed-on-the-wire ErrClientNotUsable case.
 var ErrUnknownClient = errors.New("oauth: client_id is unknown or not usable")
 
 // codeChallengeLen is the fixed length of a valid RFC 7636 S256 challenge:
@@ -162,7 +175,7 @@ func (s *OAuthAuthorizeService) IssueCode(ctx context.Context, in IssueCodeInput
 
 	client, err := s.clientSvc.UsableByClientID(ctx, in.ClientID)
 	if err != nil {
-		return "", fmt.Errorf("%w: client_id %q: %v", ErrUnknownClient, in.ClientID, err)
+		return "", fmt.Errorf("%w: client_id %q: %w", ErrUnknownClient, in.ClientID, err)
 	}
 
 	// A client whose registered redirect is the device-flow OOB placeholder
