@@ -561,9 +561,10 @@ func (s *OAuthTokenService) ExchangeAuthorizationCode(ctx context.Context, clien
 		Only(ctx)
 	if err != nil {
 		// Vanishingly unlikely: we just won the CAS above, so the row must
-		// exist. Treated as an internal error (not ErrInvalidGrant) since
-		// this is a persistence-layer inconsistency, not a credential
-		// problem.
+		// exist. An internal error, not a credential problem — roll the
+		// code back to pending so a retry (the caller minted nothing) can
+		// still redeem it.
+		s.rollbackConsumedCode(ctx, code, clientID)
 		return nil, fmt.Errorf("query authorization code after consume: %w", err)
 	}
 
@@ -571,6 +572,15 @@ func (s *OAuthTokenService) ExchangeAuthorizationCode(ctx context.Context, clien
 	// rejects "plain" outright), so this should be unreachable, but a
 	// redemption path must not silently treat a hypothetical future
 	// non-S256 row as S256-verified.
+	//
+	// Everything from here through the PKCE check below is a CREDENTIAL
+	// rejection, not an internal fault — the code is deliberately left
+	// `consumed` (no rollback) on every one of these branches. Rolling
+	// back here would let a guessing attacker retry the same code with
+	// different client_id/redirect_uri/verifier combinations indefinitely;
+	// see ExchangeAuthorizationCode's docs above the CAS for the full
+	// reasoning. Only genuine infrastructure failures downstream (user
+	// lookup, entropy, signing, token persistence) roll back.
 	if row.CodeChallengeMethod != "S256" {
 		return nil, ErrInvalidGrant
 	}
@@ -592,7 +602,8 @@ func (s *OAuthTokenService) ExchangeAuthorizationCode(ctx context.Context, clien
 	}
 	// A client revoked between /oauth/authorize and this redemption must not
 	// get a token, mirroring assertClientUsable's use in the other two
-	// grants.
+	// grants. Also left un-rolled-back: revocation is itself a deliberate,
+	// permanent policy decision, not a transient fault.
 	if err := s.assertClientUsable(ctx, clientID); err != nil {
 		return nil, ErrInvalidGrant
 	}
@@ -605,8 +616,15 @@ func (s *OAuthTokenService) ExchangeAuthorizationCode(ctx context.Context, clien
 	user, err := s.userRepo.GetByID(ctx, row.UserID)
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
+			// The user is genuinely gone — a credential rejection, not an
+			// infrastructure fault. No rollback: retrying buys nothing.
 			return nil, ErrInvalidGrant
 		}
+		// A real lookup failure (DB blip, etc.) — internal, not credential.
+		// Roll back so a retry (the caller minted nothing) is not forced
+		// through a full browser re-login for a fault unrelated to its
+		// authorization.
+		s.rollbackConsumedCode(ctx, code, clientID)
 		return nil, fmt.Errorf("load user for authorization code grant: %w", err)
 	}
 	if !user.IsActive() {
@@ -615,29 +633,48 @@ func (s *OAuthTokenService) ExchangeAuthorizationCode(ctx context.Context, clien
 
 	familyID, err := newFamilyID()
 	if err != nil {
+		s.rollbackConsumedCode(ctx, code, clientID)
 		return nil, fmt.Errorf("family id entropy: %w", err)
 	}
 
-	access, err := s.mintAccessToken(ctx, row.UserID, clientID, row.Scope)
-	if err != nil {
-		return nil, err
-	}
-	refresh, err := s.issueRefreshToken(ctx, row.UserID, clientID, row.Scope, familyID, resolvedTokenVersion(user))
-	if err != nil {
-		return nil, err
-	}
-
-	// Record the family on the (already-consumed) row so a replay of this
-	// same code can find and revoke exactly what this redemption minted.
-	// A failure here is returned as a real error (not folded into
-	// ErrInvalidGrant): the tokens above are already live, so this is a
-	// persistence fault the caller must see as a 500, not a credential
-	// rejection.
+	// Record the family on the (already-consumed) row BEFORE minting
+	// anything, not after. This is the opposite order from a first draft of
+	// this method, and deliberately so: recording a family that then fails
+	// to be minted is harmless (DeleteTokenFamily on a family nothing was
+	// ever stored under is a no-op), whereas minting first and recording
+	// after leaves two live windows in which a replay cannot be revoked —
+	// (a) if this recording update itself fails after a successful mint,
+	// the resulting 30-day family is unrevocable forever, since
+	// handleAuthorizationCodeReplay only revokes what IssuedTokenFamily
+	// names; (b) even when it succeeds, a replay landing in the gap between
+	// the mint completing and this update committing reads
+	// IssuedTokenFamily == nil and skips revocation entirely, defeating RFC
+	// 6749 §4.1.2 for that window. Recording first closes both.
 	if _, err := s.entClient.OAuthAuthorizationCode.Update().
 		Where(oauthauthorizationcode.ID(row.ID)).
 		SetIssuedTokenFamily(familyID).
 		Save(ctx); err != nil {
+		// Nothing has been minted yet — safe to roll back.
+		s.rollbackConsumedCode(ctx, code, clientID)
 		return nil, fmt.Errorf("record issued token family: %w", err)
+	}
+
+	access, err := s.mintAccessToken(ctx, row.UserID, clientID, row.Scope)
+	if err != nil {
+		// The family record above is now orphaned (harmless — see the
+		// comment on that update) but nothing was minted or returned to any
+		// caller. Roll back so a retry can redeem the same code.
+		s.rollbackConsumedCode(ctx, code, clientID)
+		return nil, err
+	}
+	refresh, err := s.issueRefreshToken(ctx, row.UserID, clientID, row.Scope, familyID, resolvedTokenVersion(user))
+	if err != nil {
+		// The access token minted above was never returned to any caller —
+		// it is a live but unheld 15-minute JWT, harmless by construction
+		// (nothing holds it to present). Roll back so a retry can redeem
+		// the same code.
+		s.rollbackConsumedCode(ctx, code, clientID)
+		return nil, err
 	}
 
 	return &OAuthTokens{
@@ -648,6 +685,40 @@ func (s *OAuthTokenService) ExchangeAuthorizationCode(ctx context.Context, clien
 	}, nil
 }
 
+// rollbackConsumedCode reverts a just-consumed authorization code back to
+// "pending" after an INTERNAL failure downstream of the consuming CAS in
+// ExchangeAuthorizationCode — never after a credential-rejecting validation
+// check (wrong PKCE verifier, mismatched client/redirect_uri, expiry, a
+// revoked client, or a genuinely missing/inactive user — see the call
+// sites' comments for exactly which branches call this and which
+// deliberately do not).
+//
+// Safe by construction: only the single goroutine that won the original CAS
+// can ever reach one of the internal-error call sites (the CAS itself
+// serializes that), so the caller performing the rollback has, by
+// definition, minted and returned nothing to anyone — there is no
+// concurrent redemption for this rollback to race against. Without it, a
+// transient fault with nothing to do with the caller's credential (a
+// signing-key store blip, a Redis hiccup) permanently burns the code and
+// forces a full browser re-login — worse, an HTTP client's default 5xx
+// retry behavior would itself trigger the CAS-affects-zero replay path on
+// its very next attempt, since the code is already `consumed`.
+//
+// Best-effort: a failure here is logged, not propagated — the caller is
+// already returning the original internal error, and a rollback that also
+// fails just means the code stays burned, exactly the pre-fix behavior.
+func (s *OAuthTokenService) rollbackConsumedCode(ctx context.Context, code, clientID string) {
+	if _, err := s.entClient.OAuthAuthorizationCode.Update().
+		Where(
+			oauthauthorizationcode.Code(code),
+			oauthauthorizationcode.Status(authCodeStatusConsumed),
+		).
+		SetStatus(authCodeStatusPending).
+		Save(ctx); err != nil {
+		slog.Error("oauth: failed to roll back authorization code after internal error", "client_id", clientID, "error", err)
+	}
+}
+
 // handleAuthorizationCodeReplay is called when the consuming CAS in
 // ExchangeAuthorizationCode affects zero rows: either the code never
 // existed, or it did and was already consumed by an earlier presentation.
@@ -656,6 +727,27 @@ func (s *OAuthTokenService) ExchangeAuthorizationCode(ctx context.Context, clien
 // is an attacker, and since the server cannot tell which, the safe move is
 // to kill the credential family the first arrival walked away with, not
 // merely reject the second.
+//
+// Revocation is gated on clientID matching the family's owner (row.ClientID)
+// — the caller presenting the replay is NOT authenticated (public client, no
+// secret; this is unavoidable and RFC-consistent for this grant), but a
+// client_id it supplies is still worth checking before acting on it: without
+// this gate, a registered client B that merely observed client A's leaked
+// authorization code (proxy access logs, a Referer header, browser history —
+// codes travel in a query string) could revoke A's freshly-minted family by
+// replaying it with B's own client_id, a self-inflicted denial-of-service A
+// never triggered. Gating on client_id closes that cross-client vector while
+// keeping the same unauthenticated-replay posture RFC 6749 requires: the
+// wire response is ErrInvalidGrant either way, so this reveals nothing about
+// which client_id actually owns the code.
+//
+// Note what this does NOT revoke: the access token minted by the redemption
+// being replayed survives for the rest of its 15-minute TTL regardless — it
+// is a stateless, self-verifying JWT with no server-side record to delete
+// (DeleteTokenFamily only ever touches Redis-backed refresh-token state).
+// That is inherent to how every access token in this codebase works, and is
+// the same property ExchangeRefreshToken's own reuse-detection path already
+// lives with — not a gap specific to this grant.
 func (s *OAuthTokenService) handleAuthorizationCodeReplay(ctx context.Context, code, clientID string) error {
 	row, err := s.entClient.OAuthAuthorizationCode.Query().
 		Where(oauthauthorizationcode.Code(code)).
@@ -669,21 +761,31 @@ func (s *OAuthTokenService) handleAuthorizationCodeReplay(ctx context.Context, c
 		return fmt.Errorf("query authorization code after failed consume: %w", err)
 	}
 
-	if row.IssuedTokenFamily != nil {
+	if row.IssuedTokenFamily != nil && row.ClientID == clientID {
 		// A token family WAS minted from this code by an earlier
-		// presentation — revoke it. Logged (client_id only, never the code
-		// or the family id — a family id is as sensitive as the refresh
-		// tokens it names) so an operator can see reuse happening, mirroring
-		// ExchangeRefreshToken's reuse-detection log line.
+		// presentation, AND the caller presenting this replay is the same
+		// client_id the code was bound to at issue — revoke it. Logged
+		// (client_id only, never the code or the family id — a family id is
+		// as sensitive as the refresh tokens it names) so an operator can
+		// see reuse happening, mirroring ExchangeRefreshToken's
+		// reuse-detection log line.
 		slog.Warn("oauth: authorization code replay detected, revoking issued token family", "client_id", clientID)
 		if delErr := s.refreshCache.DeleteTokenFamily(ctx, *row.IssuedTokenFamily); delErr != nil {
 			return fmt.Errorf("revoke token family after authorization code replay: %w", delErr)
 		}
 	}
-	// If IssuedTokenFamily is nil, the row was consumed by an earlier
-	// presentation that itself failed validation (bad PKCE verifier,
-	// mismatched client/redirect_uri, or expiry) before minting anything —
-	// nothing was ever issued, so there is nothing to revoke.
+	// Two cases silently skip revocation, both deliberately:
+	//   - IssuedTokenFamily is nil: the row was consumed by an earlier
+	//     presentation that itself failed validation (bad PKCE verifier,
+	//     mismatched client/redirect_uri, or expiry) before minting
+	//     anything — nothing was ever issued, so there is nothing to
+	//     revoke.
+	//   - IssuedTokenFamily is set but row.ClientID != clientID: a
+	//     DIFFERENT client_id than the one the code was bound to is
+	//     presenting it — see the client_id-gating note above. The correct
+	//     response is still the ordinary ErrInvalidGrant below, not a
+	//     distinct error: this must not become an oracle for "does this
+	//     code belong to a different client than the one I guessed."
 
 	return ErrInvalidGrant
 }
