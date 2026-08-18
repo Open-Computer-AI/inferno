@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -49,6 +50,18 @@ const (
 // active key. This is also what makes key rotation possible later: adding a
 // second key only ever requires a change inside ByKid, never here.
 //
+// A failure to resolve the key is NOT automatically "the token is invalid".
+// A missing kid header, or a kid that ByKid reports as unknown
+// (service.ErrUnknownKid), really is a bad token: 401 invalid_token. But any
+// OTHER error out of ByKid — e.g. Postgres unreachable — means this
+// middleware could not even check the signature, and folding that into the
+// same 401 would make an infrastructure outage look, in logs and metrics,
+// identical to "every client's credential is dead". That case is reported
+// as 500 server_error instead, logged with the error and the kid (never the
+// token). jwt.ParseWithClaims only ever surfaces its own parse/verify error
+// from a failing keyFunc, so the underlying cause is captured out of the
+// closure into keyResolutionErr and inspected after ParseWithClaims returns.
+//
 // required == "" means "any validly-signed, unexpired OAuth token" — no
 // specific scope needed, just proof of a real OAuth-issued identity.
 func RequireOAuthScope(keySvc *service.OAuthKeyService, required string) gin.HandlerFunc {
@@ -64,6 +77,10 @@ func RequireOAuthScope(keySvc *service.OAuthKeyService, required string) gin.Han
 			return
 		}
 
+		var (
+			keyResolutionErr error
+			resolvedKid      string
+		)
 		claims := jwt.MapClaims{}
 		// WithExpirationRequired: golang-jwt/v5 only validates exp when the
 		// claim is PRESENT (validator.go's verifyExpiresAt defaults
@@ -79,12 +96,24 @@ func RequireOAuthScope(keySvc *service.OAuthKeyService, required string) gin.Han
 			if kid == "" {
 				return nil, errors.New("token has no kid")
 			}
+			resolvedKid = kid
 			key, err := keySvc.ByKid(c.Request.Context(), kid)
 			if err != nil {
+				if !errors.Is(err, service.ErrUnknownKid) {
+					// Not "this kid doesn't exist" — a real failure to reach
+					// the key store. Captured for the 500 branch below;
+					// still returned here so ParseWithClaims fails closed.
+					keyResolutionErr = err
+				}
 				return nil, err
 			}
 			return &key.Private.PublicKey, nil
 		})
+		if keyResolutionErr != nil {
+			slog.Error("oauth: cannot resolve signing key for scope check", "error", keyResolutionErr, "kid", resolvedKid)
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+			return
+		}
 		// A bearer credential must never be logged, on any path — success or
 		// failure. Only kid (the key that verified it) and client_id
 		// (public by design, see oauth_client_service.go) are ever logged

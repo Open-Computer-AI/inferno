@@ -303,6 +303,33 @@ func TestRequireOAuthScopeRejectsTokenWithUnknownKid(t *testing.T) {
 	require.JSONEq(t, `{"error":"invalid_token"}`, w.Body.String())
 }
 
+// TestRequireOAuthScopeReturns500OnKeyStoreFailure is the regression test
+// for the review finding that folding key-resolution failures into the same
+// 401 as a genuinely bad token would make a Postgres outage indistinguishable,
+// in logs and metrics, from "every client's credential is dead". A real,
+// validly-signed token (minted while the store was healthy) is presented
+// AFTER the underlying ent client is closed — ByKid does not cache, so it
+// re-queries on every call and this closed connection is exactly the shape
+// of failure a real DB outage would produce, not a hand-rolled stub. This
+// must come back as 500 server_error, not 401 invalid_token.
+func TestRequireOAuthScopeReturns500OnKeyStoreFailure(t *testing.T) {
+	entClient := newOAuthScopeTestEntClient(t)
+	keySvc := service.NewOAuthKeyService(entClient)
+
+	claims := baseTestClaims(42, "agent:abc123", "inference:invoke", time.Now().Add(time.Hour))
+	tok := mintTestRS256Token(t, keySvc, claims)
+
+	require.NoError(t, entClient.Close())
+
+	r, w := newOAuthScopeTestRouter(keySvc, "inference:invoke")
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+	require.JSONEq(t, `{"error":"server_error"}`, w.Body.String())
+}
+
 // TestRequireOAuthScopeRejectsTokenWithNoExpClaim is the fix for the review
 // finding: golang-jwt/v5 only validates exp when the claim is PRESENT
 // (validator.go's verifyExpiresAt defaults required=false), so without

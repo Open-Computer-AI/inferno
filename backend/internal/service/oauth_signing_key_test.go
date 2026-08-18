@@ -4,6 +4,9 @@ import (
 	"context"
 	"crypto/rsa"
 	"errors"
+	"fmt"
+	"os"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -87,13 +90,23 @@ func TestJWKSEncodesExponentWithoutLeadingZeros(t *testing.T) {
 
 // TestLegacyES256SecretNameMatchesMigration907 guards against
 // legacyES256SecretName's value silently drifting from the literal
-// migrations/907_oauth_rs256_key.sql deletes. Nothing else in this package
-// references the constant (it exists purely as a documented, named source of
-// truth for that migration's DELETE statement), so this is the only thing
-// that keeps the two from silently diverging.
+// migrations/907_oauth_rs256_key.sql deletes — in EITHER direction. It
+// actually opens and reads that file (relative to this package,
+// ../../migrations/907_oauth_rs256_key.sql) and asserts its DELETE
+// statement contains the constant's current value, so this fails whether
+// the Go constant changes without the SQL, or the SQL changes without the
+// Go constant. Nothing else in this package references the constant (it
+// exists purely as a documented, named source of truth for that migration's
+// DELETE statement), so this is the only thing that keeps the two from
+// silently diverging.
 func TestLegacyES256SecretNameMatchesMigration907(t *testing.T) {
-	if legacyES256SecretName != "oauth_es256_active" {
-		t.Fatalf("legacyES256SecretName changed to %q — update migrations/907_oauth_rs256_key.sql's DELETE statement to match", legacyES256SecretName)
+	sql, err := os.ReadFile("../../migrations/907_oauth_rs256_key.sql")
+	if err != nil {
+		t.Fatalf("read migrations/907_oauth_rs256_key.sql: %v", err)
+	}
+	needle := fmt.Sprintf("key = '%s'", legacyES256SecretName)
+	if !strings.Contains(string(sql), needle) {
+		t.Fatalf("migrations/907_oauth_rs256_key.sql does not contain %q — it must delete the row named by legacyES256SecretName (%q); update whichever side drifted", needle, legacyES256SecretName)
 	}
 }
 
