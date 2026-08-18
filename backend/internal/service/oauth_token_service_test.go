@@ -683,6 +683,24 @@ func TestRefreshReplayPairIsNeverStoredInPlaintext(t *testing.T) {
 	}
 }
 
+// TestRefreshReplaySealInfoIsPinned is the third member of the
+// sliding-expectation family found in this task, and the reason it needed
+// finding: the domain-separation test above spells the info string as
+// refreshReplaySealInfo on BOTH sides of every comparison, so changing the
+// constant moves the test with it and fails nothing.
+//
+// The value is a cross-version compatibility constant, not decoration.
+// During a rolling deploy, blobs sealed by old instances are opened by new
+// ones; a changed info string derives a different key, every in-flight grace
+// replay fails to open its pair, and those requests become 500s for the
+// length of the rollout. Bumping it is therefore a deliberate act — which is
+// exactly what a pinned value forces it to be.
+func TestRefreshReplaySealInfoIsPinned(t *testing.T) {
+	if refreshReplaySealInfo != "inferno/oauth/refresh-replay/v1" {
+		t.Fatalf("the HKDF info string is a cross-version constant: changing it makes every in-flight sealed pair unopenable during a rolling deploy. Bump it deliberately, and update this test in the same commit. Got %q", refreshReplaySealInfo)
+	}
+}
+
 // TestRefreshReplayKeyIsDomainSeparatedFromTheLookupHash is the guard the
 // review found missing (F3), and it is the one test holding up the entire
 // justification for storing replay pairs at all.

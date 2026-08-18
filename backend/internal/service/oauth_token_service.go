@@ -447,13 +447,25 @@ func (s *OAuthTokenService) ExchangeDeviceCode(ctx context.Context, clientID, de
 // documents the same window and the hermes client is written against it.
 //
 // The grace is kept as narrow as it can be, because every widening of it is
-// a narrowing of reuse detection, which is the only reason rotation exists:
-// it forgives ONE token (the one whose own rotation is less than a minute
-// old), it returns the already-minted pair rather than minting another (two
-// live tokens in one family is the fork that permanently disables the
-// detector), and a replay writes nothing at all — so the window never
-// restarts and never extends. Outside it, reuse revokes the family exactly
-// as before.
+// a narrowing of reuse detection, which is the only reason rotation exists.
+// Forgiveness requires BOTH of:
+//
+//   - the token's own rotation was less than RefreshReuseGracePeriod ago, and
+//   - the successor that rotation minted is still the family head.
+//
+// The second condition is not implied by the first. A family that rotates
+// twice inside a minute leaves an ancestor whose own window is still open
+// but which is no longer the immediately previous token, and forgiving it
+// would hand a thief the intermediate token to walk forward to the live one.
+// So a claim closes its predecessor's window in the same atomic operation
+// that makes it the head — see RefreshReplaySupersededMarker and
+// TestSupersededAncestorIsNotForgiven.
+//
+// Beyond that: a forgiven replay returns the already-minted pair rather than
+// minting another (two live tokens in one family is the fork that
+// permanently disables the detector), and it writes nothing at all — so the
+// window never restarts and never extends. Anything else revokes the family
+// exactly as before.
 //
 // The window is decided inside MarkRotated's single atomic operation, not
 // here: reading a rotation timestamp in one round trip and deciding on it in

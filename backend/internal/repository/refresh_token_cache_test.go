@@ -208,7 +208,10 @@ func TestRefreshTokenCache_SupersessionClosesPredecessorWindow(t *testing.T) {
 
 	// N0's slot now holds the marker, not the ciphertext: the secret is gone
 	// AND the slot still distinguishes supersession from eviction.
-	require.Equal(t, []byte(service.RefreshReplaySupersededMarker), mustGet(t, mr, refreshReplayKey(ancestor)))
+	// Literal, not service.RefreshReplaySupersededMarker: an assertion written
+	// in terms of the constant it is checking moves with that constant and
+	// proves only "the slot holds whatever the marker happens to be".
+	require.Equal(t, []byte("superseded:v1"), mustGet(t, mr, refreshReplayKey(ancestor)))
 
 	// t0+30s: inside N0's own window, but N0 is two generations stale.
 	superseded, err := c.MarkRotated(ctx, ancestor, n0Tomb, sealedReplayFixture, now.Add(30*time.Second))
@@ -332,6 +335,19 @@ func TestRefreshGraceConstants(t *testing.T) {
 	require.Equal(t, 5*time.Second, service.RefreshGraceClockSkewAllowance)
 	require.Greater(t, service.RefreshReplayRetention, service.RefreshReuseGracePeriod,
 		"the replay slot must outlive the grace window, or a missing slot inside the window becomes ambiguous between expiry and eviction")
+
+	// The marker and the key prefix belong here for the same reason the
+	// durations do, even though they are strings: both are values that a
+	// rolling deploy compares ACROSS versions. Two instances running
+	// different markers would each read the other's supersession write as a
+	// sealed pair and forgive an ancestor the other had already closed;
+	// two instances running different prefixes would look in different slots
+	// and turn every grace replay into a 500. Neither would fail a test that
+	// spelled the expectation as the constant.
+	require.Equal(t, "superseded:v1", service.RefreshReplaySupersededMarker)
+	require.Equal(t, "refresh_replay:", refreshReplayKeyPrefix)
+	require.NotEqual(t, refreshTokenKeyPrefix, refreshReplayKeyPrefix,
+		"the record and its replay slot must not collide in the keyspace")
 }
 
 // TestRefreshTokenCache_DeleteDropsReplayPair asserts a revocation takes the
