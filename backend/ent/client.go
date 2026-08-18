@@ -34,6 +34,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
+	"github.com/Wei-Shaw/sub2api/ent/oauthauthorizationcode"
 	"github.com/Wei-Shaw/sub2api/ent/oauthclient"
 	"github.com/Wei-Shaw/sub2api/ent/oauthdeviceauthorization"
 	"github.com/Wei-Shaw/sub2api/ent/org"
@@ -105,6 +106,8 @@ type Client struct {
 	IdempotencyRecord *IdempotencyRecordClient
 	// IdentityAdoptionDecision is the client for interacting with the IdentityAdoptionDecision builders.
 	IdentityAdoptionDecision *IdentityAdoptionDecisionClient
+	// OAuthAuthorizationCode is the client for interacting with the OAuthAuthorizationCode builders.
+	OAuthAuthorizationCode *OAuthAuthorizationCodeClient
 	// OAuthClient is the client for interacting with the OAuthClient builders.
 	OAuthClient *OAuthClientClient
 	// OAuthDeviceAuthorization is the client for interacting with the OAuthDeviceAuthorization builders.
@@ -183,6 +186,7 @@ func (c *Client) init() {
 	c.Group = NewGroupClient(c.config)
 	c.IdempotencyRecord = NewIdempotencyRecordClient(c.config)
 	c.IdentityAdoptionDecision = NewIdentityAdoptionDecisionClient(c.config)
+	c.OAuthAuthorizationCode = NewOAuthAuthorizationCodeClient(c.config)
 	c.OAuthClient = NewOAuthClientClient(c.config)
 	c.OAuthDeviceAuthorization = NewOAuthDeviceAuthorizationClient(c.config)
 	c.Org = NewOrgClient(c.config)
@@ -318,6 +322,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		Group:                         NewGroupClient(cfg),
 		IdempotencyRecord:             NewIdempotencyRecordClient(cfg),
 		IdentityAdoptionDecision:      NewIdentityAdoptionDecisionClient(cfg),
+		OAuthAuthorizationCode:        NewOAuthAuthorizationCodeClient(cfg),
 		OAuthClient:                   NewOAuthClientClient(cfg),
 		OAuthDeviceAuthorization:      NewOAuthDeviceAuthorizationClient(cfg),
 		Org:                           NewOrgClient(cfg),
@@ -380,6 +385,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		Group:                         NewGroupClient(cfg),
 		IdempotencyRecord:             NewIdempotencyRecordClient(cfg),
 		IdentityAdoptionDecision:      NewIdentityAdoptionDecisionClient(cfg),
+		OAuthAuthorizationCode:        NewOAuthAuthorizationCodeClient(cfg),
 		OAuthClient:                   NewOAuthClientClient(cfg),
 		OAuthDeviceAuthorization:      NewOAuthDeviceAuthorizationClient(cfg),
 		Org:                           NewOrgClient(cfg),
@@ -438,13 +444,13 @@ func (c *Client) Use(hooks ...Hook) {
 		c.BatchImageJob, c.ChannelMonitor, c.ChannelMonitorDailyRollup,
 		c.ChannelMonitorHistory, c.ChannelMonitorRequestTemplate,
 		c.CompositeModelRoute, c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
-		c.IdentityAdoptionDecision, c.OAuthClient, c.OAuthDeviceAuthorization, c.Org,
-		c.OrgMember, c.PaymentAuditLog, c.PaymentOrder, c.PaymentProviderInstance,
-		c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage, c.Proxy, c.RedeemCode,
-		c.SecuritySecret, c.Setting, c.SubscriptionPlan, c.TLSFingerprintProfile,
-		c.UsageCleanupTask, c.UsageLog, c.User, c.UserAllowedGroup,
-		c.UserAttributeDefinition, c.UserAttributeValue, c.UserPlatformQuota,
-		c.UserSubscription,
+		c.IdentityAdoptionDecision, c.OAuthAuthorizationCode, c.OAuthClient,
+		c.OAuthDeviceAuthorization, c.Org, c.OrgMember, c.PaymentAuditLog,
+		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
+		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
+		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
+		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
+		c.UserPlatformQuota, c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -459,13 +465,13 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.BatchImageJob, c.ChannelMonitor, c.ChannelMonitorDailyRollup,
 		c.ChannelMonitorHistory, c.ChannelMonitorRequestTemplate,
 		c.CompositeModelRoute, c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
-		c.IdentityAdoptionDecision, c.OAuthClient, c.OAuthDeviceAuthorization, c.Org,
-		c.OrgMember, c.PaymentAuditLog, c.PaymentOrder, c.PaymentProviderInstance,
-		c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage, c.Proxy, c.RedeemCode,
-		c.SecuritySecret, c.Setting, c.SubscriptionPlan, c.TLSFingerprintProfile,
-		c.UsageCleanupTask, c.UsageLog, c.User, c.UserAllowedGroup,
-		c.UserAttributeDefinition, c.UserAttributeValue, c.UserPlatformQuota,
-		c.UserSubscription,
+		c.IdentityAdoptionDecision, c.OAuthAuthorizationCode, c.OAuthClient,
+		c.OAuthDeviceAuthorization, c.Org, c.OrgMember, c.PaymentAuditLog,
+		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
+		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
+		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
+		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
+		c.UserPlatformQuota, c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -512,6 +518,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.IdempotencyRecord.mutate(ctx, m)
 	case *IdentityAdoptionDecisionMutation:
 		return c.IdentityAdoptionDecision.mutate(ctx, m)
+	case *OAuthAuthorizationCodeMutation:
+		return c.OAuthAuthorizationCode.mutate(ctx, m)
 	case *OAuthClientMutation:
 		return c.OAuthClient.mutate(ctx, m)
 	case *OAuthDeviceAuthorizationMutation:
@@ -3608,6 +3616,139 @@ func (c *IdentityAdoptionDecisionClient) mutate(ctx context.Context, m *Identity
 		return (&IdentityAdoptionDecisionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown IdentityAdoptionDecision mutation op: %q", m.Op())
+	}
+}
+
+// OAuthAuthorizationCodeClient is a client for the OAuthAuthorizationCode schema.
+type OAuthAuthorizationCodeClient struct {
+	config
+}
+
+// NewOAuthAuthorizationCodeClient returns a client for the OAuthAuthorizationCode from the given config.
+func NewOAuthAuthorizationCodeClient(c config) *OAuthAuthorizationCodeClient {
+	return &OAuthAuthorizationCodeClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `oauthauthorizationcode.Hooks(f(g(h())))`.
+func (c *OAuthAuthorizationCodeClient) Use(hooks ...Hook) {
+	c.hooks.OAuthAuthorizationCode = append(c.hooks.OAuthAuthorizationCode, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `oauthauthorizationcode.Intercept(f(g(h())))`.
+func (c *OAuthAuthorizationCodeClient) Intercept(interceptors ...Interceptor) {
+	c.inters.OAuthAuthorizationCode = append(c.inters.OAuthAuthorizationCode, interceptors...)
+}
+
+// Create returns a builder for creating a OAuthAuthorizationCode entity.
+func (c *OAuthAuthorizationCodeClient) Create() *OAuthAuthorizationCodeCreate {
+	mutation := newOAuthAuthorizationCodeMutation(c.config, OpCreate)
+	return &OAuthAuthorizationCodeCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of OAuthAuthorizationCode entities.
+func (c *OAuthAuthorizationCodeClient) CreateBulk(builders ...*OAuthAuthorizationCodeCreate) *OAuthAuthorizationCodeCreateBulk {
+	return &OAuthAuthorizationCodeCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *OAuthAuthorizationCodeClient) MapCreateBulk(slice any, setFunc func(*OAuthAuthorizationCodeCreate, int)) *OAuthAuthorizationCodeCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &OAuthAuthorizationCodeCreateBulk{err: fmt.Errorf("calling to OAuthAuthorizationCodeClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*OAuthAuthorizationCodeCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &OAuthAuthorizationCodeCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for OAuthAuthorizationCode.
+func (c *OAuthAuthorizationCodeClient) Update() *OAuthAuthorizationCodeUpdate {
+	mutation := newOAuthAuthorizationCodeMutation(c.config, OpUpdate)
+	return &OAuthAuthorizationCodeUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *OAuthAuthorizationCodeClient) UpdateOne(_m *OAuthAuthorizationCode) *OAuthAuthorizationCodeUpdateOne {
+	mutation := newOAuthAuthorizationCodeMutation(c.config, OpUpdateOne, withOAuthAuthorizationCode(_m))
+	return &OAuthAuthorizationCodeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *OAuthAuthorizationCodeClient) UpdateOneID(id int64) *OAuthAuthorizationCodeUpdateOne {
+	mutation := newOAuthAuthorizationCodeMutation(c.config, OpUpdateOne, withOAuthAuthorizationCodeID(id))
+	return &OAuthAuthorizationCodeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for OAuthAuthorizationCode.
+func (c *OAuthAuthorizationCodeClient) Delete() *OAuthAuthorizationCodeDelete {
+	mutation := newOAuthAuthorizationCodeMutation(c.config, OpDelete)
+	return &OAuthAuthorizationCodeDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *OAuthAuthorizationCodeClient) DeleteOne(_m *OAuthAuthorizationCode) *OAuthAuthorizationCodeDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *OAuthAuthorizationCodeClient) DeleteOneID(id int64) *OAuthAuthorizationCodeDeleteOne {
+	builder := c.Delete().Where(oauthauthorizationcode.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &OAuthAuthorizationCodeDeleteOne{builder}
+}
+
+// Query returns a query builder for OAuthAuthorizationCode.
+func (c *OAuthAuthorizationCodeClient) Query() *OAuthAuthorizationCodeQuery {
+	return &OAuthAuthorizationCodeQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeOAuthAuthorizationCode},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a OAuthAuthorizationCode entity by its id.
+func (c *OAuthAuthorizationCodeClient) Get(ctx context.Context, id int64) (*OAuthAuthorizationCode, error) {
+	return c.Query().Where(oauthauthorizationcode.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *OAuthAuthorizationCodeClient) GetX(ctx context.Context, id int64) *OAuthAuthorizationCode {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *OAuthAuthorizationCodeClient) Hooks() []Hook {
+	return c.hooks.OAuthAuthorizationCode
+}
+
+// Interceptors returns the client interceptors.
+func (c *OAuthAuthorizationCodeClient) Interceptors() []Interceptor {
+	return c.inters.OAuthAuthorizationCode
+}
+
+func (c *OAuthAuthorizationCodeClient) mutate(ctx context.Context, m *OAuthAuthorizationCodeMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&OAuthAuthorizationCodeCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&OAuthAuthorizationCodeUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&OAuthAuthorizationCodeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&OAuthAuthorizationCodeDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown OAuthAuthorizationCode mutation op: %q", m.Op())
 	}
 }
 
@@ -7395,24 +7536,26 @@ type (
 		AuthIdentityChannel, BatchImageEvent, BatchImageItem, BatchImageJob,
 		ChannelMonitor, ChannelMonitorDailyRollup, ChannelMonitorHistory,
 		ChannelMonitorRequestTemplate, CompositeModelRoute, ErrorPassthroughRule,
-		Group, IdempotencyRecord, IdentityAdoptionDecision, OAuthClient,
-		OAuthDeviceAuthorization, Org, OrgMember, PaymentAuditLog, PaymentOrder,
-		PaymentProviderInstance, PendingAuthSession, PromoCode, PromoCodeUsage, Proxy,
-		RedeemCode, SecuritySecret, Setting, SubscriptionPlan, TLSFingerprintProfile,
-		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
-		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Hook
+		Group, IdempotencyRecord, IdentityAdoptionDecision, OAuthAuthorizationCode,
+		OAuthClient, OAuthDeviceAuthorization, Org, OrgMember, PaymentAuditLog,
+		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
+		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
+		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
+		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
+		UserSubscription []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
 		AuthIdentityChannel, BatchImageEvent, BatchImageItem, BatchImageJob,
 		ChannelMonitor, ChannelMonitorDailyRollup, ChannelMonitorHistory,
 		ChannelMonitorRequestTemplate, CompositeModelRoute, ErrorPassthroughRule,
-		Group, IdempotencyRecord, IdentityAdoptionDecision, OAuthClient,
-		OAuthDeviceAuthorization, Org, OrgMember, PaymentAuditLog, PaymentOrder,
-		PaymentProviderInstance, PendingAuthSession, PromoCode, PromoCodeUsage, Proxy,
-		RedeemCode, SecuritySecret, Setting, SubscriptionPlan, TLSFingerprintProfile,
-		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
-		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Interceptor
+		Group, IdempotencyRecord, IdentityAdoptionDecision, OAuthAuthorizationCode,
+		OAuthClient, OAuthDeviceAuthorization, Org, OrgMember, PaymentAuditLog,
+		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
+		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
+		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
+		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
+		UserSubscription []ent.Interceptor
 	}
 )
 

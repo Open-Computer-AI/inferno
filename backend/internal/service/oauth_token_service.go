@@ -3,6 +3,9 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -12,6 +15,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/oauthauthorizationcode"
 	"github.com/Wei-Shaw/sub2api/ent/oauthdeviceauthorization"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -490,4 +494,196 @@ func (s *OAuthTokenService) ExchangeRefreshToken(ctx context.Context, clientID, 
 		Scope:        winner.Scope,
 		ExpiresIn:    int(oauthAccessTokenTTL.Seconds()),
 	}, nil
+}
+
+// pkceChallengeMatches reports whether verifier hashes (RFC 7636 S256:
+// BASE64URL-NOPAD(SHA256(verifier))) to challenge, in constant time.
+// subtle.ConstantTimeCompare is used rather than == so that comparing a
+// forged code_verifier against the stored challenge does not leak, via
+// response timing, how many leading bytes of the hash it happened to get
+// right.
+func pkceChallengeMatches(verifier, challenge string) bool {
+	sum := sha256.Sum256([]byte(verifier))
+	computed := base64.RawURLEncoding.EncodeToString(sum[:])
+	return subtle.ConstantTimeCompare([]byte(computed), []byte(challenge)) == 1
+}
+
+// ExchangeAuthorizationCode implements the authorization_code grant (RFC
+// 6749 §4.1.3), PKCE-verified (RFC 7636 §4.6). Every rejection returns the
+// single sentinel ErrInvalidGrant, deliberately — distinguishing "unknown
+// code" from "wrong verifier" from "wrong client" on the wire would let a
+// caller enumerate which check a guess failed, the same anti-probing
+// reasoning ExchangeRefreshToken and ExchangeDeviceCode already apply to
+// their own failure sets.
+//
+// THE CODE IS CONSUMED — via a status-predicated UPDATE ... WHERE code = ?
+// AND status = 'pending', exactly the CAS shape ExchangeDeviceCode already
+// uses — BEFORE any of the PKCE/client/redirect_uri/expiry checks below run,
+// not after. This is deliberate, not an oversight of "validate first,
+// consume on success": the property that actually matters is that no two
+// concurrent presentations of the same code can both reach the minting call
+// below, and a read-then-validate-then-write ordering is exactly the race
+// that took two review rounds to close on the refresh_token path (see
+// ExchangeRefreshToken's docs and MarkRotated) — two goroutines could both
+// read status="pending", both pass every check, and both mint a token pair
+// from one authorization. Claiming the row FIRST closes that window
+// unconditionally: at most one caller ever wins the CAS, so at most one
+// caller ever reaches mintAccessToken/issueRefreshToken for a given code,
+// regardless of what the subsequent checks decide. A side effect of this
+// ordering is that a request with a wrong PKCE verifier or mismatched
+// client_id also permanently burns the code (issued_token_family stays nil,
+// since nothing was minted) — a deliberate fail-safe, not a bug: an
+// authorization code is meant to be presented exactly once, and treating a
+// failed presentation as "still available, try again with different
+// parameters" would hand a guessing attacker unlimited free attempts against
+// one code instead of exactly one.
+func (s *OAuthTokenService) ExchangeAuthorizationCode(ctx context.Context, clientID, code, redirectURI, codeVerifier string) (*OAuthTokens, error) {
+	if clientID == "" || code == "" {
+		return nil, ErrInvalidGrant
+	}
+
+	affected, err := s.entClient.OAuthAuthorizationCode.Update().
+		Where(
+			oauthauthorizationcode.Code(code),
+			oauthauthorizationcode.Status(authCodeStatusPending),
+		).
+		SetStatus(authCodeStatusConsumed).
+		Save(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("consume authorization code: %w", err)
+	}
+	if affected == 0 {
+		return nil, s.handleAuthorizationCodeReplay(ctx, code, clientID)
+	}
+
+	row, err := s.entClient.OAuthAuthorizationCode.Query().
+		Where(oauthauthorizationcode.Code(code)).
+		Only(ctx)
+	if err != nil {
+		// Vanishingly unlikely: we just won the CAS above, so the row must
+		// exist. Treated as an internal error (not ErrInvalidGrant) since
+		// this is a persistence-layer inconsistency, not a credential
+		// problem.
+		return nil, fmt.Errorf("query authorization code after consume: %w", err)
+	}
+
+	// Defense in depth: IssueCode never persists anything but "S256" (it
+	// rejects "plain" outright), so this should be unreachable, but a
+	// redemption path must not silently treat a hypothetical future
+	// non-S256 row as S256-verified.
+	if row.CodeChallengeMethod != "S256" {
+		return nil, ErrInvalidGrant
+	}
+	// Bind check: the code is only redeemable by the exact client_id and
+	// exact redirect_uri it was issued to. A code redeemable by a different
+	// client, or delivered to a different URI, is the classic authorization
+	// code interception vector RFC 6749 §10.5 / RFC 7636 exist to close.
+	if row.ClientID != clientID {
+		return nil, ErrInvalidGrant
+	}
+	if row.RedirectURI != redirectURI {
+		return nil, ErrInvalidGrant
+	}
+	if time.Now().After(row.ExpiresAt) {
+		return nil, ErrInvalidGrant
+	}
+	if !pkceChallengeMatches(codeVerifier, row.CodeChallenge) {
+		return nil, ErrInvalidGrant
+	}
+	// A client revoked between /oauth/authorize and this redemption must not
+	// get a token, mirroring assertClientUsable's use in the other two
+	// grants.
+	if err := s.assertClientUsable(ctx, clientID); err != nil {
+		return nil, ErrInvalidGrant
+	}
+
+	// Load the user BEFORE minting, for the same two reasons ExchangeDeviceCode
+	// documents: the refresh token must carry the user's CURRENT TokenVersion
+	// fingerprint, and an authorization is not a session — a user banned or
+	// deleted between the browser redirect and this token call must not
+	// receive a 30-day credential.
+	user, err := s.userRepo.GetByID(ctx, row.UserID)
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			return nil, ErrInvalidGrant
+		}
+		return nil, fmt.Errorf("load user for authorization code grant: %w", err)
+	}
+	if !user.IsActive() {
+		return nil, ErrInvalidGrant
+	}
+
+	familyID, err := newFamilyID()
+	if err != nil {
+		return nil, fmt.Errorf("family id entropy: %w", err)
+	}
+
+	access, err := s.mintAccessToken(ctx, row.UserID, clientID, row.Scope)
+	if err != nil {
+		return nil, err
+	}
+	refresh, err := s.issueRefreshToken(ctx, row.UserID, clientID, row.Scope, familyID, resolvedTokenVersion(user))
+	if err != nil {
+		return nil, err
+	}
+
+	// Record the family on the (already-consumed) row so a replay of this
+	// same code can find and revoke exactly what this redemption minted.
+	// A failure here is returned as a real error (not folded into
+	// ErrInvalidGrant): the tokens above are already live, so this is a
+	// persistence fault the caller must see as a 500, not a credential
+	// rejection.
+	if _, err := s.entClient.OAuthAuthorizationCode.Update().
+		Where(oauthauthorizationcode.ID(row.ID)).
+		SetIssuedTokenFamily(familyID).
+		Save(ctx); err != nil {
+		return nil, fmt.Errorf("record issued token family: %w", err)
+	}
+
+	return &OAuthTokens{
+		AccessToken:  access,
+		RefreshToken: refresh,
+		Scope:        row.Scope,
+		ExpiresIn:    int(oauthAccessTokenTTL.Seconds()),
+	}, nil
+}
+
+// handleAuthorizationCodeReplay is called when the consuming CAS in
+// ExchangeAuthorizationCode affects zero rows: either the code never
+// existed, or it did and was already consumed by an earlier presentation.
+// RFC 6749 §4.1.2 requires the latter case to revoke whatever that earlier
+// presentation minted — a code arriving twice means one of the two arrivals
+// is an attacker, and since the server cannot tell which, the safe move is
+// to kill the credential family the first arrival walked away with, not
+// merely reject the second.
+func (s *OAuthTokenService) handleAuthorizationCodeReplay(ctx context.Context, code, clientID string) error {
+	row, err := s.entClient.OAuthAuthorizationCode.Query().
+		Where(oauthauthorizationcode.Code(code)).
+		Only(ctx)
+	if dbent.IsNotFound(err) {
+		// Never existed at all — indistinguishable on the wire from any
+		// other invalid_grant.
+		return ErrInvalidGrant
+	}
+	if err != nil {
+		return fmt.Errorf("query authorization code after failed consume: %w", err)
+	}
+
+	if row.IssuedTokenFamily != nil {
+		// A token family WAS minted from this code by an earlier
+		// presentation — revoke it. Logged (client_id only, never the code
+		// or the family id — a family id is as sensitive as the refresh
+		// tokens it names) so an operator can see reuse happening, mirroring
+		// ExchangeRefreshToken's reuse-detection log line.
+		slog.Warn("oauth: authorization code replay detected, revoking issued token family", "client_id", clientID)
+		if delErr := s.refreshCache.DeleteTokenFamily(ctx, *row.IssuedTokenFamily); delErr != nil {
+			return fmt.Errorf("revoke token family after authorization code replay: %w", delErr)
+		}
+	}
+	// If IssuedTokenFamily is nil, the row was consumed by an earlier
+	// presentation that itself failed validation (bad PKCE verifier,
+	// mismatched client/redirect_uri, or expiry) before minting anything —
+	// nothing was ever issued, so there is nothing to revoke.
+
+	return ErrInvalidGrant
 }

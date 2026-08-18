@@ -25,6 +25,16 @@ const (
 	ScopeBillingManage = "billing:manage"
 	ScopeAgentsRead    = "agents:read"
 	ScopeAgentsManage  = "agents:manage"
+	// ScopeAgentDashboardAccess is sent by the gateway on every
+	// authorize/device-code request for the Hermes Desktop login leg
+	// (plugins/dashboard_auth/nous/__init__.py in the read-only client
+	// repo). Nothing on this server currently gates any route on it — its
+	// security value is zero — but ValidateScope's whole-request rejection
+	// means omitting it from the vocabulary would 400 invalid_scope on
+	// EVERY desktop login, not just decline one optional capability. The
+	// compatibility requirement is absolute where the security requirement
+	// is nil, so it is echoed faithfully rather than dropped.
+	ScopeAgentDashboardAccess = "agent_dashboard:access"
 )
 
 // knownScopes is the closed vocabulary a client may request.
@@ -44,12 +54,13 @@ const (
 // is never granted at initial login and must be elevated to via a second device
 // flow — expressible at all: you cannot enforce a policy over an open set.
 var knownScopes = map[string]struct{}{
-	ScopeInferenceInvoke: {},
-	ScopeToolInvoke:      {},
-	ScopeBillingRead:     {},
-	ScopeBillingManage:   {},
-	ScopeAgentsRead:      {},
-	ScopeAgentsManage:    {},
+	ScopeInferenceInvoke:      {},
+	ScopeToolInvoke:           {},
+	ScopeBillingRead:          {},
+	ScopeBillingManage:        {},
+	ScopeAgentsRead:           {},
+	ScopeAgentsManage:         {},
+	ScopeAgentDashboardAccess: {},
 }
 
 // ErrInvalidScope is RFC 6749 §4.1.2.1 / RFC 8628 §3.2's `invalid_scope`: the

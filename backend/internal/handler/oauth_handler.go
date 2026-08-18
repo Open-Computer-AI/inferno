@@ -207,8 +207,8 @@ func refreshTokenFromRequest(c *gin.Context) string {
 
 // Token handles POST /api/oauth/token. Unauthenticated — this endpoint IS
 // the credential-issuance step; a caller with a valid session wouldn't need
-// it. Form-encoded per RFC 6749/8628. Never logs device_code, refresh_token,
-// or access_token — client_id only.
+// it. Form-encoded per RFC 6749/8628. Never logs device_code, code,
+// code_verifier, refresh_token, or access_token — client_id only.
 //
 // Every branch below matches known sentinels explicitly and falls through to
 // a logged 500 server_error for anything else (a Redis outage, a signing-key
@@ -244,6 +244,25 @@ func (h *OAuthHandler) Token(c *gin.Context) {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "expired_token"})
 			default:
 				slog.Error("oauth: device_code token exchange failed", "client_id", clientID, "error", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+			}
+			return
+		}
+		tokenResponse(c, tokens)
+
+	case "authorization_code":
+		tokens, err := h.tokenSvc.ExchangeAuthorizationCode(c.Request.Context(), clientID,
+			c.PostForm("code"), c.PostForm("redirect_uri"), c.PostForm("code_verifier"))
+		if err != nil {
+			switch {
+			case errors.Is(err, service.ErrInvalidGrant):
+				// Every redemption failure — unknown code, replay, wrong
+				// PKCE verifier, mismatched client_id/redirect_uri,
+				// expired — collapses to this single RFC 6749 §5.2 code, so
+				// the wire response never reveals which check failed.
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant"})
+			default:
+				slog.Error("oauth: authorization_code token exchange failed", "client_id", clientID, "error", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
 			}
 			return

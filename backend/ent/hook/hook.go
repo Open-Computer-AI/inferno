@@ -237,6 +237,18 @@ func (f IdentityAdoptionDecisionFunc) Mutate(ctx context.Context, m ent.Mutation
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.IdentityAdoptionDecisionMutation", m)
 }
 
+// The OAuthAuthorizationCodeFunc type is an adapter to allow the use of ordinary
+// function as OAuthAuthorizationCode mutator.
+type OAuthAuthorizationCodeFunc func(context.Context, *ent.OAuthAuthorizationCodeMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f OAuthAuthorizationCodeFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.OAuthAuthorizationCodeMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.OAuthAuthorizationCodeMutation", m)
+}
+
 // The OAuthClientFunc type is an adapter to allow the use of ordinary
 // function as OAuthClient mutator.
 type OAuthClientFunc func(context.Context, *ent.OAuthClientMutation) (ent.Value, error)

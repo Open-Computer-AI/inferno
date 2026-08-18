@@ -24,6 +24,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
+	"github.com/Wei-Shaw/sub2api/ent/oauthauthorizationcode"
 	"github.com/Wei-Shaw/sub2api/ent/oauthclient"
 	"github.com/Wei-Shaw/sub2api/ent/oauthdeviceauthorization"
 	"github.com/Wei-Shaw/sub2api/ent/org"
@@ -1279,6 +1280,127 @@ func init() {
 	identityadoptiondecisionDescDecidedAt := identityadoptiondecisionFields[4].Descriptor()
 	// identityadoptiondecision.DefaultDecidedAt holds the default value on creation for the decided_at field.
 	identityadoptiondecision.DefaultDecidedAt = identityadoptiondecisionDescDecidedAt.Default.(func() time.Time)
+	oauthauthorizationcodeMixin := schema.OAuthAuthorizationCode{}.Mixin()
+	oauthauthorizationcodeMixinFields0 := oauthauthorizationcodeMixin[0].Fields()
+	_ = oauthauthorizationcodeMixinFields0
+	oauthauthorizationcodeFields := schema.OAuthAuthorizationCode{}.Fields()
+	_ = oauthauthorizationcodeFields
+	// oauthauthorizationcodeDescCreatedAt is the schema descriptor for created_at field.
+	oauthauthorizationcodeDescCreatedAt := oauthauthorizationcodeMixinFields0[0].Descriptor()
+	// oauthauthorizationcode.DefaultCreatedAt holds the default value on creation for the created_at field.
+	oauthauthorizationcode.DefaultCreatedAt = oauthauthorizationcodeDescCreatedAt.Default.(func() time.Time)
+	// oauthauthorizationcodeDescUpdatedAt is the schema descriptor for updated_at field.
+	oauthauthorizationcodeDescUpdatedAt := oauthauthorizationcodeMixinFields0[1].Descriptor()
+	// oauthauthorizationcode.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	oauthauthorizationcode.DefaultUpdatedAt = oauthauthorizationcodeDescUpdatedAt.Default.(func() time.Time)
+	// oauthauthorizationcode.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	oauthauthorizationcode.UpdateDefaultUpdatedAt = oauthauthorizationcodeDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// oauthauthorizationcodeDescCode is the schema descriptor for code field.
+	oauthauthorizationcodeDescCode := oauthauthorizationcodeFields[0].Descriptor()
+	// oauthauthorizationcode.CodeValidator is a validator for the "code" field. It is called by the builders before save.
+	oauthauthorizationcode.CodeValidator = func() func(string) error {
+		validators := oauthauthorizationcodeDescCode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(code string) error {
+			for _, fn := range fns {
+				if err := fn(code); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// oauthauthorizationcodeDescClientID is the schema descriptor for client_id field.
+	oauthauthorizationcodeDescClientID := oauthauthorizationcodeFields[1].Descriptor()
+	// oauthauthorizationcode.ClientIDValidator is a validator for the "client_id" field. It is called by the builders before save.
+	oauthauthorizationcode.ClientIDValidator = func() func(string) error {
+		validators := oauthauthorizationcodeDescClientID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(client_id string) error {
+			for _, fn := range fns {
+				if err := fn(client_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// oauthauthorizationcodeDescRedirectURI is the schema descriptor for redirect_uri field.
+	oauthauthorizationcodeDescRedirectURI := oauthauthorizationcodeFields[3].Descriptor()
+	// oauthauthorizationcode.RedirectURIValidator is a validator for the "redirect_uri" field. It is called by the builders before save.
+	oauthauthorizationcode.RedirectURIValidator = func() func(string) error {
+		validators := oauthauthorizationcodeDescRedirectURI.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(redirect_uri string) error {
+			for _, fn := range fns {
+				if err := fn(redirect_uri); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// oauthauthorizationcodeDescScope is the schema descriptor for scope field.
+	oauthauthorizationcodeDescScope := oauthauthorizationcodeFields[4].Descriptor()
+	// oauthauthorizationcode.DefaultScope holds the default value on creation for the scope field.
+	oauthauthorizationcode.DefaultScope = oauthauthorizationcodeDescScope.Default.(string)
+	// oauthauthorizationcode.ScopeValidator is a validator for the "scope" field. It is called by the builders before save.
+	oauthauthorizationcode.ScopeValidator = oauthauthorizationcodeDescScope.Validators[0].(func(string) error)
+	// oauthauthorizationcodeDescCodeChallenge is the schema descriptor for code_challenge field.
+	oauthauthorizationcodeDescCodeChallenge := oauthauthorizationcodeFields[5].Descriptor()
+	// oauthauthorizationcode.CodeChallengeValidator is a validator for the "code_challenge" field. It is called by the builders before save.
+	oauthauthorizationcode.CodeChallengeValidator = func() func(string) error {
+		validators := oauthauthorizationcodeDescCodeChallenge.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(code_challenge string) error {
+			for _, fn := range fns {
+				if err := fn(code_challenge); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// oauthauthorizationcodeDescCodeChallengeMethod is the schema descriptor for code_challenge_method field.
+	oauthauthorizationcodeDescCodeChallengeMethod := oauthauthorizationcodeFields[6].Descriptor()
+	// oauthauthorizationcode.CodeChallengeMethodValidator is a validator for the "code_challenge_method" field. It is called by the builders before save.
+	oauthauthorizationcode.CodeChallengeMethodValidator = func() func(string) error {
+		validators := oauthauthorizationcodeDescCodeChallengeMethod.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(code_challenge_method string) error {
+			for _, fn := range fns {
+				if err := fn(code_challenge_method); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// oauthauthorizationcodeDescStatus is the schema descriptor for status field.
+	oauthauthorizationcodeDescStatus := oauthauthorizationcodeFields[7].Descriptor()
+	// oauthauthorizationcode.DefaultStatus holds the default value on creation for the status field.
+	oauthauthorizationcode.DefaultStatus = oauthauthorizationcodeDescStatus.Default.(string)
+	// oauthauthorizationcode.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	oauthauthorizationcode.StatusValidator = oauthauthorizationcodeDescStatus.Validators[0].(func(string) error)
+	// oauthauthorizationcodeDescIssuedTokenFamily is the schema descriptor for issued_token_family field.
+	oauthauthorizationcodeDescIssuedTokenFamily := oauthauthorizationcodeFields[8].Descriptor()
+	// oauthauthorizationcode.IssuedTokenFamilyValidator is a validator for the "issued_token_family" field. It is called by the builders before save.
+	oauthauthorizationcode.IssuedTokenFamilyValidator = oauthauthorizationcodeDescIssuedTokenFamily.Validators[0].(func(string) error)
 	oauthclientMixin := schema.OAuthClient{}.Mixin()
 	oauthclientMixinFields0 := oauthclientMixin[0].Fields()
 	_ = oauthclientMixinFields0

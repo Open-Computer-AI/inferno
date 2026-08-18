@@ -227,6 +227,26 @@ backend/migrations/907_oauth_rs256_key.sql
 # declared above (Tasks 3/2) -- not re-listed here, same files.
 backend/internal/service/oauth_redirect_uri.go
 backend/internal/service/oauth_redirect_uri_test.go
+# D5 -- OAuth AS (authorization_code + PKCE plan, Task 3: authorization
+# codes -- issue and redeem). oauth_handler.go, oauth_token_service.go, and
+# oauth_scope_vocabulary.go are already declared above (Tasks 2/5/8) -- not
+# re-listed here, same files. The shared ent codegen files this task's
+# `go generate ./ent` run also touched (client.go, ent.go, hook/hook.go,
+# intercept/intercept.go, migrate/schema.go, mutation.go,
+# predicate/predicate.go, runtime/runtime.go, tx.go) are already declared
+# above (Task 3's oauth_client registration) -- not re-listed here, same
+# files.
+backend/ent/schema/oauth_authorization_code.go
+backend/ent/oauthauthorizationcode.go
+backend/ent/oauthauthorizationcode/oauthauthorizationcode.go
+backend/ent/oauthauthorizationcode/where.go
+backend/ent/oauthauthorizationcode_create.go
+backend/ent/oauthauthorizationcode_delete.go
+backend/ent/oauthauthorizationcode_query.go
+backend/ent/oauthauthorizationcode_update.go
+backend/migrations/906_oauth_authorization_code.sql
+backend/internal/service/oauth_authorize_service.go
+backend/internal/service/oauth_authorize_service_test.go
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }
