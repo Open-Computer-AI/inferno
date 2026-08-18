@@ -231,7 +231,7 @@ backend/internal/service/oauth_redirect_uri_test.go
 # codes -- issue and redeem). oauth_handler.go, oauth_token_service.go, and
 # oauth_scope_vocabulary.go are already declared above (Tasks 2/5/8) -- not
 # re-listed here, same files. The shared ent codegen files this task's
-# `go generate ./ent` run also touched (client.go, ent.go, hook/hook.go,
+# 'go generate ./ent' run also touched (client.go, ent.go, hook/hook.go,
 # intercept/intercept.go, migrate/schema.go, mutation.go,
 # predicate/predicate.go, runtime/runtime.go, tx.go) are already declared
 # above (Task 3's oauth_client registration) -- not re-listed here, same
