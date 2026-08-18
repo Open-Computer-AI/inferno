@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/ent/oauthauthorizationcode"
+	"github.com/Wei-Shaw/sub2api/ent/oauthclient"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 )
@@ -18,14 +19,28 @@ import (
 // Redis write) — simulating a transient infrastructure fault (a Redis
 // hiccup) downstream of a fully-validated authorization code redemption,
 // with nothing wrong with the caller's credential.
+// onFail, if set, runs synchronously at the moment the injected failure
+// fires — i.e. AFTER ExchangeAuthorizationCode's family-recording update
+// has run but BEFORE its rollback (which clears the family again) has had
+// a chance to. This is the only point at which "family recorded before
+// mint" is observable from outside: rollbackConsumedCode's
+// ClearIssuedTokenFamily means the row looks the same (family nil) both
+// before the record-then-mint sequence starts AND after a rollback
+// completes, so asserting on the row's state after the call returns cannot
+// distinguish "recorded, then failed, then cleared" from "never recorded
+// at all". Checking mid-flight is what actually pins the ordering down.
 type failOnceRefreshTokenCache struct {
 	*fakeRefreshTokenCache
-	armed bool
+	armed  bool
+	onFail func()
 }
 
 func (f *failOnceRefreshTokenCache) StoreRefreshToken(ctx context.Context, tokenHash string, data *RefreshTokenData, ttl time.Duration) error {
 	if f.armed {
 		f.armed = false
+		if f.onFail != nil {
+			f.onFail()
+		}
 		return errors.New("injected: transient refresh-token store failure")
 	}
 	return f.fakeRefreshTokenCache.StoreRefreshToken(ctx, tokenHash, data, ttl)
@@ -171,12 +186,40 @@ func TestAuthorizationCodeIsSingleUseAndReplayRevokes(t *testing.T) {
 
 // TestAuthorizationCodeRejectsWrongVerifier: challenge derived from verifier
 // A, redemption attempted with verifier B.
+//
+// A wrong-verifier attempt must ALSO leave the code burned, not merely
+// fail its own call — this is the property the earlier internal-failure
+// rollback tests do NOT cover, and its absence is exactly what let a
+// mutant that rolls back on ANY failure (including this one, a genuine
+// credential rejection) pass all the other tests in this file: nothing
+// re-read the row or tried the code again. Two assertions close that gap:
+// the row is still "consumed" immediately after the failed attempt, and a
+// SECOND attempt — this time with the CORRECT verifier — still fails,
+// proving the code was not silently made retryable by the rejection.
 func TestAuthorizationCodeRejectsWrongVerifier(t *testing.T) {
 	f := newAuthCodeFixture(t)
-	code, _ := f.issue(t)
+	code, verifier := f.issue(t)
 
 	if _, err := f.tokens.ExchangeAuthorizationCode(f.ctx, f.clientID, code, f.redirectURI, "a-completely-different-verifier-value"); !errors.Is(err, ErrInvalidGrant) {
 		t.Fatalf("expected ErrInvalidGrant for a mismatched code_verifier, got %v", err)
+	}
+
+	row, err := f.entClient.OAuthAuthorizationCode.Query().
+		Where(oauthauthorizationcode.Code(code)).
+		Only(f.ctx)
+	if err != nil {
+		t.Fatalf("query authorization code row: %v", err)
+	}
+	if row.Status != authCodeStatusConsumed {
+		t.Fatalf("a credential-rejecting validation failure (wrong PKCE verifier) must NOT roll the code back — "+
+			"expected status %q, got %q; a rolled-back code here would be infinitely retryable against a guessed verifier",
+			authCodeStatusConsumed, row.Status)
+	}
+
+	// Retrying with the CORRECT verifier must still fail: the code is
+	// burned, full stop, regardless of which verifier is presented next.
+	if _, err := f.tokens.ExchangeAuthorizationCode(f.ctx, f.clientID, code, f.redirectURI, verifier); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected the code to remain burned even when retried with the correct verifier, got %v", err)
 	}
 }
 
@@ -208,6 +251,30 @@ func TestAuthorizationCodeRejectsPlainChallengeMethod(t *testing.T) {
 	})
 	if !errors.Is(err, ErrPlainChallengeMethodRejected) {
 		t.Fatalf("expected ErrPlainChallengeMethodRejected, got %v", err)
+	}
+}
+
+// TestIssueCodeRejectsUnknownClient proves the review's fourth finding is
+// closed: an unknown (or unusable) client_id must return the dedicated
+// ErrUnknownClient sentinel, discoverable via errors.Is, not a bare wrapped
+// error nothing can branch on. Task 4's /oauth/authorize handler MUST be
+// able to tell this apart from an ordinary rejection and refuse to redirect
+// — an unknown client_id has no registered redirect_uri to validate
+// against, so redirecting anywhere the caller names is an open redirect.
+func TestIssueCodeRejectsUnknownClient(t *testing.T) {
+	f := newAuthCodeFixture(t)
+	_, challenge := pkcePair()
+
+	_, err := f.authorize.IssueCode(f.ctx, IssueCodeInput{
+		ClientID:            "agent:this-client-id-was-never-registered",
+		RedirectURI:         f.redirectURI,
+		Scope:               ScopeInferenceInvoke,
+		CodeChallenge:       challenge,
+		CodeChallengeMethod: "S256",
+		UserID:              42,
+	})
+	if !errors.Is(err, ErrUnknownClient) {
+		t.Fatalf("expected ErrUnknownClient for an unregistered client_id, got %v", err)
 	}
 }
 
@@ -276,6 +343,26 @@ func TestAuthorizationCodeInternalFailureRollsBackAndFamilyIsRecordedBeforeMint(
 		t.Fatalf("IssueCode: %v", err)
 	}
 
+	// Checked mid-flight, at the exact moment the injected failure fires —
+	// after the family-recording update has run, before the rollback that
+	// is about to clear it again. This is the only point from which
+	// "family recorded before mint" is externally observable at all: the
+	// rollback's ClearIssuedTokenFamily (the Minor-review fold-in) makes
+	// the row's post-call state (family nil) identical whether the family
+	// was ever recorded or not.
+	var familyObservedMidFlight *string
+	var statusObservedMidFlight string
+	cache.onFail = func() {
+		row, qerr := entClient.OAuthAuthorizationCode.Query().
+			Where(oauthauthorizationcode.Code(code)).
+			Only(ctx)
+		if qerr != nil {
+			t.Fatalf("query authorization code row mid-flight: %v", qerr)
+		}
+		familyObservedMidFlight = row.IssuedTokenFamily
+		statusObservedMidFlight = row.Status
+	}
+
 	// First attempt: the code is fully valid, but the refresh-token store
 	// fails with an injected transient error.
 	if _, err := tokens.ExchangeAuthorizationCode(ctx, oc.ClientID, code, redirectURI, verifier); err == nil {
@@ -284,6 +371,18 @@ func TestAuthorizationCodeInternalFailureRollsBackAndFamilyIsRecordedBeforeMint(
 		t.Fatalf("an internal infrastructure failure must NOT be folded into ErrInvalidGrant, got %v", err)
 	}
 
+	if statusObservedMidFlight != authCodeStatusConsumed {
+		t.Fatalf("expected status %q at the moment of failure (before rollback), got %q", authCodeStatusConsumed, statusObservedMidFlight)
+	}
+	if familyObservedMidFlight == nil || *familyObservedMidFlight == "" {
+		t.Fatal("expected issued_token_family to already be recorded at the moment of failure — " +
+			"it must be written BEFORE mintAccessToken/issueRefreshToken run, not after")
+	}
+
+	// Post-call: the row must be back to pending AND the stale family
+	// cleared (the Minor fold-in) — a replay landing in the retry window
+	// below must not be able to find and revoke a family nothing was ever
+	// actually stored under.
 	row, err := entClient.OAuthAuthorizationCode.Query().
 		Where(oauthauthorizationcode.Code(code)).
 		Only(ctx)
@@ -293,9 +392,8 @@ func TestAuthorizationCodeInternalFailureRollsBackAndFamilyIsRecordedBeforeMint(
 	if row.Status != authCodeStatusPending {
 		t.Fatalf("expected status %q after an internal failure (rolled back), got %q", authCodeStatusPending, row.Status)
 	}
-	if row.IssuedTokenFamily == nil || *row.IssuedTokenFamily == "" {
-		t.Fatal("expected issued_token_family to already be recorded on the row even though minting failed — " +
-			"it must be written BEFORE mintAccessToken/issueRefreshToken run, not after")
+	if row.IssuedTokenFamily != nil {
+		t.Fatalf("expected issued_token_family to be cleared by the rollback, got %q", *row.IssuedTokenFamily)
 	}
 
 	// Second attempt, fault cleared: the SAME code must still redeem
@@ -377,5 +475,40 @@ func TestAuthorizationCodeExpires(t *testing.T) {
 	}
 	if row.IssuedTokenFamily != nil {
 		t.Fatal("expected no issued_token_family for an expired code — no tokens should have been minted")
+	}
+}
+
+// TestAuthorizationCodeRejectsRevokedClientWithoutRollback proves the
+// review's first finding is closed on the RIGHT side too: assertClientUsable
+// returning ErrClientNotUsable is a genuine, deliberate, permanent policy
+// rejection (the client was revoked between issue and redemption), not an
+// infrastructure fault — so it must stay ErrInvalidGrant AND the code must
+// stay burned (no rollback). Rolling back here would make a revoked
+// client's already-consumed code retryable, which is exactly backwards:
+// revocation is supposed to be a one-way door.
+func TestAuthorizationCodeRejectsRevokedClientWithoutRollback(t *testing.T) {
+	f := newAuthCodeFixture(t)
+	code, verifier := f.issue(t)
+
+	if _, err := f.entClient.OAuthClient.Update().
+		Where(oauthclient.ClientID(f.clientID)).
+		SetStatus(ClientRevoked).
+		Save(f.ctx); err != nil {
+		t.Fatalf("revoke client: %v", err)
+	}
+
+	if _, err := f.tokens.ExchangeAuthorizationCode(f.ctx, f.clientID, code, f.redirectURI, verifier); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected ErrInvalidGrant for a revoked client, got %v", err)
+	}
+
+	row, err := f.entClient.OAuthAuthorizationCode.Query().
+		Where(oauthauthorizationcode.Code(code)).
+		Only(f.ctx)
+	if err != nil {
+		t.Fatalf("query authorization code row: %v", err)
+	}
+	if row.Status != authCodeStatusConsumed {
+		t.Fatalf("a revoked-client rejection (ErrClientNotUsable, a policy decision) must NOT roll the code back — "+
+			"expected status %q, got %q", authCodeStatusConsumed, row.Status)
 	}
 }

@@ -49,6 +49,26 @@ var ErrPlainChallengeMethodRejected = errors.New("oauth: code_challenge_method m
 // expected.
 var ErrMissingCodeChallenge = errors.New("oauth: code_challenge is required and must be a valid RFC 7636 S256 challenge")
 
+// ErrUnknownClient is returned by IssueCode when client_id does not resolve
+// to a usable oauth_client (unregistered, or registered but revoked/not yet
+// active — see OAuthClientService.UsableByClientID).
+//
+// Its own sentinel for the same reason ErrMissingCodeChallenge is: RFC 6749
+// §4.1.2.1 puts an invalid client_id in the same MUST-NOT-redirect class as
+// an untrustworthy redirect_uri — the server has no registered origin to
+// validate the caller's redirect_uri against, so it cannot safely send the
+// browser anywhere the caller names. Before this existed, an unknown
+// client_id fell through to a bare wrapped error with no sentinel Task 4
+// could branch on; a handler written against this file's own guidance
+// ("branches on ErrInvalidRedirectURI to pick the must-not-redirect arm")
+// would have treated an unknown client_id as an ordinary rejection and
+// redirected anyway — to a redirect_uri that was never validated against
+// any registration. That is an open redirect: supply a bogus client_id
+// alongside an attacker-controlled redirect_uri and the browser gets
+// bounced there. Task 4 MUST treat ErrUnknownClient the same as
+// ErrInvalidRedirectURI: render an error page, never redirect.
+var ErrUnknownClient = errors.New("oauth: client_id is unknown or not usable")
+
 // codeChallengeLen is the fixed length of a valid RFC 7636 S256 challenge:
 // BASE64URL-NOPAD(SHA256(verifier)) is always 43 characters, since a SHA256
 // digest is 32 bytes and base64url encodes 6 bits per output character (32*8
@@ -142,7 +162,7 @@ func (s *OAuthAuthorizeService) IssueCode(ctx context.Context, in IssueCodeInput
 
 	client, err := s.clientSvc.UsableByClientID(ctx, in.ClientID)
 	if err != nil {
-		return "", fmt.Errorf("client_id %q not usable: %w", in.ClientID, err)
+		return "", fmt.Errorf("%w: client_id %q: %v", ErrUnknownClient, in.ClientID, err)
 	}
 
 	// A client whose registered redirect is the device-flow OOB placeholder

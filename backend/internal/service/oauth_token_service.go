@@ -47,6 +47,13 @@ const (
 	// the authorization flow from scratch.
 	oauthRefreshTokenTTL = 30 * 24 * time.Hour
 
+	// rollbackConsumedCodeTimeout bounds rollbackConsumedCode's detached,
+	// best-effort UPDATE — long enough for an ordinary write under load,
+	// short enough that a rollback attempt against a genuinely wedged
+	// database does not linger indefinitely after the request that
+	// triggered it is long gone.
+	rollbackConsumedCodeTimeout = 5 * time.Second
+
 	// oauthRefreshTokenPrefix distinguishes OAuth-issued refresh tokens from
 	// Inferno's panel-session refresh tokens (which use refreshTokenPrefix,
 	// "rt_") on the wire. Both classes of token end up hashed into the same
@@ -602,9 +609,26 @@ func (s *OAuthTokenService) ExchangeAuthorizationCode(ctx context.Context, clien
 	}
 	// A client revoked between /oauth/authorize and this redemption must not
 	// get a token, mirroring assertClientUsable's use in the other two
-	// grants. Also left un-rolled-back: revocation is itself a deliberate,
-	// permanent policy decision, not a transient fault.
+	// grants.
+	//
+	// The two failure shapes here are NOT the same, and must not be treated
+	// the same. ErrClientNotUsable is a genuine, deliberate, permanent
+	// policy decision (the client was revoked) — left un-rolled-back, same
+	// as every other credential rejection above. Anything else reaching
+	// this branch is NOT that: assertClientUsable's call chain bottoms out
+	// in entClient.OAuthClient.Query().Only(ctx), which returns a raw ent
+	// error on ANY database fault (a transient blip, a connection-pool
+	// exhaustion, ...), not just "not found". Folding that into
+	// ErrInvalidGrant without rolling back is exactly the I1 failure mode
+	// this method was fixed for once already, one call site over: a
+	// transient backend fault burns the code and forces a full browser
+	// re-login for a problem that had nothing to do with the caller's
+	// credential.
 	if err := s.assertClientUsable(ctx, clientID); err != nil {
+		if !errors.Is(err, ErrClientNotUsable) {
+			s.rollbackConsumedCode(ctx, code, clientID)
+			return nil, fmt.Errorf("check client usability for authorization code grant: %w", err)
+		}
 		return nil, ErrInvalidGrant
 	}
 
@@ -707,14 +731,50 @@ func (s *OAuthTokenService) ExchangeAuthorizationCode(ctx context.Context, clien
 // Best-effort: a failure here is logged, not propagated — the caller is
 // already returning the original internal error, and a rollback that also
 // fails just means the code stays burned, exactly the pre-fix behavior.
+//
+// Runs on a DETACHED context, not the caller's ctx — deliberately. The
+// caller's ctx is the very thing that was failing (or, for the handler's
+// entry point, c.Request.Context(), which is CANCELED on client disconnect
+// or a request timeout: see oauth_handler.go's Token). A client that hung
+// up or timed out is exactly the scenario this rollback exists to recover
+// from, so issuing the rollback's UPDATE on that same, already-canceling
+// context would make it fail immediately with "context canceled" — the fix
+// silently not firing for precisely the fault class that motivated it.
+// context.WithoutCancel preserves any request-scoped values (for tracing/
+// logging) while detaching cancellation and deadline; rollbackTimeout then
+// bounds how long this best-effort write is allowed to run on its own,
+// mirroring the same idiom already used for other post-response,
+// caller-context-outlives writes in this codebase (e.g.
+// accountRepository.syncSchedulerAccountSnapshotDetached,
+// systemUpdateContext).
 func (s *OAuthTokenService) rollbackConsumedCode(ctx context.Context, code, clientID string) {
+	base := context.Background()
+	if ctx != nil {
+		base = context.WithoutCancel(ctx)
+	}
+	rollbackCtx, cancel := context.WithTimeout(base, rollbackConsumedCodeTimeout)
+	defer cancel()
+
+	// ClearIssuedTokenFamily undoes the family-recording update the caller
+	// may have already made before hitting whatever internal failure
+	// triggered this rollback (see ExchangeAuthorizationCode's
+	// family-record-before-mint ordering). Leaving a stale family on a row
+	// that is once again "pending" is harmless in itself — a later
+	// successful redemption of the same code overwrites it with a fresh
+	// family — but a replay landing in the narrow window before that retry
+	// would otherwise read a non-nil IssuedTokenFamily, log "replay
+	// detected, revoking issued token family", and call DeleteTokenFamily
+	// on a family nothing was ever actually stored under: a misleading
+	// operator-facing signal for an event that didn't happen. Clearing it
+	// here removes that false signal entirely.
 	if _, err := s.entClient.OAuthAuthorizationCode.Update().
 		Where(
 			oauthauthorizationcode.Code(code),
 			oauthauthorizationcode.Status(authCodeStatusConsumed),
 		).
 		SetStatus(authCodeStatusPending).
-		Save(ctx); err != nil {
+		ClearIssuedTokenFamily().
+		Save(rollbackCtx); err != nil {
 		slog.Error("oauth: failed to roll back authorization code after internal error", "client_id", clientID, "error", err)
 	}
 }
