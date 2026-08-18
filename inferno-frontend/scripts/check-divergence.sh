@@ -330,14 +330,15 @@ backend/internal/service/oauth_backing_key_test.go
 # api_key.go adds the field and api_key_repo.go maps it (api_key_repo.go was
 # already declared under D1; internal/service/api_key.go was not, and is added
 # below). deploy/config.example.yaml documents oauth_backing_key.group_name so
-# the feature
-# -- and it is that file and NOT backend/config.yaml,
+# the feature does not ship dark -- it is that file and NOT backend/config.yaml,
 # which .gitignore line 111 excludes, so an edit there is invisible to every
 # other checkout and to this script. api_key_service_delete_test.go covers the
-# new refusal. The
-# repository integration suite gains migration 910 behaviour against real
-# Postgres plus a canary recording that lib/pq hides the credential in Error()
-# but carries it on pq.Error.Detail (that file is already declared above).
+# new refusal. The repository integration suite gains migration 910 behaviour
+# against real Postgres plus a canary recording that lib/pq hides the credential
+# in Error() but carries it on pq.Error.Detail (that file is already declared
+# above). Fix round 2 (re-review NEW-1..NEW-12) touched only files already
+# listed here: oauth_backing_key.go, oauth_backing_key_test.go and
+# api_key_service.go.
 backend/migrations/910_api_key_oauth_client_uniq_live_only.sql
 backend/internal/service/api_key_service_delete_test.go
 backend/internal/service/api_key.go

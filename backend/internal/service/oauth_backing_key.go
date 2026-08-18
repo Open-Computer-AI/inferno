@@ -24,6 +24,18 @@ import (
 // one.
 var ErrNoGroupForOAuthKey = errors.New("oauth backing key: no group configured")
 
+// ErrInvalidBackingKeyRequest marks the caller's arguments as unusable: a
+// non-positive user id, an empty client_id, or a service with no database
+// client.
+//
+// It exists so those guards can be tested for the reason they name. Without it
+// the assertions were satisfied by a second mechanism -- the api_keys.user_id
+// foreign key rejects user id 0 anyway, so `require.Error` and "no row was
+// written" both held with the guard deleted, and the guard itself was untested.
+// A caller also gets a clean signal instead of a misleading "rejected by a
+// unique constraint" 500.
+var ErrInvalidBackingKeyRequest = errors.New("oauth backing key: invalid request")
+
 // ErrOAuthBackingKeyUndeletable rejects any attempt to delete an OAuth backing
 // row through a user-facing path.
 //
@@ -61,8 +73,9 @@ const backingKeyNameMaxLen = 100
 // credential that does not expire. The one rule containing that risk: the
 // backing key's secret is NEVER returned to anyone, by any endpoint, ever. It
 // is a row the server resolves *to*, never a credential the server hands *out*.
-// This file therefore has no accessor that yields the secret, and takes care
-// (see scrubBackingKeySecret) not to let one escape through an error string.
+// This file therefore has no accessor that yields the secret, blanks
+// api_keys.key on every row it returns (redactBackingKeySecret), and strips both
+// the text and the value of any create-path error (sanitizeBackingKeyError).
 //
 // # Never hard-delete a backing row
 //
@@ -88,17 +101,17 @@ func NewOAuthBackingKeyService(entClient *dbent.Client, cfg *config.Config) *OAu
 // error while resolving the group is NOT ErrNoGroupForOAuthKey.
 func (s *OAuthBackingKeyService) Resolve(ctx context.Context, userID int64, clientID string) (*dbent.APIKey, error) {
 	if s == nil || s.entClient == nil {
-		return nil, errors.New("oauth backing key: no database client")
+		return nil, fmt.Errorf("%w: no database client", ErrInvalidBackingKeyRequest)
 	}
 	if userID <= 0 {
-		return nil, fmt.Errorf("oauth backing key: invalid user id %d", userID)
+		return nil, fmt.Errorf("%w: user id %d is not positive", ErrInvalidBackingKeyRequest, userID)
 	}
 	clientID = strings.TrimSpace(clientID)
 	if clientID == "" {
 		// An empty client_id would store NULL, which migration 909's partial
 		// index ignores -- every agent of this user would then collapse onto
 		// unbounded duplicate rows with no identity rule at all.
-		return nil, errors.New("oauth backing key: empty client_id")
+		return nil, fmt.Errorf("%w: empty client_id", ErrInvalidBackingKeyRequest)
 	}
 
 	existing, err := s.lookup(ctx, userID, clientID)
@@ -174,8 +187,10 @@ func (s *OAuthBackingKeyService) createOrAdoptWinner(ctx context.Context, userID
 	}
 
 	if !dbent.IsConstraintError(err) {
-		// scrub before the error travels: a unique violation on api_keys.key
-		// would otherwise carry the freshly generated credential in its DETAIL.
+		// Sanitize before the error travels. This branch is the one that gets a
+		// BARE *pq.Error, whose exported Detail field carries the freshly
+		// generated credential -- see sanitizeBackingKeyError for exactly which
+		// serialisers leak it and which do not.
 		return nil, fmt.Errorf("oauth backing key: create: %w", sanitizeBackingKeyError(err, secret))
 	}
 
@@ -184,12 +199,20 @@ func (s *OAuthBackingKeyService) createOrAdoptWinner(ctx context.Context, userID
 		return nil, lookupErr
 	}
 	if winner == nil {
-		// A constraint fired but no live row matches the pair. Since migration
-		// 910 scoped the identity index to "deleted_at IS NULL", a tombstone no
-		// longer holds the slot, so the remaining reachable cause is a
-		// collision on api_keys.key itself -- which is exactly the case whose
-		// Postgres DETAIL line carries the freshly generated credential, hence
-		// the scrub. Report rather than loop.
+		// A constraint fired but no live row matches the pair.
+		//
+		// Migration 910 scoped the identity index to deleted_at IS NULL, which
+		// removed the case this branch was originally written for (a tombstone
+		// holding the slot). It is NOT dead code, but it is now vanishingly
+		// rare: the reachable causes are a collision on api_keys.key itself
+		// (~2^-256), and the winner's row being deleted between our rejected
+		// INSERT and this re-read. Both are reported rather than retried,
+		// because a retry loop here would hammer a table under whatever
+		// condition produced the anomaly.
+		//
+		// It is reached deliberately by
+		// TestCreatePathErrorNeverCarriesTheCredential_ConstraintError, which is
+		// also what pins the sanitizer on this path.
 		return nil, fmt.Errorf(
 			"oauth backing key: insert for user %d client %q was rejected by a unique constraint but no live backing row matches the pair: %w",
 			userID, clientID, sanitizeBackingKeyError(err, secret))
@@ -308,11 +331,27 @@ func backingKeyName(clientID string) string {
 // redaction belongs at this boundary, which is the only one that must never
 // emit a secret.
 //
-// Nothing in the gateway pipeline reads api_keys.key functionally -- the only
-// consumers are handler/ops display paths calling keyPrefix(apiKey.Key, 8),
-// which now render empty for OAuth-backed requests. That is the intended
-// trade: an ops log should not carry the leading bytes of a credential the
-// server promised never to surface.
+// Every consumer of api_keys.key outside key management was checked, and none
+// breaks on a blank one:
+//
+//   - handler/ops_error_logger.go and handler/openai_gateway_handler.go call
+//     keyPrefix(apiKey.Key, 8) for ops metadata, which now renders empty for
+//     OAuth-backed requests. Intended: an ops log should not carry the leading
+//     bytes of a credential the server promised never to surface. Use
+//     oauth_client_id if per-agent correlation is wanted.
+//   - gateway_usage_billing.go's quota-exhausted hook already guards
+//     `p.APIKey.Key != ""` before InvalidateAuthCacheByKey, so it skips. That is
+//     correct rather than merely harmless: the auth cache is keyed by a secret
+//     presented as a bearer credential, and a backing key is never presented as
+//     one, so there is no entry under it to invalidate.
+//   - admin_group.go / admin_user.go / api_key_service.go invalidate on rows
+//     fetched from the repository, which still carry the real secret. They never
+//     see a row that came through here.
+//
+// CONSTRAINT ON TASK 4: because the row it receives has a blank Key, it must not
+// route OAuth-backed requests through APIKeyService.ValidateKey or anything else
+// that authenticates by key string. It resolves identity from the token, not
+// from the credential.
 // It is applied in exactly two places -- lookup and reload, the only two
 // functions in this file that produce a row -- so no return path can forget it,
 // and there is no second redundant guard to make a test pass for the wrong
@@ -328,25 +367,54 @@ func redactBackingKeySecret(row *dbent.APIKey) *dbent.APIKey {
 // sanitizeBackingKeyError makes an error from the create path safe to return,
 // log or serialise, by two separate measures.
 //
-// **It flattens the error value.** This is the one that matters, and it is not
-// what the original version did. A PostgreSQL unique violation on api_keys.key
-// arrives as a *pq.Error whose exported Detail field reads
+// # What actually leaks, measured
+//
+// A PostgreSQL unique violation on api_keys.key arrives with the credential on
+// the exported pq.Error.Detail field --
 // `Key (key)=(sk-...) already exists.` -- verified against real PostgreSQL 18 in
 // repository.APIKeyOAuthClientIDSuite.TestPostgresUniqueViolationHidesTheKeyInErrorTextButNotInTheErrorValue.
-// lib/pq's Error() renders only Severity and Message, so the credential is
-// absent from err.Error() and %+v, but present on the value that every wrapped
-// chain carries upward. Anything that serialises an error structurally --
-// zap.Any("err", err), %#v, a JSON error reporter -- prints it in full. Rewriting
-// the message can never reach that; dropping the chain can, so this returns a
-// flat errors.New and the driver error does not escape.
+// lib/pq's Error() renders only Severity and Message, so err.Error() and %+v are
+// clean; the value is not.
 //
-// **It redacts the message text.** Defence in depth for a driver that does
-// render DETAIL (pgx formats differently, and lib/pq's rendering is not a
-// contract), and for any wrapper that has already folded the value into a
-// string.
+// The two shapes behave differently, and the difference is worth stating exactly
+// rather than overstating it:
 //
-// Call it only after any errors.Is / dbent.IsConstraintError checks: by design
-// nothing survives for errors.As to find.
+//   - A BARE *pq.Error -- what the non-constraint branch above receives --
+//     leaks through everything that walks the value: %#v, json.Marshal,
+//     zap.Reflect and zap.Any alike, because pq.Error's fields are exported.
+//   - An *ent.ConstraintError wrapping a *pq.Error -- the other branch -- does
+//     NOT leak through those: zap.Any takes its `case error` path and calls
+//     Error(), %#v prints `wrap:(*pq.Error)(0x...)` as a pointer, and
+//     json.Marshal/zap.Reflect yield `{}` because ent.ConstraintError's fields
+//     are unexported. The credential is still reachable there, but only by
+//     errors.As-ing down to the *pq.Error -- which is exactly what code that
+//     branches on PostgreSQL error codes does.
+//
+// So the value-level leak is direct in one branch and one unwrap away in the
+// other. Both are closed the same way.
+//
+// # The two measures
+//
+//  1. **Flatten the error value.** Return a plain error, so no driver error
+//     escapes for anything downstream to serialise or unwrap. This is the
+//     measure that closes the channel; rewriting the message can never reach a
+//     credential that is not in the message.
+//  2. **Redact the message text.** Defence in depth for a driver that does
+//     render DETAIL (pgx formats differently, and lib/pq's rendering is not a
+//     contract) and for any wrapper that has already folded the value into a
+//     string.
+//
+// # The one thing flattening must not destroy
+//
+// context.Canceled and context.DeadlineExceeded are branched on elsewhere in
+// this codebase, and a client that hung up is not a failed request: dropping
+// their identity would make the caller map a disconnect to a 500. They are
+// re-wrapped explicitly. Both are payload-free sentinels, so preserving them
+// carries nothing -- errors.As still cannot reach a driver error through the
+// result.
+//
+// Call it only after any errors.Is / dbent.IsConstraintError checks on the
+// original: by design nothing else survives for errors.As to find.
 func sanitizeBackingKeyError(err error, secret string) error {
 	if err == nil {
 		return nil
@@ -354,6 +422,12 @@ func sanitizeBackingKeyError(err error, secret string) error {
 	msg := err.Error()
 	if secret != "" {
 		msg = strings.ReplaceAll(msg, secret, "[redacted]")
+	}
+	switch {
+	case errors.Is(err, context.Canceled):
+		return fmt.Errorf("%s: %w", msg, context.Canceled)
+	case errors.Is(err, context.DeadlineExceeded):
+		return fmt.Errorf("%s: %w", msg, context.DeadlineExceeded)
 	}
 	return errors.New(msg)
 }

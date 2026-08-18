@@ -364,10 +364,9 @@ func TestResolveUsesTheOrdinaryKeyGenerator(t *testing.T) {
 	stored := storedBackingKeySecret(t, cli, a.ID)
 	other := storedBackingKeySecret(t, cli, b.ID)
 	for _, secret := range []string{stored, other} {
-		require.True(t, strings.HasPrefix(secret, "sk-"), "secret should carry the configured prefix; got prefix %q", safeSecretPrefix(secret))
-		require.Len(t, secret, len("sk-")+64, "32 random bytes, hex-encoded")
+		requireSecretShape(t, secret, "sk-", len("sk-")+64, "the generator emits the configured prefix plus 32 random bytes as hex")
 	}
-	require.NotEqual(t, stored, other, "every backing key must be independently random")
+	requireSecretsDiffer(t, stored, other, "every backing key must be independently random")
 }
 
 // TestGenerateKeyDelegatesToGenerateAPIKeySecret keeps "the same generator" from
@@ -411,7 +410,7 @@ func TestSanitizeBackingKeyErrorDropsBothTheTextAndTheValue(t *testing.T) {
 	// also fail this.
 	textual := fmt.Errorf(`insert api_keys: ERROR: duplicate key value violates unique constraint "api_keys_key_key" (DETAIL: Key (key)=(%s) already exists.)`, secret)
 	sanitized := sanitizeBackingKeyError(textual, secret)
-	require.NotContains(t, sanitized.Error(), secret, "the credential must not survive into an error string")
+	requireSecretAbsent(t, sanitized.Error(), secret, "the credential must not survive into an error string")
 	require.Contains(t, sanitized.Error(), "api_keys_key_key", "the diagnosable part must survive")
 
 	// Half 2 -- the real channel. The text is already clean, so a text-only
@@ -422,13 +421,13 @@ func TestSanitizeBackingKeyErrorDropsBothTheTextAndTheValue(t *testing.T) {
 		Detail:  fmt.Sprintf("Key (key)=(%s) already exists.", secret),
 	}
 	wrapped := fmt.Errorf("ent: constraint failed: %w", driver)
-	require.NotContains(t, wrapped.Error(), secret, "precondition: the driver hides the secret from Error()")
+	requireSecretAbsent(t, wrapped.Error(), secret, "precondition: the driver hides the secret from Error()")
 
 	sanitized = sanitizeBackingKeyError(wrapped, secret)
 	var leaked *backingKeyDriverError
 	require.False(t, errors.As(sanitized, &leaked),
 		"the driver error value must not survive; anything serialising it structurally would print the credential")
-	require.NotContains(t, sanitized.Error(), secret)
+	requireSecretAbsent(t, sanitized.Error(), secret, "the flattened error's text must be clean too")
 
 	require.Nil(t, sanitizeBackingKeyError(nil, secret))
 	// An empty secret still flattens: the value is the risk, not just the text.
@@ -460,7 +459,7 @@ func TestResolveRejectsAnEmptyClientID(t *testing.T) {
 
 	row, err := svc.Resolve(ctx, userID, "   ")
 	requireNoBackingRow(t, row, "an empty client_id returns no row")
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInvalidBackingKeyRequest)
 
 	total, err := cli.APIKey.Query().Count(ctx)
 	require.NoError(t, err)
@@ -488,6 +487,41 @@ func requireNoSecret(t *testing.T, got, msg string) {
 	t.Helper()
 	if got != "" {
 		t.Fatalf("%s: carried %d characters starting %q", msg, len(got), safeSecretPrefix(got))
+	}
+}
+
+// requireSecretAbsent fails if haystack contains the secret. require.NotContains
+// prints BOTH operands on failure, so it renders the credential as the needle
+// even when the assertion is about the haystack.
+func requireSecretAbsent(t *testing.T, haystack, secret, msg string) {
+	t.Helper()
+	if secret == "" {
+		t.Fatalf("%s: precondition failed, no secret to look for", msg)
+	}
+	if strings.Contains(haystack, secret) {
+		t.Fatalf("%s: a %d-character credential starting %q appears inside a %d-character value",
+			msg, len(secret), safeSecretPrefix(secret), len(haystack))
+	}
+}
+
+// requireSecretShape checks a credential's prefix and length without printing
+// it. require.Len renders the whole object on failure
+// (`"sk-d1de…" should have 67 item(s), but has 35`).
+func requireSecretShape(t *testing.T, secret, wantPrefix string, wantLen int, msg string) {
+	t.Helper()
+	if !strings.HasPrefix(secret, wantPrefix) {
+		t.Fatalf("%s: expected prefix %q, got %q", msg, wantPrefix, safeSecretPrefix(secret))
+	}
+	if len(secret) != wantLen {
+		t.Fatalf("%s: expected %d characters, got %d (prefix %q)", msg, wantLen, len(secret), safeSecretPrefix(secret))
+	}
+}
+
+// requireSecretsDiffer compares two credentials without printing either.
+func requireSecretsDiffer(t *testing.T, a, b, msg string) {
+	t.Helper()
+	if a == b {
+		t.Fatalf("%s: two credentials are identical (%d characters, prefix %q)", msg, len(a), safeSecretPrefix(a))
 	}
 }
 
@@ -522,9 +556,10 @@ func backingKeyCreateFailsWith(cli *dbent.Client, build func(key string) error) 
 	})
 }
 
-// TestCreatePathErrorNeverCarriesTheCredential_PlainError pins the scrub at the
-// non-constraint create-error call site. Remove `scrubBackingKeySecret` there
-// and this fails.
+// TestCreatePathErrorNeverCarriesTheCredential_PlainError pins
+// sanitizeBackingKeyError at the non-constraint create-error call site -- the
+// branch that receives a BARE *pq.Error, whose exported fields leak through
+// every serialiser. Remove the call there and this fails.
 func TestCreatePathErrorNeverCarriesTheCredential_PlainError(t *testing.T) {
 	svc, cli := newBackingKeyTestService(t)
 	ctx := context.Background()
@@ -546,7 +581,7 @@ func TestCreatePathErrorNeverCarriesTheCredential_PlainError(t *testing.T) {
 	requireNoBackingRow(t, row, "a failing create returns no row")
 	require.Error(t, err)
 	require.NotEmpty(t, generated, "the hook must have seen the generated secret")
-	require.NotContains(t, err.Error(), generated, "the create path's error must never carry the credential")
+	requireSecretAbsent(t, err.Error(), generated, "the create path's error must never carry the credential")
 	require.Contains(t, err.Error(), "Failing row contains", "the diagnosable part of the error must survive")
 
 	var leaked *backingKeyDriverError
@@ -582,7 +617,7 @@ func TestCreatePathErrorNeverCarriesTheCredential_ConstraintError(t *testing.T) 
 	requireNoBackingRow(t, row, "a rejected create returns no row")
 	require.Error(t, err)
 	require.NotEmpty(t, generated)
-	require.NotContains(t, err.Error(), generated, "the adopt-winner failure path must never carry the credential")
+	requireSecretAbsent(t, err.Error(), generated, "the adopt-winner failure path must never carry the credential")
 	require.Contains(t, err.Error(), "api_keys_key_key", "the diagnosable part of the error must survive")
 
 	var leaked *backingKeyDriverError
@@ -611,11 +646,11 @@ func TestResolveNeverHandsBackTheSecret(t *testing.T) {
 
 	stored := storedBackingKeySecret(t, cli, created.ID)
 	require.NotEmpty(t, stored, "the row in the database must still have its credential")
-	require.NotContains(t, created.String(), stored, "String() must have nothing to leak")
+	requireSecretAbsent(t, created.String(), stored, "String() must have nothing to leak")
 
 	marshalled, err := json.Marshal(created)
 	require.NoError(t, err)
-	require.NotContains(t, string(marshalled), stored, "JSON marshalling must have nothing to leak")
+	requireSecretAbsent(t, string(marshalled), stored, "JSON marshalling must have nothing to leak")
 
 	// The reuse path returns through the same choke point.
 	reused, err := svc.Resolve(ctx, userID, "agent:redacted")
@@ -729,7 +764,7 @@ func TestResolveRebindsARowWhoseGroupWasDeactivated(t *testing.T) {
 	first, err := svc.Resolve(ctx, userID, "agent:deactivated")
 	require.NoError(t, err)
 	require.NoError(t, cli.APIKey.UpdateOneID(first.ID).SetGroupID(stale.ID).Exec(ctx))
-	require.NoError(t, cli.Group.UpdateOneID(stale.ID).SetStatus("disabled").Exec(ctx))
+	require.NoError(t, cli.Group.UpdateOneID(stale.ID).SetStatus(domain.StatusDisabled).Exec(ctx))
 
 	again, err := svc.Resolve(ctx, userID, "agent:deactivated")
 	require.NoError(t, err)
@@ -794,24 +829,123 @@ func TestResolveRejectsInvalidInputs(t *testing.T) {
 	svc, cli := newBackingKeyTestService(t)
 	ctx := context.Background()
 
+	// ErrorIs, not merely Error. `require.Error` was satisfied by the api_keys
+	// .user_id foreign key rejecting the insert, so deleting the `userID <= 0`
+	// guard left this test green -- the classic second-mechanism-adopts-the-
+	// first's-coverage failure. Asserting the sentinel makes the test fail for
+	// the reason it names, and also pins the failure SHAPE a caller sees: a
+	// clean input rejection rather than a misleading "rejected by a unique
+	// constraint" 500.
 	row, err := svc.Resolve(ctx, 0, "agent:bad-user")
 	requireNoBackingRow(t, row, "a non-positive user id returns no row")
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInvalidBackingKeyRequest)
+	require.NotContains(t, err.Error(), "constraint", "the guard must reject the input, not let the database reject the insert")
 
 	row, err = svc.Resolve(ctx, -1, "agent:bad-user")
 	requireNoBackingRow(t, row, "a negative user id returns no row")
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInvalidBackingKeyRequest)
 
 	var nilSvc *OAuthBackingKeyService
 	row, err = nilSvc.Resolve(ctx, 1, "agent:nil-service")
 	requireNoBackingRow(t, row, "a nil service returns no row")
-	require.Error(t, err, "a nil service must error rather than panic")
+	require.ErrorIs(t, err, ErrInvalidBackingKeyRequest, "a nil service must error rather than panic")
 
 	row, err = NewOAuthBackingKeyService(nil, backingKeyTestConfig(backingKeyTestGroupName)).Resolve(ctx, 1, "agent:no-client")
 	requireNoBackingRow(t, row, "a service with no ent client returns no row")
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInvalidBackingKeyRequest)
 
 	total, err := cli.APIKey.Query().Count(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 0, total, "no guard may leave a row behind")
+}
+
+// ---------------------------------------------------------------------------
+// Fix round 2 — re-review findings NEW-1..NEW-12.
+// ---------------------------------------------------------------------------
+
+// TestSanitizeBackingKeyErrorPreservesCancellation is NEW-5.
+//
+// Flattening the error value is what keeps a driver error's credential from
+// escaping, but context.Canceled and context.DeadlineExceeded are branched on
+// elsewhere in this codebase, and a client that hung up is not a failed
+// request. If their identity is dropped, the caller maps a disconnect to a 500.
+//
+// Both must survive errors.Is while the driver error still does not survive
+// errors.As, and the message must still be redacted.
+func TestSanitizeBackingKeyErrorPreservesCancellation(t *testing.T) {
+	secret := "sk-cancelled-request-secret"
+
+	for _, tc := range []struct {
+		name     string
+		sentinel error
+	}{
+		{"canceled", context.Canceled},
+		{"deadline exceeded", context.DeadlineExceeded},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			driver := &backingKeyDriverError{
+				Message: "pq: canceling statement due to user request",
+				Detail:  fmt.Sprintf("Key (key)=(%s) already exists.", secret),
+			}
+			// The shape a cancelled write arrives in: the context sentinel and
+			// the driver error both in one chain.
+			original := fmt.Errorf("ent: %w (%w)", tc.sentinel, driver)
+			require.ErrorIs(t, original, tc.sentinel, "precondition")
+
+			sanitized := sanitizeBackingKeyError(original, secret)
+			require.ErrorIs(t, sanitized, tc.sentinel,
+				"a cancelled or timed-out request must stay distinguishable from a genuine failure")
+
+			var leaked *backingKeyDriverError
+			require.False(t, errors.As(sanitized, &leaked),
+				"preserving the context sentinel must not drag the driver error along with it")
+			requireSecretAbsent(t, sanitized.Error(), secret, "the message is still redacted")
+		})
+	}
+
+	// A non-cancellation error is still flattened to a bare error, so the
+	// preservation is a narrow carve-out rather than a hole.
+	plain := fmt.Errorf("ent: %w", &backingKeyDriverError{Message: "pq: boom", Detail: secret})
+	sanitized := sanitizeBackingKeyError(plain, secret)
+	require.False(t, errors.Is(sanitized, context.Canceled))
+	require.False(t, errors.Is(sanitized, context.DeadlineExceeded))
+	var leaked *backingKeyDriverError
+	require.False(t, errors.As(sanitized, &leaked))
+}
+
+// TestResolveStopsEveryAgentWhenThePolicyGroupItselfIsDeactivated is NEW-8.
+//
+// This is the deliberate carve-out from the continuity guarantee that
+// TestResolveKeepsServingAnAlreadyProvisionedAgentAfterThePolicyBreaks pins. A
+// mistyped or removed group NAME leaves provisioned agents serving, because the
+// fast path never consults the policy. Deactivating the policy GROUP is
+// different: that group is also the one the rows are bound to, so the fast path
+// sees an inactive edge, falls through, and policyGroup finds no active group —
+// every agent stops.
+//
+// That is the intended behaviour and not an accident: a group set to inactive
+// should stop routing, and it is the only lever an operator has to halt OAuth
+// inference without deleting anything. Both existing tests passed without
+// noticing the difference, so it is asserted here explicitly.
+func TestResolveStopsEveryAgentWhenThePolicyGroupItselfIsDeactivated(t *testing.T) {
+	svc, cli := newBackingKeyTestService(t)
+	ctx := context.Background()
+	userID := seedBackingKeyUser(t, cli)
+
+	first, err := svc.Resolve(ctx, userID, "agent:halted")
+	require.NoError(t, err)
+	require.NotNil(t, first.Edges.Group)
+
+	require.NoError(t, cli.Group.UpdateOneID(first.Edges.Group.ID).SetStatus(domain.StatusDisabled).Exec(ctx))
+
+	again, err := svc.Resolve(ctx, userID, "agent:halted")
+	requireNoBackingRow(t, again, "deactivating the policy group must stop the agent, not route it somewhere else")
+	require.ErrorIs(t, err, ErrNoGroupForOAuthKey,
+		"the operator gets a 403 naming the policy, which is the readable form of 'you switched this group off'")
+
+	// Reactivating restores service on the same row — nothing was destroyed.
+	require.NoError(t, cli.Group.UpdateOneID(first.Edges.Group.ID).SetStatus(domain.StatusActive).Exec(ctx))
+	restored, err := svc.Resolve(ctx, userID, "agent:halted")
+	require.NoError(t, err)
+	require.Equal(t, first.ID, restored.ID)
 }

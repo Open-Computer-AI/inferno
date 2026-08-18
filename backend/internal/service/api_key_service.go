@@ -86,6 +86,12 @@ type APIKeyRepository interface {
 	Create(ctx context.Context, key *APIKey) error
 	GetByID(ctx context.Context, id int64) (*APIKey, error)
 	// GetKeyAndOwnerID 仅获取 API Key 的 key 与所有者 ID，用于删除等轻量场景
+	//
+	// NOTE: Delete was its last caller and now uses GetByID, because the
+	// backing-row refusal needs oauth_client_id too. The method is kept rather
+	// than removed: it is upstream API with a real implementation (a Select()
+	// projection), and deleting upstream surface to tidy a fork costs more at
+	// the next reconcile than an unused method does. It is not dead by accident.
 	GetKeyAndOwnerID(ctx context.Context, id int64) (string, int64, error)
 	GetByKey(ctx context.Context, key string) (*APIKey, error)
 	// GetByKeyForAuth 认证专用查询，返回最小字段集
