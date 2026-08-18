@@ -592,8 +592,22 @@ func TestRefreshTokenCache_DeleteRefreshTokenClearsUserSetMembership(t *testing.
 	require.Empty(t, userMembers, "deleting a record must SREM its user-set membership")
 }
 
-// TestRefreshTokenCache_DeleteUserRefreshTokensRemovesEnumeratedMembers pins
-// DeleteUserRefreshTokens' SREM-of-what-was-enumerated shape.
+// TestRefreshTokenCache_DeleteUserRefreshTokensRemovesEnumeratedMembers
+// asserts the ORDINARY outcome of DeleteUserRefreshTokens: both records gone,
+// the user's set empty.
+//
+// It does NOT pin the SREM-of-what-was-enumerated shape, and an earlier
+// version of this comment claimed it did. Reverting the implementation to
+// `pipe.Del(userRefreshTokensKey)` compiles and passes this test and the
+// whole tagged suite, because SREM and DEL differ only under an interleaving
+// the public method cannot produce: the extra membership has to arrive
+// between this call's SMEMBERS and its own delete, and `refreshTokenCache`
+// holds a concrete *redis.Client, so there is no seam to inject it through.
+// Adding one purely for this would be a production change made for a test.
+//
+// The shape is therefore argued, not guarded — see the comment on
+// DeleteUserRefreshTokens for the argument. Recorded here so the next reader
+// does not mistake a green run for a regression guard.
 //
 // It used to DEL the set key outright, which also discarded a membership
 // added between the SMEMBERS and the delete — and that token's record was
@@ -605,6 +619,42 @@ func TestRefreshTokenCache_DeleteRefreshTokenClearsUserSetMembership(t *testing.
 // A user-scoped revocation MARKER is deliberately not the answer: a user id
 // is reused by every future login, so a marker would refuse legitimate
 // logins for its whole retention. See RefreshFamilyRevokedRetention.
+// TestRefreshTokenCache_RevokingAnEmptyFamilyStillMarksItRevoked pins the
+// ORDERING that makes DeleteTokenFamily's revocation race-free, and it is the
+// only property here that a non-racing test can actually discriminate.
+//
+// DeleteTokenFamily writes familyRevokedKey BEFORE enumerating, then returns
+// early when the family is empty. Moving that write below the enumeration
+// looks equivalent and is not: the empty case is exactly the racing case.
+// A family reads empty precisely when the rotation that would populate it has
+// not persisted yet, so it is the moment the marker matters most — with the
+// write below the early return, that rotation lands afterwards, re-creates
+// the family it was just revoked from, and survives holding the only head.
+//
+// Revoke an empty family; the marker must exist anyway.
+func TestRefreshTokenCache_RevokingAnEmptyFamilyStillMarksItRevoked(t *testing.T) {
+	c, mr := newRefreshTokenTestCache(t)
+	ctx := context.Background()
+
+	require.NoError(t, c.DeleteTokenFamily(ctx, "family-with-no-live-tokens"))
+
+	require.True(t, mr.Exists(familyRevokedKey("family-with-no-live-tokens")),
+		"an empty family must still be marked revoked: it reads empty exactly when "+
+			"a rotation is in flight, which is the race the marker exists to close")
+
+	// And the mark must actually bite: a rotation arriving afterwards is refused.
+	err := c.PersistRefreshToken(ctx, "late-arrival", &service.RefreshTokenData{
+		UserID:    7,
+		FamilyID:  "family-with-no-live-tokens",
+		ClientID:  "agent:x",
+		Scope:     "inference:invoke",
+		CreatedAt: time.Now(),
+		ExpiresAt: time.Now().Add(time.Hour),
+	}, time.Hour)
+	require.Error(t, err, "a rotation into a revoked family must be refused")
+	require.False(t, mr.Exists(refreshTokenKey("late-arrival")))
+}
+
 func TestRefreshTokenCache_DeleteUserRefreshTokensRemovesEnumeratedMembers(t *testing.T) {
 	c, mr := newRefreshTokenTestCache(t)
 	ctx := context.Background()
