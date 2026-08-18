@@ -7,9 +7,20 @@
 -- CASCADE, a backing row must never be hard-deleted -- doing so silently
 -- erases that agent's whole usage history.
 --
--- The partial unique index is the identity rule: at most ONE backing row per
--- (user, client). It is partial so ordinary keys, which all carry NULL, are
--- unaffected -- a plain UNIQUE would collapse every user's keys to one.
+-- The unique index is the identity rule: at most ONE backing row per
+-- (user, client).
+--
+-- It is partial, but NOT because a plain UNIQUE would break ordinary keys --
+-- that claim was in this plan and is empirically false, verified against real
+-- Postgres 18 both as a bare CREATE UNIQUE INDEX and through the production
+-- migration runner. Postgres treats NULL as distinct from NULL in a unique
+-- index, so ordinary keys (all NULL here) never collide with each other
+-- either way.
+--
+-- The WHERE clause is kept for the reason 904 and 908 keep theirs: the index
+-- covers only the rows the constraint is about, so it stays proportional to
+-- the number of agents rather than to the number of API keys in the system.
+-- Correctness would survive dropping it; size and intent would not.
 ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS oauth_client_id VARCHAR(255);
 
 CREATE UNIQUE INDEX IF NOT EXISTS api_keys_user_oauth_client_uniq

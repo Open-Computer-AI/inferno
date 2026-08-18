@@ -117,9 +117,13 @@ field.String("oauth_client_id").
 -- finding F-C: usage_logs.api_key_id is NOT NULL with an FK, and the quota
 -- ledger IS the key row).
 --
--- The partial unique index is the identity rule: at most ONE backing row per
--- (user, client). It is partial so ordinary keys, which all carry NULL, are
--- unaffected — a plain UNIQUE would collapse every user's keys to one.
+-- The unique index is the identity rule: at most ONE backing row per
+-- (user, client). It is partial so the index covers only the rows the
+-- constraint is about — proportional to agents, not to all API keys.
+-- (CORRECTED 2026-08-19: an earlier draft claimed a plain UNIQUE would
+-- collapse every user's keys to one. False — Postgres treats NULL as
+-- distinct from NULL in a unique index. Task 2 disproved it against real
+-- Postgres 18.)
 ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS oauth_client_id VARCHAR(255);
 
 CREATE UNIQUE INDEX IF NOT EXISTS api_keys_user_oauth_client_uniq
@@ -368,5 +372,5 @@ Add the inference leg beside the device, refresh and dashboard legs, including t
 
 - Spec coverage: F-A → Task 4 (ordering, mutation-proven). F-B → not fixed, explicit non-goal; Task 4's obligation is only to not add a second path into it. F-C → Task 2 + Task 3. "Never returned" → Task 5. "Done means" 1-6 → Task 6 steps 2-5.
 - Task 1 is first because it is a pure refactor that everything else consumes, and because its safety net (the existing `RequireOAuthScope` tests passing **unedited**) is strongest before any new behaviour exists.
-- The partial unique index in Task 2 is the one place a mistake would damage existing users — hence its own mutation step proving the index is genuinely partial.
+- The partial unique index in Task 2 was flagged as the one place a mistake could damage existing users. Task 2's mutation step DISPROVED that: Postgres treats NULL as distinct from NULL in a unique index, so ordinary keys never collide whether the index is partial or not. The `WHERE` clause is kept for index scope, not correctness. The mutation step earned its place by refuting the plan rather than confirming it.
 - Deliberately deferred: `/v1beta`, the billing adapter, F-B's IP-wide block, and retiring API-key auth. All are named non-goals in the spec.
