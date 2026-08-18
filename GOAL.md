@@ -68,16 +68,25 @@ and is not listed is a bug, not a feature.
 | D2 | English legal-document defaults | `service/setting_public.go` (4 strings) + `server/api_contract_test.go` (golden fixture) | Chinese defaults on the legal documents of a rebranded English product. Applies only when no `login_agreement_documents` settings row exists — i.e. a fresh install, which is exactly when it matters. | Trivial. Zero upstream commits to this file in the 124 we were behind. |
 | D3 | `.gitignore` | appended negations | Lets `inferno-frontend/` and `docs/superpowers/` be tracked (upstream allowlists `docs/*`). Outside the four gated dirs, so the script does not see it; listed for completeness. | Trivial. |
 | D4 | OpenComputer portal design specs | `docs/superpowers/specs/*.md` | Design docs for making Inferno the OC Portal (OAuth authorization server, agent registry, billing contract) — replacing Nous Portal for the hermes-agent client. Docs only, no code. Upstream has no equivalent and never will. | Trivial — additive files, cannot conflict. |
+| D5 | **Razorpay payment provider** | 6 new files (`payment/provider/razorpay{,_test}.go`, `payment/razorpay_events.go`, `service/payment_client_verification.go`, `service/payment_razorpay_subscription{,_test}.go`) + 12 modified (`payment/provider/factory.go`, `payment/types.go`, `handler/payment_{handler,webhook_handler}.go`, `server/routes/payment.go`, `service/payment_{service,order,currency,fulfillment,config_providers,order_provider_snapshot,webhook_provider}.go`) | **Core product, permanent.** Inferno bills Indian customers; upstream ships Stripe/epay/Alipay and no INR path. This is not a patch waiting to be retired — it is one of the reasons the fork exists. | Additive files cannot conflict. The 12 modified ones are the seams where a provider plugs in — `factory.go` (registration switch), `types.go` (provider enum), and the `payment_*` service files (per-provider branches). Upstream touched `backend/internal/{payment,service,handler}` in 6 commits since the last base, so expect real conflicts here eventually. Resolve by **keeping upstream's structure and re-adding the Razorpay branch**, never by taking our whole file — that is how you silently drop an upstream fix. |
+| D6 | `NODE_OPTIONS` heap bump | `deploy/Dockerfile` (1 line, 1536 → 3072) | The frontend build OOMs at upstream's 1536 MB because Inferno's bundle is larger. Unrelated to payments — it was committed alongside `318a7852` and only looks like payment work. | Trivial, but **check whether it is still needed** rather than re-applying blind: if a future upstream bumps it themselves, drop this row. Upstream's own Dockerfile edits so far are on other lines (they bumped `GOLANG_IMAGE` to 1.26.6 in `11e1e228`), so git merges both cleanly. |
 
 **Better mechanism for D2 when someone has time:** seed the four titles as a
 `login_agreement_documents` settings row instead. Admin-editable, and it touches
 no Go at all, which retires this ledger entry.
 
+**Upstream is a one-way source.** Fixes and features flow `Wei-Shaw/sub2api` →
+Inferno and never back. We do not open PRs upstream, and no ledger entry is a
+"temporary carry until upstream takes it" — every row here is permanent until we
+delete the feature. The ledger exists so reconciles stay possible, not to shame
+divergence into being small.
+
 **Before adding an entry:** prefer frontend-only, then an existing backend field,
-then upstreaming it as a PR to `Wei-Shaw/sub2api`, and only then a new entry
-here. Each entry is a permanent tax on every future reconcile. `avatar_seed` was
-checked against riding on the existing `avatar_url` field first — it cannot,
-because `SetAvatar` runs `normalizeUserAvatarInput`, which rejects a bare seed.
+and only then a new entry here. Each entry is a real cost at every future
+reconcile — pay it deliberately, for product reasons, not by accident.
+`avatar_seed` was checked against riding on the existing `avatar_url` field
+first — it cannot, because `SetAvatar` runs `normalizeUserAvatarInput`, which
+rejects a bare seed.
 
 ### Known-good exceptions, do not "fix" these
 - `npm run lint:check` reports one pre-existing eslint error in
