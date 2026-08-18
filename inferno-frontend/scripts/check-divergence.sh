@@ -37,6 +37,14 @@ BASE="$(git merge-base HEAD upstream/main)" || {
 
 # Declared divergence. Keep in lockstep with GOAL.md's ledger table.
 # One path per line. Blank lines and #-comments are ignored.
+#
+# A line may be a glob (`case` patterns, so `*` also crosses `/`). Use one ONLY
+# for files that are unambiguously ours by name -- a razorpay_* file cannot be
+# an upstream file we drifted from, so a new one appearing is not the accident
+# this gate exists to catch. NEVER glob a directory that also holds upstream
+# files: `service/payment_*` would swallow upstream's own payment files and this
+# gate would stop seeing the modified-file conflict seams, which are the
+# expensive half of a reconcile. When in doubt, list the exact path.
 DECLARED="
 # D1 -- avatar_seed on users
 backend/ent/schema/user.go
@@ -62,6 +70,27 @@ backend/internal/server/api_contract_test.go
 # D4 -- OpenComputer portal design specs + plans
 docs/superpowers/specs/2026-08-17-inferno-oauth-authorization-server-design.md
 docs/superpowers/plans/2026-08-17-inferno-oauth-authorization-server.md
+# D5 -- Razorpay payment provider. Files that are ours by name may glob;
+# the upstream files we MODIFIED to add the provider are listed exactly,
+# because those are the seams that will actually conflict on a reconcile.
+backend/internal/payment/provider/razorpay*
+backend/internal/payment/razorpay_events.go
+backend/internal/service/payment_razorpay_*
+backend/internal/service/payment_client_verification.go
+backend/internal/payment/provider/factory.go
+backend/internal/payment/types.go
+backend/internal/handler/payment_handler.go
+backend/internal/handler/payment_webhook_handler.go
+backend/internal/server/routes/payment.go
+backend/internal/service/payment_service.go
+backend/internal/service/payment_order.go
+backend/internal/service/payment_currency.go
+backend/internal/service/payment_fulfillment.go
+backend/internal/service/payment_config_providers.go
+backend/internal/service/payment_order_provider_snapshot.go
+backend/internal/service/payment_webhook_provider.go
+# D6 -- NODE_OPTIONS heap bump for the larger Inferno bundle
+deploy/Dockerfile
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }
@@ -79,16 +108,34 @@ n_declared=$(declared_list | grep -c . || true)
 echo "divergence: base $(git rev-parse --short "$BASE") · ${n_changed} file(s) differ · ${n_declared} declared"
 
 # Undeclared: differs but is not in the ledger. This is the failure condition.
+# `case` does the matching so a DECLARED line may be an exact path or a glob;
+# with no metacharacters a glob match IS an exact match, so both work uniformly.
 undeclared=""
 if [ "$n_changed" -gt 0 ]; then
   undeclared="$(printf '%s\n' "$CHANGED" | grep . | while IFS= read -r f; do
-    declared_list | grep -qxF "$f" || printf '%s\n' "$f"
+    hit=0
+    while IFS= read -r d; do
+      [ -n "$d" ] || continue
+      case "$f" in ($d) hit=1; break ;; esac
+    done <<INNER
+$(declared_list)
+INNER
+    [ "$hit" -eq 0 ] && printf '%s\n' "$f"
   done)"
 fi
 
-# Stale: declared but no longer differs. Not fatal, but the ledger should shrink.
+# Stale: declared but nothing matches it any more. Not fatal, but the ledger
+# should shrink when a divergence is retired or a glob stops covering anything.
 stale="$(declared_list | while IFS= read -r d; do
-  printf '%s\n' "$CHANGED" | grep -qxF "$d" || printf '%s\n' "$d"
+  [ -n "$d" ] || continue
+  hit=0
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    case "$f" in ($d) hit=1; break ;; esac
+  done <<INNER
+$CHANGED
+INNER
+  [ "$hit" -eq 0 ] && printf '%s\n' "$d"
 done)"
 
 if [ -n "$stale" ]; then
