@@ -36,13 +36,19 @@ export type SchedulingThresholdPlatformType =
   | "openai"
   | "anthropic"
   | "grok"
+  | "kimi"
+  | "zhipu"
 
 export type AccountSchedulingThresholdsMap = Record<SchedulingThresholdPlatformType, number>
 
+// Matches the backend's AllowedSchedulingThresholdPlatforms (deepseek is
+// balance-based, so it uses balance checks rather than a usage threshold).
 export const SCHEDULING_THRESHOLD_PLATFORMS: SchedulingThresholdPlatformType[] = [
   "openai",
   "anthropic",
   "grok",
+  "kimi",
+  "zhipu",
 ]
 
 export function normalizeAccountSchedulingThresholdsMap(

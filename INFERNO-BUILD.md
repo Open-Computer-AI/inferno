@@ -1737,3 +1737,207 @@ re-litigated.
 
 **Last reviewed upstream SHA: `baeac1f3de21d37b129405f092ef86c24b3f203d`**
 (2026-08-15 13:40:21 UTC, "chore: sync VERSION to 0.1.177 [skip ci]").
+
+### 2026-08-17/18 — BLOCKED, then unblocked, then a real reconcile
+
+**BLOCKED for about a day.** `sync/reconcile-2026-08-17` (PR #5) found Gate 5
+red: three 2026-08-16-evening commits (`1d95ff8f2`, `318a7852e`, `3b756d076`)
+had landed a full Razorpay payment provider — subscriptions, top-up checkout,
+webhook verification — across 16+ backend files with no ledger entry. Per the
+hard rule ("a new backend divergence is a product decision, not this
+routine's to make"), nothing was reverted or force-declared; the PR reported
+the exact files and waited. Over the following ~20 hours the same undeclared
+work kept growing (more Razorpay commits, then a separate reconcile session
+rebased the PR onto more upstream churn) while the block stood.
+
+**Resolved by the owner directly on `inferno-redesign`**, not through the PR:
+`bac26b550` declared D4 (OpenComputer portal design specs under `docs/`), and
+`68ef97c7d` declared D5 (the 18 Razorpay files, split by how they behave on a
+reconcile: 6 razorpay-named files are ours outright, 12 modified files are
+the seams a provider plugs into and should keep upstream's structure on
+re-apply rather than take our whole file) and D6 (the `deploy/Dockerfile`
+`NODE_OPTIONS` bump, unrelated to payments, recorded separately). Also
+upgraded `check-divergence.sh` to match `DECLARED` entries with `case`, so a
+line can glob (used only for the razorpay-named files, not `service/payment_*`
+generally, so upstream's own payment files stay visible to the gate).
+
+**PR #5's branch was not reused for the real work.** Its history had
+accumulated multiple sessions' rebases onto different upstream points, which
+made `check-divergence.sh`'s merge-base computation unreliable (a clean
+`git merge-base` sanity check on a fresh branch from `origin/inferno-redesign`
+read 40 files / 38 declared / exit 0; the tangled PR branch read 191 files
+undeclared against the same script). Rather than debug rebase-hash
+archaeology, this cycle started a fresh branch
+(`sync/reconcile-2026-08-18`) directly from `origin/inferno-redesign`
+(`68ef97c7d`, recovery tag `pre-sync-backup-20260818`) and PR #5 is left for a
+human to close, pointing here.
+
+**23 commits behind upstream** (`inferno-redesign`'s own merge-base with
+upstream had not moved since 2026-08-15, despite 137 of its own commits
+landing since — those are `inferno-redesign`'s own new work, not upstream
+catch-up). Range `baeac1f3d` → `8869775ed`. **Rebase: clean**, all of
+`inferno-redesign`'s commits replayed with zero conflicts onto fresh
+`upstream/main`.
+
+**Gate 5 (`check-divergence.sh`): exit 0.** 40 files differ against the fresh
+merge-base, 38 declared (D1 avatar_seed, D2 legal defaults, D4 portal specs,
+D5 Razorpay, D6 Dockerfile bump), 0 undeclared.
+
+## Ported (2 wholesale, 1 new unwired file, 4 hand-merged)
+
+Upstream's biggest change this cycle was first-class CN provider support
+(Kimi/Zhipu/DeepSeek — multi-protocol accounts, quota/balance monitoring) plus
+channel model time-based pricing, a Codex identity-snapshot fix, a Grok
+response-model-audit-alias fix, an ops error-distribution legend-label fix,
+and an i18n key fix. Diffed the port-policy paths
+(`frontend/src/{api,stores,composables,utils,types}`,
+`backend/internal/handler/dto`, `backend/internal/handler/admin`) against
+`baeac1f3d`:
+
+Wholesale copy (mirror differed, we had never touched these):
+
+1. `inferno-frontend/src/api/admin/index.ts` -- wires the new `cnProviders`
+   module into the `adminAPI` aggregator. Additive only.
+2. `inferno-frontend/src/utils/platformColors.ts` -- adds kimi/zhipu/deepseek
+   entries. Confirmed this file predates June and is not itself
+   June-converted (still raw Tailwind palette strings); `GroupBadge.vue`'s
+   June rewrite only consumes one exported function
+   (`platformAccentColor()`) from it, so copying the whole file wholesale
+   does not reintroduce category colour into the converted component --
+   verified `GroupBadge.vue` needed zero changes, since it never had
+   platform-specific Tailwind branches to begin with.
+
+New file, zero consumers yet (ported but unwired, same call as
+`accountUsageRefresh.ts` on 2026-08-15):
+
+3. `inferno-frontend/src/api/admin/cnProviders.ts` -- the CN provider API
+   client. Nothing in `inferno-frontend` calls it yet; wiring it in means
+   editing the ignored account/channel modals.
+
+Hand-merged (file is in our own touched history, or copying wholesale broke
+something):
+
+4. `inferno-frontend/src/api/admin/settings.ts` -- added `kimi`/`zhipu` to
+   `SchedulingThresholdPlatformType` and `SCHEDULING_THRESHOLD_PLATFORMS`,
+   matching the backend's `AllowedSchedulingThresholdPlatforms` (deepseek is
+   balance-based, not threshold-based, so it is deliberately absent from this
+   list, matching upstream).
+5. `inferno-frontend/src/types/index.ts` -- added `kimi`/`zhipu`/`deepseek` to
+   the `GroupPlatform` and `AccountPlatform` unions. Purely additive; nothing
+   broke under `vue-tsc` since both are new union members, not removals.
+6. `inferno-frontend/src/composables/useModelWhitelist.ts` -- added
+   `kimi-for-coding` and `kimi-k2` to the Moonshot/Kimi model list, and routed
+   `case 'kimi'` to the same list as `case 'moonshot'`.
+7. `inferno-frontend/src/components/common/PlatformIcon.vue` (June-converted)
+   -- added the three new platforms' official SVG logo marks (pure glyph
+   paths via `:class="sizeClass"`, no Tailwind/colour concerns, so no
+   ground-rule conflict).
+8. `inferno-frontend/src/components/common/PlatformTypeBadge.vue`
+   (June-converted, but still speaks Tailwind-arbitrary-value June tokens,
+   e.g. `bg-[var(--brand-tint)]`) -- added the three platforms' text labels
+   ('Kimi', 'Zhipu GLM', 'DeepSeek') to `platformLabel`. Deliberately did
+   **not** port upstream's raw per-platform Tailwind classes
+   (`bg-pink-100`/`bg-indigo-100`/`bg-teal-100`) into `platformClass`/
+   `typeClass`: this file had already collapsed every platform past
+   anthropic/openai to one shared `bg-[var(--brand-tint)] text-[var(--brand)]`
+   treatment (ground rule 5, colour is not category), which the three new
+   platforms already inherit for free by falling through with no branch.
+   Porting upstream's raw classes would have been a regression, re-adding the
+   category colour this file had already removed.
+
+**REVERTED, not a keeper:** `inferno-frontend/src/api/admin/channels.ts` was
+wholesale-copied first, then reverted. Upstream's channel-time-pricing feature
+made `ChannelModelPricing.time_pricing` a *required* field; our (unconverted,
+ignored-bucket) `ChannelsView.vue` still constructs the old shape without it,
+so the copy broke `vue-tsc` on code we are not porting. Exact repeat of the
+`backup.ts` call from 2026-08-15: "the type-only port helps nobody without the
+view change alongside it." Left at its pre-sync shape.
+
+## Fixed: a stale test, found by finally running the full gate
+
+`src/components/layout/__tests__/siteLogoSanitization.spec.ts` failed 2 of 4
+tests. Not caused by this sync -- root cause is `c7906aaf6` ("remove sidebar
+brand mark", 2026-08-17T00:07, landed before this cycle started), which
+deliberately deleted `AppSidebar.vue`'s standalone logo mark entirely
+(covered by its own new test in `AppSidebar.spec.ts`: "keeps the wordmark
+without rendering a standalone logo mark"). `siteLogoSanitization.spec.ts` is
+a separate, older spec file nobody updated for that removal -- it still
+asserted `AppSidebar.vue` imports and calls `sanitizeUrl` on a `siteLogo` that
+no longer exists. Nobody had run the full suite since Gate 5 started blocking
+it, so this sat red for a day.
+
+Fixed by updating the test to match the intentional new behaviour (not
+weakened): `AppSidebar` now only needs to assert it does not reference
+`siteLogo` at all; `HomeView` and `KeyUsageView` remain the two real
+consumers and keep their full assertions, including the
+`allowRelative`/`allowDataUrl` check (now scoped to just the two of them).
+
+## Skipped, with reasons
+
+1. **`frontend/src/components/account/{CNProviderBalanceCell,
+   CNProviderQuotaCell,CnBaseUrlPresets,CreateAccountModal,EditAccountModal,
+   ModelWhitelistSelector,credentialsBuilder}`**,
+   **`frontend/src/components/admin/channel/{PricingEntryCard,
+   TimePricingSection,types}.ts`**, **`frontend/src/views/admin/{ChannelsView,
+   GroupsView}.vue`**, **`frontend/src/views/admin/ops/components/
+   OpsErrorDistributionChart.vue`** -- all under the standing
+   `components/`/`views/` ignore rule. These are the actual CN-provider and
+   channel-time-pricing UI; the June redesign replaces them, not a merge
+   target.
+2. **New i18n keys** in `admin/{accounts,channels,overview}.ts` (en/zh) --
+   used only by the skipped components above. Porting the keys alone would
+   add orphaned strings with zero consumers in our tree, same call as
+   `opsFormatters.ts` on 2026-08-15.
+3. **Backend-only changes verified but not port-relevant** (no admin/user
+   SPA-facing contract read by anything in `frontend/src/api`): the CN
+   provider quota/balance services, `openai_gateway_*` CN dispatch fixes,
+   Codex fingerprint/identity work, WS forwarder/pool changes, channel
+   time-pricing service layer, migrations 224/225. These are backend
+   implementation for the same skipped feature surface above.
+4. **`backup.ts`** (multi-part download shape) and **`admin/groups.ts`
+   `getUsageSummary`** (dropped `timezone` param, new `yesterday_cost` field)
+   -- re-checked against `upstream/main`, unchanged since 2026-08-15, same
+   skip reasons apply verbatim.
+
+## Gate output (real, both frontend and backend)
+
+Frontend, before any port (today's baseline): `june-lint` 867 violation(s)
+across 278 converted file(s) · `vue-tsc --noEmit` 0 errors · `vitest run`
+230/230 files, 1620/1620 tests (2 pre-existing failures in
+`siteLogoSanitization.spec.ts`, fixed — see above) · `vite build` succeeded
+(pre-existing >500kB chunk warnings only).
+
+Frontend, after port + fix: `june-lint` 867 violation(s) across 278
+file(s) -- **identical count, zero new violations from this cycle's edits** ·
+`vue-tsc --noEmit` 0 errors · `vitest run` 230/230 files, 1620/1620 tests,
+all green · `vite build` succeeded.
+
+Backend (gated because `inferno-redesign` moved and backend files changed in
+the rebase): `go build ./...` clean · `go test -tags unit ./internal/...
+./ent/...` -- every package with tests reports `ok`, all others report `no
+test files`. No failures anywhere.
+
+`check-divergence.sh`: exit 0, 40 differ / 38 declared / 0 undeclared, both
+before and after porting (porting only touched files outside the four gated
+dirs).
+
+## Unsure about / flagging for review
+
+- **PR #5 should be closed, not merged.** Its finding (undeclared Razorpay
+  divergence) is resolved on `inferno-redesign` directly via D5/D6; its
+  branch history is tangled across multiple sessions' rebases and is not
+  worth untangling. This entry and its PR supersede it.
+- **`PlatformTypeBadge.vue`'s colour call is a judgement call, not a fact.**
+  Leaving kimi/zhipu/deepseek on the shared brand-tint treatment (rather than
+  porting upstream's distinct per-platform hues) matches this file's own
+  established pattern, but if the product intent is for platform badges to
+  stay visually distinguishable by colour in the account list, that is a
+  reversal worth a second look, not something to assume settled.
+- **`cnProviders.ts` and its API surface are ported but completely unwired.**
+  No screen in `inferno-frontend` can create a Kimi/Zhipu/DeepSeek account or
+  see its quota yet -- that is real feature work belonging to whoever
+  eventually converts the account/channel modals, not a gap in this port.
+
+**Last reviewed upstream SHA: `8869775ed385fe985e05d4e9f414c9062b64af5a`**
+(2026-08-18 10:06:56 +0800, merge of PR #5636
+"fix(i18n): add missing expired key to account status block used by proxy list").
