@@ -31,6 +31,7 @@ func RegisterGatewayRoutes(
 	opsService *service.OpsService,
 	settingService *service.SettingService,
 	compositeResolver *service.CompositeRouteResolver,
+	oauthBackingKeyService *service.OAuthBackingKeyService,
 	cfg *config.Config,
 ) {
 	bodyLimit := middleware.RequestBodyLimit(cfg.Gateway.MaxBodySize)
@@ -39,6 +40,25 @@ func RegisterGatewayRoutes(
 	opsErrorLogger := handler.OpsErrorLoggerMiddleware(opsService)
 	endpointNorm := handler.InboundEndpointMiddleware()
 	compositeTarget := compositeTargetPlatformMiddleware(compositeResolver)
+	// The inference credential branch: an OAuth access token takes the OAuth
+	// path, everything else is delegated to apiKeyAuth untouched. It REPLACES
+	// gin.HandlerFunc(apiKeyAuth) on the routes below rather than being layered
+	// in front of it, because the API-key path's 256-byte Authorization cap
+	// aborts a ~628-byte access token before any lookup -- so the shape test has
+	// to run ahead of that middleware, not inside it. See
+	// middleware.OAuthOrAPIKeyAuth's doc comment (evidence finding F-A).
+	//
+	// keySvc/clientSvc/issuer come off h.OAuth, the same accessors
+	// RegisterOAuthAccountRoutes uses for RequireOAuthScope, so the mint and
+	// both verifying surfaces share one issuer string by construction.
+	oauthOrAPIKeyAuth := middleware.OAuthOrAPIKeyAuth(
+		apiKeyAuth,
+		apiKeyService,
+		h.OAuth.KeyService(),
+		h.OAuth.ClientService(),
+		oauthBackingKeyService,
+		h.OAuth.TokenIssuer(),
+	)
 	compositeGeminiTarget := compositeGeminiTargetPlatformMiddleware(compositeResolver)
 
 	// 未分组 Key 拦截中间件（按协议格式区分错误响应）
@@ -178,7 +198,7 @@ func RegisterGatewayRoutes(
 	gateway.Use(clientRequestID)
 	gateway.Use(opsErrorLogger)
 	gateway.Use(endpointNorm)
-	gateway.Use(gin.HandlerFunc(apiKeyAuth))
+	gateway.Use(oauthOrAPIKeyAuth)
 	gateway.GET("/sub2api/billing", h.Gateway.KeyBillingInfo)
 	gateway.Use(compositeTarget)
 	gateway.Use(requireGroupAnthropic)
@@ -349,9 +369,9 @@ func RegisterGatewayRoutes(
 		}
 		h.Gateway.Responses(c)
 	}
-	r.POST("/responses", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, responsesHandler)
-	r.POST("/responses/*subpath", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, guardResponsesSubpath(responsesHandler))
-	r.POST("/alpha/search", textBodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, h.OpenAIGateway.AlphaSearch)
+	r.POST("/responses", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, oauthOrAPIKeyAuth, compositeTarget, requireGroupAnthropic, responsesHandler)
+	r.POST("/responses/*subpath", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, oauthOrAPIKeyAuth, compositeTarget, requireGroupAnthropic, guardResponsesSubpath(responsesHandler))
+	r.POST("/alpha/search", textBodyLimit, clientRequestID, opsErrorLogger, endpointNorm, oauthOrAPIKeyAuth, compositeTarget, requireGroupAnthropic, h.OpenAIGateway.AlphaSearch)
 	r.GET("/responses", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		h.OpenAIGateway.ResponsesWebSocket(c)
 	})

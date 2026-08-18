@@ -863,6 +863,28 @@ func (r *apiKeyRepository) GetRateLimitData(ctx context.Context, id int64) (resu
 	return data, rows.Err()
 }
 
+// APIKeyEntityToService converts an ent api_keys row -- with its User and Group
+// edges, if eager-loaded -- into the *service.APIKey the rest of the server
+// works with.
+//
+// Exported for exactly one caller outside this package:
+// middleware.OAuthOrAPIKeyAuth. OAuthBackingKeyService.Resolve returns the ent
+// entity (it is a persistence-layer get-or-create, and the api_keys identity
+// index is what makes it correct), while the /v1 pipeline reads *service.APIKey
+// off the gin context. Something has to do that mapping, and the alternatives
+// were both worse: a second copy in the middleware would have to restate the
+// Group's ~60 pricing and routing fields and would drift from this one the
+// first time a column is added, and re-reading the row through
+// APIKeyService.GetByID would double the queries on the hottest path in the
+// server AND undo OAuthBackingKeyService's deliberate blanking of api_keys.key
+// by loading the secret back out of the database.
+//
+// It is a pure function of its argument -- no client, no context, no I/O -- so
+// exporting it exposes no repository state.
+func APIKeyEntityToService(m *dbent.APIKey) *service.APIKey {
+	return apiKeyEntityToService(m)
+}
+
 func apiKeyEntityToService(m *dbent.APIKey) *service.APIKey {
 	if m == nil {
 		return nil

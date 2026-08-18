@@ -28,6 +28,16 @@ const (
 	IngressRejectGroupUnassigned        IngressRejectReason = "group_unassigned"
 	IngressRejectInvalidAuthRateLimited IngressRejectReason = "invalid_auth_rate_limited"
 	IngressRejectAPIKeyAuthOverloaded   IngressRejectReason = "api_key_auth_overloaded"
+
+	// OAuth-bearer admission failures on the /v1 inference chain
+	// (OAuthOrAPIKeyAuth). They are separate reasons rather than reuses of
+	// IngressRejectInvalidAPIKey because the whole operator-side complaint the
+	// gap evidence records is that a request carrying a genuine OAuth
+	// credential was indistinguishable, in the access log, from a script
+	// spraying garbage API keys.
+	IngressRejectOAuthInvalidToken            IngressRejectReason = "oauth_invalid_token"
+	IngressRejectOAuthInsufficientScope       IngressRejectReason = "oauth_insufficient_scope"
+	IngressRejectOAuthBackingGroupUnavailable IngressRejectReason = "oauth_backing_group_unavailable"
 )
 
 const ingressRejectReasonContextKey = "ingress_reject_reason"

@@ -59,7 +59,15 @@ func (h *OAuthHandler) SetAuthorizeService(svc *service.OAuthAuthorizeService) {
 // middleware guarding GET /api/oauth/account) can verify token signatures
 // without a separate wire-provided dependency — routes.go already has this
 // handler in hand when it builds that middleware.
+//
+// Nil-receiver safe. RegisterGatewayRoutes now calls this while building the
+// /v1 inference credential branch, and Handlers literals in route tests leave
+// OAuth unset; a nil service there makes VerifyOAuthBearer fail closed rather
+// than panicking at registration time.
 func (h *OAuthHandler) KeyService() *service.OAuthKeyService {
+	if h == nil {
+		return nil
+	}
 	return h.keySvc
 }
 
@@ -68,7 +76,12 @@ func (h *OAuthHandler) KeyService() *service.OAuthKeyService {
 // real registration. Same rationale as KeyService above: routes.go already
 // holds this handler when it builds that middleware, so this avoids a
 // second wire-provided dependency.
+//
+// Nil-receiver safe, for the same reason as KeyService.
 func (h *OAuthHandler) ClientService() *service.OAuthClientService {
+	if h == nil {
+		return nil
+	}
 	return h.clientSvc
 }
 
@@ -82,8 +95,10 @@ func (h *OAuthHandler) ClientService() *service.OAuthClientService {
 //
 // Returns "" when no token service is wired, which the middleware treats as
 // a misconfiguration and fails closed on.
+//
+// Nil-receiver safe, for the same reason as KeyService.
 func (h *OAuthHandler) TokenIssuer() string {
-	if h.tokenSvc == nil {
+	if h == nil || h.tokenSvc == nil {
 		return ""
 	}
 	return h.tokenSvc.Issuer()

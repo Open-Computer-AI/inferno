@@ -343,6 +343,32 @@ backend/migrations/910_api_key_oauth_client_uniq_live_only.sql
 backend/internal/service/api_key_service_delete_test.go
 backend/internal/service/api_key.go
 deploy/config.example.yaml
+# D5 -- OAuth AS (oauth-bearer-inference plan, Task 4: the /v1 OAuth credential
+# branch). middleware.OAuthOrAPIKeyAuth runs a JWT shape test AHEAD of the
+# API-key middleware -- not inside it -- because that middleware's first act is a
+# 256-byte Authorization cap that a ~628-byte access token can never pass, which
+# is why the reproduction logged latency_ms: 0 on every rejection. The cap is
+# unchanged. ingress_reject.go gains three OAuth-specific admission reasons so an
+# agent holding a real OAuth credential stops being indistinguishable in the
+# access log from a script spraying garbage keys. gateway.go swaps the middleware
+# on the /v1 group and the three root-level aliases the evidence reproduced
+# against; gateway_test.go and gateway_key_billing_test.go only thread the new
+# RegisterGatewayRoutes parameter. router.go, http.go and cmd/server/wire_gen.go
+# thread OAuthBackingKeyService from wire to the route registration; router.go
+# and wire_gen.go are already declared above (Tasks 2/3/5 and org tenancy) and
+# are not re-listed. api_key_repo.go (already declared under D1) exports
+# APIKeyEntityToService, because Resolve returns the ent entity while the /v1
+# pipeline reads *service.APIKey. handler/oauth_handler.go (already declared
+# above) makes its three accessors nil-receiver safe, since route tests build a
+# Handlers literal with no OAuth handler.
+backend/internal/server/middleware/oauth_inference_auth.go
+backend/internal/server/middleware/oauth_inference_auth_test.go
+backend/internal/server/middleware/ingress_reject.go
+backend/internal/server/routes/gateway.go
+backend/internal/server/routes/gateway_test.go
+backend/internal/server/routes/gateway_key_billing_test.go
+backend/internal/server/routes/gateway_oauth_mount_test.go
+backend/internal/server/http.go
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }
