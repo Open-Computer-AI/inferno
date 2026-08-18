@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"errors"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -26,19 +25,29 @@ const (
 	OAuthContextKeyScope    = "oauth_scope"
 )
 
-// RequireOAuthScope validates an OAuth-issued ES256 bearer token and enforces
+// RequireOAuthScope validates an OAuth-issued RS256 bearer token and enforces
 // a required scope, for the OAuth resource-server surface (currently just
 // GET /api/oauth/account).
 //
-// It accepts ES256 ONLY. Inferno's panel session tokens (see jwt_auth.go)
-// are HMAC-signed with a symmetric secret that every server process holds;
-// if this middleware accepted HMAC too, anyone holding that secret could
-// mint API credentials for any agent — which is exactly why Task 2
-// introduced a separate asymmetric ES256 keypair for OAuth tokens in the
-// first place. Both the algorithm allowlist (jwt.WithValidMethods) and the
-// keyFunc's own method-type assertion enforce this — two independent checks
-// against algorithm-confusion, mirroring AuthService.ValidateToken's pattern
-// for the HMAC side.
+// It accepts RS256 ONLY — the gateway-brokered flow the Hermes Desktop
+// client actually uses hard-codes algorithms=["RS256"] and rejects anything
+// else outright, so the signing key moved from ES256 to RS256 rather than
+// the constrained consumer changing. Inferno's panel session tokens (see
+// jwt_auth.go) are HMAC-signed with a symmetric secret that every server
+// process holds; if this middleware accepted HMAC too, anyone holding that
+// secret could mint API credentials for any agent — which is exactly why a
+// separate asymmetric keypair was introduced for OAuth tokens in the first
+// place. Both the algorithm allowlist (jwt.WithValidMethods) and the
+// verification key resolving strictly by the token's own kid header (never
+// falling back to "the" active key) enforce this — two independent checks
+// against algorithm/key confusion, mirroring AuthService.ValidateToken's
+// pattern for the HMAC side.
+//
+// The verification key is resolved by ByKid — never Active() directly — so
+// a token with no kid header, or a kid nobody recognizes, is rejected
+// outright rather than silently falling back to whatever happens to be the
+// active key. This is also what makes key rotation possible later: adding a
+// second key only ever requires a change inside ByKid, never here.
 //
 // required == "" means "any validly-signed, unexpired OAuth token" — no
 // specific scope needed, just proof of a real OAuth-issued identity.
@@ -55,26 +64,24 @@ func RequireOAuthScope(keySvc *service.OAuthKeyService, required string) gin.Han
 			return
 		}
 
-		key, err := keySvc.Active(c.Request.Context())
-		if err != nil {
-			slog.Error("oauth: cannot load signing key for scope check", "error", err)
-			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
-			return
-		}
-
 		claims := jwt.MapClaims{}
 		// WithExpirationRequired: golang-jwt/v5 only validates exp when the
 		// claim is PRESENT (validator.go's verifyExpiresAt defaults
-		// `required=false`) — a validly ES256-signed token that simply omits
+		// `required=false`) — a validly RS256-signed token that simply omits
 		// exp would otherwise be accepted as non-expiring forever. Today's
 		// only signer, mintAccessToken (oauth_token_service.go), always sets
 		// exp, but that is a fact about one caller, not a property this
-		// middleware enforces; a future ES256-signing path that forgets exp
+		// middleware enforces; a future RS256-signing path that forgets exp
 		// must fail closed here, not mint an eternal credential.
-		parser := jwt.NewParser(jwt.WithValidMethods([]string{"ES256"}), jwt.WithExpirationRequired())
+		parser := jwt.NewParser(jwt.WithValidMethods([]string{"RS256"}), jwt.WithExpirationRequired())
 		token, err := parser.ParseWithClaims(raw, claims, func(t *jwt.Token) (any, error) {
-			if _, ok := t.Method.(*jwt.SigningMethodECDSA); !ok {
-				return nil, errors.New("unexpected signing method")
+			kid, _ := t.Header["kid"].(string)
+			if kid == "" {
+				return nil, errors.New("token has no kid")
+			}
+			key, err := keySvc.ByKid(c.Request.Context(), kid)
+			if err != nil {
+				return nil, err
 			}
 			return &key.Private.PublicKey, nil
 		})

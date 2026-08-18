@@ -33,7 +33,7 @@ var (
 )
 
 const (
-	// oauthAccessTokenTTL bounds how long an ES256 access token is valid.
+	// oauthAccessTokenTTL bounds how long an RS256 access token is valid.
 	// Short-lived by design: the refresh token (below) is the long-lived
 	// credential, and it is rotated on every use.
 	oauthAccessTokenTTL = 15 * time.Minute
@@ -72,11 +72,11 @@ type OAuthUserLookup interface {
 }
 
 // OAuthTokenService implements the device_code and refresh_token grants of
-// POST /api/oauth/token. It mints access tokens itself — ES256, signed by
+// POST /api/oauth/token. It mints access tokens itself — RS256, signed by
 // OAuthKeyService's key — and deliberately does NOT call
 // AuthService.GenerateTokenPair, which signs Inferno's separate HMAC panel
-// session token. Task 6's resource-server middleware accepts ES256 only;
-// an HMAC-signed token here would be silently rejected two tasks later.
+// session token. The resource-server middleware accepts RS256 only;
+// an HMAC-signed token here would be silently rejected.
 //
 // Refresh tokens ARE persisted through the same RefreshTokenCache used by
 // panel sessions (Redis-backed, SHA256-hashed at rest) rather than a
@@ -124,7 +124,7 @@ func (s *OAuthTokenService) assertClientUsable(ctx context.Context, clientID str
 	return err
 }
 
-// mintAccessToken signs an ES256 JWT whose audience is the client_id, so an
+// mintAccessToken signs an RS256 JWT whose audience is the client_id, so an
 // agent can verify a token was minted for it and no other instance.
 func (s *OAuthTokenService) mintAccessToken(ctx context.Context, userID int64, clientID, scope string) (string, error) {
 	key, err := s.keySvc.Active(ctx)
@@ -134,15 +134,23 @@ func (s *OAuthTokenService) mintAccessToken(ctx context.Context, userID int64, c
 
 	now := time.Now()
 	claims := jwt.MapClaims{
-		"iss":   s.issuer,
-		"sub":   strconv.FormatInt(userID, 10),
-		"aud":   clientID,
-		"scope": scope,
-		"iat":   now.Unix(),
-		"exp":   now.Add(oauthAccessTokenTTL).Unix(),
+		"iss":                    s.issuer,
+		"sub":                    strconv.FormatInt(userID, 10),
+		"aud":                    clientID,
+		"scope":                  scope,
+		"iat":                    now.Unix(),
+		"exp":                    now.Add(oauthAccessTokenTTL).Unix(),
+		"oauth_contract_version": 1,
+	}
+	// agent_instance_id is the client_id suffix, which the gateway
+	// cross-checks against its own configured client_id as defense-in-depth
+	// (plugins/dashboard_auth/nous/__init__.py:33-35 in the read-only client
+	// repo).
+	if rest, ok := strings.CutPrefix(clientID, "agent:"); ok {
+		claims["agent_instance_id"] = rest
 	}
 
-	tok := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	tok.Header["kid"] = key.Kid
 
 	signed, err := tok.SignedString(key.Private)

@@ -37,7 +37,7 @@ func TestOAuthAccountRouteUsesScopeMiddlewareNotJWTAuth(t *testing.T) {
 // RegisterOAuthAPIRoutes (the jwtAuth-gated group) must NOT also expose
 // "/account" — if it were dual-registered there, jwtAuth (which accepts
 // Inferno's HMAC panel-session tokens) would run for a request that should
-// only ever be verified by the ES256-only RequireOAuthScope, defeating the
+// only ever be verified by the RS256-only RequireOAuthScope, defeating the
 // entire point of Task 6's algorithm restriction.
 func TestOAuthAccountRouteNotRegisteredOnJWTAuthGroup(t *testing.T) {
 	gin.SetMode(gin.TestMode)

@@ -2,38 +2,122 @@ package service
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"encoding/base64"
+	"crypto/rsa"
+	"errors"
 	"sync"
 	"testing"
 )
 
-// fixedShortYCoordinateKeyPEM is a TEST-ONLY, deliberately insecure P-256
-// key fixture — NOT a real signing key, never used outside this test. Its
-// private scalar is the small integer 43 (found by exhaustive deterministic
-// search over d=1,2,3,... using crypto/elliptic.ScalarBaseMult, not
-// crypto/rand, so this exact key is reproducible), chosen specifically
-// because its Y coordinate's minimal big-endian encoding is 31 bytes, not
-// 32: the high byte is genuinely zero. That makes it exercise the
-// left-pad-to-32 path on every run, unlike a randomly generated per-test-run
-// key, which only hits that path in about 1 run in 256.
-//
-//	D  = 43
-//	X  = 986ae2506f1ff104d04230861d8f4b498f4bc4c6d009b30f7544dc129b82d28d (32 bytes, no padding needed)
-//	Y  = 3cccc0a6460e0ae328a4d97d3c7b61d86fc6289c189f2525110c441bb07e97   (31 bytes — needs a leading 0x00)
-const fixedShortYCoordinateKeyPEM = `-----BEGIN EC PRIVATE KEY-----
-MHcCAQEEIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAroAoGCCqGSM49
-AwEHoUQDQgAEmGriUG8f8QTQQjCGHY9LSY9LxMbQCbMPdUTcEpuC0o0APMzApkYO
-CuMopNl9PHth2G/GKJwYnyUlEQxEG7B+lw==
------END EC PRIVATE KEY-----
-`
+func TestActiveIsRSA(t *testing.T) {
+	ctx := context.Background()
+	svc := NewOAuthKeyService(newPaymentConfigServiceTestClient(t))
 
-// newTestEntClient is not defined in this package. The closest existing
-// in-package helper with a matching signature — func(t *testing.T) *dbent.Client
-// — is newPaymentConfigServiceTestClient (payment_config_service_test.go),
-// established as the real helper to reuse for this in Task 1's
-// org_service_test.go. Reused here for the same reason: use the real
-// existing helper name rather than inventing a second one.
+	key, err := svc.Active(ctx)
+	if err != nil {
+		t.Fatalf("Active: %v", err)
+	}
+	if key.Private == nil || key.Private.N == nil {
+		t.Fatal("expected an RSA private key")
+	}
+	if bits := key.Private.N.BitLen(); bits < 2048 {
+		t.Fatalf("RSA key must be >= 2048 bits, got %d", bits)
+	}
+}
+
+func TestJWKSEmitsRSAPublicKeyOnly(t *testing.T) {
+	ctx := context.Background()
+	svc := NewOAuthKeyService(newPaymentConfigServiceTestClient(t))
+
+	jwks, err := svc.JWKS(ctx)
+	if err != nil {
+		t.Fatalf("JWKS: %v", err)
+	}
+	keys, ok := jwks["keys"].([]map[string]any)
+	if !ok || len(keys) == 0 {
+		t.Fatalf("expected a non-empty keys array, got %#v", jwks["keys"])
+	}
+	k := keys[0]
+	for _, want := range []string{"kty", "n", "e", "kid", "use", "alg"} {
+		if _, present := k[want]; !present {
+			t.Errorf("JWKS entry missing %q", want)
+		}
+	}
+	if k["kty"] != "RSA" || k["alg"] != "RS256" {
+		t.Errorf("expected RSA/RS256, got %v/%v", k["kty"], k["alg"])
+	}
+	// The private half must never appear. For RSA that is more fields than ES256's single "d".
+	for _, secret := range []string{"d", "p", "q", "dp", "dq", "qi"} {
+		if _, leaked := k[secret]; leaked {
+			t.Fatalf("JWKS leaked private RSA parameter %q", secret)
+		}
+	}
+}
+
+// TestJWKSEncodesExponentWithoutLeadingZeros is the regression test for the
+// usual 65537 public exponent: a big-endian encoding that still carries
+// leading zero bytes is accepted by some JWT verifiers and rejected by
+// others, which produces an intermittent, very hard to diagnose failure. The
+// canonical encoding of 65537 is exactly 3 bytes (0x01 0x00 0x01), which
+// base64url-encodes to "AQAB".
+func TestJWKSEncodesExponentWithoutLeadingZeros(t *testing.T) {
+	ctx := context.Background()
+	svc := NewOAuthKeyService(newPaymentConfigServiceTestClient(t))
+
+	key, err := svc.Active(ctx)
+	if err != nil {
+		t.Fatalf("Active: %v", err)
+	}
+	if key.Private.E != 65537 {
+		t.Fatalf("expected the standard public exponent 65537, got %d", key.Private.E)
+	}
+
+	jwks, err := svc.JWKS(ctx)
+	if err != nil {
+		t.Fatalf("JWKS: %v", err)
+	}
+	keys, ok := jwks["keys"].([]map[string]any)
+	if !ok || len(keys) == 0 {
+		t.Fatalf("expected a non-empty keys array, got %#v", jwks["keys"])
+	}
+	e, _ := keys[0]["e"].(string)
+	if e != "AQAB" {
+		t.Fatalf("expected e=%q for exponent 65537, got %q", "AQAB", e)
+	}
+}
+
+// TestLegacyES256SecretNameMatchesMigration907 guards against
+// legacyES256SecretName's value silently drifting from the literal
+// migrations/907_oauth_rs256_key.sql deletes. Nothing else in this package
+// references the constant (it exists purely as a documented, named source of
+// truth for that migration's DELETE statement), so this is the only thing
+// that keeps the two from silently diverging.
+func TestLegacyES256SecretNameMatchesMigration907(t *testing.T) {
+	if legacyES256SecretName != "oauth_es256_active" {
+		t.Fatalf("legacyES256SecretName changed to %q — update migrations/907_oauth_rs256_key.sql's DELETE statement to match", legacyES256SecretName)
+	}
+}
+
+func TestByKidResolvesTheActiveKeyAndRejectsUnknown(t *testing.T) {
+	ctx := context.Background()
+	svc := NewOAuthKeyService(newPaymentConfigServiceTestClient(t))
+
+	active, err := svc.Active(ctx)
+	if err != nil {
+		t.Fatalf("Active: %v", err)
+	}
+
+	got, err := svc.ByKid(ctx, active.Kid)
+	if err != nil {
+		t.Fatalf("ByKid(active): %v", err)
+	}
+	if got.Kid != active.Kid {
+		t.Fatalf("ByKid returned %q, want %q", got.Kid, active.Kid)
+	}
+
+	if _, err := svc.ByKid(ctx, "not-a-real-kid"); !errors.Is(err, ErrUnknownKid) {
+		t.Fatalf("expected ErrUnknownKid for an unknown kid, got %v", err)
+	}
+}
 
 func TestActiveGeneratesAndPersistsKey(t *testing.T) {
 	ctx := context.Background()
@@ -47,8 +131,8 @@ func TestActiveGeneratesAndPersistsKey(t *testing.T) {
 	if first.Kid == "" {
 		t.Fatal("expected non-empty kid")
 	}
-	if _, ok := any(first.Private).(*ecdsa.PrivateKey); !ok {
-		t.Fatal("expected an ECDSA private key")
+	if _, ok := any(first.Private).(*rsa.PrivateKey); !ok {
+		t.Fatal("expected an RSA private key")
 	}
 
 	second, err := svc.Active(ctx)
@@ -57,91 +141,6 @@ func TestActiveGeneratesAndPersistsKey(t *testing.T) {
 	}
 	if first.Kid != second.Kid {
 		t.Fatalf("key not persisted: kid %q then %q", first.Kid, second.Kid)
-	}
-}
-
-func TestJWKSExposesPublicKeyOnly(t *testing.T) {
-	ctx := context.Background()
-	client := newPaymentConfigServiceTestClient(t)
-	svc := NewOAuthKeyService(client)
-
-	jwks, err := svc.JWKS(ctx)
-	if err != nil {
-		t.Fatalf("JWKS: %v", err)
-	}
-
-	keys, ok := jwks["keys"].([]map[string]any)
-	if !ok || len(keys) == 0 {
-		t.Fatalf("expected a non-empty keys array, got %#v", jwks["keys"])
-	}
-	k := keys[0]
-	for _, want := range []string{"kty", "crv", "x", "y", "kid", "use", "alg"} {
-		if _, present := k[want]; !present {
-			t.Errorf("JWKS entry missing %q", want)
-		}
-	}
-	if _, leaked := k["d"]; leaked {
-		t.Fatal("JWKS leaked the private scalar 'd'")
-	}
-	if k["alg"] != "ES256" {
-		t.Errorf("expected alg ES256, got %v", k["alg"])
-	}
-}
-
-// TestJWKSPadsShortCoordinateTo32Bytes is the deterministic regression test
-// for the fixed-width x/y encoding: P-256 JWK coordinates MUST be exactly 32
-// bytes, and a coordinate whose big-endian value happens to have a zero
-// leading byte would otherwise serialize one byte short. Uses
-// fixedShortYCoordinateKeyPEM (a hardcoded fixture with a known 31-byte Y),
-// so this exercises the padding path on every run instead of ~1 run in 256
-// for a randomly generated key.
-func TestJWKSPadsShortCoordinateTo32Bytes(t *testing.T) {
-	ctx := context.Background()
-	client := newPaymentConfigServiceTestClient(t)
-	svc := NewOAuthKeyService(client)
-
-	if _, err := client.SecuritySecret.Create().
-		SetKey(activeKeySecretName).
-		SetValue(fixedShortYCoordinateKeyPEM).
-		Save(ctx); err != nil {
-		t.Fatalf("seed fixture signing key: %v", err)
-	}
-
-	jwks, err := svc.JWKS(ctx)
-	if err != nil {
-		t.Fatalf("JWKS: %v", err)
-	}
-	keys, ok := jwks["keys"].([]map[string]any)
-	if !ok || len(keys) == 0 {
-		t.Fatalf("expected a non-empty keys array, got %#v", jwks["keys"])
-	}
-	k := keys[0]
-
-	xEnc, _ := k["x"].(string)
-	yEnc, _ := k["y"].(string)
-	if xEnc == "" || yEnc == "" {
-		t.Fatalf("expected non-empty x/y, got x=%q y=%q", xEnc, yEnc)
-	}
-
-	xDecoded, err := base64.RawURLEncoding.DecodeString(xEnc)
-	if err != nil {
-		t.Fatalf("decode x: %v", err)
-	}
-	if len(xDecoded) != 32 {
-		t.Fatalf("x: expected exactly 32 bytes, got %d", len(xDecoded))
-	}
-
-	yDecoded, err := base64.RawURLEncoding.DecodeString(yEnc)
-	if err != nil {
-		t.Fatalf("decode y: %v", err)
-	}
-	if len(yDecoded) != 32 {
-		t.Fatalf("y: expected exactly 32 bytes, got %d (this is the padding regression: a short coordinate must be left-padded with 0x00, not serialized as-is)", len(yDecoded))
-	}
-	// This fixture's Y is specifically 31 raw bytes, so a correct
-	// implementation must have prepended exactly one 0x00 byte.
-	if yDecoded[0] != 0x00 {
-		t.Fatalf("y: expected a leading 0x00 pad byte for this fixture's known-short coordinate, got leading byte 0x%02x", yDecoded[0])
 	}
 }
 

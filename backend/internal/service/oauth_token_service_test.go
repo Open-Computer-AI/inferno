@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -269,7 +270,7 @@ func TestExchangeReturnsSlowDownOnFastRepoll(t *testing.T) {
 	}
 }
 
-func TestExchangeReturnsSignedES256TokenAfterApproval(t *testing.T) {
+func TestExchangeReturnsSignedRS256TokenAfterApproval(t *testing.T) {
 	ctx, tokens, devices, clientID, deviceCode := newDeviceFlowFixture(t)
 
 	row, err := devices.byDeviceCode(ctx, deviceCode)
@@ -291,15 +292,29 @@ func TestExchangeReturnsSignedES256TokenAfterApproval(t *testing.T) {
 		t.Fatalf("expected scope %q, got %q", "inference:invoke", got.Scope)
 	}
 
-	parsed, _, err := jwt.NewParser().ParseUnverified(got.AccessToken, jwt.MapClaims{})
+	claims := jwt.MapClaims{}
+	parsed, _, err := jwt.NewParser().ParseUnverified(got.AccessToken, claims)
 	if err != nil {
 		t.Fatalf("parse access token: %v", err)
 	}
-	if parsed.Method.Alg() != "ES256" {
-		t.Fatalf("expected ES256, got %s", parsed.Method.Alg())
+	if parsed.Method.Alg() != "RS256" {
+		t.Fatalf("expected RS256, got %s", parsed.Method.Alg())
 	}
 	if parsed.Header["kid"] == nil || parsed.Header["kid"] == "" {
 		t.Fatal("access token header must carry a kid")
+	}
+
+	// The two claims the gateway's own verifier reads
+	// (plugins/dashboard_auth/nous/__init__.py in the read-only client repo).
+	if v, _ := claims["oauth_contract_version"].(float64); v != 1 {
+		t.Fatalf("expected oauth_contract_version claim 1, got %v", claims["oauth_contract_version"])
+	}
+	wantInstanceID, ok := strings.CutPrefix(clientID, "agent:")
+	if !ok {
+		t.Fatalf("test fixture clientID %q does not have the expected agent: prefix", clientID)
+	}
+	if got, _ := claims["agent_instance_id"].(string); got != wantInstanceID {
+		t.Fatalf("expected agent_instance_id %q, got %q", wantInstanceID, got)
 	}
 }
 

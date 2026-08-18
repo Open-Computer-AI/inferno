@@ -2,28 +2,51 @@ package service
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"fmt"
+	"math/big"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 )
 
 // activeKeySecretName is the security_secrets row holding the PEM-encoded
-// ES256 private key used to sign OAuth-issued tokens. Deliberately separate
+// RS256 private key used to sign OAuth-issued tokens. Deliberately separate
 // from Inferno's HMAC session-token secret: a symmetric key cannot be
 // published as a JWKS, and agents must verify signatures offline.
-const activeKeySecretName = "oauth_es256_active"
+//
+// RS256, not ES256: the gateway-brokered flow the Hermes Desktop client
+// actually uses (plugins/dashboard_auth/nous/__init__.py:444 in the
+// read-only client repo — the constrained consumer, so it decides) hard
+// codes algorithms=["RS256"] and rejects anything else outright.
+const activeKeySecretName = "oauth_rs256_active"
+
+// legacyES256SecretName is the pre-RS256-migration security_secrets row
+// name. It is not read or written by any code in this package any more —
+// kept only as a named constant so migration 907's DELETE statement has a
+// documented reason to reference "oauth_es256_active" instead of a bare
+// string literal.
+const legacyES256SecretName = "oauth_es256_active"
+
+// rsaKeyBits is the RSA modulus size for newly generated OAuth signing
+// keys. 2048 is the accepted floor for RS256 in 2026; anything smaller is a
+// real cryptographic weakness, not a style choice.
+const rsaKeyBits = 2048
+
+// ErrUnknownKid is returned by ByKid when no signing key matches the
+// requested kid — e.g. a token minted by a key that has since been rotated
+// out, or a forged/garbage kid header.
+var ErrUnknownKid = errors.New("oauth signing key: unknown kid")
 
 type SigningKey struct {
 	Kid     string
-	Private *ecdsa.PrivateKey
+	Private *rsa.PrivateKey
 }
 
 type OAuthKeyService struct {
@@ -34,20 +57,18 @@ func NewOAuthKeyService(entClient *dbent.Client) *OAuthKeyService {
 	return &OAuthKeyService{entClient: entClient}
 }
 
-// kidFor derives a stable key id from the public key bytes, so the same key
-// always produces the same kid without storing it separately.
-func kidFor(pub *ecdsa.PublicKey) (string, error) {
-	// SEC1 uncompressed point: 0x04 || X (32 bytes) || Y (32 bytes) for P-256.
-	// Already fixed-width — no manual big.Int padding needed.
-	raw, err := pub.Bytes()
+// kidFor derives a stable key id from the public key's DER encoding, so the
+// same key always produces the same kid without storing it separately.
+func kidFor(pub *rsa.PublicKey) (string, error) {
+	der, err := x509.MarshalPKIXPublicKey(pub)
 	if err != nil {
 		return "", fmt.Errorf("oauth signing key: encode public key: %w", err)
 	}
-	sum := sha256.Sum256(raw)
+	sum := sha256.Sum256(der)
 	return base64.RawURLEncoding.EncodeToString(sum[:16]), nil
 }
 
-// signingKeyFromPEM parses a stored PEM-encoded EC private key row into a
+// signingKeyFromPEM parses a stored PEM-encoded RSA private key row into a
 // SigningKey. Shared by the read path and the post-race re-read path so both
 // produce an identically-derived Kid.
 func signingKeyFromPEM(value string) (*SigningKey, error) {
@@ -55,7 +76,7 @@ func signingKeyFromPEM(value string) (*SigningKey, error) {
 	if block == nil {
 		return nil, fmt.Errorf("oauth signing key: stored PEM is undecodable")
 	}
-	priv, err := x509.ParseECPrivateKey(block.Bytes)
+	priv, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 	if err != nil {
 		return nil, fmt.Errorf("oauth signing key: parse: %w", err)
 	}
@@ -84,15 +105,12 @@ func (s *OAuthKeyService) Active(ctx context.Context) (*SigningKey, error) {
 		return nil, fmt.Errorf("oauth signing key: query: %w", err)
 	}
 
-	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	priv, err := rsa.GenerateKey(rand.Reader, rsaKeyBits)
 	if err != nil {
 		return nil, fmt.Errorf("oauth signing key: generate: %w", err)
 	}
-	der, err := x509.MarshalECPrivateKey(priv)
-	if err != nil {
-		return nil, fmt.Errorf("oauth signing key: marshal: %w", err)
-	}
-	encoded := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der})
+	der := x509.MarshalPKCS1PrivateKey(priv)
+	encoded := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: der})
 
 	if _, err := s.entClient.SecuritySecret.Create().
 		SetKey(activeKeySecretName).
@@ -121,7 +139,24 @@ func (s *OAuthKeyService) Active(ctx context.Context) (*SigningKey, error) {
 	return &SigningKey{Kid: kid, Private: priv}, nil
 }
 
-// JWKS projects the active key to its public JWK form. Never includes "d".
+// ByKid resolves a signing key by its kid, for verification. Today it only
+// ever has the one active key to resolve to, but it is deliberately the ONLY
+// lookup RequireOAuthScope (and anything else that verifies a token) uses —
+// never Active() directly — so a second key can be added later (rotation)
+// by changing this one method, without touching any verifier.
+func (s *OAuthKeyService) ByKid(ctx context.Context, kid string) (*SigningKey, error) {
+	active, err := s.Active(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if active.Kid != kid {
+		return nil, ErrUnknownKid
+	}
+	return active, nil
+}
+
+// JWKS projects the active key to its public JWK form. Never includes any of
+// the private RSA parameters (d, p, q, dp, dq, qi).
 func (s *OAuthKeyService) JWKS(ctx context.Context) (map[string]any, error) {
 	key, err := s.Active(ctx)
 	if err != nil {
@@ -129,29 +164,25 @@ func (s *OAuthKeyService) JWKS(ctx context.Context) (map[string]any, error) {
 	}
 	pub := key.Private.PublicKey
 
-	// SEC1 uncompressed point: 0x04 || X (32 bytes) || Y (32 bytes) for
-	// P-256 — already fixed-width, so slicing it out is the padding: no
-	// manual big.Int left-pad needed (and none of the deprecated direct
-	// pub.X/pub.Y field access this replaced).
-	raw, err := pub.Bytes()
-	if err != nil {
-		return nil, fmt.Errorf("oauth signing key: encode public key: %w", err)
-	}
-	if len(raw) != 65 || raw[0] != 0x04 {
-		return nil, fmt.Errorf("oauth signing key: unexpected public key encoding (len=%d)", len(raw))
-	}
-	x := raw[1:33]
-	y := raw[33:65]
-
 	return map[string]any{
 		"keys": []map[string]any{{
-			"kty": "EC",
-			"crv": "P-256",
-			"x":   base64.RawURLEncoding.EncodeToString(x),
-			"y":   base64.RawURLEncoding.EncodeToString(y),
+			"kty": "RSA",
+			"n":   base64.RawURLEncoding.EncodeToString(pub.N.Bytes()),
+			"e":   base64.RawURLEncoding.EncodeToString(bigEndianExponent(pub.E)),
 			"kid": key.Kid,
 			"use": "sig",
-			"alg": "ES256",
+			"alg": "RS256",
 		}},
 	}, nil
+}
+
+// bigEndianExponent encodes an RSA public exponent as a minimal big-endian
+// byte slice, with no leading zero bytes. big.Int.Bytes() already returns
+// the minimal (unpadded) big-endian encoding, which for the usual exponent
+// 65537 is exactly 3 bytes (0x01 0x00 0x01) — base64url "AQAB". A padded
+// encoding is accepted by some JWT verifiers and rejected by others, which
+// produces an intermittent, hard-to-diagnose failure, so this must never
+// pad.
+func bigEndianExponent(e int) []byte {
+	return big.NewInt(int64(e)).Bytes()
 }

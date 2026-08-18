@@ -493,7 +493,7 @@ func newOAuthAccountTestRouter(t *testing.T) (*gin.Engine, *OAuthHandler) {
 	return router, h
 }
 
-// mintTestAccountToken signs an ES256 access token with h's own active
+// mintTestAccountToken signs an RS256 access token with h's own active
 // signing key, exactly as OAuthTokenService.mintAccessToken does — same
 // claim shape — so these tests exercise the real verification path in
 // RequireOAuthScope rather than a hand-rolled approximation of it.
@@ -511,7 +511,7 @@ func mintTestAccountToken(t *testing.T, h *OAuthHandler, userID int64, scope str
 		"iat":   now.Unix(),
 		"exp":   now.Add(time.Hour).Unix(),
 	}
-	tok := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	tok.Header["kid"] = key.Kid
 	signed, err := tok.SignedString(key.Private)
 	require.NoError(t, err)

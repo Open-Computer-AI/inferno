@@ -2,6 +2,9 @@ package middleware
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"database/sql"
 	"fmt"
 	"net/http"
@@ -78,7 +81,7 @@ func newOAuthScopeTestEntClient(t *testing.T) *dbent.Client {
 }
 
 // newOAuthScopeTestKeyService returns a real OAuthKeyService (backed by a
-// throwaway sqlite ent client) so the tests below exercise actual ES256
+// throwaway sqlite ent client) so the tests below exercise actual RS256
 // signature verification against the same code path RequireOAuthScope uses
 // in production, rather than a stub.
 func newOAuthScopeTestKeyService(t *testing.T) *service.OAuthKeyService {
@@ -86,18 +89,36 @@ func newOAuthScopeTestKeyService(t *testing.T) *service.OAuthKeyService {
 	return service.NewOAuthKeyService(newOAuthScopeTestEntClient(t))
 }
 
-// mintTestES256Token signs claims with keySvc's active ES256 key, exactly as
+// mintTestRS256Token signs claims with keySvc's active RS256 key, exactly as
 // OAuthTokenService.mintAccessToken does (same header/claims shape), so
-// these tests are a faithful resource-server-side check against Task 5's
-// actual token minting, not a hand-rolled approximation of it.
-func mintTestES256Token(t *testing.T, keySvc *service.OAuthKeyService, claims jwt.MapClaims) string {
+// these tests are a faithful resource-server-side check against the actual
+// token minting, not a hand-rolled approximation of it.
+func mintTestRS256Token(t *testing.T, keySvc *service.OAuthKeyService, claims jwt.MapClaims) string {
 	t.Helper()
 	key, err := keySvc.Active(context.Background())
 	require.NoError(t, err)
 
-	tok := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	tok.Header["kid"] = key.Kid
 	signed, err := tok.SignedString(key.Private)
+	require.NoError(t, err)
+	return signed
+}
+
+// mintTestES256Token signs claims with an independently generated ES256
+// keypair (never keySvc's own key — ES256/RS256 use unrelated key shapes so
+// there's no shared key to reuse), with header/claims shaped exactly like a
+// real access token. This is stand-in for a stale, pre-migration token: the
+// algorithm this server used to sign with, and exactly what
+// TestRequireOAuthScopeRejectsES256SignedToken exercises.
+func mintTestES256Token(t *testing.T, claims jwt.MapClaims) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	tok := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+	tok.Header["kid"] = "stale-es256-kid"
+	signed, err := tok.SignedString(key)
 	require.NoError(t, err)
 	return signed
 }
@@ -133,7 +154,7 @@ func newOAuthScopeTestRouter(keySvc *service.OAuthKeyService, required string) (
 func TestRequireOAuthScopeAcceptsValidTokenWithSufficientScope(t *testing.T) {
 	keySvc := newOAuthScopeTestKeyService(t)
 	claims := baseTestClaims(42, "agent:abc123", "inference billing:read", time.Now().Add(time.Hour))
-	tok := mintTestES256Token(t, keySvc, claims)
+	tok := mintTestRS256Token(t, keySvc, claims)
 
 	r, w := newOAuthScopeTestRouter(keySvc, "billing:read")
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)
@@ -152,7 +173,7 @@ func TestRequireOAuthScopeRejectsInsufficientScope(t *testing.T) {
 	// satisfy a "billing:manage" requirement. A strings.Contains-based
 	// implementation would wrongly accept the first of these.
 	claims := baseTestClaims(42, "agent:abc123", "inference billing:manage_nothing billing", time.Now().Add(time.Hour))
-	tok := mintTestES256Token(t, keySvc, claims)
+	tok := mintTestRS256Token(t, keySvc, claims)
 
 	r, w := newOAuthScopeTestRouter(keySvc, "billing:manage")
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)
@@ -173,7 +194,7 @@ func TestRequireOAuthScopeRejectsNoScopeClaimAgainstNonEmptyRequirement(t *testi
 		"iat": time.Now().Unix(),
 		"exp": time.Now().Add(time.Hour).Unix(),
 	}
-	tok := mintTestES256Token(t, keySvc, claims)
+	tok := mintTestRS256Token(t, keySvc, claims)
 
 	r, w := newOAuthScopeTestRouter(keySvc, "inference:invoke")
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)
@@ -188,8 +209,8 @@ func TestRequireOAuthScopeRejectsNoScopeClaimAgainstNonEmptyRequirement(t *testi
 // matters most here: Inferno's panel-session tokens are HMAC-signed
 // (jwt_auth.go / AuthService.ValidateToken) with a symmetric secret shared
 // by every server process. If RequireOAuthScope accepted HMAC in addition
-// to ES256, anyone holding that shared secret — which is far more widely
-// held than the OAuth ES256 private key — could mint their own "OAuth"
+// to RS256, anyone holding that shared secret — which is far more widely
+// held than the OAuth RS256 private key — could mint their own "OAuth"
 // bearer tokens. This must fail even though every claim in the token is
 // otherwise perfectly valid (correct sub, aud, scope, and a future exp).
 func TestRequireOAuthScopeRejectsHMACSignedToken(t *testing.T) {
@@ -197,7 +218,80 @@ func TestRequireOAuthScopeRejectsHMACSignedToken(t *testing.T) {
 	claims := baseTestClaims(42, "agent:abc123", "inference:invoke", time.Now().Add(time.Hour))
 
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signed, err := tok.SignedString([]byte("some-hmac-secret-that-is-not-the-es256-key"))
+	signed, err := tok.SignedString([]byte("some-hmac-secret-that-is-not-the-rs256-key"))
+	require.NoError(t, err)
+
+	r, w := newOAuthScopeTestRouter(keySvc, "inference:invoke")
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("Authorization", "Bearer "+signed)
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+	require.JSONEq(t, `{"error":"invalid_token"}`, w.Body.String())
+}
+
+// TestRequireOAuthScopeRejectsES256SignedToken is the migration-specific
+// companion to the HMAC test above: ES256 is the algorithm this server used
+// to sign OAuth access tokens with before the RS256 migration (Task 1 of the
+// authorization_code + PKCE plan), so a stale, pre-migration token is
+// exactly ES256-shaped — a real key, a real signature, a plausible kid,
+// every other claim valid. Nothing else in this suite would catch a
+// middleware that still accepted it: the HMAC test only proves symmetric
+// signatures are rejected, not that the specific algorithm being retired is.
+func TestRequireOAuthScopeRejectsES256SignedToken(t *testing.T) {
+	keySvc := newOAuthScopeTestKeyService(t)
+	claims := baseTestClaims(42, "agent:abc123", "inference:invoke", time.Now().Add(time.Hour))
+
+	signed := mintTestES256Token(t, claims)
+
+	r, w := newOAuthScopeTestRouter(keySvc, "inference:invoke")
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("Authorization", "Bearer "+signed)
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+	require.JSONEq(t, `{"error":"invalid_token"}`, w.Body.String())
+}
+
+// TestRequireOAuthScopeRejectsTokenWithNoKidHeader is the regression test
+// for ByKid-only dispatch: a token with no kid header must be rejected
+// outright, never silently resolved to whatever the current active key
+// happens to be. The signature itself is entirely genuine — signed with the
+// real active RS256 key and otherwise-valid claims — so this fails only
+// because the kid header is missing, not for any other reason.
+func TestRequireOAuthScopeRejectsTokenWithNoKidHeader(t *testing.T) {
+	keySvc := newOAuthScopeTestKeyService(t)
+	key, err := keySvc.Active(context.Background())
+	require.NoError(t, err)
+
+	claims := baseTestClaims(42, "agent:abc123", "inference:invoke", time.Now().Add(time.Hour))
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	// Deliberately no tok.Header["kid"] set.
+	signed, err := tok.SignedString(key.Private)
+	require.NoError(t, err)
+
+	r, w := newOAuthScopeTestRouter(keySvc, "inference:invoke")
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("Authorization", "Bearer "+signed)
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+	require.JSONEq(t, `{"error":"invalid_token"}`, w.Body.String())
+}
+
+// TestRequireOAuthScopeRejectsTokenWithUnknownKid is ByKid-dispatch's other
+// half: a syntactically well-formed kid that just doesn't match any signing
+// key this server knows about (service.ErrUnknownKid) must be rejected the
+// same as a missing one, not treated as some other kind of error.
+func TestRequireOAuthScopeRejectsTokenWithUnknownKid(t *testing.T) {
+	keySvc := newOAuthScopeTestKeyService(t)
+	key, err := keySvc.Active(context.Background())
+	require.NoError(t, err)
+
+	claims := baseTestClaims(42, "agent:abc123", "inference:invoke", time.Now().Add(time.Hour))
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	tok.Header["kid"] = "not-a-real-kid"
+	signed, err := tok.SignedString(key.Private)
 	require.NoError(t, err)
 
 	r, w := newOAuthScopeTestRouter(keySvc, "inference:invoke")
@@ -212,9 +306,9 @@ func TestRequireOAuthScopeRejectsHMACSignedToken(t *testing.T) {
 // TestRequireOAuthScopeRejectsTokenWithNoExpClaim is the fix for the review
 // finding: golang-jwt/v5 only validates exp when the claim is PRESENT
 // (validator.go's verifyExpiresAt defaults required=false), so without
-// jwt.WithExpirationRequired() a validly ES256-signed token that simply
+// jwt.WithExpirationRequired() a validly RS256-signed token that simply
 // omits exp would be accepted as non-expiring forever. Signed with the real
-// active ES256 key and otherwise-valid claims — only exp is missing — so
+// active RS256 key and otherwise-valid claims — only exp is missing — so
 // this fails for the right reason (the missing-exp check) and not because
 // the signature or any other claim is wrong.
 func TestRequireOAuthScopeRejectsTokenWithNoExpClaim(t *testing.T) {
@@ -227,7 +321,7 @@ func TestRequireOAuthScopeRejectsTokenWithNoExpClaim(t *testing.T) {
 		"iat":   time.Now().Unix(),
 		// no "exp" claim at all.
 	}
-	tok := mintTestES256Token(t, keySvc, claims)
+	tok := mintTestRS256Token(t, keySvc, claims)
 
 	r, w := newOAuthScopeTestRouter(keySvc, "inference:invoke")
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)
@@ -241,7 +335,7 @@ func TestRequireOAuthScopeRejectsTokenWithNoExpClaim(t *testing.T) {
 func TestRequireOAuthScopeRejectsExpiredToken(t *testing.T) {
 	keySvc := newOAuthScopeTestKeyService(t)
 	claims := baseTestClaims(42, "agent:abc123", "inference:invoke", time.Now().Add(-time.Hour))
-	tok := mintTestES256Token(t, keySvc, claims)
+	tok := mintTestRS256Token(t, keySvc, claims)
 
 	r, w := newOAuthScopeTestRouter(keySvc, "inference:invoke")
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)
@@ -262,7 +356,7 @@ func TestRequireOAuthScopeRejectsUnparsableSubject(t *testing.T) {
 		"iat":   time.Now().Unix(),
 		"exp":   time.Now().Add(time.Hour).Unix(),
 	}
-	tok := mintTestES256Token(t, keySvc, claims)
+	tok := mintTestRS256Token(t, keySvc, claims)
 
 	r, w := newOAuthScopeTestRouter(keySvc, "inference:invoke")
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)

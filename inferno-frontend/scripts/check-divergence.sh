@@ -217,6 +217,11 @@ backend/scripts/oauth-conformance.md
 # of this script's diff scope entirely -- see GOAL.md's D5 row for that list.
 backend/internal/service/oauth_scope_vocabulary.go
 backend/internal/service/auth_service_personal_org_login_test.go
+# D5 -- OAuth AS (new plan, Task 1: RS256 signing key migration, kid-dispatched
+# verification). oauth_signing_key.go, oauth_signing_key_test.go,
+# oauth_scope.go, oauth_scope_test.go, and oauth_token_service.go are already
+# declared above (Tasks 2/5/6) -- not re-listed here, same files.
+backend/migrations/907_oauth_rs256_key.sql
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }
