@@ -6,6 +6,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -649,6 +650,52 @@ func TestVerifyOAuthBearerRejectsHS256Token(t *testing.T) {
 	require.ErrorIs(t, err, ErrOAuthInvalidToken)
 }
 
+// TestVerifyOAuthBearerRejectsPS256SignedToken is what makes
+// jwt.WithValidMethods(["RS256"]) itself load-bearing, not merely backstopped
+// by kid dispatch (Task 1 review, finding 4, mutation C): none of the
+// existing algorithm tests (alg:none, HS256, ES256) isolate the allowlist,
+// because all three are rejected by keyFunc's kid handling before the
+// algorithm ever matters — none of them carry a kid that resolves to a real
+// key. PS256 (RSA-PSS) closes that gap: it uses the exact same RSA keypair
+// shape as RS256, so this token is signed with the server's OWN active
+// private key, under the real kid, and would verify as a perfectly valid
+// signature against that same key's public half — nothing BUT the algorithm
+// allowlist stands between this and acceptance. Remove
+// jwt.WithValidMethods and keyFunc resolves the real kid, PS256.Verify
+// succeeds against the *rsa.PublicKey it returns, and VerifyOAuthBearer
+// would accept this token outright — which is exactly the mutation this
+// test now catches that the pre-existing suite did not.
+func TestVerifyOAuthBearerRejectsPS256SignedToken(t *testing.T) {
+	env := newOAuthScopeTestEnv(t)
+	key, err := env.keySvc.Active(context.Background())
+	require.NoError(t, err)
+
+	claims := baseTestClaims(42, testAudienceClientID, "inference:invoke", time.Now().Add(time.Hour))
+	tok := jwt.NewWithClaims(jwt.SigningMethodPS256, claims)
+	tok.Header["kid"] = key.Kid
+	signed, err := tok.SignedString(key.Private)
+	require.NoError(t, err)
+
+	_, err = VerifyOAuthBearer(context.Background(), env.keySvc, env.clientSvc, testIssuer, signed)
+
+	require.ErrorIs(t, err, ErrOAuthInvalidToken)
+}
+
+// TestVerifyOAuthBearerRejectsMissingKid isolates the keyFunc's explicit
+// `kid == ""` early return from ByKid's own ErrUnknownKid fallback (Task 1
+// review, finding 5, mutation H): removing the explicit guard still gets a
+// missing-kid token rejected, because keySvc.ByKid(ctx, "") also returns
+// ErrUnknownKid for an empty kid — so a naive assertion on the outcome
+// alone cannot tell whether the dedicated guard fired or whether it was
+// ByKid's fallback doing the work. The two differ in whether the key store
+// is ever touched: the explicit guard never calls ByKid at all, so the key
+// store being UNREACHABLE must not matter for a missing-kid token. This
+// test closes the ent client after minting (a real, validly-signed token —
+// signing happens before the close) and asserts the token still comes back
+// invalid_token, not server_error. Without the guard, kid="" would reach
+// ByKid, which would call the (now-closed) store's Active() and surface a
+// real infrastructure error — flipping the result to ErrOAuthServerFault,
+// which is exactly what this test now catches.
 func TestVerifyOAuthBearerRejectsMissingKid(t *testing.T) {
 	env := newOAuthScopeTestEnv(t)
 	key, err := env.keySvc.Active(context.Background())
@@ -660,9 +707,12 @@ func TestVerifyOAuthBearerRejectsMissingKid(t *testing.T) {
 	signed, err := tok.SignedString(key.Private)
 	require.NoError(t, err)
 
+	require.NoError(t, env.entClient.Close())
+
 	_, err = VerifyOAuthBearer(context.Background(), env.keySvc, env.clientSvc, testIssuer, signed)
 
 	require.ErrorIs(t, err, ErrOAuthInvalidToken)
+	require.NotErrorIs(t, err, ErrOAuthServerFault)
 }
 
 func TestVerifyOAuthBearerRejectsUnknownKid(t *testing.T) {
@@ -733,15 +783,37 @@ func TestVerifyOAuthBearerRejectsWrongIssuer(t *testing.T) {
 // RFC 7519 permits `aud` to be an array, mintAccessToken never writes one,
 // and a bare type assertion used to silently read an array as "".
 // VerifyOAuthBearer must reject it outright instead.
+//
+// It isolates the single-string `aud` guard from the client-registry lookup
+// that a bare type-asserted "" would otherwise ALSO reach (Task 1 review,
+// finding 5, mutation G): without the guard, `aud, _ :=
+// claims["aud"].(string)` on an array value silently produces "" and flows
+// straight into clientSvc.UsableByClientID(ctx, ""), so a naive assertion
+// on the outcome alone cannot tell whether the guard fired before ever
+// touching the client registry, or the registry lookup rejected "" on its
+// own. This test resolves the audience against a client service backed by
+// an ALREADY-CLOSED ent client: with the guard present, that broken service
+// is never called at all (the type assertion fails first) and the result
+// is still ErrOAuthInvalidToken; without the guard, the empty string would
+// reach the broken UsableByClientID call and the failure would flip to
+// ErrOAuthServerFault — exactly what this test now catches. (The registry
+// itself enforces client_id NotEmpty, so a real "" client row cannot exist
+// to test against directly; unreachability is the only way to isolate this
+// clause without weakening that schema constraint for the test.)
 func TestVerifyOAuthBearerRejectsArrayAudience(t *testing.T) {
 	env := newOAuthScopeTestEnv(t)
 	claims := baseTestClaims(42, testAudienceClientID, "inference:invoke", time.Now().Add(time.Hour))
 	claims["aud"] = []string{testAudienceClientID, "some-other-client"}
 	tok := mintTestRS256Token(t, env.keySvc, claims)
 
-	_, err := VerifyOAuthBearer(context.Background(), env.keySvc, env.clientSvc, testIssuer, tok)
+	brokenClientEntClient := newOAuthScopeTestEntClient(t)
+	brokenClientSvc := service.NewOAuthClientService(brokenClientEntClient)
+	require.NoError(t, brokenClientEntClient.Close())
+
+	_, err := VerifyOAuthBearer(context.Background(), env.keySvc, brokenClientSvc, testIssuer, tok)
 
 	require.ErrorIs(t, err, ErrOAuthInvalidToken)
+	require.NotErrorIs(t, err, ErrOAuthServerFault)
 }
 
 func TestVerifyOAuthBearerRejectsNonNumericSubject(t *testing.T) {
@@ -798,4 +870,38 @@ func TestVerifyOAuthBearerReturnsServerFaultOnClientLookupFailure(t *testing.T) 
 	require.Nil(t, bearer)
 	require.ErrorIs(t, err, ErrOAuthServerFault)
 	require.NotErrorIs(t, err, ErrOAuthInvalidToken)
+}
+
+// ---------------------------------------------------------------------------
+// Fix round 1 (Task 1 review findings 2/3): the structural guarantee that
+// VerifyOAuthBearer can never return an error satisfying neither sentinel.
+// ---------------------------------------------------------------------------
+
+// TestClassifyOAuthVerificationErrorNormalizesUnclassifiedErrors is the
+// direct test for classifyOAuthVerificationError, the choke point every
+// result of VerifyOAuthBearer passes through (Task 1 review findings 2/3).
+// Every real return path inside verifyOAuthBearer already returns one of
+// the two sentinels directly, so this test exercises the backstop with an
+// error that is neither — a plain errors.New, standing in for a future
+// return path that forgets to classify itself — and asserts it comes back
+// as ErrOAuthServerFault, never ErrOAuthInvalidToken. That direction is the
+// whole point: an unclassified failure must fail closed as a server fault,
+// not silently present as a bad credential.
+func TestClassifyOAuthVerificationErrorNormalizesUnclassifiedErrors(t *testing.T) {
+	unclassified := errors.New("some future internal error nobody classified")
+
+	got := classifyOAuthVerificationError(unclassified)
+
+	require.ErrorIs(t, got, ErrOAuthServerFault)
+	require.NotErrorIs(t, got, ErrOAuthInvalidToken)
+}
+
+// TestClassifyOAuthVerificationErrorPassesSentinelsThrough proves the
+// backstop is transparent for the two cases that actually happen today: nil
+// stays nil, and each real sentinel is returned unchanged (still matchable
+// by errors.Is, not re-wrapped).
+func TestClassifyOAuthVerificationErrorPassesSentinelsThrough(t *testing.T) {
+	require.NoError(t, classifyOAuthVerificationError(nil))
+	require.ErrorIs(t, classifyOAuthVerificationError(ErrOAuthInvalidToken), ErrOAuthInvalidToken)
+	require.ErrorIs(t, classifyOAuthVerificationError(ErrOAuthServerFault), ErrOAuthServerFault)
 }

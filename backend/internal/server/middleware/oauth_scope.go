@@ -21,7 +21,7 @@ import (
 // (ContextKeyUser et al.) — kept separate deliberately, so a handler can
 // never accidentally read a panel-session value off an OAuth-bearer request
 // or vice versa; the two token types are not interchangeable (see
-// RequireOAuthScope's doc comment).
+// VerifyOAuthBearer's doc comment).
 const (
 	OAuthContextKeyUserID   = "oauth_user_id"
 	OAuthContextKeyClientID = "oauth_client_id"
@@ -132,14 +132,56 @@ var ErrOAuthServerFault = errors.New("oauth: cannot verify token")
 // caller is, not what they may do. Returning the granted scope on
 // OAuthBearer lets each caller (RequireOAuthScope today) enforce whatever
 // requirement is appropriate for its own surface via scopeSatisfies.
+//
+// EVERY ERROR THIS FUNCTION RETURNS SATISFIES EXACTLY ONE OF THE TWO
+// SENTINELS — that is a structural guarantee, not a convention callers must
+// remember. verifyOAuthBearer (below) does the actual work and, like any
+// function with many return statements, could in principle grow a return
+// path that returns some other error; classifyOAuthVerificationError is the
+// single choke point every result passes through before it leaves this
+// package, and it maps anything that is neither sentinel to
+// ErrOAuthServerFault — never to ErrOAuthInvalidToken. That direction
+// matters: a caller (RequireOAuthScope today, the inference middleware
+// next) that trusts the two-sentinel contract and defaults its own
+// fallthrough to 401 would otherwise turn an unclassified internal bug into
+// "your credential is dead" instead of a visible, alertable 500. See Task 1
+// review findings 2 and 3.
 func VerifyOAuthBearer(ctx context.Context, keySvc *service.OAuthKeyService, clientSvc *service.OAuthClientService, issuer string, rawToken string) (*OAuthBearer, error) {
+	bearer, err := verifyOAuthBearer(ctx, keySvc, clientSvc, issuer, rawToken)
+	return bearer, classifyOAuthVerificationError(err)
+}
+
+// classifyOAuthVerificationError is VerifyOAuthBearer's structural backstop
+// (Task 1 review, findings 2/3): it normalizes whatever
+// verifyOAuthBearer returns into exactly ErrOAuthInvalidToken,
+// ErrOAuthServerFault, or nil. Every return path inside verifyOAuthBearer
+// already returns one of the two sentinels directly, so today this never
+// changes anything observable — it exists so that stays true even if a
+// future edit adds a return path that forgets to. An error that satisfies
+// neither sentinel fails closed as ErrOAuthServerFault, the safe direction
+// for an auth check: it must never be silently reported as a bad credential.
+func classifyOAuthVerificationError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, ErrOAuthInvalidToken) || errors.Is(err, ErrOAuthServerFault) {
+		return err
+	}
+	slog.Error("oauth: bearer verification returned an unclassified error; treating it as a server fault, not a bad credential", "error", err)
+	return ErrOAuthServerFault
+}
+
+// verifyOAuthBearer is VerifyOAuthBearer's actual verification body — kept
+// separate so classifyOAuthVerificationError has a single choke point to
+// normalize through (see VerifyOAuthBearer's doc comment).
+func verifyOAuthBearer(ctx context.Context, keySvc *service.OAuthKeyService, clientSvc *service.OAuthClientService, issuer string, rawToken string) (*OAuthBearer, error) {
 	if rawToken == "" || keySvc == nil {
 		return nil, ErrOAuthInvalidToken
 	}
 	if issuer == "" || clientSvc == nil {
 		// Misconfigured server, not a bad token. Fail closed and say so
 		// where an operator will see it.
-		slog.Error("oauth: resource-server middleware is missing its issuer or client registry; refusing every token")
+		slog.Error("oauth: bearer verifier is missing its issuer or client registry; refusing every token")
 		return nil, ErrOAuthServerFault
 	}
 
@@ -180,7 +222,7 @@ func VerifyOAuthBearer(ctx context.Context, keySvc *service.OAuthKeyService, cli
 		return &key.Private.PublicKey, nil
 	})
 	if keyResolutionErr != nil {
-		slog.Error("oauth: cannot resolve signing key for scope check", "error", keyResolutionErr, "kid", resolvedKid)
+		slog.Error("oauth: cannot resolve signing key for bearer verification", "error", keyResolutionErr, "kid", resolvedKid)
 		return nil, ErrOAuthServerFault
 	}
 	// A bearer credential must never be logged, on any path — success or
@@ -218,13 +260,35 @@ func VerifyOAuthBearer(ctx context.Context, keySvc *service.OAuthKeyService, cli
 			// Could not check — not "the check failed". Reporting this
 			// as invalid_token would make an outage indistinguishable
 			// from every agent's credential dying at once.
-			slog.Error("oauth: cannot resolve token audience for scope check", "error", err, "client_id", aud)
+			slog.Error("oauth: cannot resolve token audience for bearer verification", "error", err, "client_id", aud)
 			return nil, ErrOAuthServerFault
 		}
 		return nil, ErrOAuthInvalidToken
 	}
 
 	return &OAuthBearer{UserID: uid, ClientID: aud, Scope: granted}, nil
+}
+
+// bearerFromAuthorizationHeader extracts the raw bearer credential from an
+// HTTP Authorization header value, or reports ok == false if the header is
+// missing or is not a well-formed Bearer-scheme credential. Gin-free and
+// package-level (not a RequireOAuthScope-local closure) so any caller that
+// reads a bearer credential off an Authorization header — RequireOAuthScope
+// today, the inference middleware next — shares this exact parsing instead
+// of growing its own copy that can drift from it (Task 1 review, finding
+// 6).
+//
+// RFC 6750 §2.1 / RFC 7235 §2.1 make the auth-scheme token case-insensitive,
+// so `bearer <tok>` is a well-formed credential and must not be rejected.
+// The real client sends "Bearer", so this is interop hygiene — but a
+// resource server that rejects a spec-conformant header is wrong regardless
+// of who is calling it today.
+func bearerFromAuthorizationHeader(authz string) (string, bool) {
+	const bearerPrefix = "Bearer "
+	if len(authz) < len(bearerPrefix) || !strings.EqualFold(authz[:len(bearerPrefix)], bearerPrefix) {
+		return "", false
+	}
+	return strings.TrimSpace(authz[len(bearerPrefix):]), true
 }
 
 // RequireOAuthScope validates an OAuth-issued RS256 bearer token and
@@ -246,37 +310,58 @@ func VerifyOAuthBearer(ctx context.Context, keySvc *service.OAuthKeyService, cli
 // VerifyOAuthBearer returns one of two sentinel errors on failure, and this
 // wrapper maps each to a distinct response: ErrOAuthInvalidToken (the
 // credential is bad) becomes 401 {"error":"invalid_token"};
-// ErrOAuthServerFault (verification could not be completed — key store or
-// client registry unreachable) becomes 500 {"error":"server_error"}. Both
-// faults are already logged inside VerifyOAuthBearer at the point of
-// failure, with only kid and client_id — never the credential itself, on
-// any path, success or failure.
+// EVERYTHING ELSE — ErrOAuthServerFault, and anything that somehow is
+// neither sentinel — becomes 500 {"error":"server_error"}. The default arm
+// is deliberately the safe one: for an auth check, "we could not tell"
+// must fail closed as a server fault, never as a bad credential. The real
+// Hermes Desktop client force-refreshes and retries on invalid_token, so an
+// unclassified server-side fault reported as 401 would both mislabel an
+// outage as every credential dying at once AND drive the exact retry loop
+// that has previously driven an IP-wide 429 (Task 1 review, finding 2).
+// VerifyOAuthBearer's own doc comment describes the matching structural
+// guarantee on the producing side — this wrapper's default is the second,
+// belt-and-suspenders layer, not the only one. Both faults are already
+// logged inside VerifyOAuthBearer at the point of failure, with only kid
+// and client_id — never the credential itself, on any path, success or
+// failure.
 func RequireOAuthScope(keySvc *service.OAuthKeyService, clientSvc *service.OAuthClientService, issuer string, required string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authz := c.GetHeader("Authorization")
-		// RFC 6750 §2.1 / RFC 7235 §2.1 make the auth-scheme token
-		// case-insensitive, so `bearer <tok>` is a well-formed credential
-		// and must not 401. The real client sends "Bearer", so this is
-		// interop hygiene — but a resource server that rejects a
-		// spec-conformant header is wrong regardless of who is calling it
-		// today.
-		const bearerPrefix = "Bearer "
-		if len(authz) < len(bearerPrefix) || !strings.EqualFold(authz[:len(bearerPrefix)], bearerPrefix) {
+		raw, ok := bearerFromAuthorizationHeader(c.GetHeader("Authorization"))
+		if !ok {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
 			return
 		}
-		raw := strings.TrimSpace(authz[len(bearerPrefix):])
 
 		bearer, err := VerifyOAuthBearer(c.Request.Context(), keySvc, clientSvc, issuer, raw)
 		if err != nil {
-			if errors.Is(err, ErrOAuthServerFault) {
-				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+			if errors.Is(err, ErrOAuthInvalidToken) {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
 				return
 			}
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+			// Anything that isn't specifically a bad credential — including
+			// ErrOAuthServerFault and any error that reaches here without
+			// matching either sentinel — is reported as a server fault.
+			// See this function's doc comment and Task 1 review finding 2.
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
 			return
 		}
 
+		// Scope is checked AFTER identity verification, deliberately — this
+		// is a change from the pre-extraction code, which checked scope
+		// first. VerifyOAuthBearer proves identity; only a token it accepts
+		// as genuine reaches this line. Reporting 403 insufficient_scope
+		// for a token whose identity was never established would tell the
+		// caller "your scope was the only problem" about a credential this
+		// server never verified belongs to anyone — identity first,
+		// authorization second, is the correct order. The observable
+		// consequence: a token that is BOTH scope-insufficient AND
+		// identity-invalid (e.g. a revoked client, or an unparseable sub)
+		// now gets 401 invalid_token where the pre-extraction code
+		// returned 403 insufficient_scope. A valid-identity token with
+		// insufficient scope is unaffected and still gets 403 here — it
+		// never reaches the credential-refresh path a 401 triggers. Ruled
+		// an intentional improvement, not reverted (Task 1 review,
+		// finding 1).
 		if !scopeSatisfies(bearer.Scope, required) {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient_scope"})
 			return
