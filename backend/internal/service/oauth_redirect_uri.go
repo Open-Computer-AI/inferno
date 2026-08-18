@@ -135,6 +135,14 @@ func isLoopbackHost(host string) bool {
 // avoid two spellings of one origin sitting in the table. Any other
 // non-empty path is still rejected.
 //
+// The returned authority is also canonicalised for a trailing DNS
+// root-label dot ("example.com." vs "example.com") via canonicalAuthority
+// -- a prior version of this function returned u.Host verbatim, so a
+// registrant who typed the dotted form would silently store it, and every
+// subsequent authorize request (which nobody types with a trailing dot)
+// would fail RedirectURIMatchesClient's exact-Host-equality check against
+// their own registration.
+//
 // This validates INPUT at registration time only — it must never be run
 // retroactively against rows already in the table. The migration-seeded
 // hermes-cli row (redirect_uri_origin = the OOB placeholder, see
@@ -148,7 +156,38 @@ func NormalizeRedirectOrigin(raw string) (string, error) {
 	if u.Path != "" && u.Path != "/" {
 		return "", fmt.Errorf("%w: origin must not include a path", ErrInvalidRedirectURI)
 	}
-	return u.Scheme + "://" + u.Host, nil
+	return u.Scheme + "://" + canonicalAuthority(u), nil
+}
+
+// canonicalAuthority rebuilds the scheme-relative "host[:port]" authority
+// from a *url.URL that has already passed parsedCandidate, stripping the
+// same trailing DNS root-label dot isLoopbackHost tolerates when deciding
+// loopback-ness ("example.com." and "example.com" are one origin to DNS).
+// isLoopbackHost's TrimSuffix only ever touched a local copy used for that
+// one decision -- it never reached the string this function returns, which
+// is what NormalizeRedirectOrigin actually persists. Without this, a
+// dotted registration and its dot-free authorize requests would carry two
+// different Host strings and RedirectURIMatchesClient's exact-equality
+// check would never match them.
+//
+// u.Host is NOT reused directly: it already contains any port, but not the
+// dot-stripped host, and simply trimming a trailing dot off u.Host would
+// silently no-op whenever a port is present (e.g. "example.com.:8443" does
+// not end in "."). Instead this rebuilds from u.Hostname() (brackets/port
+// already stripped by net/url) and u.Port() via net.JoinHostPort, which
+// re-brackets an IPv6 literal correctly -- a hand-rolled host+":"+port
+// would produce an invalid, unbracketed "::1:8443"-class authority. An
+// IPv6 literal with NO port still needs its brackets restored manually,
+// since net.JoinHostPort is only invoked when a port is present.
+func canonicalAuthority(u *url.URL) string {
+	host := strings.TrimSuffix(u.Hostname(), ".")
+	if port := u.Port(); port != "" {
+		return net.JoinHostPort(host, port)
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.To4() == nil {
+		return "[" + host + "]"
+	}
+	return host
 }
 
 // ValidateRedirectOrigin is NormalizeRedirectOrigin for callers that only

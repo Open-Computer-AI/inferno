@@ -136,6 +136,75 @@ func TestNormalizeRedirectOriginAcceptsAndNormalisesTrailingSlash(t *testing.T) 
 	}
 }
 
+// TestNormalizeRedirectOriginStripsTrailingDot is the round-2 security
+// review fix: isLoopbackHost's trailing-dot handling (added for F2) only
+// ever operated on a local copy used for the loopback decision -- it never
+// reached the string NormalizeRedirectOrigin actually returns/persists.
+// "https://example.com." and "https://example.com" are one origin to DNS,
+// but a client registered with the dotted spelling would never match its
+// own authorize requests (nobody types the trailing dot) under
+// RedirectURIMatchesClient's exact-Host-equality check. This must fail
+// against the pre-fix code, which returned "https://example.com." verbatim.
+func TestNormalizeRedirectOriginStripsTrailingDot(t *testing.T) {
+	got, err := NormalizeRedirectOrigin("https://example.com./")
+	if err != nil {
+		t.Fatalf("a trailing-dot host must be accepted, got %v", err)
+	}
+	if got != "https://example.com" {
+		t.Fatalf("expected the trailing dot normalised away, got %q", got)
+	}
+}
+
+// TestNormalizeRedirectOriginStripsTrailingDotWithPort pins the fiddlier
+// case the review specifically warned about: u.Host for
+// "example.com.:8443" is "example.com.:8443" as a single string, so a
+// naive strings.TrimSuffix(u.Host, ".") is a silent no-op whenever a port
+// is present -- the dot is no longer at the end of the string. The fix
+// must rebuild from u.Hostname() (port already split off) and reattach the
+// port via net.JoinHostPort, not trim u.Host directly.
+func TestNormalizeRedirectOriginStripsTrailingDotWithPort(t *testing.T) {
+	got, err := NormalizeRedirectOrigin("https://example.com.:8443/")
+	if err != nil {
+		t.Fatalf("a trailing-dot host with a port must be accepted, got %v", err)
+	}
+	if got != "https://example.com:8443" {
+		t.Fatalf("expected the trailing dot normalised away with the port preserved, got %q", got)
+	}
+}
+
+// TestNormalizeRedirectOriginPreservesIPv6BracketsWithPort covers the other
+// half of the fiddliness the review flagged: net.JoinHostPort re-brackets
+// an IPv6 literal automatically, but a hand-rolled host+":"+port would
+// produce an invalid, unbracketed authority. Uses a non-loopback IPv6
+// literal so the loopback/unspecified rejection doesn't mask this check.
+func TestNormalizeRedirectOriginPreservesIPv6BracketsWithPort(t *testing.T) {
+	got, err := NormalizeRedirectOrigin("https://[2001:db8::1]:8443/")
+	if err != nil {
+		t.Fatalf("a non-loopback IPv6 host with a port must be accepted, got %v", err)
+	}
+	if got != "https://[2001:db8::1]:8443" {
+		t.Fatalf("expected the IPv6 literal to keep its brackets, got %q", got)
+	}
+}
+
+// TestRegisterSelfHostedStoresTrailingDotNormalized is the storage-level
+// round trip: registering with the dotted form must store the dot-free
+// canonical form, the same invariant TestRegisterSelfHostedNormalizesTrailingSlashOrigin
+// pins for the trailing-slash case.
+func TestRegisterSelfHostedStoresTrailingDotNormalized(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := NewOAuthClientService(client)
+
+	got, err := svc.RegisterSelfHosted(ctx, 1, 42, "https://agent-abc.example.com./", "")
+	if err != nil {
+		t.Fatalf("RegisterSelfHosted: %v", err)
+	}
+	if got.RedirectURIOrigin != "https://agent-abc.example.com" {
+		t.Fatalf("expected the stored origin to be normalised (no trailing dot), got %q", got.RedirectURIOrigin)
+	}
+}
+
 // TestValidateRedirectURIRejectsUnspecifiedAddress pins fix 1: 0.0.0.0 and
 // the IPv6 unspecified address are a DIFFERENT net.IP predicate
 // (IsUnspecified, not IsLoopback) and were not covered before this fix,
