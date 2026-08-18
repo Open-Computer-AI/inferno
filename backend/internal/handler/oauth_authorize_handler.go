@@ -67,10 +67,19 @@ import (
 //     asking are checked before the bearer check and, when redirect_uri is
 //     already validated, delivered as a REAL 302 to redirect_uri -- this
 //     works correctly for a raw browser hit too, not just a fetch call.
-//   - client_id/redirect_uri/ownership failures -> a real HTTP error status
-//     (400/403/500) with a short bare HTML body. Reachable directly by a raw
-//     navigation (these checks run before the bearer check), so the body is
-//     genuinely human-readable, not just a status code for JS to interpret.
+//   - client_id/redirect_uri failures -> a real HTTP error status (400/500)
+//     with a short bare HTML body. Reachable directly by a raw navigation
+//     (these checks run before the bearer check), so the body is genuinely
+//     human-readable, not just a status code for JS to interpret.
+//   - Ownership failures -> the same bare HTML body shape, but at 403 --
+//     UNLIKE client_id/redirect_uri, this check runs AFTER the bearer
+//     check (it needs to know who is asking), so in practice it is only
+//     ever reached by the authenticated fetch AuthorizeConsentView.vue
+//     makes, never by a raw navigation. The body is real HTML, but axios
+//     consumes it as an opaque error object -- extractApiErrorMessage
+//     never sees a message field in it, so the person sees a generic
+//     "request failed" toast, not this page's copy. Correctness holds
+//     either way (never a redirect); only the presentation degrades.
 //   - Once a bearer IS present (only ever true for the authenticated fetch
 //     AuthorizeConsentView.vue makes back to this same URL) and the request
 //     is well-formed: GET reports either "ready" (200, text/plain body =
@@ -80,16 +89,55 @@ import (
 //     explicit decision=approve|deny query parameter (the consent screen's
 //     Approve/Deny buttons) and always responds with the 200/target-URL
 //     protocol. In every case the frontend's only job is
-//     `window.location.assign(bodyText)` -- this endpoint never emits the
+//     `window.location.replace(bodyText)` -- this endpoint never emits the
 //     literal cross-origin 302 itself, because that would only work for a
 //     raw navigation, and a raw navigation can never carry the bearer this
 //     branch requires (see the package doc above).
+//
+// ACCEPTED LIMITS -- read before "fixing" either of these; both were raised
+// in review and are deliberate trade-offs, not oversights:
+//
+//   - Server-side "consent" is unverifiable. The POST decision=approve arm
+//     reads `decision` from the query string and mints on "approve" with no
+//     server-side pending-authorization record, nonce, or binding to any
+//     rendered screen -- unlike the device flow's real `user_code` row.
+//     Cross-site CSRF is genuinely blocked (OptionalJWTAuthMiddleware reads
+//     the bearer from the Authorization header only; no cookie or
+//     query-param credential path exists anywhere in this codebase's
+//     middleware), but the server cannot distinguish "a human read the
+//     scope list and clicked Approve" from "same-origin script issued a
+//     POST". Closing that gap needs a real server-side pending-consent
+//     record (a second RFC-8628-user_code-shaped table keyed by a
+//     server-issued nonce) -- a re-architecture, not a line fix. See the
+//     next point for why this doesn't add attacker capability beyond what
+//     already exists.
+//   - The 200-body-plus-window.location.replace design (chosen over a
+//     literal cross-origin 302 -- see the WIRE PROTOCOL section above for
+//     why a 302 doesn't work here) means the authorization code is
+//     readable by page JS, not only by the browser following a Location
+//     header. Any XSS on the panel origin can trigger minting (a same-
+//     origin GET/POST the axios interceptor attaches the bearer to) and
+//     read the resulting code, for any client the user owns, without the
+//     consent screen ever rendering. This is a real, larger blast radius
+//     than a pure-302 design. Accepted because panel-origin XSS already
+//     means total account takeover via the bearer sitting in
+//     localStorage -- an attacker who can run script on this origin does
+//     not need this endpoint to do damage -- and the alternative is not
+//     "use a real 302" (structurally impossible without a session cookie,
+//     which this codebase does not have) but "delete the SPA consent
+//     screen and force every scope through the narrow auto-approve path",
+//     which is a worse trade.
 func (h *OAuthHandler) Authorize(c *gin.Context) {
 	q := c.Request.URL.Query()
 	clientID := strings.TrimSpace(q.Get("client_id"))
 	redirectURI := strings.TrimSpace(q.Get("redirect_uri"))
 	responseType := strings.TrimSpace(q.Get("response_type"))
-	scope := q.Get("scope")
+	// Trimmed once, here, and used everywhere below -- including what
+	// IssueCode persists. Previously only the auto-approve comparison
+	// trimmed the value, so `scope=%20agent_dashboard:access` auto-approved
+	// but stored a leading space; the two representations of "the scope"
+	// must not diverge by which code path touched them last.
+	scope := strings.TrimSpace(q.Get("scope"))
 	state := q.Get("state")
 	codeChallenge := strings.TrimSpace(q.Get("code_challenge"))
 	codeChallengeMethod := strings.TrimSpace(q.Get("code_challenge_method"))
@@ -136,6 +184,18 @@ func (h *OAuthHandler) Authorize(c *gin.Context) {
 		c.Redirect(http.StatusFound, authorizeRedirectTarget(redirectURI, "invalid_scope", state))
 		return
 	}
+	// billing:manage is documented (oauth_scope_vocabulary.go) as never
+	// grantable at initial login -- only via a second, explicit device-flow
+	// elevation -- but nothing enforced that until now. Without this check,
+	// /oauth/authorize was a second, undocumented path to the exact scope
+	// that rule exists to gate, reachable via ordinary consent-screen
+	// approval rather than the deliberate elevation flow. Same redirect-
+	// class treatment as any other unsupported scope: it doesn't need to
+	// know who is asking to reject it.
+	if scopeContains(scope, service.ScopeBillingManage) {
+		c.Redirect(http.StatusFound, authorizeRedirectTarget(redirectURI, "invalid_scope", state))
+		return
+	}
 	if codeChallengeMethod != "S256" || !service.ValidCodeChallengeShape(codeChallenge) {
 		c.Redirect(http.StatusFound, authorizeRedirectTarget(redirectURI, "invalid_request", state))
 		return
@@ -179,19 +239,31 @@ func (h *OAuthHandler) Authorize(c *gin.Context) {
 		case "approve":
 			approved = true
 		case "deny":
-			c.Data(http.StatusOK, "text/plain; charset=utf-8",
-				[]byte(authorizeRedirectTarget(redirectURI, "access_denied", state)))
+			respondWithTarget(c, authorizeRedirectTarget(redirectURI, "access_denied", state))
 			return
 		default:
 			renderAuthorizeErrorPage(c, http.StatusBadRequest, "Invalid request", "No decision was provided.")
 			return
 		}
 	default:
-		// GET: auto-approve ONLY for the exact desktop-login scope. Any
-		// other request -- a wider scope, or a client the user owns but
-		// hasn't reviewed this specific grant for -- needs the consent
-		// screen.
-		approved = strings.TrimSpace(scope) == service.ScopeAgentDashboardAccess
+		// GET: auto-approve ONLY for the exact desktop-login scope AND ONLY
+		// for the client's actual registrant (client.OwnerUserID), NOT the
+		// broader owner-or-org-member test userOwnsClient uses for the
+		// MUST-NOT-REDIRECT gate above. That broader test is correct for
+		// "may this person even see/deny this request" but is NOT correct
+		// for "may a code be minted with zero human interaction": review
+		// found that org-member auto-approve, reachable via a bare GET a
+		// browser lands on after nothing but a link click, lets any org
+		// peer mint a code naming a VICTIM teammate as the grantee for a
+		// client the peer controls (register a client with an attacker-
+		// controlled redirect_uri, send the victim a same-org link, the
+		// victim's browser auto-approves on their behalf with no consent
+		// screen ever rendered). Requiring the exact registrant closes
+		// that: a non-owner org member always gets the consent screen
+		// (POST decision=approve still runs the SAME userOwnsClient check
+		// above, so they CAN approve deliberately -- they just cannot be
+		// auto-approved without ever seeing what they're granting).
+		approved = scope == service.ScopeAgentDashboardAccess && client.OwnerUserID == subject.UserID
 		if !approved {
 			c.Status(http.StatusAccepted) // 202: consent required, no body.
 			return
@@ -215,22 +287,35 @@ func (h *OAuthHandler) Authorize(c *gin.Context) {
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrMissingCodeChallenge), errors.Is(err, service.ErrPlainChallengeMethodRejected):
-			c.Data(http.StatusOK, "text/plain; charset=utf-8",
-				[]byte(authorizeRedirectTarget(redirectURI, "invalid_request", state)))
+			respondWithTarget(c, authorizeRedirectTarget(redirectURI, "invalid_request", state))
 		case errors.Is(err, service.ErrInvalidScope):
-			c.Data(http.StatusOK, "text/plain; charset=utf-8",
-				[]byte(authorizeRedirectTarget(redirectURI, "invalid_scope", state)))
-		case errors.Is(err, service.ErrUnknownClient), errors.Is(err, service.ErrInvalidRedirectURI):
+			respondWithTarget(c, authorizeRedirectTarget(redirectURI, "invalid_scope", state))
+		case errors.Is(err, service.ErrInvalidRedirectURI):
 			// Defense in depth against a TOCTOU between the checks above
 			// and this call -- should be unreachable, but the same
 			// MUST-NOT-REDIRECT rule applies if it ever isn't.
-			slog.Error("oauth authorize: client/redirect_uri rejected at issuance after passing pre-checks", "client_id", clientID, "error", err)
+			slog.Error("oauth authorize: redirect_uri rejected at issuance after passing pre-checks", "client_id", clientID, "error", err)
+			renderAuthorizeErrorPage(c, http.StatusBadRequest, "Invalid request", "This request could not be authorized.")
+		case errors.Is(err, service.ErrUnknownClient) && (errors.Is(err, service.ErrClientNotUsable) || dbent.IsNotFound(err)):
+			// Same collapse as the pre-check above (unknown vs revoked
+			// reads identically), same defense-in-depth reasoning for the
+			// TOCTOU window as ErrInvalidRedirectURI just above.
+			slog.Error("oauth authorize: client rejected at issuance after passing pre-checks", "client_id", clientID, "error", err)
 			renderAuthorizeErrorPage(c, http.StatusBadRequest, "Invalid request", "This request could not be authorized.")
 		default:
-			// Code entropy, persistence failure, or anything else
-			// unclassified. The default arm is the error page, never a
-			// redirect -- an error this handler doesn't recognize must
-			// fail closed, not be guessed into an RFC error code and
+			// Everything NOT explicitly matched above -- including an
+			// ErrUnknownClient that wraps a genuine infrastructure fault
+			// (neither ErrClientNotUsable nor a NotFound; e.g. a DB outage
+			// in this exact TOCTOU window), code entropy failures,
+			// persistence failures, or anything else unclassified.
+			// ErrUnknownClient's own doc comment (oauth_authorize_service.go)
+			// is explicit that this case belongs on a logged 500, not a
+			// silent "unknown client" render -- collapsing it into the
+			// case above would make a database outage invisible to
+			// alerting, exactly the mistake ErrClientNotUsable exists to
+			// let this handler avoid. The default arm is the error page,
+			// never a redirect -- an error this handler doesn't recognize
+			// must fail closed, not be guessed into an RFC error code and
 			// bounced to a third party.
 			slog.Error("oauth authorize: code issuance failed", "client_id", clientID, "error", err)
 			renderAuthorizeErrorPage(c, http.StatusInternalServerError, "Server error", "Something went wrong. Please try again.")
@@ -238,20 +323,57 @@ func (h *OAuthHandler) Authorize(c *gin.Context) {
 		return
 	}
 
-	c.Data(http.StatusOK, "text/plain; charset=utf-8",
-		[]byte(authorizeRedirectTargetWithCode(redirectURI, code, state)))
+	respondWithTarget(c, authorizeRedirectTargetWithCode(redirectURI, code, state))
 }
 
-// userOwnsClient decides whether userID may authorize a grant against
-// client: either they registered it directly (owner_user_id), or they are a
-// member (any role) of the org it belongs to. Self-hosted clients are
-// created with OwnerUserID set to the registering user and OrgID set to
-// that user's org at the time (OAuthClientService.RegisterSelfHosted), so
-// org membership is the broader, correct test -- it also covers a
-// teammate added to the org after the client was registered, which a
-// strict OwnerUserID-only check would wrongly refuse. RoleIn returns "" (no
+// scopeContains reports whether scope's whitespace-delimited tokens include
+// target exactly -- the same tokenisation service.ValidateScope /
+// middleware.RequireOAuthScope use, so this agrees with how scope is
+// interpreted everywhere else.
+func scopeContains(scope, target string) bool {
+	for _, s := range strings.Fields(scope) {
+		if s == target {
+			return true
+		}
+	}
+	return false
+}
+
+// respondWithTarget writes the "go here next" wire response every non-error
+// 200 arm of Authorize uses: the exact URL (success, an RFC redirect-class
+// error, or access_denied) for AuthorizeConsentView.vue to hand to
+// window.location.replace. RFC 6749 §5.1 requires Cache-Control: no-store /
+// Pragma: no-cache on any response carrying a credential -- this body can
+// carry an authorization code, exactly the kind of credential that rule
+// exists for, and unlike a 302's Location header (not a cacheable entity
+// body) this IS one.
+func respondWithTarget(c *gin.Context, target string) {
+	c.Header("Cache-Control", "no-store")
+	c.Header("Pragma", "no-cache")
+	c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(target))
+}
+
+// userOwnsClient decides whether userID may SEE and DECIDE ON a grant
+// request against client: either they registered it directly
+// (owner_user_id), or they are a member (any role) of the org it belongs
+// to. Self-hosted clients are created with OwnerUserID set to the
+// registering user and OrgID set to that user's org at the time
+// (OAuthClientService.RegisterSelfHosted), so org membership is the
+// broader, correct test for THIS gate -- it also covers a teammate added
+// to the org after the client was registered, which a strict
+// OwnerUserID-only check would wrongly refuse. RoleIn returns "" (no
 // error) for a non-member, so this reduces to a single membership lookup
 // whenever the direct-owner check already misses.
+//
+// NOT the test for auto-approve. This function answers "may this person
+// interact with this request at all" (the MUST-NOT-REDIRECT ownership
+// gate below, and the POST decision=approve/deny arms); it deliberately
+// does NOT gate whether a code can be minted with zero human interaction
+// on a bare GET -- that needs the strictly narrower `client.OwnerUserID ==
+// subject.UserID` test the GET branch applies directly, or an org peer who
+// registered a client with an attacker-controlled redirect_uri could send
+// a same-org teammate a link that auto-mints a code with no consent screen
+// ever rendered.
 func (h *OAuthHandler) userOwnsClient(ctx context.Context, userID int64, client *dbent.OAuthClient) (bool, error) {
 	if client.OwnerUserID == userID {
 		return true, nil
@@ -306,24 +428,31 @@ func authorizeRedirectTargetWithCode(redirectURI, code, state string) string {
 }
 
 // PendingAuthorization handles GET /api/oauth/authorize/pending?client_id=...
-// -- purely a display-name lookup for AuthorizeConsentView.vue's consent
-// screen ("who is asking"), NOT a second copy of Authorize's security
-// checks. It is a panel endpoint (session-authenticated, on the
+// -- a display-name lookup for AuthorizeConsentView.vue's consent screen
+// ("who is asking"), not a full re-run of Authorize's redirect_uri/PKCE/
+// scope validation (those stay Authorize's job; the screen only renders
+// after Authorize's GET already responded 202, so they're already
+// satisfied). It is a panel endpoint (session-authenticated, on the
 // {code,message,data} envelope), unlike Authorize itself: nothing outside
 // inferno-frontend ever calls it, mirroring PendingDeviceAuthorization
 // above for exactly the same reason (see that handler's doc comment for
 // the envelope-vs-bare split this file's package doc references).
 //
-// It intentionally does NOT re-check client/redirect_uri/ownership --
-// those are Authorize's job, already satisfied before the consent screen
-// can be showing at all (the screen only renders after Authorize's GET
-// responded 202). This endpoint answers one question only: "what is this
-// client called", so a revoked-between-calls client degrades to its raw
-// client_id rather than a hard failure -- the consent screen can still
-// show *something*, and the actual grant remains gated by Authorize's own
-// checks regardless of what this displays.
+// It DOES re-check client usability and ownership, though -- review found
+// the first version skipped both: using the unfiltered ByClientID (rather
+// than UsableByClientID) meant a revoked client still returned 200,
+// un-collapsing exactly the unknown-vs-revoked distinction
+// service.ErrClientNotUsable's doc comment says must stay collapsed
+// ("giving a revoked client its own observable code would hand an
+// attacker a free client_id oracle"); and skipping ownership meant any
+// authenticated Inferno user who obtained a client_id (a shared URL, a
+// screenshot, a log) could learn another org's client's owner-chosen
+// display name. Both failure modes now respond identically to "unknown
+// client" -- see the ownership check below for why that's a 404, not a
+// distinct 403.
 func (h *OAuthHandler) PendingAuthorization(c *gin.Context) {
-	if _, ok := middleware2.GetAuthSubjectFromContext(c); !ok {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
 		response.Unauthorized(c, "unauthorized")
 		return
 	}
@@ -334,14 +463,33 @@ func (h *OAuthHandler) PendingAuthorization(c *gin.Context) {
 		return
 	}
 
-	client, err := h.clientSvc.ByClientID(c.Request.Context(), clientID)
+	ctx := c.Request.Context()
+	client, err := h.clientSvc.UsableByClientID(ctx, clientID)
 	if err != nil {
-		if dbent.IsNotFound(err) {
+		if errors.Is(err, service.ErrClientNotUsable) || dbent.IsNotFound(err) {
 			response.NotFound(c, "client not found")
 			return
 		}
 		slog.Error("oauth authorize: pending client lookup failed", "client_id", clientID, "error", err)
 		response.InternalError(c, "server_error")
+		return
+	}
+
+	owns, err := h.userOwnsClient(ctx, subject.UserID, client)
+	if err != nil {
+		slog.Error("oauth authorize: pending ownership check failed", "client_id", clientID, "error", err)
+		response.InternalError(c, "server_error")
+		return
+	}
+	if !owns {
+		// Same response as "not found", deliberately -- not a distinct
+		// 403. This endpoint exists to answer a display-name question for
+		// a client the caller is about to decide on; a caller with no
+		// relationship to it has no legitimate reason to be asking, and a
+		// distinguishable "exists but isn't yours" response would itself
+		// be a new org-boundary existence oracle, the same class of leak
+		// the UsableByClientID switch above just closed.
+		response.NotFound(c, "client not found")
 		return
 	}
 

@@ -113,6 +113,16 @@ func registerRoutes(
 	cfg *config.Config,
 	redisClient *redis.Client,
 ) {
+	// 面板 API 限流器：认证接口按用户 ID、公开接口按安全客户端 IP，
+	// 防止高频刷管理面接口打爆数据库（阈值可在系统设置中调整）。
+	//
+	// Constructed here, ahead of /api/v1's registration below, purely so
+	// GET/POST /oauth/authorize (also registered before /api/v1) can use
+	// it too -- it only depends on redisClient/settingService, both
+	// already in scope from the top of this function, so moving it up is
+	// a reordering, not new wiring.
+	panelRateLimiter := middleware2.NewPanelRateLimiter(redisClient, settingService)
+
 	// 通用路由（健康检查、状态等）；also mounts OAuth 2.0 discovery
 	// (/.well-known/jwks.json) at the server ROOT, not under /api.
 	routes.RegisterCommonRoutes(r, h.OAuth)
@@ -135,15 +145,16 @@ func registerRoutes(
 	// bypassed to the embedded frontend by web.FrontendServer (see
 	// shouldBypassEmbeddedFrontend in internal/web/embed_on.go), since it
 	// is a real backend endpoint the hermes client's system browser
-	// navigates to directly, not a Vue route.
-	routes.RegisterOAuthAuthorizeRoute(r, h.OAuth, optionalJWTAuth)
+	// navigates to directly, not a Vue route. panelRateLimiter.PublicIP()
+	// (Task 4 fix round 1, F15): every hit -- including an unauthenticated
+	// one, which performs a DB client lookup before any auth check runs --
+	// was previously unbounded; PublicIP is the same choice
+	// RegisterModelPlazaRoutes makes for its own pre-auth-reachable public
+	// group, for the same reason.
+	routes.RegisterOAuthAuthorizeRoute(r, h.OAuth, optionalJWTAuth, panelRateLimiter)
 
 	// API v1
 	v1 := r.Group("/api/v1")
-
-	// 面板 API 限流器：认证接口按用户 ID、公开接口按安全客户端 IP，
-	// 防止高频刷管理面接口打爆数据库（阈值可在系统设置中调整）。
-	panelRateLimiter := middleware2.NewPanelRateLimiter(redisClient, settingService)
 
 	// 注册各模块路由
 	routes.RegisterAuthRoutes(v1, h, jwtAuth, auditLog, redisClient, settingService, panelRateLimiter)

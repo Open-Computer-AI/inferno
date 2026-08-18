@@ -260,6 +260,18 @@ backend/internal/service/oauth_authorize_service_test.go
 backend/internal/handler/oauth_authorize_handler.go
 backend/internal/handler/oauth_authorize_handler_test.go
 backend/internal/web/embed_on.go
+# D5 -- OAuth AS (authorization_code + PKCE plan, Task 4 fix round 1: F3/F4).
+# embed_test.go was already modified by da357017 (a new
+# TestEmbeddedFrontendBypassesOAuthAuthorize test) but was never added here or
+# to GOAL.md -- review caught this exact gate failing on its own introduced
+# file. F4's fix also moved shouldBypassEmbeddedFrontend and its tests out of
+# the two embed-tagged files into two new untagged ones, so the allowlist
+# assertion actually runs under a plain go test ./... instead of requiring
+# -tags embed plus a gitignored dist/index.html that CI without a frontend
+# build never has.
+backend/internal/web/embed_test.go
+backend/internal/web/bypass.go
+backend/internal/web/bypass_test.go
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }

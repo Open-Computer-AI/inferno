@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -9,6 +10,8 @@ import (
 	"testing"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/oauthauthorizationcode"
+	"github.com/Wei-Shaw/sub2api/ent/oauthclient"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -54,8 +57,37 @@ func newAuthorizeTestFixture(t *testing.T) *authorizeTestFixture {
 	})
 	router.GET("/oauth/authorize", h.Authorize)
 	router.POST("/oauth/authorize", h.Authorize)
+	router.GET("/api/oauth/authorize/pending", h.PendingAuthorization)
 
 	return &authorizeTestFixture{h: h, router: router, ent: entClient}
+}
+
+// authorizationCodes returns every OAuthAuthorizationCode row for clientID,
+// ordered oldest-first -- F13's fix: "issues no code" / "issues exactly one
+// code" must be asserted against the actual persisted rows, not against
+// substrings of the response body (a handler that minted a code and simply
+// forgot to put it in the body would otherwise pass).
+func (f *authorizeTestFixture) authorizationCodes(t *testing.T, clientID string) []*dbent.OAuthAuthorizationCode {
+	t.Helper()
+	rows, err := f.ent.OAuthAuthorizationCode.Query().
+		Where(oauthauthorizationcode.ClientID(clientID)).
+		Order(dbent.Asc(oauthauthorizationcode.FieldID)).
+		All(context.Background())
+	require.NoError(t, err)
+	return rows
+}
+
+// pendingAuthorizationCodes narrows authorizationCodes to status="pending"
+// -- the count that matters for F9 (repeat issuance must not leave more
+// than one live, redeemable code outstanding per client+user).
+func (f *authorizeTestFixture) pendingAuthorizationCodes(t *testing.T, clientID string) []*dbent.OAuthAuthorizationCode {
+	t.Helper()
+	rows, err := f.ent.OAuthAuthorizationCode.Query().
+		Where(oauthauthorizationcode.ClientID(clientID), oauthauthorizationcode.Status("pending")).
+		Order(dbent.Asc(oauthauthorizationcode.FieldID)).
+		All(context.Background())
+	require.NoError(t, err)
+	return rows
 }
 
 // registerClient creates a self-hosted client owned by ownerUserID in orgID,
@@ -112,6 +144,17 @@ func (f *authorizeTestFixture) post(t *testing.T, q url.Values, decision string,
 	q = cloneValues(q)
 	q.Set("decision", decision)
 	req := httptest.NewRequest(http.MethodPost, "/oauth/authorize?"+q.Encode(), nil)
+	if userID != 0 {
+		req.Header.Set(authorizeTestUserHeader, strconv.FormatInt(userID, 10))
+	}
+	rec := httptest.NewRecorder()
+	f.router.ServeHTTP(rec, req)
+	return rec
+}
+
+func (f *authorizeTestFixture) pending(t *testing.T, clientID string, userID int64) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/oauth/authorize/pending?client_id="+url.QueryEscape(clientID), nil)
 	if userID != 0 {
 		req.Header.Set(authorizeTestUserHeader, strconv.FormatInt(userID, 10))
 	}
@@ -190,7 +233,17 @@ func TestAuthorizeNonOwnerRendersErrorPageNotRedirect(t *testing.T) {
 	require.Empty(t, rec.Header().Get("Location"))
 }
 
-func TestAuthorizeOrgMemberMayAuthorizeClientTheyDidNotRegister(t *testing.T) {
+// Review finding F2: the org-member-may-auto-approve test this replaces
+// (TestAuthorizeOrgMemberMayAuthorizeClientTheyDidNotRegister) enshrined a
+// one-click privilege escalation as intended behaviour -- a bare GET, with
+// no consent screen ever rendered, minted a code naming user 7 as the
+// grantee for a client user 7 never registered and does not control. Any
+// org peer could register a client with an attacker-controlled
+// redirect_uri and send a same-org teammate a link that silently
+// auto-approved on their behalf. Auto-approve now requires
+// client.OwnerUserID == the session user exactly; everyone else -- even a
+// legitimate org peer -- gets routed to the consent screen instead.
+func TestAuthorizeOrgMemberDoesNotAutoApproveClientTheyDidNotRegister(t *testing.T) {
 	f := newAuthorizeTestFixture(t)
 	clientID := f.registerClient(t, 1, 42, "https://agent.example.com")
 	// user 7 didn't register the client, but IS a member of its org.
@@ -199,7 +252,29 @@ func TestAuthorizeOrgMemberMayAuthorizeClientTheyDidNotRegister(t *testing.T) {
 	q := authorizeQuery(clientID, "https://agent.example.com/auth/callback", service.ScopeAgentDashboardAccess, "s1")
 	rec := f.get(t, q, 7)
 
-	require.Equal(t, http.StatusOK, rec.Code, "org member must be able to auto-approve, body=%s", rec.Body.String())
+	require.Equal(t, http.StatusAccepted, rec.Code, "a non-owner org member must see the consent screen, never auto-approve; body=%s", rec.Body.String())
+	require.Empty(t, f.pendingAuthorizationCodes(t, clientID), "no code may be minted without an explicit decision")
+}
+
+// The narrowing above must not have gone too far: an org member who did NOT
+// register the client is still someone who may SEE and DECIDE ON the
+// request (userOwnsClient's broader owner-or-org-member test, kept
+// deliberately for this gate) -- they just cannot be auto-approved with
+// zero interaction. A deliberate POST decision=approve must still succeed
+// and must still pass the ownership gate rather than hitting the 403 page.
+func TestAuthorizeOrgMemberPassesOwnershipGateAndCanExplicitlyApprove(t *testing.T) {
+	f := newAuthorizeTestFixture(t)
+	clientID := f.registerClient(t, 1, 42, "https://agent.example.com")
+	f.addOrgMember(t, 1, 7, service.OrgRoleMember)
+
+	q := authorizeQuery(clientID, "https://agent.example.com/auth/callback", service.ScopeAgentDashboardAccess, "s1")
+	rec := f.post(t, q, "approve", 7)
+
+	require.NotEqual(t, http.StatusForbidden, rec.Code, "org member must pass the ownership gate, not be treated as a non-owner")
+	require.Equal(t, http.StatusOK, rec.Code, "an explicit approve from an org member must mint a code; body=%s", rec.Body.String())
+	rows := f.authorizationCodes(t, clientID)
+	require.Len(t, rows, 1)
+	require.EqualValues(t, 7, rows[0].UserID, "the code must be minted for the approving org member, not the client's registrant")
 }
 
 // ---- Login round trip ---------------------------------------------------
@@ -283,11 +358,23 @@ func TestAuthorizeAutoApprovesExactDashboardScopeForOwner(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Header().Get("Content-Type"), "text/plain")
+	// F5: RFC 6749 §5.1 requires no-store/no-cache on any response carrying
+	// a credential -- this body carries the authorization code itself.
+	require.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+	require.Equal(t, "no-cache", rec.Header().Get("Pragma"))
 	body := rec.Body.String()
 	require.Contains(t, body, "https://agent.example.com/auth/callback?")
 	require.Contains(t, body, "code=")
 	require.Contains(t, body, "state=s1")
 	require.NotContains(t, body, "error=")
+
+	// F13: "issues a code" must mean a row actually exists, not just that
+	// the body contains the substring "code=".
+	rows := f.authorizationCodes(t, clientID)
+	require.Len(t, rows, 1)
+	require.Equal(t, "pending", rows[0].Status)
+	require.EqualValues(t, 42, rows[0].UserID)
+	require.Equal(t, service.ScopeAgentDashboardAccess, rows[0].Scope)
 }
 
 func TestAuthorizeWiderScopeRequiresConsentEvenForOwner(t *testing.T) {
@@ -326,8 +413,182 @@ func TestAuthorizePostDenyRedirectsWithAccessDeniedAndIssuesNoCode(t *testing.T)
 	rec := f.post(t, q, "deny", 42)
 
 	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
 	body := rec.Body.String()
 	require.Contains(t, body, "error=access_denied")
 	require.Contains(t, body, "state=s3")
 	require.NotContains(t, body, "code=")
+
+	// F13: "issues no code" must mean zero rows, not merely that the body
+	// happens not to contain the substring "code=" -- a handler that
+	// minted a code and forgot to include it in the body would otherwise
+	// pass this assertion.
+	require.Empty(t, f.authorizationCodes(t, clientID), "deny must not persist any authorization code row")
+}
+
+// ---- New scope rule ------------------------------------------------------
+
+func TestAuthorizeBillingManageScopeRedirectsWithInvalidScope(t *testing.T) {
+	f := newAuthorizeTestFixture(t)
+	clientID := f.registerClient(t, 1, 42, "https://agent.example.com")
+
+	// oauth_scope_vocabulary.go documents billing:manage as never grantable
+	// at initial login -- only via a second, explicit device-flow
+	// elevation. /oauth/authorize must not open a second path to it, even
+	// though billing:manage is otherwise a member of the valid vocabulary
+	// (so plain ValidateScope alone would let it through).
+	q := authorizeQuery(clientID, "https://agent.example.com/auth/callback", service.ScopeBillingManage, "s1")
+	rec := f.get(t, q, 0) // no auth needed to reject this -- redirect-class, pre-bearer-check
+	require.Equal(t, http.StatusFound, rec.Code)
+	require.Contains(t, rec.Header().Get("Location"), "error=invalid_scope")
+
+	// Also rejected when bundled with an otherwise-fine scope, and even for
+	// the client's own owner attempting an explicit POST approve -- the
+	// billing:manage check runs before the method/decision branch, same as
+	// every other redirect-class rejection that doesn't need to know who
+	// is asking, so this is a real 302 too, not the 200/target-body
+	// protocol the POST decision arms otherwise use.
+	q2 := authorizeQuery(clientID, "https://agent.example.com/auth/callback", service.ScopeAgentsRead+" "+service.ScopeBillingManage, "s2")
+	rec2 := f.post(t, q2, "approve", 42)
+	require.Equal(t, http.StatusFound, rec2.Code)
+	require.Contains(t, rec2.Header().Get("Location"), "error=invalid_scope")
+	require.Empty(t, f.authorizationCodes(t, clientID))
+}
+
+// ---- F9: repeat issuance must not leave more than one live code ---------
+
+func TestAuthorizeRepeatAutoApproveInvalidatesPriorPendingCode(t *testing.T) {
+	f := newAuthorizeTestFixture(t)
+	clientID := f.registerClient(t, 1, 42, "https://agent.example.com")
+	q := authorizeQuery(clientID, "https://agent.example.com/auth/callback", service.ScopeAgentDashboardAccess, "s1")
+
+	first := f.get(t, q, 42)
+	require.Equal(t, http.StatusOK, first.Code)
+	firstCode := codeFromTarget(t, first.Body.String())
+
+	// Simulates AuthorizeConsentView.vue remounting (Back-navigation, a
+	// refresh, a duplicated onMounted) and re-issuing the same request --
+	// review found this previously left BOTH codes independently
+	// redeemable, N calls meaning N live credentials for one authorization.
+	second := f.get(t, q, 42)
+	require.Equal(t, http.StatusOK, second.Code)
+	secondCode := codeFromTarget(t, second.Body.String())
+	require.NotEqual(t, firstCode, secondCode, "each issuance still mints a fresh code")
+
+	rows := f.authorizationCodes(t, clientID)
+	require.Len(t, rows, 2, "both attempts persist a row")
+	pending := f.pendingAuthorizationCodes(t, clientID)
+	require.Len(t, pending, 1, "only the most recent issuance may still be pending/redeemable")
+	require.Equal(t, secondCode, pending[0].Code)
+
+	// The superseded code is not silently dropped -- it's marked consumed
+	// with no issued_token_family, the schema's existing "invalidated
+	// without ever being redeemed" state (see
+	// ent/schema/oauth_authorization_code.go), not deleted.
+	for _, row := range rows {
+		if row.Code == firstCode {
+			require.Equal(t, "consumed", row.Status)
+			require.Nil(t, row.IssuedTokenFamily)
+		}
+	}
+}
+
+// codeFromTarget extracts the `code` query parameter from a
+// respondWithTarget body (redirect_uri?code=...&state=...).
+func codeFromTarget(t *testing.T, target string) string {
+	t.Helper()
+	parsed, err := url.Parse(target)
+	require.NoError(t, err)
+	code := parsed.Query().Get("code")
+	require.NotEmpty(t, code, "target has no code param: %s", target)
+	return code
+}
+
+// ---- F14: scope is normalised once, not just at the comparison site -----
+
+func TestAuthorizeScopeIsTrimmedBeforeBothComparingAndPersisting(t *testing.T) {
+	f := newAuthorizeTestFixture(t)
+	clientID := f.registerClient(t, 1, 42, "https://agent.example.com")
+
+	q := authorizeQuery(clientID, "https://agent.example.com/auth/callback", " "+service.ScopeAgentDashboardAccess+" ", "s1")
+	rec := f.get(t, q, 42)
+
+	require.Equal(t, http.StatusOK, rec.Code, "a scope that trims down to the exact auto-approve scope must still auto-approve")
+	rows := f.authorizationCodes(t, clientID)
+	require.Len(t, rows, 1)
+	require.Equal(t, service.ScopeAgentDashboardAccess, rows[0].Scope, "the stored scope must be trimmed, not the untrimmed raw query value")
+}
+
+// ---- F11: GET /api/oauth/authorize/pending -------------------------------
+
+func TestPendingAuthorizationRequiresAuth(t *testing.T) {
+	f := newAuthorizeTestFixture(t)
+	clientID := f.registerClient(t, 1, 42, "https://agent.example.com")
+
+	rec := f.pending(t, clientID, 0)
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestPendingAuthorizationReturnsDisplayNameForOwner(t *testing.T) {
+	f := newAuthorizeTestFixture(t)
+	clientID := f.registerClient(t, 1, 42, "https://agent.example.com")
+
+	rec := f.pending(t, clientID, 42)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var body struct {
+		Data struct {
+			ClientName string `json:"client_name"`
+			ClientID   string `json:"client_id"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "test-agent", body.Data.ClientName)
+	require.Equal(t, clientID, body.Data.ClientID)
+}
+
+func TestPendingAuthorizationReturnsDisplayNameForOrgMember(t *testing.T) {
+	f := newAuthorizeTestFixture(t)
+	clientID := f.registerClient(t, 1, 42, "https://agent.example.com")
+	f.addOrgMember(t, 1, 7, service.OrgRoleMember)
+
+	rec := f.pending(t, clientID, 7)
+	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+// F11: an authenticated user with no relationship to the client must not
+// be able to learn its display name -- the exact disclosure review found:
+// any authenticated Inferno user who obtained a client_id could previously
+// learn another org's client's owner-chosen name.
+func TestPendingAuthorizationNonOwnerGetsNotFoundNotTheName(t *testing.T) {
+	f := newAuthorizeTestFixture(t)
+	clientID := f.registerClient(t, 1, 42, "https://agent.example.com")
+
+	rec := f.pending(t, clientID, 99)
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.NotContains(t, rec.Body.String(), "test-agent")
+}
+
+func TestPendingAuthorizationUnknownClientReturnsNotFound(t *testing.T) {
+	f := newAuthorizeTestFixture(t)
+
+	rec := f.pending(t, "agent:does-not-exist", 42)
+	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// F11: a revoked client must read identically to an unknown one -- the
+// unfiltered ByClientID lookup this replaced un-collapsed exactly the
+// unknown-vs-revoked distinction service.ErrClientNotUsable's doc comment
+// says must stay collapsed.
+func TestPendingAuthorizationRevokedClientReturnsNotFoundNotTheName(t *testing.T) {
+	f := newAuthorizeTestFixture(t)
+	clientID := f.registerClient(t, 1, 42, "https://agent.example.com")
+	_, err := f.ent.OAuthClient.Update().
+		Where(oauthclient.ClientID(clientID)).
+		SetStatus(service.ClientRevoked).
+		Save(context.Background())
+	require.NoError(t, err)
+
+	rec := f.pending(t, clientID, 42)
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.NotContains(t, rec.Body.String(), "test-agent")
 }

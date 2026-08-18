@@ -50,11 +50,11 @@ function mountView() {
   return mount(AuthorizeConsentView, { global: { stubs: globalStubs } })
 }
 
-// jsdom's window.location.assign is not configurable, so it cannot be
+// jsdom's window.location.replace is not configurable, so it cannot be
 // vi.spyOn'd directly -- the whole `location` object has to be replaced,
 // exactly as PaymentStatusPanel.spec.ts already does for the same reason.
 let originalLocation: Location
-let locationAssign: ReturnType<typeof vi.fn>
+let locationReplace: ReturnType<typeof vi.fn>
 
 describe('AuthorizeConsentView', () => {
   beforeEach(() => {
@@ -65,10 +65,10 @@ describe('AuthorizeConsentView', () => {
     fetchPendingAuthorization.mockResolvedValue(PENDING)
 
     originalLocation = window.location
-    locationAssign = vi.fn()
+    locationReplace = vi.fn()
     Object.defineProperty(window, 'location', {
       configurable: true,
-      value: { assign: locationAssign }
+      value: { replace: locationReplace }
     })
   })
 
@@ -88,7 +88,7 @@ describe('AuthorizeConsentView', () => {
     await flushPromises()
 
     expect(checkAuthorize).toHaveBeenCalledWith(VALID_QUERY)
-    expect(locationAssign).toHaveBeenCalledWith(
+    expect(locationReplace).toHaveBeenCalledWith(
       'https://agent.example.com/auth/callback?code=abc&state=csrf-state'
     )
     expect(fetchPendingAuthorization).not.toHaveBeenCalled()
@@ -134,7 +134,7 @@ describe('AuthorizeConsentView', () => {
     await flushPromises()
 
     expect(decideAuthorize).toHaveBeenCalledWith(VALID_QUERY, 'approve')
-    expect(locationAssign).toHaveBeenCalledWith(
+    expect(locationReplace).toHaveBeenCalledWith(
       'https://agent.example.com/auth/callback?code=xyz&state=csrf-state'
     )
   })
@@ -149,7 +149,7 @@ describe('AuthorizeConsentView', () => {
     await flushPromises()
 
     expect(decideAuthorize).toHaveBeenCalledWith(VALID_QUERY, 'deny')
-    expect(locationAssign).toHaveBeenCalledWith(
+    expect(locationReplace).toHaveBeenCalledWith(
       'https://agent.example.com/auth/callback?error=access_denied&state=csrf-state'
     )
   })

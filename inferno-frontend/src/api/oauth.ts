@@ -74,7 +74,7 @@ export async function fetchPendingDeviceAuthorization(
  * to next (the browser cannot follow a literal cross-origin 302 issued to a
  * `fetch()` call the way it could a real top-level navigation -- see that
  * handler's doc comment for the full reasoning). AuthorizeConsentView.vue's
- * only job on a "redirect" result is `window.location.assign(url)`.
+ * only job on a "redirect" result is `window.location.replace(url)`.
  *
  * checkAuthorize is the GET: it reports either "here is where to go next"
  * (auto-approved, or the request was rejected with an RFC redirect-class
@@ -96,6 +96,35 @@ export type AuthorizeCheckResult =
   | { kind: 'redirect'; url: string }
   | { kind: 'consent_required' }
 
+/**
+ * Validates that a 2xx body from /oauth/authorize is genuinely an absolute
+ * `https:` URL before it is ever handed to `window.location.replace`.
+ *
+ * Without this, ANY non-202 2xx response body was treated as a navigation
+ * target unconditionally -- and that was concretely reachable, not
+ * theoretical: before the `/oauth` vite proxy entry existed, `apiClient`
+ * had no `VITE_API_BASE_URL` to resolve against, `buildGatewayUrl`
+ * resolved to the Vite dev server's OWN origin, and Vite answered with its
+ * SPA `index.html` at 200 -- so this function would have received
+ * `<!doctype html>...` as `response.data` and called
+ * `window.location.replace('<!doctype html>...')`, a garbage navigation
+ * with no error surfaced anywhere. Throwing here turns that class of
+ * failure into a normal caught error `AuthorizeConsentView.vue`'s existing
+ * `fail()` handler already renders, instead of a silent broken redirect.
+ */
+function requireAbsoluteHttpsTarget(body: string): string {
+  let parsed: URL
+  try {
+    parsed = new URL(body)
+  } catch {
+    throw new Error('oauth authorize: response was not a URL')
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error('oauth authorize: response was not an https: URL')
+  }
+  return body
+}
+
 export async function checkAuthorize(params: AuthorizeParams): Promise<AuthorizeCheckResult> {
   const response = await apiClient.get<string>(buildGatewayUrl('/oauth/authorize'), {
     params,
@@ -104,7 +133,7 @@ export async function checkAuthorize(params: AuthorizeParams): Promise<Authorize
   if (response.status === 202) {
     return { kind: 'consent_required' }
   }
-  return { kind: 'redirect', url: response.data }
+  return { kind: 'redirect', url: requireAbsoluteHttpsTarget(response.data) }
 }
 
 export async function decideAuthorize(
@@ -116,7 +145,7 @@ export async function decideAuthorize(
     null,
     { params: { ...params, decision }, responseType: 'text' }
   )
-  return response.data
+  return requireAbsoluteHttpsTarget(response.data)
 }
 
 /**

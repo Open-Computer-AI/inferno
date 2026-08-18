@@ -79,9 +79,18 @@ func RegisterOAuthDeviceRoutes(r gin.IRouter, h *handler.OAuthHandler) {
 // is rejected by that shared middleware before the handler runs -- see
 // OAuthHandler.Authorize's doc comment for why that one case is this
 // otherwise-bare endpoint's sole JSON exception.
-func RegisterOAuthAuthorizeRoute(r gin.IRouter, h *handler.OAuthHandler, optionalJWTAuth middleware.OptionalJWTAuthMiddleware) {
-	r.GET("/oauth/authorize", gin.HandlerFunc(optionalJWTAuth), h.Authorize)
-	r.POST("/oauth/authorize", gin.HandlerFunc(optionalJWTAuth), h.Authorize)
+//
+// rateLimiter.PublicIP() (Task 4 fix round 1, F15) -- every hit performs a
+// DB client lookup BEFORE any auth check runs (client_id/redirect_uri are
+// validated first, deliberately, since they gate the MUST-NOT-REDIRECT
+// decision), so an unauthenticated caller could otherwise drive unbounded
+// lookups. Per-IP, not per-user, for the same reason
+// RegisterModelPlazaRoutes uses PublicIP() for its own pre-auth-reachable
+// public group: there is no session to key on until AFTER the checks this
+// limiter needs to bound.
+func RegisterOAuthAuthorizeRoute(r gin.IRouter, h *handler.OAuthHandler, optionalJWTAuth middleware.OptionalJWTAuthMiddleware, rateLimiter *middleware.PanelRateLimiter) {
+	r.GET("/oauth/authorize", rateLimiter.PublicIP(), gin.HandlerFunc(optionalJWTAuth), h.Authorize)
+	r.POST("/oauth/authorize", rateLimiter.PublicIP(), gin.HandlerFunc(optionalJWTAuth), h.Authorize)
 }
 
 // RegisterOAuthAccountRoutes mounts GET /api/oauth/account behind Task 6's
@@ -89,7 +98,7 @@ func RegisterOAuthAuthorizeRoute(r gin.IRouter, h *handler.OAuthHandler, optiona
 // deliberately not merged into RegisterOAuthAPIRoutes (gated by jwtAuth,
 // Inferno's HMAC panel-session middleware) or RegisterOAuthDeviceRoutes
 // (unauthenticated). A hermes agent calling this endpoint presents an
-// OAuth-issued ES256 bearer token, not a panel session and not a bare
+// OAuth-issued RS256 bearer token, not a panel session and not a bare
 // client_id — a third auth shape needs its own group. required scope is ""
 // (any validly-signed, unexpired OAuth token) since this endpoint only
 // resolves which org(s) the token's holder belongs to; it grants no

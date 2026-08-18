@@ -59,11 +59,19 @@ interface MockAuthState {
 
 /**
  * 将 router/index.ts 中 beforeEach 守卫的核心逻辑提取为可测试的函数
+ *
+ * toQuery mirrors `to.query` -- added for Task 4 fix round 1 (review F1):
+ * an already-authenticated browser hitting /login?redirect=<oauth path>
+ * (the round trip GET/POST /oauth/authorize's 302 produces for a session
+ * that already exists) must land on that redirect target, not be bounced
+ * to the hardcoded dashboard path -- the exact bug that silently dropped
+ * the OAuth request for any user who was already signed in.
  */
 function simulateGuard(
   toPath: string,
   toMeta: Record<string, any>,
-  authState: MockAuthState
+  authState: MockAuthState,
+  toQuery: Record<string, unknown> = {}
 ): string | null {
   const requiresAuth = toMeta.requiresAuth !== false
   const requiresAdmin = toMeta.requiresAdmin === true
@@ -80,6 +88,12 @@ function simulateGuard(
     ) {
       if (authState.backendModeEnabled && !authState.isAdmin) {
         return null
+      }
+      const redirectTarget = toPath === '/login' && typeof toQuery.redirect === 'string'
+        ? toQuery.redirect
+        : ''
+      if (redirectTarget) {
+        return redirectTarget
       }
       return authState.isAdmin ? '/admin/dashboard' : '/dashboard'
     }
@@ -207,6 +221,37 @@ describe('路由守卫逻辑', () => {
       expect(redirect).toBe('/dashboard')
     })
 
+    // Task 4 fix round 1 (review F1): GET/POST /oauth/authorize's 302
+    // lands an already-authenticated browser on exactly this path+state --
+    // /login?redirect=/oauth/authorize?... -- and without honoring
+    // `redirect` here, the OAuth request silently evaporated into
+    // /dashboard for any user who was already signed in when they clicked
+    // a desktop login link, which is the common case, not an edge case.
+    it('已登录用户携带 redirect 参数访问 /login 时跳转到 redirect 目标，而非 dashboard', () => {
+      const redirect = simulateGuard(
+        '/login',
+        { requiresAuth: false },
+        authState,
+        { redirect: '/oauth/authorize?response_type=code&client_id=agent%3Aabc&state=s1' }
+      )
+      expect(redirect).toBe('/oauth/authorize?response_type=code&client_id=agent%3Aabc&state=s1')
+    })
+
+    it('已登录用户访问 /login 但没有 redirect 参数时仍跳转到 dashboard', () => {
+      const redirect = simulateGuard('/login', { requiresAuth: false }, authState, {})
+      expect(redirect).toBe('/dashboard')
+    })
+
+    it('redirect 参数只对 /login 生效，/register 上被忽略', () => {
+      const redirect = simulateGuard(
+        '/register',
+        { requiresAuth: false },
+        authState,
+        { redirect: '/oauth/authorize?response_type=code' }
+      )
+      expect(redirect).toBe('/dashboard')
+    })
+
     it('访问 /register 重定向到 /dashboard', () => {
       const redirect = simulateGuard('/register', { requiresAuth: false }, authState)
       expect(redirect).toBe('/dashboard')
@@ -242,6 +287,16 @@ describe('路由守卫逻辑', () => {
     it('访问 /login 重定向到 /admin/dashboard', () => {
       const redirect = simulateGuard('/login', { requiresAuth: false }, authState)
       expect(redirect).toBe('/admin/dashboard')
+    })
+
+    it('已登录管理员携带 redirect 参数访问 /login 时跳转到 redirect 目标，而非 /admin/dashboard', () => {
+      const redirect = simulateGuard(
+        '/login',
+        { requiresAuth: false },
+        authState,
+        { redirect: '/oauth/authorize?response_type=code&client_id=agent%3Aabc' }
+      )
+      expect(redirect).toBe('/oauth/authorize?response_type=code&client_id=agent%3Aabc')
     })
 
     it('访问管理页面允许通过', () => {

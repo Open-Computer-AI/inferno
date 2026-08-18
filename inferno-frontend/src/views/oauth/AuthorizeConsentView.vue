@@ -158,9 +158,14 @@ const pending = ref<PendingAuthorization | null>(null)
 const isSubmitting = ref<'approve' | 'deny' | null>(null)
 
 /** Isolated so tests can stub navigation instead of driving jsdom through a
- *  real cross-origin page load. */
+ *  real cross-origin page load. Uses `replace`, not `assign`: this is the
+ *  terminal step of a redirect-shaped flow, matching a real HTTP 302's
+ *  semantics (no history entry) rather than `assign`'s "navigate as if the
+ *  person typed the URL" -- `assign` would leave
+ *  `/oauth/authorize?...&state=...&code_challenge=...` in the back stack,
+ *  letting Back re-enter a flow that has already been decided. */
 function navigateTo(url: string): void {
-  window.location.assign(url)
+  window.location.replace(url)
 }
 
 function fail(err: unknown): void {

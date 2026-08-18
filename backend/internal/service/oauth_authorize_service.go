@@ -9,6 +9,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/oauthauthorizationcode"
 )
 
 // Authorization-code lifecycle. Deliberately just two states, unlike the
@@ -195,6 +196,39 @@ func (s *OAuthAuthorizeService) IssueCode(ctx context.Context, in IssueCodeInput
 	}
 	if err := RedirectURIMatchesClient(client.RedirectURIOrigin, in.RedirectURI); err != nil {
 		return "", err
+	}
+
+	// Invalidate any still-pending code already issued for this exact
+	// (client, user) pair before minting a new one. Without this, every
+	// call to this function -- a remount of AuthorizeConsentView.vue
+	// (Back-navigation, a refresh, a duplicated mount), or a repeat
+	// auto-approve GET -- adds ANOTHER independently redeemable
+	// credential on top of whatever is already outstanding, rather than
+	// replacing it: N calls means N live codes, each good for its own
+	// token exchange, not one. Task 3's single-use/replay-revocation
+	// logic (ExchangeAuthorizationCode) operates per-code and does
+	// nothing to bound that count.
+	//
+	// Marked "consumed" with issued_token_family left nil -- the exact
+	// state this schema already defines for "a presentation that failed
+	// validation, so nothing was ever issued and a later replay has
+	// nothing to revoke" (see the field's doc comment on
+	// ent/schema/oauth_authorization_code.go). A superseded-but-never-
+	// redeemed code fits that same description. Deliberately not wrapped
+	// in a transaction with the Create below: the invalidation window is
+	// a few milliseconds against a 10-minute TTL, and the property this
+	// closes is "how many codes can be outstanding at once", not
+	// single-use (which the CAS in ExchangeAuthorizationCode already
+	// guarantees regardless).
+	if _, err := s.entClient.OAuthAuthorizationCode.Update().
+		Where(
+			oauthauthorizationcode.ClientID(in.ClientID),
+			oauthauthorizationcode.UserID(in.UserID),
+			oauthauthorizationcode.Status(authCodeStatusPending),
+		).
+		SetStatus(authCodeStatusConsumed).
+		Save(ctx); err != nil {
+		return "", fmt.Errorf("invalidate prior pending codes: %w", err)
 	}
 
 	code, err := newAuthorizationCode()

@@ -898,6 +898,25 @@ router.beforeEach(async (to, _from, next) => {
         next()
         return
       }
+      // GET /oauth/authorize (backend/internal/handler/oauth_authorize_handler.go)
+      // bounces an unauthenticated browser to /login?redirect=<original
+      // oauth path+query> -- but that backend redirect is issued for EVERY
+      // bearer-less hit, including one from a browser that is already
+      // signed in (Inferno has no session cookie, so the backend cannot
+      // tell the difference). Without honoring `redirect` here too, an
+      // already-authenticated user hitting /login this way is bounced to
+      // /dashboard and the OAuth request silently evaporates -- this is
+      // the common case, not an edge case, since a desktop app's login
+      // link is opened in whatever browser profile the person already
+      // uses daily. Mirrors LoginView.vue's own post-submit
+      // `router.currentRoute.value.query.redirect` handling exactly.
+      const redirectTarget = to.path === '/login' && typeof to.query.redirect === 'string'
+        ? to.query.redirect
+        : ''
+      if (redirectTarget) {
+        next(redirectTarget)
+        return
+      }
       // Admin users go to admin dashboard, regular users go to user dashboard
       next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
       return

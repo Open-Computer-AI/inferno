@@ -530,6 +530,8 @@ func TestFrontendServer_Middleware(t *testing.T) {
 			"/health",
 			"/responses",
 			"/responses/compact",
+			"/oauth/authorize",
+			"/.well-known/jwks.json",
 		}
 
 		for _, path := range apiPaths {
@@ -678,35 +680,12 @@ func TestFrontendServer_Middleware(t *testing.T) {
 	})
 }
 
-func TestEmbeddedFrontendBypassesBareVideoAPIRoutes(t *testing.T) {
-	for _, path := range []string{
-		"/videos/generations",
-		"/videos/edits",
-		"/videos/extensions",
-		"/videos/request-123",
-	} {
-		require.True(t, shouldBypassEmbeddedFrontend(path), "path=%s", path)
-	}
-}
-
-// TestEmbeddedFrontendBypassesOAuthAuthorize is Task 4's regression guard on
-// the one line that makes GET/POST /oauth/authorize reachable at all in a
-// production embed build: without it, the SPA fallback below would serve
-// index.html for this path (indistinguishable from any other unmatched
-// route) and OAuthHandler.Authorize -- the handler that owns the RFC 6749
-// §4.1.2.1 error-page/redirect split -- would never run. A production-mode
-// `go run ./cmd/server` (no `-tags embed`, this test's own build) can't
-// exercise that path end to end since web.HasEmbeddedFrontend() is false
-// there and this middleware never even mounts; this is the fast,
-// unconditional substitute -- see SetupRouter in internal/server/router.go
-// for where frontendServer.Middleware() actually sits in the chain.
-func TestEmbeddedFrontendBypassesOAuthAuthorize(t *testing.T) {
-	require.True(t, shouldBypassEmbeddedFrontend("/oauth/authorize"))
-	// Sibling paths must NOT bypass -- only the exact literal path is a real
-	// backend route; anything else at this prefix is still SPA territory.
-	require.False(t, shouldBypassEmbeddedFrontend("/oauth/authorized"))
-	require.False(t, shouldBypassEmbeddedFrontend("/oauth/authorize/consent"))
-}
+// shouldBypassEmbeddedFrontend's own tests moved to bypass_test.go
+// (untagged -- see that file and bypass.go for why: Task 4 fix round 1,
+// F4). This file keeps only the tests that need a REAL embed build --
+// FrontendServer, its Middleware(), and a real dist/ -- and Middleware()
+// itself still calls the moved function, so its behavior stays covered
+// here indirectly (TestFrontendServer_Middleware below).
 
 func TestNewFrontendServer(t *testing.T) {
 	t.Run("creates_server_successfully", func(t *testing.T) {
