@@ -366,7 +366,14 @@ func shouldBypassEmbeddedFrontend(path string) bool {
 		strings.HasPrefix(trimmed, "/responses/") ||
 		trimmed == "/alpha/search" ||
 		strings.HasPrefix(trimmed, "/images/") ||
-		strings.HasPrefix(trimmed, "/videos/")
+		strings.HasPrefix(trimmed, "/videos/") ||
+		// GET/POST /oauth/authorize (Task 4 of the authorization_code+PKCE
+		// plan): a real backend endpoint the hermes client's system browser
+		// navigates to directly (see OAuthHandler.Authorize's doc comment),
+		// not a Vue route -- without this it would be served index.html
+		// like any other unmatched SPA path and the handler that does the
+		// RFC 6749 §4.1.2.1 error-page/redirect split would never run.
+		trimmed == "/oauth/authorize"
 }
 
 func serveIndexHTML(c *gin.Context, fsys fs.FS) {

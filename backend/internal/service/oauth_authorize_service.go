@@ -88,7 +88,7 @@ var ErrUnknownClient = errors.New("oauth: client_id is unknown or not usable")
 // = 256 bits -> ceil(256/6) = 43 characters, no padding).
 const codeChallengeLen = 43
 
-// validCodeChallengeShape reports whether s is shaped like a real RFC 7636
+// ValidCodeChallengeShape reports whether s is shaped like a real RFC 7636
 // S256 challenge: exactly codeChallengeLen unpadded base64url characters.
 //
 // This does NOT verify the challenge matches any particular verifier — that
@@ -97,7 +97,13 @@ const codeChallengeLen = 43
 // any verifier at redemption), but validating its shape at issue time turns
 // a silent invalid_grant several steps later into an immediate, diagnosable
 // invalid_request at the point the caller actually made the mistake.
-func validCodeChallengeShape(s string) bool {
+//
+// Exported (Task 4) so /oauth/authorize's handler can apply the identical
+// check before ever calling IssueCode: that lets it redirect a malformed
+// PKCE request straight to redirect_uri with error=invalid_request without
+// first forcing the browser through a login round trip to answer a
+// question that doesn't depend on who is asking.
+func ValidCodeChallengeShape(s string) bool {
 	if len(s) != codeChallengeLen {
 		return false
 	}
@@ -166,7 +172,7 @@ func (s *OAuthAuthorizeService) IssueCode(ctx context.Context, in IssueCodeInput
 	if in.CodeChallengeMethod != "S256" {
 		return "", ErrPlainChallengeMethodRejected
 	}
-	if !validCodeChallengeShape(in.CodeChallenge) {
+	if !ValidCodeChallengeShape(in.CodeChallenge) {
 		return "", ErrMissingCodeChallenge
 	}
 	if err := ValidateScope(in.Scope); err != nil {

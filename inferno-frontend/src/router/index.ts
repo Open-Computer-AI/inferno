@@ -427,6 +427,32 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    // Load-bearing path: this is a Vue route ONLY for the authenticated leg
+    // of the flow. The FIRST hit at this exact path is always a real
+    // top-level browser navigation the hermes client's system browser makes
+    // directly to backend/internal/handler/oauth_authorize_handler.go's
+    // GET/POST /oauth/authorize -- that handler is bypassed out of the
+    // embedded-frontend SPA fallback (see shouldBypassEmbeddedFrontend in
+    // internal/web/embed_on.go) precisely so it runs before this route ever
+    // could. This route only starts rendering once that handler has already
+    // sent an unauthenticated visitor to /login?redirect=/oauth/authorize?...
+    // and LoginView has pushed back here client-side (see LoginView.vue's
+    // post-login `router.push(redirectTo)`), with a JWT already in hand --
+    // AuthorizeConsentView.vue is what re-issues the request, this time
+    // authenticated, to actually complete the flow.
+    path: '/oauth/authorize',
+    name: 'OAuthAuthorize',
+    component: () => import('@/views/oauth/AuthorizeConsentView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      hideInMenu: true,
+      title: 'Authorize application',
+      titleKey: 'authorize.title',
+      descriptionKey: 'authorize.description'
+    }
+  },
+  {
     path: '/custom/:id',
     name: 'CustomPage',
     component: () => import('@/views/user/CustomPageView.vue'),

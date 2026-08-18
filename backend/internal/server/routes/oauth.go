@@ -35,6 +35,11 @@ func RegisterOAuthAPIRoutes(r gin.IRouter, h *handler.OAuthHandler, jwtAuth midd
 		authenticated.GET("/device/pending", h.PendingDeviceAuthorization)
 		authenticated.POST("/device/approve", h.ApproveDevice)
 		authenticated.POST("/device/deny", h.DenyDevice)
+		// AuthorizeConsentView.vue's display-name lookup for the
+		// /oauth/authorize consent screen (Task 4). See
+		// OAuthHandler.PendingAuthorization's doc comment for why this is
+		// on the envelope while /oauth/authorize itself is bare.
+		authenticated.GET("/authorize/pending", h.PendingAuthorization)
 	}
 }
 
@@ -56,6 +61,27 @@ func RegisterOAuthDeviceRoutes(r gin.IRouter, h *handler.OAuthHandler) {
 		unauthenticated.POST("/device/code", h.DeviceCode)
 		unauthenticated.POST("/token", h.Token)
 	}
+}
+
+// RegisterOAuthAuthorizeRoute mounts GET/POST /oauth/authorize (Task 4) at
+// the server ROOT, not under /api -- it is a browser endpoint, reached by
+// the hermes client's system browser via a real top-level navigation, not
+// an XHR call, so it cannot live behind the header-only jwtAuth group that
+// RegisterOAuthAPIRoutes uses (a raw navigation never carries an
+// Authorization header at all; jwtAuth would 401 every unauthenticated hit
+// with a JSON body no browser can act on).
+//
+// optionalJWTAuth (middleware.OptionalJWTAuthMiddleware, already wired for
+// every other panel endpoint) is used instead: no header at all passes
+// through anonymously (the handler then does its own 302-to-login), a
+// header on a still-valid session resolves the AuthSubject the handler
+// needs for the ownership check, and a header on an EXPIRED/invalid session
+// is rejected by that shared middleware before the handler runs -- see
+// OAuthHandler.Authorize's doc comment for why that one case is this
+// otherwise-bare endpoint's sole JSON exception.
+func RegisterOAuthAuthorizeRoute(r gin.IRouter, h *handler.OAuthHandler, optionalJWTAuth middleware.OptionalJWTAuthMiddleware) {
+	r.GET("/oauth/authorize", gin.HandlerFunc(optionalJWTAuth), h.Authorize)
+	r.POST("/oauth/authorize", gin.HandlerFunc(optionalJWTAuth), h.Authorize)
 }
 
 // RegisterOAuthAccountRoutes mounts GET /api/oauth/account behind Task 6's

@@ -32,10 +32,26 @@ type OAuthHandler struct {
 	// UserRepository, so this handler cannot grow into mutating users. Callers
 	// may pass nil; Account then degrades to an email-less payload.
 	userSvc service.OAuthUserLookup
+	// authorizeSvc issues RFC 6749 §4.1 authorization codes for
+	// GET/POST /oauth/authorize (Task 4). Set via SetAuthorizeService rather
+	// than threaded through NewOAuthHandler's constructor -- that signature
+	// is called directly (not through wire) by a number of existing tests,
+	// and adding a required parameter there would break all of them for a
+	// dependency most of those tests don't exercise. Mirrors
+	// ProvideSettingHandler/ProvideBatchImageHandler's existing
+	// construct-then-set pattern in handler/wire.go.
+	authorizeSvc *service.OAuthAuthorizeService
 }
 
 func NewOAuthHandler(keySvc *service.OAuthKeyService, clientSvc *service.OAuthClientService, orgSvc *service.OrgService, deviceSvc *service.OAuthDeviceService, tokenSvc *service.OAuthTokenService, userSvc service.OAuthUserLookup) *OAuthHandler {
 	return &OAuthHandler{keySvc: keySvc, clientSvc: clientSvc, orgSvc: orgSvc, deviceSvc: deviceSvc, tokenSvc: tokenSvc, userSvc: userSvc}
+}
+
+// SetAuthorizeService wires the authorization-code issuance service used by
+// Authorize (GET/POST /oauth/authorize). See the authorizeSvc field comment
+// for why this is a setter and not a constructor parameter.
+func (h *OAuthHandler) SetAuthorizeService(svc *service.OAuthAuthorizeService) {
+	h.authorizeSvc = svc
 }
 
 // KeyService exposes the OAuth signing key service so

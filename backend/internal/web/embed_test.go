@@ -689,6 +689,25 @@ func TestEmbeddedFrontendBypassesBareVideoAPIRoutes(t *testing.T) {
 	}
 }
 
+// TestEmbeddedFrontendBypassesOAuthAuthorize is Task 4's regression guard on
+// the one line that makes GET/POST /oauth/authorize reachable at all in a
+// production embed build: without it, the SPA fallback below would serve
+// index.html for this path (indistinguishable from any other unmatched
+// route) and OAuthHandler.Authorize -- the handler that owns the RFC 6749
+// §4.1.2.1 error-page/redirect split -- would never run. A production-mode
+// `go run ./cmd/server` (no `-tags embed`, this test's own build) can't
+// exercise that path end to end since web.HasEmbeddedFrontend() is false
+// there and this middleware never even mounts; this is the fast,
+// unconditional substitute -- see SetupRouter in internal/server/router.go
+// for where frontendServer.Middleware() actually sits in the chain.
+func TestEmbeddedFrontendBypassesOAuthAuthorize(t *testing.T) {
+	require.True(t, shouldBypassEmbeddedFrontend("/oauth/authorize"))
+	// Sibling paths must NOT bypass -- only the exact literal path is a real
+	// backend route; anything else at this prefix is still SPA territory.
+	require.False(t, shouldBypassEmbeddedFrontend("/oauth/authorized"))
+	require.False(t, shouldBypassEmbeddedFrontend("/oauth/authorize/consent"))
+}
+
 func TestNewFrontendServer(t *testing.T) {
 	t.Run("creates_server_successfully", func(t *testing.T) {
 		provider := &mockSettingsProvider{

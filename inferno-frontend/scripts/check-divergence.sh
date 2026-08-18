@@ -247,6 +247,19 @@ backend/ent/oauthauthorizationcode_update.go
 backend/migrations/906_oauth_authorization_code.sql
 backend/internal/service/oauth_authorize_service.go
 backend/internal/service/oauth_authorize_service_test.go
+# D5 -- OAuth AS (authorization_code + PKCE plan, Task 4: GET/POST
+# /oauth/authorize and the consent screen). oauth_handler.go,
+# oauth_authorize_service.go (ValidCodeChallengeShape exported, no behavior
+# change), handler/wire.go, service/wire.go, server/routes/oauth.go,
+# server/router.go, and cmd/server/wire_gen.go are already declared above
+# (Tasks 1-3 / org tenancy) -- not re-listed here, same files. The frontend
+# half of this task (views/oauth/AuthorizeConsentView.vue + its spec,
+# api/oauth.ts, router/index.ts, i18n/locales/en+zh/misc.ts) is out of this
+# script's diff scope entirely, same as Task 7's device screen -- see
+# GOAL.md's D5 row for that list.
+backend/internal/handler/oauth_authorize_handler.go
+backend/internal/handler/oauth_authorize_handler_test.go
+backend/internal/web/embed_on.go
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }

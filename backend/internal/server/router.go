@@ -130,6 +130,14 @@ func registerRoutes(
 	// RegisterOAuthAccountRoutes.
 	routes.RegisterOAuthAccountRoutes(r, h.OAuth)
 
+	// GET/POST /oauth/authorize (Task 4): the browser-facing authorization
+	// endpoint, mounted at the server root -- not under /api -- and NOT
+	// bypassed to the embedded frontend by web.FrontendServer (see
+	// shouldBypassEmbeddedFrontend in internal/web/embed_on.go), since it
+	// is a real backend endpoint the hermes client's system browser
+	// navigates to directly, not a Vue route.
+	routes.RegisterOAuthAuthorizeRoute(r, h.OAuth, optionalJWTAuth)
+
 	// API v1
 	v1 := r.Group("/api/v1")
 

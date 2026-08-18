@@ -678,4 +678,38 @@ export default {
     },
   },
 
+  // Authorization-code + PKCE consent screen (/oauth/authorize) -- the
+  // browser step of RFC 6749 4.1's authorization_code grant, opened by the
+  // hermes desktop client's system browser. Distinct from device above
+  // (RFC 8628): this flow is usually invisible, redirecting straight back
+  // without ever showing this screen, and only renders it when the
+  // requested scope needs a human decision.
+  authorize: {
+    title: 'Authorize application',
+    description: 'Review what this application is requesting before you approve it.',
+    loading: 'Checking this request...',
+    requestedBy: 'Requesting application',
+    requestedAccess: 'Access requested',
+    grantWarning:
+      'Approving signs this application in to your account. It receives a credential that keeps working in the background until you revoke it, not just for this browser session.',
+    unknownScope: 'An unrecognised permission. Deny this request.',
+    scopes: {
+      agentDashboardAccess: 'View your agent dashboard',
+      inferenceInvoke: 'Send model requests and spend your credits',
+      toolInvoke: 'Use tools on your behalf',
+      billingRead: 'Read your billing and credit balance',
+      billingManage: 'Charge you, change your plan and top up automatically',
+      agentsRead: 'List the agents on your account',
+      agentsManage: 'Register and revoke agents on your account',
+    },
+    approve: 'Approve',
+    approving: 'Approving...',
+    deny: 'Deny',
+    denying: 'Denying...',
+    redirecting: 'Redirecting you back...',
+    errors: {
+      generic: 'This request could not be authorized. Please try again from the application.',
+    },
+  },
+
 }

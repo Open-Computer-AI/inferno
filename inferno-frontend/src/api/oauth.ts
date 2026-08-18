@@ -62,3 +62,77 @@ export async function fetchPendingDeviceAuthorization(
   )
   return data
 }
+
+/**
+ * GET/POST /oauth/authorize (backend/internal/handler/oauth_authorize_handler.go)
+ * -- the RFC 6749 §4.1 authorization_code + PKCE browser leg.
+ *
+ * DELIBERATELY NOT on the {code,message,data} envelope, and NOT JSON at all:
+ * that endpoint is a real OAuth authorization endpoint any client can
+ * navigate a browser to directly, so its success/redirect-with-error
+ * responses are a bare `text/plain` body carrying the exact URL to navigate
+ * to next (the browser cannot follow a literal cross-origin 302 issued to a
+ * `fetch()` call the way it could a real top-level navigation -- see that
+ * handler's doc comment for the full reasoning). AuthorizeConsentView.vue's
+ * only job on a "redirect" result is `window.location.assign(url)`.
+ *
+ * checkAuthorize is the GET: it reports either "here is where to go next"
+ * (auto-approved, or the request was rejected with an RFC redirect-class
+ * error) or "202, show the consent screen". decideAuthorize is the
+ * consent screen's explicit Approve/Deny action (POST); both always resolve
+ * to a target URL.
+ */
+export interface AuthorizeParams {
+  response_type: string
+  client_id: string
+  redirect_uri: string
+  scope: string
+  state: string
+  code_challenge: string
+  code_challenge_method: string
+}
+
+export type AuthorizeCheckResult =
+  | { kind: 'redirect'; url: string }
+  | { kind: 'consent_required' }
+
+export async function checkAuthorize(params: AuthorizeParams): Promise<AuthorizeCheckResult> {
+  const response = await apiClient.get<string>(buildGatewayUrl('/oauth/authorize'), {
+    params,
+    responseType: 'text',
+  })
+  if (response.status === 202) {
+    return { kind: 'consent_required' }
+  }
+  return { kind: 'redirect', url: response.data }
+}
+
+export async function decideAuthorize(
+  params: AuthorizeParams,
+  decision: 'approve' | 'deny'
+): Promise<string> {
+  const response = await apiClient.post<string>(
+    buildGatewayUrl('/oauth/authorize'),
+    null,
+    { params: { ...params, decision }, responseType: 'text' }
+  )
+  return response.data
+}
+
+/**
+ * Display-only "who is asking" lookup for the consent screen -- unlike
+ * checkAuthorize/decideAuthorize above, this IS on the panel envelope (see
+ * OAuthHandler.PendingAuthorization's doc comment).
+ */
+export interface PendingAuthorization {
+  client_name: string
+  client_id: string
+}
+
+export async function fetchPendingAuthorization(clientID: string): Promise<PendingAuthorization> {
+  const { data } = await apiClient.get<PendingAuthorization>(
+    buildGatewayUrl('/api/oauth/authorize/pending'),
+    { params: { client_id: clientID } }
+  )
+  return data
+}

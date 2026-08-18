@@ -157,8 +157,11 @@ func ProvideOAuthHandler(
 	deviceSvc *service.OAuthDeviceService,
 	tokenSvc *service.OAuthTokenService,
 	userRepo service.UserRepository,
+	authorizeSvc *service.OAuthAuthorizeService,
 ) *OAuthHandler {
-	return NewOAuthHandler(keySvc, clientSvc, orgSvc, deviceSvc, tokenSvc, userRepo)
+	h := NewOAuthHandler(keySvc, clientSvc, orgSvc, deviceSvc, tokenSvc, userRepo)
+	h.SetAuthorizeService(authorizeSvc)
+	return h
 }
 
 // ProvideSystemHandler creates admin.SystemHandler with UpdateService
