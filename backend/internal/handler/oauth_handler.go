@@ -89,7 +89,7 @@ func (h *OAuthHandler) RegisterSelfHostedClient(c *gin.Context) {
 
 	created, err := h.clientSvc.RegisterSelfHosted(ctx, orgs[0].ID, uid, req.RedirectOrigin, req.Name)
 	if err != nil {
-		if errors.Is(err, service.ErrClientNameTooLong) {
+		if errors.Is(err, service.ErrClientNameTooLong) || errors.Is(err, service.ErrInvalidRedirectURI) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
 			return
 		}

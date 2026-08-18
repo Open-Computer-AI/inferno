@@ -137,6 +137,13 @@ func (s *OAuthClientService) GenerateName() string {
 // a client that could choose its own client_id could impersonate another
 // agent.
 //
+// redirectOrigin is validated by ValidateRedirectOrigin (oauth_redirect_uri.go)
+// before anything else in this function runs: https, a real host, no
+// userinfo/path/query/fragment, not loopback. A bad value is rejected with
+// ErrInvalidRedirectURI rather than stored — this used to be accepted
+// completely unvalidated, which is precisely how a bad row could sit in the
+// table looking legitimate until /oauth/authorize tried to use it.
+//
 // name is the caller-supplied label (e.g. `oc dashboard register --name`).
 // Leading/trailing whitespace is trimmed; an empty or whitespace-only name
 // falls back to GenerateName(). A non-empty name longer than the schema's
@@ -147,6 +154,10 @@ func (s *OAuthClientService) GenerateName() string {
 // that needs a charset policy, and (like GenerateName's output) it is
 // deliberately NOT required to be unique — the row id is the key.
 func (s *OAuthClientService) RegisterSelfHosted(ctx context.Context, orgID, userID int64, redirectOrigin, name string) (*dbent.OAuthClient, error) {
+	if err := ValidateRedirectOrigin(redirectOrigin); err != nil {
+		return nil, err
+	}
+
 	name = strings.TrimSpace(name)
 	switch {
 	case name == "":

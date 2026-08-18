@@ -222,6 +222,11 @@ backend/internal/service/auth_service_personal_org_login_test.go
 # oauth_scope.go, oauth_scope_test.go, and oauth_token_service.go are already
 # declared above (Tasks 2/5/6) -- not re-listed here, same files.
 backend/migrations/907_oauth_rs256_key.sql
+# D5 -- OAuth AS (authorization_code + PKCE plan, Task 2: redirect_uri
+# validation). oauth_client_service.go and oauth_handler.go are already
+# declared above (Tasks 3/2) -- not re-listed here, same files.
+backend/internal/service/oauth_redirect_uri.go
+backend/internal/service/oauth_redirect_uri_test.go
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }
