@@ -6,6 +6,13 @@ never commit to it) against Inferno's OAuth 2.0 authorization server, end to
 end: device authorization request → human approval → token exchange →
 signature verification → `slow_down` backoff → **refresh grant**.
 
+Step 9 adds the **dashboard leg**: the authorization_code + PKCE grant,
+driven through the real `plugins/dashboard_auth/nous` provider in the same
+read-only client repo. Different client, different grant, different token
+audience — and, unlike steps 1-8, it must be run against a **`-tags embed`
+build**, because that is the only build in which the SPA middleware can
+swallow a root-level route. Do not skip step 9 either.
+
 **Run both grants, not just device_code.** The first pass of this runbook
 tested device_code alone and shipped with the refresh grant silently
 broken against the real client (see defect 3 below) — a token pair that
@@ -104,7 +111,13 @@ SERVER_MODE=debug TZ=UTC \
 `SERVER_FRONTEND_URL` MUST be set and non-empty — the device flow builds
 `verification_uri` from it (`{frontend_url}/device`) and
 `OAuthDeviceService.RequestCode` refuses with `ErrPortalNotConfigured` (500
-`server_error`) otherwise.
+`server_error`) otherwise. It is ALSO the `iss` claim on every minted access
+token, and `OAuthTokenService.mintAccessToken` now refuses with
+`ErrIssuerNotConfigured` (a logged 500 `server_error`) rather than minting a
+token carrying `iss: ""` — see step 9's defect table.
+
+Write it **without a trailing slash**. The value is normalised now, but the
+canonical spelling is what every expectation below is written against.
 
 **Expected:** `Admin user created: admin@t8.local` and `Auto setup completed
 successfully!` in the log; `curl -s http://127.0.0.1:18480/setup/status`
@@ -118,8 +131,13 @@ docker exec t8-pg psql -U t8 -d t8db -c \
   "SELECT client_id, kind, status FROM oauth_clients;"
 ```
 
-**Expected:** one JWKS key, `alg: ES256`; one row,
+**Expected:** one JWKS key, `kty: RSA`/`alg: RS256`/`use: sig`; one row,
 `client_id=hermes-cli, kind=FIRST_PARTY, status=active`.
+
+(`alg: ES256` until the authorization_code+PKCE plan's Task 1 migrated the
+signing key to RS256 — `backend/migrations/907_oauth_rs256_key.sql`. The real
+gateway plugin hard-codes `algorithms=["RS256"]`, so ES256 here is a
+regression, not a variant.)
 
 ## 2. Seed a personal org for the auto-setup admin
 
@@ -225,13 +243,13 @@ s = json.load(open('/tmp/t8-hermes-home/auth.json'))
 tok = s['providers']['nous']['access_token']
 h = json.loads(base64.urlsafe_b64decode(tok.split('.')[0] + '=='))
 print(h)
-assert h['alg'] == 'ES256', h
+assert h['alg'] == 'RS256', h
 assert h.get('kid'), 'missing kid'
 print('OK')
 "
 ```
 
-**Expected:** `{'alg': 'ES256', 'kid': '<22-char base64url>', 'typ': 'JWT'}`
+**Expected:** `{'alg': 'RS256', 'kid': '<22-char base64url>', 'typ': 'JWT'}`
 then `OK`.
 
 ## 6. Verify the token against the JWKS endpoint
@@ -246,7 +264,7 @@ kid = json.loads(base64.urlsafe_b64decode(tok.split('.')[0] + '=='))['kid']
 jwks = json.loads(urllib.request.urlopen('http://127.0.0.1:18480/.well-known/jwks.json').read())
 match = [k for k in jwks['keys'] if k['kid'] == kid]
 assert match, f'no JWKS key with kid={kid}'
-claims = jwt.decode(tok, key=PyJWK.from_dict(match[0]).key, algorithms=['ES256'], options={'verify_aud': False})
+claims = jwt.decode(tok, key=PyJWK.from_dict(match[0]).key, algorithms=['RS256'], options={'verify_aud': False})
 print('signature valid')
 print(claims)
 "
@@ -334,6 +352,163 @@ straight into the refresh call.
 here, the header isn't being read; check `refreshTokenFromRequest` in
 `internal/handler/oauth_handler.go`.
 
+## 9. The dashboard leg — authorization_code + PKCE, against `-tags embed`
+
+Steps 1-8 exercise the hermes **CLI** (device_code + refresh). This step
+exercises the hermes **gateway dashboard**: a different real client
+(`plugins/dashboard_auth/nous/__init__.py`, same read-only repo, never
+edited), a different grant (authorization_code + PKCE S256), a different
+scope (`agent_dashboard:access`), and a token verified with
+`algorithms=["RS256"]`, `audience=<bare client_id>`, `issuer=<portal base
+URL>` and `options={"require": ["exp","iat","aud","iss","sub"]}`. One green
+run therefore proves the RS256 switch, `kid` resolution, the audience shape,
+the issuer and the required claim set simultaneously.
+
+### 9.0 Why this leg MUST run against a `-tags embed` build
+
+`deploy/Dockerfile` builds with `-tags embed`. That build installs
+`FrontendServer.Middleware()` (`internal/web/embed_on.go`) **before** route
+registration, so every root-level, non-`/api` path that is not in
+`shouldBypassEmbeddedFrontend`'s allowlist (`internal/web/bypass.go`) is
+silently served `index.html` instead of reaching its handler. Two routes this
+leg depends on live at the root: `/oauth/authorize` and
+`/.well-known/jwks.json`. The JWKS omission was a real bug on this branch and
+was invisible to every non-embed test, because without the tag the middleware
+is not even installed.
+
+```bash
+cd inferno-frontend && npm run build   # populates backend/internal/web/dist/
+cd ../backend && go build -tags embed -o /tmp/sub2api-t8-embed ./cmd/server
+```
+
+Do the frontend build even though `backend/internal/web/dist/index.html`
+already exists — the checked-in file is a 91-byte placeholder that exists only
+so `//go:embed all:dist` has a match in CI. It will not exercise the SPA
+fallback realistically.
+
+Bring the server up exactly as in step 1 but with `/tmp/sub2api-t8-embed`.
+Then, before driving anything, prove both routes reach their handlers:
+
+```bash
+curl -sS -D- -o /dev/null http://127.0.0.1:18480/.well-known/jwks.json | head -5
+curl -sS -D- -o /dev/null "http://127.0.0.1:18480/oauth/authorize?client_id=x"
+```
+
+**Expected:** the first is `200` with `Content-Type: application/json`
+(**not** `text/html` — `text/html` means the allowlist regressed and every
+RS256 verifier in the fleet is being handed an HTML page); the second reaches
+the handler (a `400` error page for the bogus `client_id`, not the SPA).
+
+### 9.1 Register a client the login user actually owns
+
+`/oauth/authorize` refuses a client the session user neither owns nor shares
+an org with, and that refusal is a MUST-NOT-REDIRECT **403 error page** — easy
+to misdiagnose as a protocol failure. Register through the API as the same
+admin you will log in as, after seeding the personal org in step 2:
+
+```bash
+TOKEN=$(curl -s -X POST http://127.0.0.1:18480/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@t8.local","password":"t8AdminPass!2345"}' \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['data']['access_token'])")
+
+curl -s -X POST http://127.0.0.1:18480/api/oauth/self-hosted-client \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"t8 dashboard","redirect_origin":"https://agent-t8.example.com"}'
+```
+
+**Expected:** `{"client_id":"agent:<32 hex>","name":"t8 dashboard"}`.
+
+The redirect origin must be **https and non-loopback** (`ValidateRedirectOrigin`,
+`internal/service/oauth_redirect_uri.go`) and the redirect_uri must end in
+`/auth/callback`. `https://agent-t8.example.com/auth/callback` never has to
+resolve — nothing in this run fetches it; the driver reads the code straight
+out of the target URL, exactly as a browser would before following it.
+
+### 9.2 Drive the real provider
+
+**⚠️ Set `HERMES_HOME` to a throwaway directory** — the same warning as the
+top of this file. The dashboard provider itself does not write an auth store,
+but `hermes_cli` imports on the same path do read config, and one careless run
+without it is how you clobber your own `~/.hermes`.
+
+The driver below stands in for exactly one thing: the **browser**. It performs
+the top-level navigation to `/oauth/authorize` a human would perform, and
+carries the panel-session bearer that `AuthorizeConsentView.vue`'s axios
+interceptor attaches after login. Everything else — the token POST, the JWKS
+fetch, the RS256 verification, the refresh POST with its
+`x-nous-refresh-token` header — is the provider's own unmodified code.
+
+```bash
+mkdir -p /tmp/t8-hermes-home-dash /tmp/t8-driver
+# The full script is ~200 lines; see the Task 6 report
+# (.superpowers/sdd/2026-08-18-authorization-code-pkce/task-6-report.md §1)
+# for its shape. The load-bearing sequence is:
+#
+#   provider = NousDashboardAuthProvider(client_id=..., portal_url=...)
+#   start    = provider.start_login(redirect_uri=".../auth/callback")
+#   # browser leg, done with httpx:
+#   #   1. GET start.redirect_url with NO Authorization header
+#   #      -> MUST be 302 to /login?redirect=<original path+query>
+#   #   2. GET start.redirect_url WITH the panel bearer
+#   #      -> MUST be 200 text/plain whose body is the target URL
+#   #         (202 means the consent screen was required -- see 9.3)
+#   code     = parse_qs(urlparse(body).query)["code"][0]
+#   session  = provider.complete_login(code=..., state=..., code_verifier=...,
+#                                      redirect_uri=...)
+#   provider.verify_session(access_token=session.access_token)
+#   rotated  = provider.refresh_session(refresh_token=session.refresh_token)
+#   provider.refresh_session(refresh_token=session.refresh_token)  # grace replay
+
+cd /Users/saksham/OpenComputerV2/OpenComputerV2 && \
+HERMES_HOME=/tmp/t8-hermes-home-dash \
+T8_PORTAL=http://127.0.0.1:18480 \
+T8_CLIENT_ID=agent:<from 9.1> \
+T8_PANEL_TOKEN="$TOKEN" \
+T8_REDIRECT_URI=https://agent-t8.example.com/auth/callback \
+uv run python /tmp/t8-driver/t8_drive_dashboard.py
+```
+
+### 9.3 What to assert, and what each failure means
+
+| Assertion | If it fails |
+|---|---|
+| anonymous GET `/oauth/authorize` → `302 /login?redirect=…` | under embed, a `200 text/html` means `shouldBypassEmbeddedFrontend` lost the path |
+| authenticated GET → **200**, not 202 | 202 = consent required. Auto-approve needs scope EXACTLY `agent_dashboard:access` **and** `client.OwnerUserID == session user`. Confirm you took the auto-approve path; do not assume it |
+| 403 error page | the login user does not own the client — 9.1 registered it as someone else |
+| target URL echoes `state` verbatim, carries `code` | — |
+| `complete_login` returns a **refresh token** | an empty one means the dashboard session silently dies at the first 15-minute expiry |
+| `ProviderError: … Invalid issuer` | `iss` is not the canonical portal base URL. **This is Task 6 defect 1**: a trailing slash on `SERVER_FRONTEND_URL` used to land in `iss` verbatim, and the client rstrips `/` before comparing. `NewOAuthTokenService` normalises it now; if you see this again, that normalisation is gone |
+| `500 server_error` on the token endpoint with `ErrIssuerNotConfigured` logged | `SERVER_FRONTEND_URL` is unset. **Task 6 defect 2**: this used to mint tokens with `iss: ""` instead of refusing, so the failure surfaced on the client as "Invalid issuer" with nothing in our logs |
+| replayed authorization code → `invalid_grant` **and** the issued refresh family is revoked | RFC 6749 §10.5. Rejecting the replay without revoking leaves a thief's stolen pair alive |
+| grace replay of a rotated RT returns the **current** pair | Task 5's 60s grace. A `RefreshExpiredError` here means the grace is gone |
+
+Decode and assert the claim set explicitly rather than eyeballing it:
+
+```bash
+python3 -c "
+import base64, json, sys
+seg = sys.argv[1].split('.')[1]
+print(json.dumps(json.loads(base64.urlsafe_b64decode(seg + '=' * (-len(seg) % 4))), indent=2, sort_keys=True))
+" "<access_token>"
+```
+
+**Expected:** `aud` is the **bare** `client_id` (a string — not a list, not a
+URL), `iss` is the portal base URL with **no trailing slash**, `exp`/`iat`/`sub`
+present, `oauth_contract_version` is `1`, and `agent_instance_id` equals the
+`client_id` suffix after `agent:`.
+
+### 9.4 Known, accepted behaviour — do not file these as bugs
+
+- **A refresh issued within the same second as the login returns a
+  byte-identical access token.** There is no `jti` claim, `iat`/`exp` have
+  one-second resolution, and RS256/PKCS#1 v1.5 is deterministic, so an
+  identical claim set produces an identical JWT. The *refresh token* does
+  rotate, which is the part that matters; a refresh a second or more later
+  produces a distinct token with an advanced `exp`. Assert the latter.
+- **`Session.org_id` is `""`.** The provider reads an `org_id` claim we do not
+  emit. Nothing in the provider requires it.
+
 ## Cleanup
 
 ```bash
@@ -341,7 +516,9 @@ kill %1 2>/dev/null   # or: pkill -f /tmp/sub2api-t8
 docker rm -f t8-pg t8-redis
 docker network rm t8net
 rm -rf /tmp/t8-data /tmp/t8-hermes-home /tmp/t8-hermes-home-2 \
-       /tmp/t8-drive-login.py /tmp/t8-drive-refresh.py /tmp/sub2api-t8
+       /tmp/t8-hermes-home-dash /tmp/t8-driver \
+       /tmp/t8-drive-login.py /tmp/t8-drive-refresh.py \
+       /tmp/sub2api-t8 /tmp/sub2api-t8-embed /tmp/sub2api-t8-noembed
 ```
 
 Verify nothing named `t8*` remains (`docker ps -a`) and ports

@@ -1614,3 +1614,100 @@ func TestDeviceGrantRejectsBannedApprover(t *testing.T) {
 		t.Fatalf("a rejected redemption must not consume the approval, status is %q", reloaded.Status)
 	}
 }
+
+// newDeviceFlowFixtureWithIssuer is newDeviceFlowFixtureWithDeps with the
+// issuer left to the caller. Every other fixture in this file hardcodes an
+// already-canonical "https://portal.example.com", which is exactly why the
+// two defects below survived until Task 6 drove the real gateway plugin
+// against a live server: no test had ever constructed this service the way
+// a real deployment's config can.
+func newDeviceFlowFixtureWithIssuer(t *testing.T, issuer string) (context.Context, *OAuthTokenService, *OAuthDeviceService, string, string) {
+	t.Helper()
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	clients := NewOAuthClientService(client)
+	keys := NewOAuthKeyService(client)
+	// The device service keeps its own already-canonical portal URL: this
+	// fixture is varying the TOKEN service's issuer, and a device service
+	// that refused to issue a code would mask the very mint this asserts.
+	devices := NewOAuthDeviceService(client, "https://portal.example.com")
+	tokens := NewOAuthTokenService(client, keys, devices, newFakeRefreshTokenCache(), newUserLookupStub(), issuer)
+
+	oc, err := clients.RegisterSelfHosted(ctx, 1, 42, "https://agent.example.com", "")
+	if err != nil {
+		t.Fatalf("RegisterSelfHosted: %v", err)
+	}
+	grant, err := devices.RequestCode(ctx, oc.ClientID, "inference:invoke")
+	if err != nil {
+		t.Fatalf("RequestCode: %v", err)
+	}
+	row, err := devices.byDeviceCode(ctx, grant.DeviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	return ctx, tokens, devices, oc.ClientID, grant.DeviceCode
+}
+
+// TestIssuerTrailingSlashIsNormalisedIntoTheIssClaim pins Task 6 defect 1.
+//
+// `SERVER_FRONTEND_URL=https://portal.example.com/` passes config
+// validation and is the shape a browser address bar yields on copy/paste,
+// but the real gateway plugin verifies with PyJWT's `issuer=` against a
+// portal_url it has already rstrip("/")-ed
+// (plugins/dashboard_auth/nous/__init__.py, read-only client repo), so the
+// un-normalised claim was rejected on EVERY token: complete_login,
+// verify_session and refresh_session all raised "Invalid issuer". Asserted
+// on the CLAIM, not on the struct field, because the claim is what the
+// client reads -- a test that only checked s.issuer would still pass if a
+// future edit re-introduced the raw value at the stamping site.
+func TestIssuerTrailingSlashIsNormalisedIntoTheIssClaim(t *testing.T) {
+	for _, raw := range []string{
+		"https://portal.example.com/",
+		"https://portal.example.com//",
+		"  https://portal.example.com/  ",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			ctx, tokens, _, clientID, deviceCode := newDeviceFlowFixtureWithIssuer(t, raw)
+
+			got, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+			if err != nil {
+				t.Fatalf("ExchangeDeviceCode: %v", err)
+			}
+			claims := jwt.MapClaims{}
+			if _, _, err := jwt.NewParser().ParseUnverified(got.AccessToken, claims); err != nil {
+				t.Fatalf("parse access token: %v", err)
+			}
+			if iss, _ := claims["iss"].(string); iss != "https://portal.example.com" {
+				t.Fatalf("expected canonical iss %q, got %q", "https://portal.example.com", iss)
+			}
+		})
+	}
+}
+
+// TestMintRefusesWhenIssuerIsNotConfigured pins Task 6 defect 2.
+//
+// With cfg.Server.FrontendURL unset, OAuthDeviceService.RequestCode already
+// refused loudly (ErrPortalNotConfigured -> a logged 500), but this service
+// happily minted tokens carrying `iss: ""` -- unverifiable by the real
+// client, and diagnosed on the CLIENT as "Invalid issuer" with nothing at
+// all in our own logs. Both token-issuing grants are asserted: the guard
+// lives at the single point that stamps the claim precisely so no grant can
+// route around it.
+func TestMintRefusesWhenIssuerIsNotConfigured(t *testing.T) {
+	ctx, tokens, _, clientID, deviceCode := newDeviceFlowFixtureWithIssuer(t, "   ")
+
+	if _, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode); !errors.Is(err, ErrIssuerNotConfigured) {
+		t.Fatalf("device_code grant: expected ErrIssuerNotConfigured, got %v", err)
+	}
+
+	// Not ErrInvalidGrant: an operator misconfiguration must not be
+	// reported to the client as a dead credential -- that is the exact
+	// "turn a blip into a fleet-wide forced re-auth" failure the handler's
+	// error switch is built to avoid.
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, "art_deadbeef"); errors.Is(err, ErrIssuerNotConfigured) {
+		t.Fatal("refresh grant should reject an unknown token before it ever reaches the mint")
+	}
+}

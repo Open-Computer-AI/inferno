@@ -38,6 +38,30 @@ var (
 	// code for all three — distinguishing them on the wire would let a
 	// caller enumerate token/client existence.
 	ErrInvalidGrant = errors.New("invalid_grant")
+
+	// ErrIssuerNotConfigured is returned by mintAccessToken when this
+	// service was constructed with an empty issuer (cfg.Server.FrontendURL
+	// unset or blank). It is the authorization_code/refresh_token analogue
+	// of OAuthDeviceService.ErrPortalNotConfigured, and exists because the
+	// two grants disagreed about that one missing setting: the device grant
+	// refused loudly at RequestCode, while this one happily minted tokens
+	// carrying `iss: ""`.
+	//
+	// Found by Task 6's conformance run against the real client. An empty
+	// `iss` is not a cosmetic defect: the gateway plugin verifies with
+	// PyJWT's `issuer=` check (plugins/dashboard_auth/nous/__init__.py's
+	// _verify_jwt, read-only client repo), so every token minted under this
+	// misconfiguration is rejected — but rejected as "Invalid issuer" on
+	// the CLIENT, with nothing at all in OUR logs, which points an operator
+	// at the agent's HERMES_DASHBOARD_PORTAL_URL rather than at the server
+	// setting that is actually wrong. Failing the mint instead puts the
+	// diagnosis where the misconfiguration is: the handler's default arm
+	// logs it and answers server_error.
+	//
+	// No handler maps this to a specific OAuth error code on purpose — it
+	// is an operator misconfiguration, not anything the client did, so it
+	// belongs on the logged 500 that every unmatched error already takes.
+	ErrIssuerNotConfigured = errors.New("oauth token service: issuer (server.frontend_url) not configured")
 )
 
 const (
@@ -123,6 +147,22 @@ type OAuthTokenService struct {
 // NewOAuthTokenService constructs the token-endpoint service. issuer is the
 // "iss" claim on minted access tokens — pass the server's own public base
 // URL (the JWKS lives at {issuer}/.well-known/jwks.json).
+//
+// The issuer is normalised here — trimmed of surrounding whitespace and of
+// any trailing "/" — for the same reason and in the same way
+// NewOAuthDeviceService normalises the identical cfg.Server.FrontendURL
+// value it is handed (strings.TrimRight(portalBaseURL, "/")). Until Task
+// 6's conformance run this constructor stored the raw string, and the two
+// consumers of one config value therefore disagreed about its canonical
+// form. That is not a style nit: `SERVER_FRONTEND_URL=https://portal/`
+// passes config validation (internal/config/config.go only rejects a
+// query string or userinfo), is the exact shape a browser address bar
+// yields on copy/paste, and produced `iss: "https://portal/"` — which the
+// real gateway plugin rejects on EVERY token, because it verifies with
+// PyJWT's `issuer=` against a portal_url it has already rstrip("/")-ed
+// (plugins/dashboard_auth/nous/__init__.py, read-only client repo). One
+// trailing slash silently broke the entire dashboard grant, and no unit
+// test saw it because every test passes an already-canonical issuer.
 func NewOAuthTokenService(entClient *dbent.Client, keySvc *OAuthKeyService, deviceSvc *OAuthDeviceService, refreshCache RefreshTokenCache, userRepo OAuthUserLookup, issuer string) *OAuthTokenService {
 	return &OAuthTokenService{
 		entClient: entClient,
@@ -134,7 +174,7 @@ func NewOAuthTokenService(entClient *dbent.Client, keySvc *OAuthKeyService, devi
 		clientSvc:    NewOAuthClientService(entClient),
 		refreshCache: refreshCache,
 		userRepo:     userRepo,
-		issuer:       issuer,
+		issuer:       strings.TrimRight(strings.TrimSpace(issuer), "/"),
 		now:          time.Now,
 	}
 }
@@ -156,6 +196,15 @@ func (s *OAuthTokenService) assertClientUsable(ctx context.Context, clientID str
 // mintAccessToken signs an RS256 JWT whose audience is the client_id, so an
 // agent can verify a token was minted for it and no other instance.
 func (s *OAuthTokenService) mintAccessToken(ctx context.Context, userID int64, clientID, scope string) (string, error) {
+	// Refuse rather than mint an unverifiable token. See
+	// ErrIssuerNotConfigured for why a blank "iss" is a hard failure and
+	// not a tolerable default, and why this check lives here (covering all
+	// three grants at the single point that stamps the claim) rather than
+	// in each grant's entry point.
+	if s.issuer == "" {
+		return "", ErrIssuerNotConfigured
+	}
+
 	key, err := s.keySvc.Active(ctx)
 	if err != nil {
 		return "", err
