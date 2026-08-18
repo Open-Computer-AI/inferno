@@ -781,6 +781,10 @@ var ProviderSet = wire.NewSet(
 	NewOAuthKeyService,
 	NewOAuthClientService,
 	NewOAuthAuthorizeService,
+	// OAuthBackingKeyService resolves a verified OAuth access token to the
+	// api_keys row the gateway pipeline meters against. Both of its inputs
+	// (*dbent.Client, *config.Config) are already in the graph.
+	NewOAuthBackingKeyService,
 	ProvideOAuthDeviceService,
 	ProvideOAuthTokenService,
 	NewPasskeyService,

@@ -99,6 +99,31 @@ type Config struct {
 	Idempotency             IdempotencyConfig             `mapstructure:"idempotency"`
 	BatchImage              BatchImageConfig              `mapstructure:"batch_image"`
 	ImageStorage            ImageStorageConfig            `mapstructure:"image_storage"`
+	OAuthBackingKey         OAuthBackingKeyConfig         `mapstructure:"oauth_backing_key"`
+}
+
+// OAuthBackingKeyConfig is the group policy for OAuth-bearer inference.
+//
+// An OAuth access token has no api_keys row of its own, but the gateway
+// pipeline needs one: usage_logs.api_key_id is NOT NULL with an ON DELETE
+// CASCADE FK, the quota and rate-limit ledger IS the key row, and
+// apiKey.Group is the only input to platform routing, channel pool
+// selection, model mapping and pricing. So the server resolves a token to
+// an internal backing row (api_keys.oauth_client_id NOT NULL), and that row
+// needs a group.
+//
+// The group is named here rather than guessed. Picking an arbitrary group
+// would silently decide which upstream accounts an agent bills against.
+type OAuthBackingKeyConfig struct {
+	// GroupName is the name of the group every OAuth backing key binds to,
+	// matched the same way the platform's other default groups are (by name,
+	// active, not soft-deleted -- see repository.createGroupIfNotExists).
+	//
+	// There is deliberately no default. Empty means no policy is configured,
+	// and service.OAuthBackingKeyService.Resolve refuses with
+	// ErrNoGroupForOAuthKey so the operator gets a readable 403 instead of a
+	// backing row bound to whichever group happened to sort first.
+	GroupName string `mapstructure:"group_name"`
 }
 
 type LogConfig struct {
@@ -2189,6 +2214,12 @@ func setDefaults() {
 	viper.SetDefault("default.user_concurrency", 5)
 	viper.SetDefault("default.user_balance", 0)
 	viper.SetDefault("default.api_key_prefix", "sk-")
+
+	// OAuth backing key group policy. The default is deliberately empty:
+	// unconfigured must mean "refuse with ErrNoGroupForOAuthKey", not "pick a
+	// group". It is registered anyway because an unregistered key makes its
+	// environment variable silently unreachable (see TestConfigKeysAreEnvReachable).
+	viper.SetDefault("oauth_backing_key.group_name", "")
 	viper.SetDefault("default.rate_multiplier", 1.0)
 
 	// RateLimit

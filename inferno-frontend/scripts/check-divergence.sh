@@ -305,6 +305,20 @@ backend/ent/mutation.go
 backend/ent/runtime/runtime.go
 backend/migrations/909_api_key_oauth_client_id.sql
 backend/internal/repository/api_key_oauth_client_id_integration_test.go
+# D5 -- OAuth AS (oauth-bearer-inference plan, Task 3: OAuthBackingKeyService --
+# get-or-create of the api_keys row a verified OAuth access token resolves to).
+# config.go adds the oauth_backing_key.group_name policy (plus its viper
+# default, without which internal/config/env_reachability_test.go fails the key
+# as env-unreachable). api_key_service.go extracts GenerateAPIKeySecret from
+# APIKeyService.GenerateKey so backing rows use the SAME generator ordinary keys
+# use -- one generator, so a leak is bounded by the ordinary-key blast radius.
+# service/wire.go is already declared above (Tasks 1-4); cmd/server/wire_gen.go
+# is byte-identical after regeneration because nothing depends on the new
+# service until Task 4's middleware does, so it is not re-listed.
+backend/internal/config/config.go
+backend/internal/service/api_key_service.go
+backend/internal/service/oauth_backing_key.go
+backend/internal/service/oauth_backing_key_test.go
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }

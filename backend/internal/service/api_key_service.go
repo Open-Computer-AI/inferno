@@ -377,8 +377,15 @@ func (s *APIKeyService) compileAPIKeyIPRules(apiKey *APIKey) {
 	apiKey.CompiledIPBlacklist = ip.CompileIPRules(apiKey.IPBlacklist)
 }
 
-// GenerateKey 生成随机API Key
-func (s *APIKeyService) GenerateKey() (string, error) {
+// GenerateAPIKeySecret 生成 api_keys.key 的凭据材料：32 字节随机数 + 前缀。
+//
+// This is the single generator for every api_keys row in the system. It is a
+// package-level function, not a method, so OAuthBackingKeyService can create an
+// OAuth backing row with the *same* credential material an ordinary key gets --
+// a hypothetical leak of a backing key is then no worse than a leak of an
+// ordinary key. Do not add a second generator; "same generator" is the property
+// that bounds the blast radius.
+func GenerateAPIKeySecret(prefix string) (string, error) {
 	// 生成32字节随机数据
 	bytes := make([]byte, 32)
 	if _, err := rand.Read(bytes); err != nil {
@@ -386,13 +393,16 @@ func (s *APIKeyService) GenerateKey() (string, error) {
 	}
 
 	// 转换为十六进制字符串并添加前缀
-	prefix := s.cfg.Default.APIKeyPrefix
 	if prefix == "" {
 		prefix = "sk-"
 	}
 
-	key := prefix + hex.EncodeToString(bytes)
-	return key, nil
+	return prefix + hex.EncodeToString(bytes), nil
+}
+
+// GenerateKey 生成随机API Key
+func (s *APIKeyService) GenerateKey() (string, error) {
+	return GenerateAPIKeySecret(s.cfg.Default.APIKeyPrefix)
 }
 
 // ValidateCustomKey 验证自定义API Key格式
