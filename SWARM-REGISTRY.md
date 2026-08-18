@@ -163,3 +163,39 @@ beside the ledger (`task-N-brief.md`, `task-N-report.md`).
 6. scope enforcement middleware + `/api/oauth/account`
 7. device approval screen (`inferno-frontend`)
 8. end-to-end conformance against the real hermes CLI
+
+---
+
+# Swarm registry — step 5: authorization_code + PKCE (2026-08-18)
+
+Continues on the SAME branch and worktree as the OAuth AS run above. Step 5 was
+deferred out of that plan and is now the blocker: the device flow works and the real
+CLI logs in, but **Hermes Desktop cannot authenticate at all** without the Portal half
+of its gateway-brokered RFC 8252 flow.
+
+| field | value |
+|---|---|
+| worktree | `/Users/saksham/OpenComputerV2/inferno-oauth-as` |
+| branch | `feat/oauth-authorization-server` (BASE for this run: `49457d7e`) |
+| spec | `docs/superpowers/specs/2026-08-18-authorization-code-pkce-design.md` |
+| plan | `docs/superpowers/plans/2026-08-18-authorization-code-pkce.md` |
+| ledger | `.superpowers/sdd/2026-08-18-authorization-code-pkce/progress.md` |
+| status | RUNNING (Task 1 of 6) |
+
+## Recover / resume
+
+```sh
+cd /Users/saksham/OpenComputerV2/inferno-oauth-as
+cat .superpowers/sdd/2026-08-18-authorization-code-pkce/progress.md   # if it survives
+git log --oneline 49457d7e..HEAD                                      # authoritative
+```
+
+## Tasks
+
+1. RS256 signing key + kid-dispatched verification (**first: it changes SigningKey.Private's
+   type, so the compiler enumerates every caller**)
+2. redirect_uri validation at registration and authorize
+3. authorization codes — issue and redeem, PKCE-bound and single-use
+4. `GET /oauth/authorize` + consent screen + org auto-approve
+5. the 60-second refresh reuse grace the Portal contract documents
+6. conformance against the real `plugins/dashboard_auth/nous` provider
