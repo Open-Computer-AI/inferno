@@ -2902,7 +2902,7 @@ func (s *oauthPendingFlowRefreshTokenCacheStub) IsTokenInFamily(context.Context,
 	return false, nil
 }
 
-func (s *oauthPendingFlowRefreshTokenCacheStub) MarkRotated(context.Context, string, *service.RefreshTokenData, *service.RefreshReplayPair, time.Time) (*service.RefreshRotationResult, error) {
+func (s *oauthPendingFlowRefreshTokenCacheStub) MarkRotated(context.Context, string, *service.RefreshTokenData, []byte, time.Time) (*service.RefreshRotationResult, error) {
 	return nil, service.ErrRefreshTokenNotFound
 }
 

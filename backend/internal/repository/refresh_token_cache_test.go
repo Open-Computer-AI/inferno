@@ -23,10 +23,17 @@ func newRefreshTokenTestCache(t *testing.T) (*refreshTokenCache, *miniredis.Mini
 	return &refreshTokenCache{rdb: rdb}, mr
 }
 
-// markRotatedFixture stores a record and returns the tombstone + replay pair
-// a rotation at `now` would write, so each test drives the script the same
-// way OAuthTokenService.ExchangeRefreshToken does.
-func markRotatedFixture(now time.Time) (*service.RefreshTokenData, *service.RefreshTokenData, *service.RefreshReplayPair) {
+// sealedReplayFixture stands in for the sealed blob the service hands down.
+// Deliberately NOT valid JSON or valid UTF-8: this layer must treat it as
+// opaque bytes and hand them back unchanged, and the round trip through
+// EVAL + Redis + go-redis has to be binary-safe to do that. A test using a
+// printable string would not notice if it were not.
+var sealedReplayFixture = []byte{0x00, 0xff, 0x7b, 0x22, 0x01, 0x80, 0xfe, 0x0a, 0x00, 0x2a}
+
+// markRotatedFixture stores a record and returns the tombstone a rotation at
+// `now` would write, so each test drives the script the same way
+// OAuthTokenService.ExchangeRefreshToken does.
+func markRotatedFixture(now time.Time) (*service.RefreshTokenData, *service.RefreshTokenData, []byte) {
 	data := &service.RefreshTokenData{
 		UserID:    7,
 		FamilyID:  "family-1",
@@ -38,13 +45,7 @@ func markRotatedFixture(now time.Time) (*service.RefreshTokenData, *service.Refr
 	tomb := *data
 	tomb.Rotated = true
 	tomb.RotatedAtUnix = now.Unix()
-	replay := &service.RefreshReplayPair{
-		AccessToken:         "access-token-value",
-		RefreshToken:        "art_successor",
-		Scope:               data.Scope,
-		AccessExpiresAtUnix: now.Add(15 * time.Minute).Unix(),
-	}
-	return data, &tomb, replay
+	return data, &tomb, sealedReplayFixture
 }
 
 // TestRefreshTokenCache_MarkRotatedWinnerLoser exercises the Lua script
@@ -67,14 +68,14 @@ func TestRefreshTokenCache_MarkRotatedWinnerLoser(t *testing.T) {
 	require.Equal(t, service.RefreshRotationClaimed, res.Outcome, "first call must win")
 	require.Equal(t, "family-1", res.Data.FamilyID)
 	require.False(t, res.Data.Rotated, "the returned pre-rotation snapshot must show Rotated=false")
-	require.Nil(t, res.Replay, "the winner is not a replay")
+	require.Empty(t, res.SealedReplay, "the winner is not a replay")
 
 	// Far outside the grace: the loser is genuine reuse.
 	res2, err := c.MarkRotated(ctx, hash, tomb, replay, now.Add(time.Hour))
 	require.NoError(t, err)
 	require.Equal(t, service.RefreshRotationReuse, res2.Outcome, "a replay long after the rotation must report reuse")
 	require.Equal(t, "family-1", res2.Data.FamilyID)
-	require.Nil(t, res2.Replay)
+	require.Empty(t, res2.SealedReplay)
 }
 
 // TestRefreshTokenCache_MarkRotatedGraceReplay drives the grace branch of the
@@ -98,10 +99,9 @@ func TestRefreshTokenCache_MarkRotatedGraceReplay(t *testing.T) {
 	inside, err := c.MarkRotated(ctx, hash, tomb, replay, now.Add(30*time.Second))
 	require.NoError(t, err)
 	require.Equal(t, service.RefreshRotationGraceReplay, inside.Outcome, "a replay 30s after rotation is inside the grace")
-	require.NotNil(t, inside.Replay)
-	require.Equal(t, "art_successor", inside.Replay.RefreshToken, "the grace must return the pair the rotation minted")
-	require.Equal(t, "access-token-value", inside.Replay.AccessToken)
-	require.Equal(t, "inference:invoke", inside.Replay.Scope)
+	// Byte-identical, including the NUL and the non-UTF-8 bytes: this layer
+	// stores and returns the sealed blob without interpreting it.
+	require.Equal(t, sealedReplayFixture, inside.SealedReplay, "the grace must return the sealed pair the rotation stored, unchanged")
 
 	// 90 seconds as a literal, not service.RefreshReuseGracePeriod+1: a test
 	// whose clock is expressed in terms of the constant it is checking slides
@@ -109,7 +109,32 @@ func TestRefreshTokenCache_MarkRotatedGraceReplay(t *testing.T) {
 	outside, err := c.MarkRotated(ctx, hash, tomb, replay, now.Add(90*time.Second))
 	require.NoError(t, err)
 	require.Equal(t, service.RefreshRotationReuse, outside.Outcome, "90s after the rotation is outside the grace, i.e. reuse")
-	require.Nil(t, outside.Replay)
+	require.Empty(t, outside.SealedReplay)
+}
+
+// TestRefreshTokenCache_MarkRotatedRejectsEmptySeal covers the guard: a
+// rotation stored without a replay pair would classify every subsequent
+// presentation inside the grace as reuse and revoke a healthy family, so the
+// call is refused rather than half-performed.
+func TestRefreshTokenCache_MarkRotatedRejectsEmptySeal(t *testing.T) {
+	c, mr := newRefreshTokenTestCache(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	hash := "token-hash-empty-seal"
+	data, tomb, _ := markRotatedFixture(now)
+	require.NoError(t, c.StoreRefreshToken(ctx, hash, data, time.Hour))
+
+	_, err := c.MarkRotated(ctx, hash, tomb, nil, now)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "sealed replay pair is required")
+
+	// And nothing was written: the record must still be un-rotated, or the
+	// refusal would have cost the caller its token anyway.
+	stored, err := c.GetRefreshToken(ctx, hash)
+	require.NoError(t, err)
+	require.False(t, stored.Rotated)
+	require.False(t, mr.Exists(refreshReplayKey(hash)))
 }
 
 // TestRefreshTokenCache_MarkRotatedGraceIsNotExtended asserts the
@@ -226,7 +251,7 @@ func TestRefreshTokenCache_MarkRotatedNotFound(t *testing.T) {
 	c, _ := newRefreshTokenTestCache(t)
 	ctx := context.Background()
 
-	_, err := c.MarkRotated(ctx, "does-not-exist", &service.RefreshTokenData{}, &service.RefreshReplayPair{}, time.Now())
+	_, err := c.MarkRotated(ctx, "does-not-exist", &service.RefreshTokenData{}, sealedReplayFixture, time.Now())
 	require.ErrorIs(t, err, service.ErrRefreshTokenNotFound)
 }
 

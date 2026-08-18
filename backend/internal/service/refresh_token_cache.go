@@ -73,15 +73,15 @@ const (
 	// detection, which is the only reason rotation exists.
 	RefreshReuseGracePeriod = 60 * time.Second
 
-	// RefreshReplayRetention is how long the RefreshReplayPair is kept.
+	// RefreshReplayRetention is how long the sealed replay pair is kept.
 	//
-	// The pair contains RAW tokens — the only place in this system where a
-	// usable refresh token is written to Redis rather than only its SHA256
-	// hash — so its lifetime is bounded to roughly the grace instead of the
-	// tombstone's remaining 30 days. Deliberately a little LONGER than the
-	// grace so that the script's explicit RotatedAtUnix comparison, not key
-	// expiry, is what decides the window; the TTL is cleanup and blast-radius
-	// containment, not policy.
+	// Deliberately a little LONGER than the grace so that the script's
+	// explicit RotatedAtUnix comparison, not key expiry, is what decides the
+	// window; the TTL is cleanup, not policy. It is no longer load-bearing
+	// for secrecy either — the stored pair is encrypted under a key only the
+	// presenter of the predecessor token can derive (see sealRefreshReplay)
+	// — but a short life on a blob nobody will ever open again is still the
+	// right hygiene.
 	RefreshReplayRetention = 2 * RefreshReuseGracePeriod
 )
 
@@ -90,6 +90,13 @@ const (
 // with the SAME pair rather than either minting a second one (which would
 // fork the family into two live branches — the race MarkRotated exists to
 // close) or revoking the family (which is what the grace is softening).
+//
+// It NEVER leaves the service package in this form. RefreshTokenCache stores
+// it sealed (AES-256-GCM under a key derived from the predecessor refresh
+// token, see sealRefreshReplay/openRefreshReplay in oauth_token_service.go),
+// so the cache — and anyone reading the cache — holds ciphertext, not
+// tokens. The only party that can open it is the one presenting the
+// predecessor, which is exactly the party entitled to the pair.
 type RefreshReplayPair struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
@@ -111,12 +118,12 @@ const (
 	// callers must treat it as an internal error, not as permission to mint.
 	RefreshRotationUnknown RefreshRotationOutcome = iota
 	// RefreshRotationClaimed: this call won the race. The record was not
-	// rotated; the tombstone and the replay pair have been stored.
+	// rotated; the tombstone and the sealed replay pair have been stored.
 	RefreshRotationClaimed
 	// RefreshRotationGraceReplay: the record was already rotated, but less
-	// than RefreshReuseGracePeriod ago and the pair that rotation minted is
-	// still stored. Nothing was written. The caller must return that pair
-	// verbatim.
+	// than RefreshReuseGracePeriod ago and the sealed pair that rotation
+	// minted is still stored. Nothing was written. The caller must unseal it
+	// and return that pair verbatim.
 	RefreshRotationGraceReplay
 	// RefreshRotationReuse: the record was already rotated, outside the
 	// grace (or with no stored pair). Nothing was written. This is the
@@ -132,8 +139,10 @@ type RefreshRotationResult struct {
 	Data *RefreshTokenData
 	// Outcome is the decision the atomic claim reached.
 	Outcome RefreshRotationOutcome
-	// Replay is non-nil iff Outcome is RefreshRotationGraceReplay.
-	Replay *RefreshReplayPair
+	// SealedReplay is non-empty iff Outcome is RefreshRotationGraceReplay.
+	// It is opaque to the cache: only a caller holding the predecessor
+	// refresh token can open it.
+	SealedReplay []byte
 }
 
 // RefreshTokenCache 管理Refresh Token的Redis缓存
@@ -210,12 +219,16 @@ type RefreshTokenCache interface {
 	// outlives the grace and a much later replay is still traceable to its
 	// FamilyID.
 	//
-	// replay is the pair the caller has just minted for THIS rotation. It is
-	// stored by the same atomic operation that writes the tombstone,
-	// deliberately: if it were written afterwards, a concurrent presentation
-	// landing in between would find a rotated record with no pair to hand
-	// back and would revoke the family — exactly the healthy-session kill
-	// the grace exists to prevent. It must not be nil.
+	// sealedReplay is the pair the caller has just minted for THIS rotation,
+	// already encrypted by the caller. Implementations MUST treat it as
+	// opaque bytes and MUST NOT attempt to interpret it: keeping the
+	// plaintext out of the cache layer is what stops the store from ever
+	// holding a usable refresh token. It is stored by the same atomic
+	// operation that writes the tombstone, deliberately: if it were written
+	// afterwards, a concurrent presentation landing in between would find a
+	// rotated record with no pair to hand back and would revoke the family —
+	// exactly the healthy-session kill the grace exists to prevent. It must
+	// not be empty.
 	//
 	// now is the caller's clock reading, and MUST be the same instant
 	// stamped into tombstoned.RotatedAtUnix. It is passed in rather than read
@@ -227,5 +240,5 @@ type RefreshTokenCache interface {
 	// as such by callers — never collapsed into an OAuth invalid_grant,
 	// which would make a Redis outage indistinguishable from a client
 	// presenting a bad token.
-	MarkRotated(ctx context.Context, tokenHash string, tombstoned *RefreshTokenData, replay *RefreshReplayPair, now time.Time) (*RefreshRotationResult, error)
+	MarkRotated(ctx context.Context, tokenHash string, tombstoned *RefreshTokenData, sealedReplay []byte, now time.Time) (*RefreshRotationResult, error)
 }

@@ -59,7 +59,7 @@ func newOAuthHandlerTestEntClient(t *testing.T) *dbent.Client {
 type oauthHandlerTestRefreshCache struct {
 	mu       sync.Mutex
 	tokens   map[string]*service.RefreshTokenData
-	replays  map[string]service.RefreshReplayPair
+	replays  map[string][]byte
 	families map[string]map[string]struct{}
 	users    map[int64]map[string]struct{}
 }
@@ -67,7 +67,7 @@ type oauthHandlerTestRefreshCache struct {
 func newOAuthHandlerTestRefreshCache() *oauthHandlerTestRefreshCache {
 	return &oauthHandlerTestRefreshCache{
 		tokens:   map[string]*service.RefreshTokenData{},
-		replays:  map[string]service.RefreshReplayPair{},
+		replays:  map[string][]byte{},
 		families: map[string]map[string]struct{}{},
 		users:    map[int64]map[string]struct{}{},
 	}
@@ -172,7 +172,7 @@ func (c *oauthHandlerTestRefreshCache) IsTokenInFamily(_ context.Context, family
 // than treated as reuse. The grace semantics themselves are asserted at the
 // service layer (internal/service/oauth_token_service_test.go); this stub
 // only has to avoid contradicting them.
-func (c *oauthHandlerTestRefreshCache) MarkRotated(_ context.Context, hash string, tombstoned *service.RefreshTokenData, replay *service.RefreshReplayPair, now time.Time) (*service.RefreshRotationResult, error) {
+func (c *oauthHandlerTestRefreshCache) MarkRotated(_ context.Context, hash string, tombstoned *service.RefreshTokenData, sealedReplay []byte, now time.Time) (*service.RefreshRotationResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	data, ok := c.tokens[hash]
@@ -183,17 +183,16 @@ func (c *oauthHandlerTestRefreshCache) MarkRotated(_ context.Context, hash strin
 	if data.Rotated {
 		stored, inGrace := c.replays[hash]
 		if inGrace && data.RotatedAtUnix > 0 && now.Unix()-data.RotatedAtUnix <= int64(service.RefreshReuseGracePeriod/time.Second) {
-			pair := stored
-			return &service.RefreshRotationResult{Data: &cloned, Outcome: service.RefreshRotationGraceReplay, Replay: &pair}, nil
+			return &service.RefreshRotationResult{Data: &cloned, Outcome: service.RefreshRotationGraceReplay, SealedReplay: stored}, nil
 		}
 		return &service.RefreshRotationResult{Data: &cloned, Outcome: service.RefreshRotationReuse}, nil
 	}
 	tomb := *tombstoned
 	c.tokens[hash] = &tomb
 	if c.replays == nil {
-		c.replays = make(map[string]service.RefreshReplayPair)
+		c.replays = make(map[string][]byte)
 	}
-	c.replays[hash] = *replay
+	c.replays[hash] = sealedReplay
 	return &service.RefreshRotationResult{Data: &cloned, Outcome: service.RefreshRotationClaimed}, nil
 }
 

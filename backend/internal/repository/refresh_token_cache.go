@@ -14,12 +14,14 @@ const (
 	refreshTokenKeyPrefix   = "refresh_token:"
 	userRefreshTokensPrefix = "user_refresh_tokens:"
 	tokenFamilyPrefix       = "token_family:"
-	// refreshReplayKeyPrefix holds the token pair a rotation minted, for the
-	// length of the reuse grace. Kept in its OWN key rather than as a field
-	// of the refresh_token: record because it contains RAW tokens: a
-	// separate key gets its own short TTL (service.RefreshReplayRetention),
-	// so Redis never holds a usable refresh token for more than about two
-	// minutes, instead of for the tombstone's remaining 30 days.
+	// refreshReplayKeyPrefix holds the SEALED token pair a rotation minted,
+	// for the length of the reuse grace. The value is opaque ciphertext —
+	// the service encrypts it under a key derived from the refresh token
+	// being rotated, so this cache never holds a usable token, only a blob
+	// that the next presenter of that token can open. Kept in its own key
+	// rather than as a field of the refresh_token: record so it can carry
+	// its own short TTL (service.RefreshReplayRetention) instead of the
+	// tombstone's remaining 30 days.
 	refreshReplayKeyPrefix = "refresh_replay:"
 )
 
@@ -38,8 +40,8 @@ func tokenFamilyKey(familyID string) string {
 	return tokenFamilyPrefix + familyID
 }
 
-// refreshReplayKey generates the Redis key holding the grace-window replay
-// pair for a rotated refresh token.
+// refreshReplayKey generates the Redis key holding the sealed grace-window
+// replay pair for a rotated refresh token.
 func refreshReplayKey(tokenHash string) string {
 	return refreshReplayKeyPrefix + tokenHash
 }
@@ -66,13 +68,14 @@ func refreshReplayKey(tokenHash string) string {
 //
 // KEEPTTL (Redis >= 6.0) preserves the record's exact remaining lifetime —
 // no separate PTTL-read-then-SET-PX window to race on. The replay key gets
-// its own short EX instead: it holds raw tokens, so it must NOT inherit the
-// tombstone's 30-day life.
+// its own short EX instead: nothing will ever open it again once the grace
+// has passed, so it should not inherit the tombstone's 30-day life.
 //
 // KEYS[1] = refresh_token:{hash}
 // KEYS[2] = refresh_replay:{hash}
 // ARGV[1] = the tombstoned JSON value to store if this call wins
-// ARGV[2] = the JSON replay pair to store if this call wins
+// ARGV[2] = the sealed replay pair to store if this call wins — opaque
+// ciphertext, never decoded here, binary-safe
 // ARGV[3] = the caller's clock, unix seconds
 // ARGV[4] = the grace window, seconds
 // ARGV[5] = the replay key's TTL, seconds
@@ -83,8 +86,8 @@ func refreshReplayKey(tokenHash string) string {
 //   - flag 0:  this call won (raw = the value as it stood immediately before
 //     the SET below — i.e. pre-rotation)
 //   - flag 1:  already rotated, OUTSIDE the grace: reuse
-//   - flag 2:  already rotated, INSIDE the grace, and replay = the pair that
-//     rotation minted, still stored
+//   - flag 2:  already rotated, INSIDE the grace, and replay = the sealed pair
+//     that rotation minted, still stored
 //
 // Note the grace is never extended: nothing on the already-rotated branch
 // writes, so neither the tombstone's rotated_at_unix nor the replay key's
@@ -149,27 +152,23 @@ func (c *refreshTokenCache) GetRefreshToken(ctx context.Context, tokenHash strin
 	return &data, nil
 }
 
-func (c *refreshTokenCache) MarkRotated(ctx context.Context, tokenHash string, tombstoned *service.RefreshTokenData, replay *service.RefreshReplayPair, now time.Time) (*service.RefreshRotationResult, error) {
-	if replay == nil {
+func (c *refreshTokenCache) MarkRotated(ctx context.Context, tokenHash string, tombstoned *service.RefreshTokenData, sealedReplay []byte, now time.Time) (*service.RefreshRotationResult, error) {
+	if len(sealedReplay) == 0 {
 		// Not defensive padding: without a stored pair every concurrent
 		// presentation inside the grace would be classified as reuse and
 		// would revoke a healthy family, which is exactly the failure this
 		// whole mechanism exists to remove.
-		return nil, fmt.Errorf("mark refresh token rotated: replay pair is required")
+		return nil, fmt.Errorf("mark refresh token rotated: sealed replay pair is required")
 	}
 	tombVal, err := json.Marshal(tombstoned)
 	if err != nil {
 		return nil, fmt.Errorf("marshal tombstoned refresh token data: %w", err)
 	}
-	replayVal, err := json.Marshal(replay)
-	if err != nil {
-		return nil, fmt.Errorf("marshal refresh token replay pair: %w", err)
-	}
 
 	keys := []string{refreshTokenKey(tokenHash), refreshReplayKey(tokenHash)}
 	res, err := refreshTokenMarkRotatedScript.Run(ctx, c.rdb, keys,
 		tombVal,
-		replayVal,
+		sealedReplay,
 		now.Unix(),
 		int64(service.RefreshReuseGracePeriod/time.Second),
 		int64(service.RefreshReplayRetention/time.Second),
@@ -210,12 +209,10 @@ func (c *refreshTokenCache) MarkRotated(ctx context.Context, tokenHash string, t
 		if !ok {
 			return nil, fmt.Errorf("mark refresh token rotated: unexpected replay type %#v", arr[2])
 		}
-		var pair service.RefreshReplayPair
-		if err := json.Unmarshal([]byte(replayStr), &pair); err != nil {
-			return nil, fmt.Errorf("unmarshal refresh token replay pair: %w", err)
-		}
+		// Handed back exactly as stored. Redis strings are binary-safe and
+		// this layer has no key with which to interpret the blob anyway.
 		out.Outcome = service.RefreshRotationGraceReplay
-		out.Replay = &pair
+		out.SealedReplay = []byte(replayStr)
 	default:
 		return nil, fmt.Errorf("mark refresh token rotated: unexpected script flag %d", flag)
 	}
@@ -223,9 +220,9 @@ func (c *refreshTokenCache) MarkRotated(ctx context.Context, tokenHash string, t
 }
 
 // DeleteRefreshToken removes a record and, with it, any grace-window replay
-// pair still parked under that hash. Dropping the replay key alongside the
-// record is what keeps an explicit revocation from leaving a RAW refresh
-// token readable in Redis for the rest of the retention window.
+// pair still parked under that hash. The pair is sealed, so this is no longer
+// about secrecy — it is about not leaving a blob behind that outlives the
+// session it belongs to.
 func (c *refreshTokenCache) DeleteRefreshToken(ctx context.Context, tokenHash string) error {
 	return c.rdb.Del(ctx, refreshTokenKey(tokenHash), refreshReplayKey(tokenHash)).Err()
 }
@@ -243,8 +240,7 @@ func (c *refreshTokenCache) DeleteUserRefreshTokens(ctx context.Context, userID 
 
 	// Build keys to delete
 	// Two keys per hash: the record and any grace-window replay pair, so a
-	// revocation never leaves a RAW refresh token behind (see
-	// DeleteRefreshToken).
+	// revocation leaves nothing behind (see DeleteRefreshToken).
 	keys := make([]string, 0, 2*len(tokenHashes)+1)
 	for _, hash := range tokenHashes {
 		keys = append(keys, refreshTokenKey(hash), refreshReplayKey(hash))
@@ -273,8 +269,7 @@ func (c *refreshTokenCache) DeleteTokenFamily(ctx context.Context, familyID stri
 
 	// Build keys to delete
 	// Two keys per hash: the record and any grace-window replay pair, so a
-	// reuse revocation never leaves a RAW refresh token behind (see
-	// DeleteRefreshToken).
+	// reuse revocation leaves nothing behind (see DeleteRefreshToken).
 	keys := make([]string, 0, 2*len(tokenHashes)+1)
 	for _, hash := range tokenHashes {
 		keys = append(keys, refreshTokenKey(hash), refreshReplayKey(hash))

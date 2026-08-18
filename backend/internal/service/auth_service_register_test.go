@@ -163,7 +163,7 @@ func (s *refreshTokenCacheStub) IsTokenInFamily(context.Context, string, string)
 	return false, nil
 }
 
-func (s *refreshTokenCacheStub) MarkRotated(context.Context, string, *RefreshTokenData, *RefreshReplayPair, time.Time) (*RefreshRotationResult, error) {
+func (s *refreshTokenCacheStub) MarkRotated(context.Context, string, *RefreshTokenData, []byte, time.Time) (*RefreshRotationResult, error) {
 	return nil, ErrRefreshTokenNotFound
 }
 

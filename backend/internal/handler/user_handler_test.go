@@ -459,7 +459,7 @@ func (s *userHandlerRefreshTokenCacheStub) IsTokenInFamily(context.Context, stri
 	return false, nil
 }
 
-func (s *userHandlerRefreshTokenCacheStub) MarkRotated(context.Context, string, *service.RefreshTokenData, *service.RefreshReplayPair, time.Time) (*service.RefreshRotationResult, error) {
+func (s *userHandlerRefreshTokenCacheStub) MarkRotated(context.Context, string, *service.RefreshTokenData, []byte, time.Time) (*service.RefreshRotationResult, error) {
 	return nil, service.ErrRefreshTokenNotFound
 }
 

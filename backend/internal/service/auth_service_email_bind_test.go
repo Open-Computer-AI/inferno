@@ -854,7 +854,7 @@ func (s *emailBindRefreshTokenCacheStub) IsTokenInFamily(_ context.Context, fami
 	return ok, nil
 }
 
-func (s *emailBindRefreshTokenCacheStub) MarkRotated(_ context.Context, tokenHash string, tombstoned *service.RefreshTokenData, _ *service.RefreshReplayPair, _ time.Time) (*service.RefreshRotationResult, error) {
+func (s *emailBindRefreshTokenCacheStub) MarkRotated(_ context.Context, tokenHash string, tombstoned *service.RefreshTokenData, _ []byte, _ time.Time) (*service.RefreshRotationResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	data, ok := s.tokens[tokenHash]

@@ -1,8 +1,10 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -26,10 +28,12 @@ type fakeRefreshTokenCache struct {
 }
 
 // fakeReplayEntry mirrors the refresh_replay:{hash} key the Redis
-// implementation writes: the pair a rotation minted, plus the moment Redis
-// would expire it (service.RefreshReplayRetention after the rotation).
+// implementation writes: the SEALED pair a rotation minted (opaque bytes —
+// the fake, like the real cache, has no key to open it with), plus the
+// moment Redis would expire it (service.RefreshReplayRetention after the
+// rotation).
 type fakeReplayEntry struct {
-	pair      RefreshReplayPair
+	sealed    []byte
 	expiresAt time.Time
 }
 
@@ -146,7 +150,7 @@ func (f *fakeRefreshTokenCache) IsTokenInFamily(_ context.Context, familyID, tok
 // what makes TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins a
 // meaningful test of OAuthTokenService.ExchangeRefreshToken's own
 // serialization rather than of this fake's.
-func (f *fakeRefreshTokenCache) MarkRotated(_ context.Context, tokenHash string, tombstoned *RefreshTokenData, replay *RefreshReplayPair, now time.Time) (*RefreshRotationResult, error) {
+func (f *fakeRefreshTokenCache) MarkRotated(_ context.Context, tokenHash string, tombstoned *RefreshTokenData, sealedReplay []byte, now time.Time) (*RefreshRotationResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	data, ok := f.tokens[tokenHash]
@@ -158,15 +162,14 @@ func (f *fakeRefreshTokenCache) MarkRotated(_ context.Context, tokenHash string,
 		graceSeconds := int64(RefreshReuseGracePeriod / time.Second)
 		if data.RotatedAtUnix > 0 && now.Unix() >= data.RotatedAtUnix && now.Unix()-data.RotatedAtUnix <= graceSeconds {
 			if entry, stored := f.replays[tokenHash]; stored && now.Before(entry.expiresAt) {
-				pair := entry.pair
-				return &RefreshRotationResult{Data: &cloned, Outcome: RefreshRotationGraceReplay, Replay: &pair}, nil
+				return &RefreshRotationResult{Data: &cloned, Outcome: RefreshRotationGraceReplay, SealedReplay: entry.sealed}, nil
 			}
 		}
 		return &RefreshRotationResult{Data: &cloned, Outcome: RefreshRotationReuse}, nil
 	}
 	tomb := *tombstoned
 	f.tokens[tokenHash] = &tomb
-	f.replays[tokenHash] = fakeReplayEntry{pair: *replay, expiresAt: now.Add(RefreshReplayRetention)}
+	f.replays[tokenHash] = fakeReplayEntry{sealed: sealedReplay, expiresAt: now.Add(RefreshReplayRetention)}
 	return &RefreshRotationResult{Data: &cloned, Outcome: RefreshRotationClaimed}, nil
 }
 
@@ -557,6 +560,132 @@ func TestRefreshReplayInsideGraceReturnsCurrentPair(t *testing.T) {
 	}
 	if next.RefreshToken == rotated.RefreshToken {
 		t.Fatal("rotation must issue a NEW refresh token")
+	}
+}
+
+// TestRefreshReplayPairIsNeverStoredInPlaintext is the regression test for
+// the one property the grace window threatened.
+//
+// Everything else in this system stores a refresh token as a SHA256 hash, so
+// read access to Redis yields nothing usable. Answering a replay with the
+// SAME pair means that pair has to be persisted — and persisting it in the
+// clear would mean the newest tombstone in every family held that family's
+// current live token, turning Redis read access into account takeover.
+//
+// So the stored blob is sealed under a key derived from the token being
+// rotated. This test asserts all three halves of that: the blob contains
+// neither token, the party holding the predecessor can open it, and nobody
+// else can.
+func TestRefreshReplayPairIsNeverStoredInPlaintext(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, cache, _ := newDeviceFlowFixtureWithDeps(t)
+	original := grantedTokens(t, ctx, tokens, devices, clientID, deviceCode)
+
+	clock := freezeClock(tokens)
+	rotated, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err != nil {
+		t.Fatalf("legitimate rotation: %v", err)
+	}
+
+	cache.mu.Lock()
+	entry, stored := cache.replays[hashToken(original.RefreshToken)]
+	cache.mu.Unlock()
+	if !stored {
+		t.Fatal("expected the rotation to store a replay blob")
+	}
+	if len(entry.sealed) == 0 {
+		t.Fatal("expected a non-empty sealed blob")
+	}
+
+	// (a) The blob leaks neither token. Checked as a raw byte search, not by
+	// unmarshalling: a future implementation that stored the pair in some
+	// other plaintext encoding would still be caught by this.
+	blob := string(entry.sealed)
+	if strings.Contains(blob, rotated.RefreshToken) {
+		t.Fatal("the successor refresh token must never be stored in the clear")
+	}
+	if strings.Contains(blob, rotated.AccessToken) {
+		t.Fatal("the successor access token must never be stored in the clear")
+	}
+	if strings.Contains(blob, original.RefreshToken) {
+		t.Fatal("the presented refresh token must never be stored in the clear either")
+	}
+
+	// (b) The party holding the predecessor — the only party entitled to the
+	// successor — can open it.
+	opened, err := openRefreshReplay(original.RefreshToken, entry.sealed)
+	if err != nil {
+		t.Fatalf("the holder of the predecessor token must be able to open the sealed pair: %v", err)
+	}
+	if opened.RefreshToken != rotated.RefreshToken || opened.AccessToken != rotated.AccessToken {
+		t.Fatal("the sealed pair must round-trip to exactly the pair the rotation minted")
+	}
+
+	// (c) Nobody else can. A Redis-only compromise yields this blob and a
+	// hash, which is what it yielded before the grace existed.
+	if _, err := openRefreshReplay(rotated.RefreshToken, entry.sealed); err == nil {
+		t.Fatal("a different token must not open the sealed pair")
+	}
+	if _, err := openRefreshReplay(original.RefreshToken+"x", entry.sealed); err == nil {
+		t.Fatal("a near-miss token must not open the sealed pair")
+	}
+
+	// And the end-to-end path still works: the grace replay unseals and
+	// returns the same pair.
+	clock.advance(30 * time.Second)
+	replayed, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err != nil {
+		t.Fatalf("grace replay: %v", err)
+	}
+	if replayed.RefreshToken != rotated.RefreshToken {
+		t.Fatal("the unsealed replay must be the pair the rotation minted")
+	}
+}
+
+// TestSealedRefreshReplayIsNonDeterministic guards the nonce: sealing the
+// same pair under the same token twice must not produce the same bytes, or
+// an observer of the store could tell that two rotations carried identical
+// contents.
+func TestSealedRefreshReplayIsNonDeterministic(t *testing.T) {
+	pair := &RefreshReplayPair{
+		AccessToken:         "access",
+		RefreshToken:        "art_successor",
+		Scope:               "inference:invoke",
+		AccessExpiresAtUnix: 1700000000,
+	}
+	token := "art_" + strings.Repeat("a", 64)
+
+	first, err := sealRefreshReplay(token, pair)
+	if err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	second, err := sealRefreshReplay(token, pair)
+	if err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	if bytes.Equal(first, second) {
+		t.Fatal("two seals of the same pair must differ — the nonce must be fresh each time")
+	}
+
+	// Both still open to the same plaintext.
+	for _, sealed := range [][]byte{first, second} {
+		opened, err := openRefreshReplay(token, sealed)
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		if opened.RefreshToken != pair.RefreshToken || opened.Scope != pair.Scope {
+			t.Fatal("round trip changed the pair")
+		}
+	}
+
+	// A truncated blob is rejected rather than panicking on the slice.
+	if _, err := openRefreshReplay(token, first[:4]); err == nil {
+		t.Fatal("a truncated blob must not open")
+	}
+	// A flipped bit in the ciphertext is caught by the GCM tag.
+	tampered := append([]byte(nil), first...)
+	tampered[len(tampered)-1] ^= 0x01
+	if _, err := openRefreshReplay(token, tampered); err == nil {
+		t.Fatal("a tampered blob must not open — the auth tag must be checked")
 	}
 }
 
@@ -957,6 +1086,96 @@ func TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins(t *testing.T) {
 	cache.mu.Unlock()
 	if !originalStillPresent {
 		t.Fatal("a concurrent double-presentation must not revoke the family; the rotated original should still be tombstoned in cache")
+	}
+}
+
+// TestConcurrentReuseRevocationAndRotationErrorClasses exists to replace
+// coverage that the rewrite of
+// TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins removed.
+//
+// Before the grace, that test's losers all took the reuse branch, so
+// DeleteTokenFamily ran concurrently with another goroutine's rotation
+// (StoreRefreshToken + AddToUserTokenSet + AddToFamilyTokenSet) on every
+// run. Under the grace, simultaneous presentations are all forgiven, so
+// nothing in that test revokes anything any more and that interleaving
+// stopped being exercised at all — including under -race.
+//
+// This restores it: N goroutines replay a token from OUTSIDE the grace (so
+// they revoke) while one goroutine legitimately rotates the family's current
+// token (so it writes).
+//
+// It asserts ERROR CLASSES ONLY, deliberately. Whether the concurrently
+// rotated successor survives the revocation depends on whether
+// AddToFamilyTokenSet lands before or after DeleteTokenFamily reads the
+// family set — a known, pre-existing ordering hazard that Task 5 did not fix
+// and that this test must not pretend to have fixed. Asserting "nothing in
+// the family survives" here would be asserting a property the code does not
+// have, which is how a flaky test gets born.
+func TestConcurrentReuseRevocationAndRotationErrorClasses(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode := newDeviceFlowFixture(t)
+	original := grantedTokens(t, ctx, tokens, devices, clientID, deviceCode)
+
+	clock := freezeClock(tokens)
+	rotated, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err != nil {
+		t.Fatalf("legitimate rotation: %v", err)
+	}
+	clock.advance(90 * time.Second)
+
+	const replayers = 8
+	var (
+		wg          sync.WaitGroup
+		mu          sync.Mutex
+		reuseSeen   int
+		otherErrors []error
+	)
+	start := make(chan struct{})
+
+	wg.Add(replayers)
+	for i := 0; i < replayers; i++ {
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case errors.Is(err, ErrRefreshTokenReused):
+				reuseSeen++
+			case errors.Is(err, ErrInvalidGrant):
+				// An earlier replayer's DeleteTokenFamily already removed the
+				// tombstone, so this one never reaches the reuse branch.
+			default:
+				otherErrors = append(otherErrors, fmt.Errorf("replayer: %w", err))
+			}
+		}()
+	}
+
+	// The legitimate client, rotating at the same moment its family is being
+	// torn down. Either outcome is correct; a third would not be.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		_, err := tokens.ExchangeRefreshToken(ctx, clientID, rotated.RefreshToken)
+		mu.Lock()
+		defer mu.Unlock()
+		if err != nil && !errors.Is(err, ErrInvalidGrant) && !errors.Is(err, ErrRefreshTokenReused) {
+			otherErrors = append(otherErrors, fmt.Errorf("rotator: %w", err))
+		}
+	}()
+
+	close(start)
+	wg.Wait()
+
+	if len(otherErrors) != 0 {
+		t.Fatalf("unexpected error classes during concurrent revocation: %v", otherErrors)
+	}
+	// The revocation path must genuinely have run — otherwise this test would
+	// pass while exercising nothing, which is exactly the coverage it exists
+	// to restore.
+	if reuseSeen == 0 {
+		t.Fatal("expected at least one replayer to take the reuse branch and revoke the family")
 	}
 }
 

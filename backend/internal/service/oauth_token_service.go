@@ -2,11 +2,15 @@ package service
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/hkdf"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -557,17 +561,23 @@ func (s *OAuthTokenService) ExchangeRefreshToken(ctx context.Context, clientID, 
 	tomb := *data
 	tomb.Rotated = true
 	tomb.RotatedAtUnix = now.Unix()
-	replay := &RefreshReplayPair{
+	// Sealed under the token being rotated, so the cache stores ciphertext
+	// rather than a live token pair — see sealRefreshReplay for why the
+	// presented token is the right key.
+	sealed, err := sealRefreshReplay(refreshToken, &RefreshReplayPair{
 		AccessToken:         access,
 		RefreshToken:        successor.raw,
 		Scope:               data.Scope,
 		AccessExpiresAtUnix: now.Add(oauthAccessTokenTTL).Unix(),
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	// The single serialization point: exactly one caller is told it claimed
 	// the rotation, and every other caller is told, in the same round trip,
 	// whether it is a forgivable replay or reuse.
-	res, err := s.refreshCache.MarkRotated(ctx, tokenHash, &tomb, replay, now)
+	res, err := s.refreshCache.MarkRotated(ctx, tokenHash, &tomb, sealed, now)
 	if err != nil {
 		if errors.Is(err, ErrRefreshTokenNotFound) {
 			// Deleted between the GetRefreshToken above and here (e.g. a
@@ -592,23 +602,30 @@ func (s *OAuthTokenService) ExchangeRefreshToken(ctx context.Context, clientID, 
 		//
 		// Nothing is written on this path, so the grace neither restarts nor
 		// extends: it stays anchored to the one rotation that opened it.
-		if res.Replay == nil {
+		if len(res.SealedReplay) == 0 {
 			// Only reachable from an implementation that breaks
 			// MarkRotated's contract. An infrastructure fault, so it must
 			// surface as a 500 rather than as an invalid_grant that would
 			// blame the client.
 			return nil, fmt.Errorf("mark refresh token rotated: grace replay without a stored token pair")
 		}
+		// The key is derived from the token this caller just presented, so
+		// this cannot fail for a well-formed request; a failure is
+		// corruption, and it is an internal error rather than a rejection.
+		pair, err := openRefreshReplay(refreshToken, res.SealedReplay)
+		if err != nil {
+			return nil, err
+		}
 		slog.Info("oauth: refresh token replayed inside reuse grace, returning current pair", "client_id", clientID)
 		return &OAuthTokens{
-			AccessToken:  res.Replay.AccessToken,
-			RefreshToken: res.Replay.RefreshToken,
-			Scope:        res.Replay.Scope,
+			AccessToken:  pair.AccessToken,
+			RefreshToken: pair.RefreshToken,
+			Scope:        pair.Scope,
 			// The access token was minted when the rotation happened, so
 			// what is left of its 15 minutes is less than a full TTL.
 			// Reporting the full TTL would leave a client holding a token it
 			// believes is live for longer than it is.
-			ExpiresIn: remainingSeconds(res.Replay.AccessExpiresAtUnix, now),
+			ExpiresIn: remainingSeconds(pair.AccessExpiresAtUnix, now),
 		}, nil
 	case RefreshRotationReuse:
 		// REPLAY outside the grace: someone else's mint completed more than
@@ -639,6 +656,98 @@ func (s *OAuthTokenService) ExchangeRefreshToken(ctx context.Context, clientID, 
 		Scope:        data.Scope,
 		ExpiresIn:    int(oauthAccessTokenTTL.Seconds()),
 	}, nil
+}
+
+// refreshReplaySealInfo domain-separates the replay-sealing key from any
+// other key that might ever be derived from a refresh token. Versioned: if
+// the sealed format changes, bump it and old blobs stop opening (they are
+// worthless after 120s anyway).
+const refreshReplaySealInfo = "inferno/oauth/refresh-replay/v1"
+
+// sealRefreshReplay encrypts the pair a rotation minted, under a key derived
+// from the refresh token being rotated.
+//
+// The point is that RefreshTokenCache — and anyone who can read it — must not
+// hold a usable refresh token. Everything else in this system is stored as a
+// SHA256 hash for exactly that reason, and the grace window would have
+// punched a hole in it: to answer a replay with the same pair, that pair has
+// to be persisted somewhere.
+//
+// The key is the predecessor token itself. That works because the only party
+// entitled to receive the successor is the party that can present the
+// predecessor, and that party is necessarily holding the predecessor's raw
+// value at the moment it asks — it just sent it. So the decryption key is in
+// hand exactly when it is needed and at no other time. A Redis-only
+// compromise yields a hash and a ciphertext, which is precisely what it
+// yielded before the grace existed.
+//
+// Deriving a key from a token is only sound because an OAuth refresh token
+// here is 32 bytes of crypto/rand rendered as hex (newOAuthRefreshToken) —
+// uniform, unguessable, and not a structured JWT. HKDF-SHA256 with a fixed
+// info string turns that into a 32-byte AES key; no salt, because the input
+// is already a uniformly random secret and a salt would have to be stored
+// alongside the ciphertext anyway.
+//
+// No additional authenticated data is bound in: the key is already
+// one-to-one with the record's hash, so a blob moved to a different key by
+// an attacker with Redis write access simply fails to open.
+func sealRefreshReplay(rawRefreshToken string, pair *RefreshReplayPair) ([]byte, error) {
+	plaintext, err := json.Marshal(pair)
+	if err != nil {
+		return nil, fmt.Errorf("marshal refresh replay pair: %w", err)
+	}
+	gcm, err := refreshReplayAEAD(rawRefreshToken)
+	if err != nil {
+		return nil, err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, fmt.Errorf("refresh replay nonce entropy: %w", err)
+	}
+	// Seal appends to its first argument, so the nonce ends up prefixed to
+	// the ciphertext: nonce || ciphertext || tag.
+	return gcm.Seal(nonce, nonce, plaintext, nil), nil
+}
+
+// openRefreshReplay reverses sealRefreshReplay. A failure here is never the
+// presenting client's fault — the key is derived from the very token whose
+// hash selected this record, so the only ways to land here are corruption or
+// a format change. Callers must surface it as an internal error, not as an
+// OAuth rejection.
+func openRefreshReplay(rawRefreshToken string, sealed []byte) (*RefreshReplayPair, error) {
+	gcm, err := refreshReplayAEAD(rawRefreshToken)
+	if err != nil {
+		return nil, err
+	}
+	if len(sealed) < gcm.NonceSize() {
+		return nil, fmt.Errorf("sealed refresh replay pair is too short (%d bytes)", len(sealed))
+	}
+	nonce, body := sealed[:gcm.NonceSize()], sealed[gcm.NonceSize():]
+	plaintext, err := gcm.Open(nil, nonce, body, nil)
+	if err != nil {
+		return nil, fmt.Errorf("open sealed refresh replay pair: %w", err)
+	}
+	var pair RefreshReplayPair
+	if err := json.Unmarshal(plaintext, &pair); err != nil {
+		return nil, fmt.Errorf("unmarshal refresh replay pair: %w", err)
+	}
+	return &pair, nil
+}
+
+func refreshReplayAEAD(rawRefreshToken string) (cipher.AEAD, error) {
+	key, err := hkdf.Key(sha256.New, []byte(rawRefreshToken), nil, refreshReplaySealInfo, 32)
+	if err != nil {
+		return nil, fmt.Errorf("derive refresh replay key: %w", err)
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("refresh replay cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("refresh replay GCM: %w", err)
+	}
+	return gcm, nil
 }
 
 // remainingSeconds reports how many whole seconds are left until a unix
