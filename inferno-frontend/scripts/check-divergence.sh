@@ -245,6 +245,7 @@ backend/ent/oauthauthorizationcode_delete.go
 backend/ent/oauthauthorizationcode_query.go
 backend/ent/oauthauthorizationcode_update.go
 backend/migrations/906_oauth_authorization_code.sql
+backend/migrations/908_oauth_authorization_code_client_user_idx.sql
 backend/internal/service/oauth_authorize_service.go
 backend/internal/service/oauth_authorize_service_test.go
 # D5 -- OAuth AS (authorization_code + PKCE plan, Task 4: GET/POST

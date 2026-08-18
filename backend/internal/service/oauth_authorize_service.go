@@ -179,6 +179,27 @@ func (s *OAuthAuthorizeService) IssueCode(ctx context.Context, in IssueCodeInput
 	if err := ValidateScope(in.Scope); err != nil {
 		return "", err
 	}
+	// billing:manage is never grantable at initial login — only via a
+	// second, explicit device-flow elevation (see knownScopes' doc comment
+	// in oauth_scope_vocabulary.go, and ruling R-4.2).
+	//
+	// The Authorize HANDLER already refuses it, and today that handler is
+	// this function's only caller, so this is not closing a live hole. It
+	// is here because the rule belongs to the authorization_code GRANT, not
+	// to one HTTP entry point: a second caller — a future admin-initiated
+	// issuance, a test harness, a background re-consent — would otherwise
+	// silently mint a code carrying the one scope that rule exists to gate,
+	// and nothing here would notice.
+	//
+	// Same precedent, same reasoning as ExchangeAuthorizationCode's
+	// CodeChallengeMethod != "S256" check, which is likewise unreachable
+	// through the only caller that exists and is likewise kept: a grant
+	// must not depend on a caller for a property it defines itself.
+	// Reported as ErrInvalidScope, which is what the handler already
+	// translates into the RFC 6749 §4.1.2.1 invalid_scope redirect.
+	if ScopeContains(in.Scope, ScopeBillingManage) {
+		return "", ErrInvalidScope
+	}
 
 	client, err := s.clientSvc.UsableByClientID(ctx, in.ClientID)
 	if err != nil {

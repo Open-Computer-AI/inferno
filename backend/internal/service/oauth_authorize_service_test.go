@@ -15,10 +15,16 @@ import (
 )
 
 // failOnceRefreshTokenCache wraps a *fakeRefreshTokenCache and, while armed,
-// fails the very first StoreRefreshToken call (issueRefreshToken's first
+// fails the very first PersistRefreshToken call (issueRefreshToken's only
 // Redis write) — simulating a transient infrastructure fault (a Redis
 // hiccup) downstream of a fully-validated authorization code redemption,
 // with nothing wrong with the caller's credential.
+//
+// It overrides PersistRefreshToken, not StoreRefreshToken: the three-write
+// sequence this service used to perform was folded into one atomic write
+// (see RefreshTokenCache.PersistRefreshToken), and an injection left
+// pointing at StoreRefreshToken would silently stop firing — a test that
+// passes because it no longer tests anything.
 // onFail, if set, runs synchronously at the moment the injected failure
 // fires — i.e. AFTER ExchangeAuthorizationCode's family-recording update
 // has run but BEFORE its rollback (which clears the family again) has had
@@ -35,7 +41,7 @@ type failOnceRefreshTokenCache struct {
 	onFail func()
 }
 
-func (f *failOnceRefreshTokenCache) StoreRefreshToken(ctx context.Context, tokenHash string, data *RefreshTokenData, ttl time.Duration) error {
+func (f *failOnceRefreshTokenCache) PersistRefreshToken(ctx context.Context, tokenHash string, data *RefreshTokenData, ttl time.Duration) error {
 	if f.armed {
 		f.armed = false
 		if f.onFail != nil {
@@ -43,7 +49,7 @@ func (f *failOnceRefreshTokenCache) StoreRefreshToken(ctx context.Context, token
 		}
 		return errors.New("injected: transient refresh-token store failure")
 	}
-	return f.fakeRefreshTokenCache.StoreRefreshToken(ctx, tokenHash, data, ttl)
+	return f.fakeRefreshTokenCache.PersistRefreshToken(ctx, tokenHash, data, ttl)
 }
 
 // pkcePair returns a fixed, valid-shaped PKCE verifier and its RFC 7636 S256
@@ -540,5 +546,57 @@ func TestAuthorizationCodeRejectsRevokedClientWithoutRollback(t *testing.T) {
 	if row.Status != authCodeStatusConsumed {
 		t.Fatalf("a revoked-client rejection (ErrClientNotUsable, a policy decision) must NOT roll the code back — "+
 			"expected status %q, got %q", authCodeStatusConsumed, row.Status)
+	}
+}
+
+// TestIssueCodeRefusesBillingManage is I-4.
+//
+// billing:manage is never grantable at initial login — only via a second,
+// explicit device-flow elevation (knownScopes' doc comment; ruling R-4.2).
+// The Authorize HANDLER enforced that and the SERVICE did not, and today the
+// handler is IssueCode's only caller, so there was no live hole. The rule
+// belongs to the GRANT, though, not to one HTTP entry point: a second caller
+// would otherwise silently mint a code carrying the exact scope the rule
+// exists to gate.
+//
+// Same precedent as ExchangeAuthorizationCode's CodeChallengeMethod != "S256"
+// check, which is likewise unreachable through the only caller that exists
+// and is likewise kept.
+func TestIssueCodeRefusesBillingManage(t *testing.T) {
+	f := newAuthCodeFixture(t)
+	_, challenge := pkcePair()
+
+	for _, scope := range []string{
+		ScopeBillingManage,
+		ScopeInferenceInvoke + " " + ScopeBillingManage,
+		ScopeBillingManage + " " + ScopeBillingRead,
+	} {
+		_, err := f.authorize.IssueCode(f.ctx, IssueCodeInput{
+			ClientID:            f.clientID,
+			RedirectURI:         f.redirectURI,
+			Scope:               scope,
+			CodeChallenge:       challenge,
+			CodeChallengeMethod: "S256",
+			UserID:              42,
+		})
+		if !errors.Is(err, ErrInvalidScope) {
+			t.Fatalf("scope %q: expected ErrInvalidScope, got %v", scope, err)
+		}
+	}
+
+	// The near-miss must NOT be refused: the check is exact, whitespace-split
+	// equality, so a scope that merely contains the string is unaffected.
+	// (billing:manage_nothing is outside the vocabulary, so use a real scope
+	// pair that would trip a strings.Contains implementation only if the
+	// entry itself were present.)
+	if _, err := f.authorize.IssueCode(f.ctx, IssueCodeInput{
+		ClientID:            f.clientID,
+		RedirectURI:         f.redirectURI,
+		Scope:               ScopeInferenceInvoke + " " + ScopeBillingRead,
+		CodeChallenge:       challenge,
+		CodeChallengeMethod: "S256",
+		UserID:              42,
+	}); err != nil {
+		t.Fatalf("an ordinary scope set must still be issuable: %v", err)
 	}
 }

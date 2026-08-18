@@ -10,6 +10,17 @@ import (
 // This is used to abstract away the underlying cache implementation (e.g., redis.Nil).
 var ErrRefreshTokenNotFound = errors.New("refresh token not found")
 
+// ErrTokenFamilyRevoked is returned by PersistRefreshToken when the family
+// the token would join has already been revoked (DeleteTokenFamily).
+//
+// It is a DELIBERATE refusal, not an infrastructure fault, and callers must
+// classify it as such: the family was killed on purpose — by reuse
+// detection, by an authorization-code replay, by a ban, or by a credential
+// change — and a token that lands a millisecond later must not be allowed
+// to resurrect it. See RefreshFamilyRevokedRetention for why this cannot be
+// answered by simply re-checking set membership after the write.
+var ErrTokenFamilyRevoked = errors.New("refresh token family revoked")
+
 // RefreshTokenData 存储在Redis中的Refresh Token数据
 type RefreshTokenData struct {
 	UserID       int64     `json:"user_id"`
@@ -112,6 +123,39 @@ const (
 	// It does not widen the window in the direction that matters: the
 	// forward edge is still exactly RefreshReuseGracePeriod.
 	RefreshGraceClockSkewAllowance = 5 * time.Second
+
+	// RefreshFamilyRevokedRetention is how long a revoked family is
+	// remembered as revoked, so that a rotation still in flight when the
+	// revocation ran cannot re-create the family behind it.
+	//
+	// This exists because DeleteTokenFamily is SMEMBERS -> DEL and a
+	// concurrent persist is a separate write. Without a marker, the
+	// canonical theft interleaving — thief replays while the real client
+	// keeps refreshing — reads:
+	//
+	//	revoker:  SMEMBERS token_family:F -> {N0, N1}
+	//	rotator:  writes N2 and SADDs it to token_family:F
+	//	revoker:  DEL refresh_token:N0, refresh_token:N1, token_family:F
+	//
+	// and leaves N2 — the live head of a family that was just revoked for
+	// reuse — alive for the rest of its 30 days, with the family set
+	// re-created holding only N2 so no later revocation is even wrong.
+	// Re-checking membership after the persist does NOT close it: the DEL
+	// can land BEFORE the SADD, in which case the re-check sees the token
+	// it just added and concludes all is well.
+	//
+	// The marker is written BEFORE the SMEMBERS, and PersistRefreshToken
+	// checks it inside the same atomic operation that writes. That leaves
+	// no interleaving: a persist that completes before the marker is
+	// visible is necessarily visible to the SMEMBERS that follows it, and a
+	// persist that starts after it is refused.
+	//
+	// Retention matches the longest refresh-token lifetime in the system
+	// (OAuth's 30 days). A family id is 16 bytes of crypto/rand and is
+	// never reused, so remembering it costs one small key per revocation
+	// and can never refuse a legitimate future login — unlike a user-scoped
+	// marker, which would (see DeleteUserRefreshTokens).
+	RefreshFamilyRevokedRetention = 30 * 24 * time.Hour
 )
 
 // RefreshReplaySupersededMarker is written over a token's replay pair when
@@ -217,6 +261,43 @@ type RefreshTokenCache interface {
 	// ttl: Token过期时间
 	StoreRefreshToken(ctx context.Context, tokenHash string, data *RefreshTokenData, ttl time.Duration) error
 
+	// PersistRefreshToken stores a refresh-token record AND both of its
+	// revocation-index memberships (the user set and the family set) as one
+	// indivisible operation, refusing outright if the family has already
+	// been revoked.
+	//
+	// Implementations MUST make all of it a single atomic operation (a
+	// Redis Lua EVAL) — NOT StoreRefreshToken followed by AddToUserTokenSet
+	// followed by AddToFamilyTokenSet. That sequence is what this method
+	// replaces, and it had two independent defects that are the same defect
+	// seen from two sides:
+	//
+	//   - A partial failure (write 1 commits, write 2 or 3 errors) leaves a
+	//     fully redeemable 30-day record that is in NEITHER revocation
+	//     index. Both DeleteTokenFamily and DeleteUserRefreshTokens work by
+	//     SMEMBERS -> DEL and there is no scan-based sweep anywhere, so a
+	//     hash missing from the sets is simply never named again: reuse
+	//     revocation, ban/delete, logout-all-devices and forgot-password
+	//     reset all miss it, for its full life. Returning an error did not
+	//     mitigate this, because the record had already committed — and
+	//     since MarkRotated seals the successor pair BEFORE the persist
+	//     runs, the client's ordinary retry of the resulting 500 lands
+	//     inside the reuse grace and is handed exactly that orphan.
+	//
+	//   - A concurrent DeleteTokenFamily can enumerate the family, miss the
+	//     token this call is about to add, and then delete the family key —
+	//     leaving the added token alive and the family set re-created
+	//     holding only it. See RefreshFamilyRevokedRetention.
+	//
+	// Returns ErrTokenFamilyRevoked, having written NOTHING, when the
+	// family is already revoked. That is a deliberate refusal and callers
+	// must not treat it as an infrastructure fault.
+	//
+	// StoreRefreshToken / AddToUserTokenSet / AddToFamilyTokenSet remain for
+	// the panel-session path (AuthService.storeRefreshToken), which has its
+	// own separate family bookkeeping and is out of this branch's scope.
+	PersistRefreshToken(ctx context.Context, tokenHash string, data *RefreshTokenData, ttl time.Duration) error
+
 	// GetRefreshToken 获取Refresh Token数据
 	// 返回 (data, nil) 如果Token存在
 	// 返回 (nil, ErrRefreshTokenNotFound) 如果Token不存在
@@ -233,6 +314,12 @@ type RefreshTokenCache interface {
 
 	// DeleteTokenFamily 删除整个Token家族
 	// 用于检测到Token重放攻击时，撤销整个会话链
+	//
+	// Implementations MUST mark the family revoked BEFORE enumerating it,
+	// and that mark MUST be the one PersistRefreshToken refuses under.
+	// Enumerate-then-delete on its own cannot see a token a concurrent
+	// rotation is in the middle of writing — see
+	// RefreshFamilyRevokedRetention for the interleaving.
 	DeleteTokenFamily(ctx context.Context, familyID string) error
 
 	// AddToUserTokenSet 将Token添加到用户的Token集合

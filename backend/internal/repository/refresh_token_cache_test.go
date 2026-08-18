@@ -453,3 +453,196 @@ func TestRefreshTokenCache_MarkRotatedConcurrentOnlyOneWins(t *testing.T) {
 	require.Equal(t, 1, wins, "exactly one concurrent MarkRotated call must win")
 	require.Equal(t, n-1, losses)
 }
+
+// ---------------------------------------------------------------------------
+// PersistRefreshToken: I-5 (atomicity) and I-3 (revoked-family ordering).
+// ---------------------------------------------------------------------------
+
+// persistFixture is a plain, un-rotated record for the persist path.
+func persistFixture(now time.Time) *service.RefreshTokenData {
+	return &service.RefreshTokenData{
+		UserID:    7,
+		FamilyID:  "family-persist",
+		ClientID:  "agent:x",
+		Scope:     "inference:invoke",
+		CreatedAt: now,
+		ExpiresAt: now.Add(time.Hour),
+	}
+}
+
+// TestRefreshTokenCache_PersistWritesTheRecordAndBothIndexes pins what the
+// EVAL must do: the record and BOTH revocation-index memberships, in one
+// operation. A record present in neither set is a live 30-day credential no
+// revocation path can name, because DeleteTokenFamily and
+// DeleteUserRefreshTokens are both SMEMBERS -> DEL with no scan-based sweep
+// behind them.
+func TestRefreshTokenCache_PersistWritesTheRecordAndBothIndexes(t *testing.T) {
+	c, mr := newRefreshTokenTestCache(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	hash := "token-hash-persist"
+	data := persistFixture(now)
+	require.NoError(t, c.PersistRefreshToken(ctx, hash, data, time.Hour))
+
+	require.True(t, mr.Exists(refreshTokenKey(hash)))
+	members, err := c.GetFamilyTokenHashes(ctx, data.FamilyID)
+	require.NoError(t, err)
+	require.Equal(t, []string{hash}, members, "the record must be in its family set")
+	userMembers, err := c.GetUserTokenHashes(ctx, data.UserID)
+	require.NoError(t, err)
+	require.Equal(t, []string{hash}, userMembers, "the record must be in its user set")
+
+	// Every key carries the TTL, so nothing outlives what it names.
+	require.InDelta(t, time.Hour.Seconds(), mr.TTL(refreshTokenKey(hash)).Seconds(), 2)
+	require.InDelta(t, time.Hour.Seconds(), mr.TTL(tokenFamilyKey(data.FamilyID)).Seconds(), 2)
+	require.InDelta(t, time.Hour.Seconds(), mr.TTL(userRefreshTokensKey(data.UserID)).Seconds(), 2)
+}
+
+// TestRefreshTokenCache_PersistIsRefusedAfterFamilyRevocation is I-3, driven
+// against the real Lua EVAL and the real DeleteTokenFamily.
+//
+// The interleaving this closes:
+//
+//	revoker:  SMEMBERS token_family:F -> {N0, N1}
+//	rotator:  persists N2 and SADDs it to token_family:F
+//	revoker:  DEL refresh_token:N0, refresh_token:N1, token_family:F
+//
+// which left N2 — the live head of a family just revoked for reuse — alive
+// for the rest of its 30 days, with the family set re-created holding only
+// it, so no later revocation was even wrong.
+//
+// DeleteTokenFamily writes family_revoked:{id} BEFORE it enumerates, and
+// the persist script checks that key inside the same operation that writes.
+// Deleting the marker write from DeleteTokenFamily makes this test fail with
+// a re-created family holding the orphan.
+func TestRefreshTokenCache_PersistIsRefusedAfterFamilyRevocation(t *testing.T) {
+	c, mr := newRefreshTokenTestCache(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	data := persistFixture(now)
+	require.NoError(t, c.PersistRefreshToken(ctx, "n0", data, time.Hour))
+	require.NoError(t, c.DeleteTokenFamily(ctx, data.FamilyID))
+
+	// The rotation that was in flight when the revocation ran.
+	err := c.PersistRefreshToken(ctx, "n2", data, time.Hour)
+	require.ErrorIs(t, err, service.ErrTokenFamilyRevoked)
+
+	require.False(t, mr.Exists(refreshTokenKey("n2")), "a refused persist must write nothing at all")
+	require.False(t, mr.Exists(tokenFamilyKey(data.FamilyID)), "a refused persist must not re-create the revoked family")
+	userMembers, err := c.GetUserTokenHashes(ctx, data.UserID)
+	require.NoError(t, err)
+	require.NotContains(t, userMembers, "n2", "a refused persist must not index anything")
+}
+
+// TestRefreshTokenCache_RevocationIsRememberedForTheTokenLifetime pins the
+// marker's retention. A family id is 16 bytes of crypto/rand and is never
+// reused, so remembering it costs one small key and can never refuse a
+// legitimate future login.
+func TestRefreshTokenCache_RevocationIsRememberedForTheTokenLifetime(t *testing.T) {
+	c, mr := newRefreshTokenTestCache(t)
+	ctx := context.Background()
+	data := persistFixture(time.Now())
+
+	require.NoError(t, c.PersistRefreshToken(ctx, "n0", data, time.Hour))
+	require.NoError(t, c.DeleteTokenFamily(ctx, data.FamilyID))
+
+	require.True(t, mr.Exists(familyRevokedKey(data.FamilyID)))
+	require.InDelta(t, service.RefreshFamilyRevokedRetention.Seconds(),
+		mr.TTL(familyRevokedKey(data.FamilyID)).Seconds(), 5)
+
+	// A DIFFERENT family is unaffected — the marker is not a global switch.
+	other := persistFixture(time.Now())
+	other.FamilyID = "family-untouched"
+	require.NoError(t, c.PersistRefreshToken(ctx, "m0", other, time.Hour))
+}
+
+// TestRefreshTokenCache_DeleteTokenFamilyClearsUserSetMembership is M-5.
+//
+// Both delete paths used to remove the record keys and the family set while
+// leaving the hash in user_refresh_tokens:{uid} for the set's full TTL,
+// which made "how many live sessions does this user have" an unreliable
+// answer and kept memory alive past what it named.
+func TestRefreshTokenCache_DeleteTokenFamilyClearsUserSetMembership(t *testing.T) {
+	c, _ := newRefreshTokenTestCache(t)
+	ctx := context.Background()
+	data := persistFixture(time.Now())
+
+	require.NoError(t, c.PersistRefreshToken(ctx, "n0", data, time.Hour))
+	require.NoError(t, c.DeleteTokenFamily(ctx, data.FamilyID))
+
+	userMembers, err := c.GetUserTokenHashes(ctx, data.UserID)
+	require.NoError(t, err)
+	require.Empty(t, userMembers, "family revocation must SREM from the user set, not only DEL the records")
+}
+
+// TestRefreshTokenCache_DeleteRefreshTokenClearsUserSetMembership is M-5 on
+// the single-token path.
+func TestRefreshTokenCache_DeleteRefreshTokenClearsUserSetMembership(t *testing.T) {
+	c, _ := newRefreshTokenTestCache(t)
+	ctx := context.Background()
+	data := persistFixture(time.Now())
+
+	require.NoError(t, c.PersistRefreshToken(ctx, "n0", data, time.Hour))
+	require.NoError(t, c.DeleteRefreshToken(ctx, "n0"))
+
+	userMembers, err := c.GetUserTokenHashes(ctx, data.UserID)
+	require.NoError(t, err)
+	require.Empty(t, userMembers, "deleting a record must SREM its user-set membership")
+}
+
+// TestRefreshTokenCache_DeleteUserRefreshTokensRemovesEnumeratedMembers pins
+// DeleteUserRefreshTokens' SREM-of-what-was-enumerated shape.
+//
+// It used to DEL the set key outright, which also discarded a membership
+// added between the SMEMBERS and the delete — and that token's record was
+// not in the delete list, so it survived as a live credential no later
+// DeleteUserRefreshTokens could name. SREM-ing only what was enumerated
+// leaves such a token both live and indexed, which is the correct reading of
+// "it arrived after the revocation ran".
+//
+// A user-scoped revocation MARKER is deliberately not the answer: a user id
+// is reused by every future login, so a marker would refuse legitimate
+// logins for its whole retention. See RefreshFamilyRevokedRetention.
+func TestRefreshTokenCache_DeleteUserRefreshTokensRemovesEnumeratedMembers(t *testing.T) {
+	c, mr := newRefreshTokenTestCache(t)
+	ctx := context.Background()
+	data := persistFixture(time.Now())
+
+	require.NoError(t, c.PersistRefreshToken(ctx, "n0", data, time.Hour))
+	require.NoError(t, c.PersistRefreshToken(ctx, "n1", data, time.Hour))
+	require.NoError(t, c.DeleteUserRefreshTokens(ctx, data.UserID))
+
+	require.False(t, mr.Exists(refreshTokenKey("n0")))
+	require.False(t, mr.Exists(refreshTokenKey("n1")))
+	userMembers, err := c.GetUserTokenHashes(ctx, data.UserID)
+	require.NoError(t, err)
+	require.Empty(t, userMembers)
+}
+
+// TestRefreshTokenCache_PersistNeverLeavesAnUnindexedRecord is the
+// repository-level statement of I-5's invariant, checked against the real
+// EVAL: whatever the script does, a stored record is always in both sets.
+func TestRefreshTokenCache_PersistNeverLeavesAnUnindexedRecord(t *testing.T) {
+	c, mr := newRefreshTokenTestCache(t)
+	ctx := context.Background()
+	data := persistFixture(time.Now())
+
+	// "mutant-fails-here" is an ordinary hash as far as this test is
+	// concerned; the name exists so a mutation of the script that bails
+	// between the record write and the index writes is caught here rather
+	// than only in the service package's fake.
+	for _, hash := range []string{"n0", "mutant-fails-here"} {
+		_ = c.PersistRefreshToken(ctx, hash, data, time.Hour)
+		if !mr.Exists(refreshTokenKey(hash)) {
+			continue // nothing written, nothing to be unindexed
+		}
+		famMembers, err := c.GetFamilyTokenHashes(ctx, data.FamilyID)
+		require.NoError(t, err)
+		require.Contains(t, famMembers, hash, "a stored record must be in its family set")
+		userMembers, err := c.GetUserTokenHashes(ctx, data.UserID)
+		require.NoError(t, err)
+		require.Contains(t, userMembers, hash, "a stored record must be in its user set")
+	}
+}

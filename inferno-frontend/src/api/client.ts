@@ -76,6 +76,66 @@ apiClient.interceptors.request.use(
   }
 )
 
+/**
+ * Normalizes an error response body into a plain object the handler below can
+ * read fields off.
+ *
+ * The string branch is M-9. A request that sets `responseType: 'text'` -- as
+ * `checkAuthorize`/`decideAuthorize` must, because `/oauth/authorize`'s 2xx
+ * body is a bare URL and not JSON -- makes axios hand back a STRING for every
+ * response, including the error ones. The endpoint's two deliberate JSON
+ * exceptions (the 429 rate-limit envelope, per OAuthHandler.Authorize's doc
+ * comment) therefore arrived as an unparsed string and were discarded by the
+ * old `typeof data === 'object' ? data : {}` guard, leaving the user with
+ * axios's generic "Request failed with status code 429". Parsing a string
+ * body when it happens to be JSON recovers the envelope without weakening the
+ * guard: an HTML error page still fails to parse and still becomes `{}`.
+ */
+function normalizeErrorBody(data: unknown): Record<string, any> {
+  if (typeof data === 'object' && data !== null) {
+    return data as Record<string, any>
+  }
+  if (typeof data === 'string' && data !== '') {
+    try {
+      const parsed = JSON.parse(data)
+      if (typeof parsed === 'object' && parsed !== null) {
+        return parsed as Record<string, any>
+      }
+    } catch {
+      // Not JSON (an HTML error page, a bare URL) -- fall through.
+    }
+  }
+  return {}
+}
+
+/**
+ * Sends the browser to the login screen, preserving where it was so the user
+ * lands back there after re-authenticating.
+ *
+ * M-10: this used to be a bare `/login`. For an ordinary page that only costs
+ * the user a navigation, but `/oauth/authorize` carries the ENTIRE
+ * authorization request in its query string (client_id, redirect_uri, state,
+ * code_challenge). Dropping it means the request cannot be reconstructed by
+ * navigating back, the user lands on the dashboard after re-login, and the
+ * desktop client that opened the browser hangs on a callback that never
+ * arrives. F1 fixed exactly this class for the router-guard path; the
+ * interceptor path was not swept.
+ *
+ * The target is read from window.location, so it is same-origin by
+ * construction -- this never introduces a caller-controlled redirect. It is
+ * the same `?redirect=` contract the backend's own bearer-less bounce uses
+ * (oauth_authorize_handler.go) and that resolveAuthenticatedLoginRedirect and
+ * LoginView already consume.
+ */
+function redirectToLogin(): void {
+  if (window.location.pathname.includes('/login')) {
+    return
+  }
+  const current = window.location.pathname + window.location.search
+  window.location.href =
+    current && current !== '/' ? `/login?redirect=${encodeURIComponent(current)}` : '/login'
+}
+
 // ==================== Response Interceptor ====================
 
 apiClient.interceptors.response.use(
@@ -115,7 +175,7 @@ apiClient.interceptors.response.use(
       const url = String(error.config?.url || '')
 
       // Validate `data` shape to avoid HTML error pages breaking our error handling.
-      const apiData = (typeof data === 'object' && data !== null ? data : {}) as Record<string, any>
+      const apiData = normalizeErrorBody(data)
 
       // Ops monitoring disabled: treat as feature-flagged 404, and proactively redirect away
       // from ops pages to avoid broken UI states.
@@ -207,9 +267,7 @@ apiClient.interceptors.response.use(
             localStorage.removeItem('token_expires_at')
             sessionStorage.setItem('auth_expired', '1')
 
-            if (!window.location.pathname.includes('/login')) {
-              window.location.href = '/login'
-            }
+            redirectToLogin()
 
             return Promise.reject({
               status: 401,
@@ -237,10 +295,8 @@ apiClient.interceptors.response.use(
         if ((hasToken || sentAuth) && !isAuthEndpoint) {
           sessionStorage.setItem('auth_expired', '1')
         }
-        // Only redirect if not already on login page
-        if (!window.location.pathname.includes('/login')) {
-          window.location.href = '/login'
-        }
+        // Only redirect if not already on login page (see redirectToLogin).
+        redirectToLogin()
       }
 
       // Return structured error

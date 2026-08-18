@@ -755,6 +755,24 @@ func (s *emailBindRefreshTokenCacheStub) StoreRefreshToken(_ context.Context, to
 	return nil
 }
 
+// PersistRefreshToken mirrors the atomic record+both-memberships write the
+// Redis implementation performs in one EVAL.
+func (s *emailBindRefreshTokenCacheStub) PersistRefreshToken(_ context.Context, tokenHash string, data *service.RefreshTokenData, _ time.Duration) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cloned := *data
+	s.tokens[tokenHash] = &cloned
+	if s.userSets[data.UserID] == nil {
+		s.userSets[data.UserID] = make(map[string]struct{})
+	}
+	s.userSets[data.UserID][tokenHash] = struct{}{}
+	if s.families[data.FamilyID] == nil {
+		s.families[data.FamilyID] = make(map[string]struct{})
+	}
+	s.families[data.FamilyID][tokenHash] = struct{}{}
+	return nil
+}
+
 func (s *emailBindRefreshTokenCacheStub) GetRefreshToken(_ context.Context, tokenHash string) (*service.RefreshTokenData, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

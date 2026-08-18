@@ -114,6 +114,6 @@ func RegisterOAuthAuthorizeRoute(r gin.IRouter, h *handler.OAuthHandler, optiona
 func RegisterOAuthAccountRoutes(r gin.IRouter, h *handler.OAuthHandler) {
 	scoped := r.Group("/api/oauth")
 	{
-		scoped.GET("/account", middleware.RequireOAuthScope(h.KeyService(), ""), h.Account)
+		scoped.GET("/account", middleware.RequireOAuthScope(h.KeyService(), h.ClientService(), h.TokenIssuer(), ""), h.Account)
 	}
 }

@@ -149,12 +149,22 @@ type OAuthTokenService struct {
 // URL (the JWKS lives at {issuer}/.well-known/jwks.json).
 //
 // The issuer is normalised here — trimmed of surrounding whitespace and of
-// any trailing "/" — for the same reason and in the same way
-// NewOAuthDeviceService normalises the identical cfg.Server.FrontendURL
-// value it is handed (strings.TrimRight(portalBaseURL, "/")). Until Task
-// 6's conformance run this constructor stored the raw string, and the two
-// consumers of one config value therefore disagreed about its canonical
-// form. That is not a style nit: `SERVER_FRONTEND_URL=https://portal/`
+// any trailing "/" — for the same reason NewOAuthDeviceService normalises
+// the identical cfg.Server.FrontendURL value it is handed. Not in the same
+// WAY: that constructor does strings.TrimRight(portalBaseURL, "/") with no
+// TrimSpace. The asymmetry is unreachable in production, because
+// internal/config/config.go already does
+// cfg.Server.FrontendURL = strings.TrimSpace(...) before either constructor
+// is handed the value (internal/service/wire.go passes the same field to
+// both), which makes the TrimSpace here redundant belt-and-braces rather
+// than a divergence. Spelled out rather than smoothed over: defect #1 WAS
+// two consumers of one config value quietly disagreeing about its canonical
+// form, and a comment asserting a parity that does not exist is how that
+// class of defect survives a review.
+//
+// Until Task 6's conformance run this constructor stored the raw string,
+// and the two consumers of one config value therefore disagreed about its
+// canonical form. That is not a style nit: `SERVER_FRONTEND_URL=https://portal/`
 // passes config validation (internal/config/config.go only rejects a
 // query string or userinfo), is the exact shape a browser address bar
 // yields on copy/paste, and produced `iss: "https://portal/"` — which the
@@ -177,6 +187,17 @@ func NewOAuthTokenService(entClient *dbent.Client, keySvc *OAuthKeyService, devi
 		issuer:       strings.TrimRight(strings.TrimSpace(issuer), "/"),
 		now:          time.Now,
 	}
+}
+
+// Issuer returns the canonicalised issuer this service stamps into every
+// access token's `iss` claim.
+//
+// Exists so the resource-server middleware verifies against the value the
+// MINT used, not a second read of cfg.Server.FrontendURL normalised its own
+// way — see NewOAuthTokenService for what one un-normalised trailing slash
+// already cost once.
+func (s *OAuthTokenService) Issuer() string {
+	return s.issuer
 }
 
 // assertClientUsable re-checks oauth_client.status on every grant.
@@ -319,31 +340,54 @@ func (s *OAuthTokenService) prepareRefreshToken(userID int64, clientID, scope, f
 // persistRefreshToken writes a prepared token: only its SHA256 hash (via
 // hashToken, shared with the panel-session refresh flow in auth_service.go)
 // reaches Redis as a key, never the raw value.
+//
+// ONE atomic operation, not three writes — the record and BOTH of its
+// revocation-index memberships land together or not at all, and the write
+// is refused outright if the family has already been revoked. See
+// RefreshTokenCache.PersistRefreshToken for the full argument; the two
+// things it closes are:
+//
+//   - a partial write (record stored, set membership not) leaving a fully
+//     redeemable 30-day credential outside every revocation index, which
+//     the reuse grace then HANDS to the client on its retry of the
+//     resulting 500, and
+//   - a concurrent DeleteTokenFamily enumerating the family a moment before
+//     this token joins it.
+//
+// This replaced an earlier three-write version whose comment claimed that
+// returning an error rather than logging it was the mitigation ("Fatal, not
+// just logged: a token silently missing from the user set would survive
+// exactly that kind of revocation for the rest of its 30-day life"). That
+// claim was wrong in the way that matters: returning an error does not
+// un-commit the record that already succeeded, so the very outcome the
+// comment described as prevented was exactly what happened. Recorded here
+// because the overstated-guarantee comment, not the missing atomicity, is
+// what kept the defect out of two reviews.
+//
+// The user set is shared with panel sessions, so an explicit
+// logout-all-devices / forgot-password RESET (both of which call
+// AuthService.RevokeAllUserSessions) kills agent-issued OAuth sessions too,
+// not just browser ones.
+//
+// Note that set does NOT cover an in-app password change:
+// UserService.ChangePassword writes the new hash and returns without
+// calling RevokeAllUserSessions. Panel sessions still die there because
+// AuthService.RefreshTokenPair compares TokenVersion, a fingerprint of
+// email+password_hash. The TokenVersion stamped in prepareRefreshToken, and
+// the matching comparison in ExchangeRefreshToken, is what gives the OAuth
+// path the same property — without it a stolen ~/.hermes/auth.json kept
+// self-rotating for its full 30 days after the victim changed their
+// password, with no UI anywhere listing OAuth grants to tell them.
+//
+// ErrTokenFamilyRevoked is passed through unwrapped: it is a deliberate
+// refusal, and every caller must classify it as a credential rejection
+// rather than as the infrastructure fault every other error here is.
 func (s *OAuthTokenService) persistRefreshToken(ctx context.Context, p *preparedRefreshToken) error {
-	if err := s.refreshCache.StoreRefreshToken(ctx, p.hash, p.data, oauthRefreshTokenTTL); err != nil {
-		return fmt.Errorf("store refresh token: %w", err)
-	}
-	// Shares the user's token set with panel sessions, so an explicit
-	// logout-all-devices / forgot-password RESET (both of which call
-	// AuthService.RevokeAllUserSessions) kills agent-issued OAuth sessions too,
-	// not just browser ones. Fatal, not just logged: a token silently missing
-	// from the user set would survive exactly that kind of revocation for the
-	// rest of its 30-day life.
-	//
-	// Note this set does NOT cover an in-app password change:
-	// UserService.ChangePassword writes the new hash and returns without
-	// calling RevokeAllUserSessions. Panel sessions still die there because
-	// AuthService.RefreshTokenPair compares TokenVersion, a fingerprint of
-	// email+password_hash. The TokenVersion stamped in prepareRefreshToken,
-	// and the matching comparison in ExchangeRefreshToken, is what gives the
-	// OAuth path the same property — without it a stolen ~/.hermes/auth.json
-	// kept self-rotating for its full 30 days after the victim changed their
-	// password, with no UI anywhere listing OAuth grants to tell them.
-	if err := s.refreshCache.AddToUserTokenSet(ctx, p.data.UserID, p.hash, oauthRefreshTokenTTL); err != nil {
-		return fmt.Errorf("add refresh token to user set: %w", err)
-	}
-	if err := s.refreshCache.AddToFamilyTokenSet(ctx, p.data.FamilyID, p.hash, oauthRefreshTokenTTL); err != nil {
-		return fmt.Errorf("add refresh token to family: %w", err)
+	if err := s.refreshCache.PersistRefreshToken(ctx, p.hash, p.data, oauthRefreshTokenTTL); err != nil {
+		if errors.Is(err, ErrTokenFamilyRevoked) {
+			return err
+		}
+		return fmt.Errorf("persist refresh token: %w", err)
 	}
 	return nil
 }
@@ -364,7 +408,20 @@ func (s *OAuthTokenService) ExchangeDeviceCode(ctx context.Context, clientID, de
 	// A client revoked between requesting the code and redeeming it must not
 	// get a token. Collapsed into access_denied, the same code a mismatched
 	// client already gets, so this adds no new observable signal.
+	//
+	// ONLY a genuine ErrClientNotUsable is collapsed that way. Anything else
+	// out of assertClientUsable is an infrastructure fault — its call chain
+	// bottoms out in entClient.OAuthClient.Query().Only(ctx), which returns
+	// the raw ent error on ANY database fault — and answering a Postgres
+	// blip with access_denied tells the CLI its login was refused when in
+	// fact nothing was decided. Surfaced as an internal error so the
+	// handler's default arm logs it and answers 500, matching what
+	// ExchangeAuthorizationCode already does at its own call site and what
+	// Token's doc comment states as the rule for the whole endpoint.
 	if err := s.assertClientUsable(ctx, clientID); err != nil {
+		if !errors.Is(err, ErrClientNotUsable) {
+			return nil, fmt.Errorf("check client usability for device code grant: %w", err)
+		}
 		return nil, ErrAccessDenied
 	}
 
@@ -441,17 +498,34 @@ func (s *OAuthTokenService) ExchangeDeviceCode(ctx context.Context, clientID, de
 		return nil, ErrExpiredToken
 	}
 
+	// Everything from here down is downstream of the consuming CAS, so an
+	// INTERNAL failure must not burn the human's approval — see
+	// rollbackConsumedDeviceCode. Without this the CLI's poll gets a 500,
+	// retries on its next interval, the CAS now finds status='expired', and
+	// the person is told `expired_token` for a code that had ten minutes
+	// left, with no way forward but re-running the whole browser flow.
 	familyID, err := newFamilyID()
 	if err != nil {
+		s.rollbackConsumedDeviceCode(ctx, row.ID, clientID)
 		return nil, fmt.Errorf("family id entropy: %w", err)
 	}
 
 	access, err := s.mintAccessToken(ctx, userID, clientID, row.Scope)
 	if err != nil {
+		s.rollbackConsumedDeviceCode(ctx, row.ID, clientID)
 		return nil, err
 	}
 	refresh, err := s.issueRefreshToken(ctx, userID, clientID, row.Scope, familyID, resolvedTokenVersion(user))
 	if err != nil {
+		// A revoked family is a DELIBERATE refusal, not an internal fault:
+		// something killed this family on purpose while the mint was in
+		// flight, and re-opening the approval so it can be minted again
+		// would undo that decision. Every other error here is
+		// infrastructure and does roll back.
+		if errors.Is(err, ErrTokenFamilyRevoked) {
+			return nil, ErrAccessDenied
+		}
+		s.rollbackConsumedDeviceCode(ctx, row.ID, clientID)
 		return nil, err
 	}
 
@@ -549,7 +623,21 @@ func (s *OAuthTokenService) ExchangeRefreshToken(ctx context.Context, clientID, 
 	// function, so an unauthenticated caller cannot use this endpoint to probe
 	// which client_ids are revoked. Collapsed into invalid_grant, the same
 	// code every other credential rejection returns.
+	//
+	// ONLY a genuine ErrClientNotUsable is collapsed that way. Anything else
+	// is an infrastructure fault (assertClientUsable bottoms out in a raw
+	// ent query error), and folding THAT into invalid_grant is the single
+	// most damaging thing this endpoint can do: the real hermes client
+	// treats invalid_grant as terminal and _quarantine_nous_oauth_state
+	// erases the stored OAuth material, silently. A Postgres blip during
+	// the refresh window would therefore make every agent refreshing in
+	// that window destroy its own credential, with nothing in our logs —
+	// exactly the fleet-wide silent forced re-auth Token's doc comment
+	// forbids. It surfaces as an internal error, hence a logged 500.
 	if err := s.assertClientUsable(ctx, clientID); err != nil {
+		if !errors.Is(err, ErrClientNotUsable) {
+			return nil, fmt.Errorf("check client usability for refresh token grant: %w", err)
+		}
 		return nil, ErrInvalidGrant
 	}
 	if s.now().After(data.ExpiresAt) {
@@ -751,6 +839,19 @@ func (s *OAuthTokenService) ExchangeRefreshToken(ctx context.Context, clientID, 
 	}
 
 	if err := s.persistRefreshToken(ctx, successor); err != nil {
+		// The family was revoked between this caller winning the rotation
+		// claim and the successor being written — a reuse detection, a ban,
+		// or a credential change landing in the same millisecond. The
+		// successor is deliberately NOT stored, so the sealed pair the
+		// grace would hand back on a retry names a token that does not
+		// exist and cannot be redeemed. invalid_grant, not a 500: the
+		// credential really is dead, and this is the one shape of
+		// invalid_grant on this path that is a genuine, deliberate
+		// decision rather than an infrastructure fault (see C-1).
+		if errors.Is(err, ErrTokenFamilyRevoked) {
+			slog.Warn("oauth: refresh token family revoked while its successor was being persisted", "client_id", clientID)
+			return nil, ErrInvalidGrant
+		}
 		return nil, err
 	}
 
@@ -1055,6 +1156,18 @@ func (s *OAuthTokenService) ExchangeAuthorizationCode(ctx context.Context, clien
 	}
 	refresh, err := s.issueRefreshToken(ctx, row.UserID, clientID, row.Scope, familyID, resolvedTokenVersion(user))
 	if err != nil {
+		// A revoked family is a DELIBERATE refusal, not an internal fault.
+		// It is reachable here by exactly the route RFC 6749 §4.1.2 asks
+		// for: a replay of this same code arriving while this redemption is
+		// mid-flight reads the IssuedTokenFamily recorded above and revokes
+		// it (handleAuthorizationCodeReplay), and the persist then lands
+		// after that revocation. Rolling the code back to `pending` there
+		// would hand the replaying party a redeemable code, so this branch
+		// deliberately does not — it is a credential rejection, same class
+		// as ErrClientNotUsable above.
+		if errors.Is(err, ErrTokenFamilyRevoked) {
+			return nil, ErrInvalidGrant
+		}
 		// The access token minted above was never returned to any caller —
 		// it is a live but unheld 15-minute JWT, harmless by construction
 		// (nothing holds it to present). Roll back so a retry can redeem
@@ -1138,6 +1251,61 @@ func (s *OAuthTokenService) rollbackConsumedCode(ctx context.Context, code, clie
 		ClearIssuedTokenFamily().
 		Save(rollbackCtx); err != nil {
 		slog.Error("oauth: failed to roll back authorization code after internal error", "client_id", clientID, "error", err)
+	}
+}
+
+// rollbackConsumedDeviceCode reverts a just-consumed device authorization
+// row from "expired" back to "approved" after an INTERNAL failure
+// downstream of the consuming CAS in ExchangeDeviceCode — never after a
+// credential-rejecting check, and never after a deliberate refusal such as
+// ErrTokenFamilyRevoked (see the call sites).
+//
+// This is rollbackConsumedCode's argument, one grant over, and it transfers
+// unchanged. The device grant has the identical CAS-then-mint shape:
+// UPDATE ... WHERE status='approved' consumes the row, and everything after
+// it — family-id entropy, mintAccessToken (which reads the signing key from
+// Postgres and can return ErrIssuerNotConfigured), issueRefreshToken (a
+// Redis write) — can fail for reasons that have nothing to do with the
+// caller's credential. Without a rollback, any one of those permanently
+// burns a human's approval: the CLI's poll gets 500, its next poll finds
+// the row already `expired`, and the person is told `expired_token` for a
+// code with ten minutes left. Re-running the device flow means typing a
+// user code into a browser again.
+//
+// Safe by construction, for the same reason: only the single goroutine that
+// won the CAS can reach an internal-error call site, so the caller
+// performing this rollback has by definition minted and returned nothing to
+// anyone, and there is no concurrent redemption to race. The UPDATE is
+// predicated on status='expired' as well as the row id, so it can only ever
+// undo the transition this same call made.
+//
+// The row's expires_at is untouched, so a code restored this way is still
+// bound by its original ten-minute life — a rollback cannot extend an
+// approval, only preserve what was left of it.
+//
+// Best-effort and DETACHED, exactly as rollbackConsumedCode: the caller's
+// ctx is the thing that was failing, and for the handler's entry point it
+// is c.Request.Context(), already canceled if the client hung up — which is
+// precisely the scenario this exists to recover from. See
+// rollbackConsumedCode's doc comment for the full reasoning behind
+// context.WithoutCancel + rollbackConsumedCodeTimeout; both are shared
+// deliberately rather than re-derived.
+func (s *OAuthTokenService) rollbackConsumedDeviceCode(ctx context.Context, rowID int64, clientID string) {
+	base := context.Background()
+	if ctx != nil {
+		base = context.WithoutCancel(ctx)
+	}
+	rollbackCtx, cancel := context.WithTimeout(base, rollbackConsumedCodeTimeout)
+	defer cancel()
+
+	if _, err := s.entClient.OAuthDeviceAuthorization.Update().
+		Where(
+			oauthdeviceauthorization.ID(rowID),
+			oauthdeviceauthorization.Status("expired"),
+		).
+		SetStatus("approved").
+		Save(rollbackCtx); err != nil {
+		slog.Error("oauth: failed to roll back device authorization after internal error", "client_id", clientID, "error", err)
 	}
 }
 

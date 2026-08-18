@@ -63,6 +63,32 @@ func (h *OAuthHandler) KeyService() *service.OAuthKeyService {
 	return h.keySvc
 }
 
+// ClientService exposes the OAuth client registry so
+// middleware.RequireOAuthScope can resolve a token's audience against a
+// real registration. Same rationale as KeyService above: routes.go already
+// holds this handler when it builds that middleware, so this avoids a
+// second wire-provided dependency.
+func (h *OAuthHandler) ClientService() *service.OAuthClientService {
+	return h.clientSvc
+}
+
+// TokenIssuer exposes the exact issuer string OAuthTokenService stamps into
+// the `iss` claim, so middleware.RequireOAuthScope verifies against the
+// value the mint actually used rather than against a second, independently
+// normalised read of cfg.Server.FrontendURL. Task 6's defect #1 was two
+// consumers of that one config value disagreeing about its canonical form;
+// routing the verifier through the minter's own accessor makes that
+// disagreement unrepresentable here.
+//
+// Returns "" when no token service is wired, which the middleware treats as
+// a misconfiguration and fails closed on.
+func (h *OAuthHandler) TokenIssuer() string {
+	if h.tokenSvc == nil {
+		return ""
+	}
+	return h.tokenSvc.Issuer()
+}
+
 // JWKS handles GET /.well-known/jwks.json
 func (h *OAuthHandler) JWKS(c *gin.Context) {
 	jwks, err := h.keySvc.JWKS(c.Request.Context())

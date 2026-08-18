@@ -422,6 +422,10 @@ func (s *userHandlerRefreshTokenCacheStub) StoreRefreshToken(context.Context, st
 	return nil
 }
 
+func (s *userHandlerRefreshTokenCacheStub) PersistRefreshToken(context.Context, string, *service.RefreshTokenData, time.Duration) error {
+	return nil
+}
+
 func (s *userHandlerRefreshTokenCacheStub) GetRefreshToken(context.Context, string) (*service.RefreshTokenData, error) {
 	return nil, service.ErrRefreshTokenNotFound
 }

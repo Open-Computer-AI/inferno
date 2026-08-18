@@ -81,6 +81,24 @@ func (c *oauthHandlerTestRefreshCache) StoreRefreshToken(_ context.Context, hash
 	return nil
 }
 
+// PersistRefreshToken mirrors the atomic record+both-memberships write the
+// Redis implementation performs in one EVAL.
+func (c *oauthHandlerTestRefreshCache) PersistRefreshToken(_ context.Context, hash string, data *service.RefreshTokenData, _ time.Duration) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	cloned := *data
+	c.tokens[hash] = &cloned
+	if c.users[data.UserID] == nil {
+		c.users[data.UserID] = map[string]struct{}{}
+	}
+	c.users[data.UserID][hash] = struct{}{}
+	if c.families[data.FamilyID] == nil {
+		c.families[data.FamilyID] = map[string]struct{}{}
+	}
+	c.families[data.FamilyID][hash] = struct{}{}
+	return nil
+}
+
 func (c *oauthHandlerTestRefreshCache) GetRefreshToken(_ context.Context, hash string) (*service.RefreshTokenData, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -504,6 +522,19 @@ func newOAuthAccountTestHandler(t *testing.T) *OAuthHandler {
 	orgSvc := service.NewOrgService(client)
 	deviceSvc := service.NewOAuthDeviceService(client, "https://portal.example.com")
 	tokenSvc := service.NewOAuthTokenService(client, keySvc, deviceSvc, newOAuthHandlerTestRefreshCache(), oauthHandlerTestUserLookup{}, "https://portal.example.com")
+	// The audience of every token these tests mint has to name a real,
+	// usable client: RequireOAuthScope now resolves `aud` against the
+	// registry rather than trusting it as the caller's identity.
+	_, err := client.OAuthClient.Create().
+		SetClientID("agent:test-client").
+		SetKind("SELF_HOSTED").
+		SetName("account test client").
+		SetOwnerUserID(1).
+		SetOrgID(1).
+		SetRedirectURIOrigin("https://agent.example.com").
+		SetStatus(service.ClientActive).
+		Save(context.Background())
+	require.NoError(t, err)
 	return NewOAuthHandler(keySvc, clientSvc, orgSvc, deviceSvc, tokenSvc, oauthHandlerTestUserLookup{})
 }
 
@@ -512,7 +543,7 @@ func newOAuthAccountTestRouter(t *testing.T) (*gin.Engine, *OAuthHandler) {
 	gin.SetMode(gin.TestMode)
 	h := newOAuthAccountTestHandler(t)
 	router := gin.New()
-	router.GET("/api/oauth/account", oauthmiddleware.RequireOAuthScope(h.KeyService(), ""), h.Account)
+	router.GET("/api/oauth/account", oauthmiddleware.RequireOAuthScope(h.KeyService(), h.ClientService(), h.TokenIssuer(), ""), h.Account)
 	return router, h
 }
 

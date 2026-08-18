@@ -23,6 +23,13 @@ const (
 	// its own short TTL (service.RefreshReplayRetention) instead of the
 	// tombstone's remaining 30 days.
 	refreshReplayKeyPrefix = "refresh_replay:"
+	// familyRevokedKeyPrefix marks a token family as revoked. Written by
+	// DeleteTokenFamily BEFORE it enumerates the family, and checked by
+	// refreshTokenPersistScript inside the same atomic operation that
+	// writes — which is what stops a rotation already in flight from
+	// re-creating a family that has just been killed. See
+	// service.RefreshFamilyRevokedRetention.
+	familyRevokedKeyPrefix = "family_revoked:"
 )
 
 // refreshTokenKey generates the Redis key for a refresh token.
@@ -45,6 +52,50 @@ func tokenFamilyKey(familyID string) string {
 func refreshReplayKey(tokenHash string) string {
 	return refreshReplayKeyPrefix + tokenHash
 }
+
+// familyRevokedKey generates the Redis key that marks a token family as
+// permanently revoked.
+func familyRevokedKey(familyID string) string {
+	return familyRevokedKeyPrefix + familyID
+}
+
+// refreshTokenPersistScript writes a refresh-token record together with both
+// of its revocation-index memberships, or writes nothing at all.
+//
+// The three writes used to be three separate round trips in
+// OAuthTokenService.persistRefreshToken, which had two failure modes that
+// are the same failure seen from two sides — a partial failure orphaning a
+// live 30-day credential outside every revocation index, and a concurrent
+// DeleteTokenFamily missing a token this call is about to add. The full
+// reasoning is on service.RefreshTokenCache.PersistRefreshToken and
+// service.RefreshFamilyRevokedRetention; the short version is that both are
+// closed only by doing the check and all three writes in ONE operation.
+//
+// KEYS[1] = refresh_token:{hash}
+// KEYS[2] = user_refresh_tokens:{user_id}
+// KEYS[3] = token_family:{family_id}
+// KEYS[4] = family_revoked:{family_id}
+// ARGV[1] = the record JSON
+// ARGV[2] = the token hash (the set member)
+// ARGV[3] = the record/set TTL, seconds
+//
+// Returns 1 on success and 0 if the family is revoked (nothing written).
+//
+// The EXPIRE on each set re-arms the whole set's lifetime on every add,
+// exactly as the AddToUserTokenSet / AddToFamilyTokenSet pipelines it
+// replaces did — deliberately unchanged, so this is atomicity only and not
+// a silent change of retention.
+var refreshTokenPersistScript = redis.NewScript(`
+if redis.call('EXISTS', KEYS[4]) == 1 then
+  return 0
+end
+redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[3])
+redis.call('SADD', KEYS[2], ARGV[2])
+redis.call('EXPIRE', KEYS[2], ARGV[3])
+redis.call('SADD', KEYS[3], ARGV[2])
+redis.call('EXPIRE', KEYS[3], ARGV[3])
+return 1
+`)
 
 // refreshTokenMarkRotatedScript atomically flips a refresh-token record's
 // "rotated" flag exactly once, and classifies every caller that does not win
@@ -165,6 +216,31 @@ func (c *refreshTokenCache) StoreRefreshToken(ctx context.Context, tokenHash str
 	return c.rdb.Set(ctx, key, val, ttl).Err()
 }
 
+func (c *refreshTokenCache) PersistRefreshToken(ctx context.Context, tokenHash string, data *service.RefreshTokenData, ttl time.Duration) error {
+	val, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("marshal refresh token data: %w", err)
+	}
+	keys := []string{
+		refreshTokenKey(tokenHash),
+		userRefreshTokensKey(data.UserID),
+		tokenFamilyKey(data.FamilyID),
+		familyRevokedKey(data.FamilyID),
+	}
+	res, err := refreshTokenPersistScript.Run(ctx, c.rdb, keys, val, tokenHash, int64(ttl/time.Second)).Result()
+	if err != nil {
+		return fmt.Errorf("persist refresh token: %w", err)
+	}
+	written, ok := res.(int64)
+	if !ok {
+		return fmt.Errorf("persist refresh token: unexpected script result %#v", res)
+	}
+	if written == 0 {
+		return service.ErrTokenFamilyRevoked
+	}
+	return nil
+}
+
 func (c *refreshTokenCache) GetRefreshToken(ctx context.Context, tokenHash string) (*service.RefreshTokenData, error) {
 	key := refreshTokenKey(tokenHash)
 	val, err := c.rdb.Get(ctx, key).Result()
@@ -272,12 +348,71 @@ func (c *refreshTokenCache) MarkRotated(ctx context.Context, tokenHash string, t
 	return out, nil
 }
 
+// ownersOf groups token hashes by the user id recorded on each one, for the
+// user-set SREM the delete paths below perform.
+//
+// Best effort by construction: a hash whose record has already expired or
+// been deleted names no user, so its membership cannot be removed and is
+// left to age out with the set's own TTL. That is the pre-existing
+// behaviour for every hash, and this narrows it rather than replacing it.
+// Read BEFORE the records are deleted, since the record is the only place
+// the user id is written.
+func (c *refreshTokenCache) ownersOf(ctx context.Context, tokenHashes []string) map[int64][]string {
+	if len(tokenHashes) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(tokenHashes))
+	for _, hash := range tokenHashes {
+		keys = append(keys, refreshTokenKey(hash))
+	}
+	vals, err := c.rdb.MGet(ctx, keys...).Result()
+	if err != nil || len(vals) != len(tokenHashes) {
+		return nil
+	}
+	owners := make(map[int64][]string)
+	for i, v := range vals {
+		raw, ok := v.(string)
+		if !ok {
+			continue
+		}
+		var data service.RefreshTokenData
+		if err := json.Unmarshal([]byte(raw), &data); err != nil {
+			continue
+		}
+		owners[data.UserID] = append(owners[data.UserID], tokenHashes[i])
+	}
+	return owners
+}
+
 // DeleteRefreshToken removes a record and, with it, any grace-window replay
-// pair still parked under that hash. The pair is sealed, so this is no longer
-// about secrecy — it is about not leaving a blob behind that outlives the
-// session it belongs to.
+// pair still parked under that hash, and its membership of the owning
+// user's token set.
+//
+// The pair is sealed, so deleting it is no longer about secrecy — it is
+// about not leaving a blob behind that outlives the session it belongs to.
+// The set membership is the same argument: without the SREM the set
+// accumulated hashes naming records that no longer exist for the rest of
+// its TTL, which made "how many live sessions does this user have" an
+// unreliable answer and kept memory alive past what it named.
 func (c *refreshTokenCache) DeleteRefreshToken(ctx context.Context, tokenHash string) error {
-	return c.rdb.Del(ctx, refreshTokenKey(tokenHash), refreshReplayKey(tokenHash)).Err()
+	owners := c.ownersOf(ctx, []string{tokenHash})
+	pipe := c.rdb.Pipeline()
+	pipe.Del(ctx, refreshTokenKey(tokenHash), refreshReplayKey(tokenHash))
+	for userID, hashes := range owners {
+		pipe.SRem(ctx, userRefreshTokensKey(userID), stringsToAny(hashes)...)
+	}
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+// stringsToAny adapts a hash slice to go-redis's variadic `...any` member
+// arguments.
+func stringsToAny(in []string) []any {
+	out := make([]any, 0, len(in))
+	for _, v := range in {
+		out = append(out, v)
+	}
+	return out
 }
 
 func (c *refreshTokenCache) DeleteUserRefreshTokens(ctx context.Context, userID int64) error {
@@ -294,22 +429,59 @@ func (c *refreshTokenCache) DeleteUserRefreshTokens(ctx context.Context, userID 
 	// Build keys to delete
 	// Two keys per hash: the record and any grace-window replay pair, so a
 	// revocation leaves nothing behind (see DeleteRefreshToken).
-	keys := make([]string, 0, 2*len(tokenHashes)+1)
+	keys := make([]string, 0, 2*len(tokenHashes))
 	for _, hash := range tokenHashes {
 		keys = append(keys, refreshTokenKey(hash), refreshReplayKey(hash))
 	}
-	keys = append(keys, userRefreshTokensKey(userID))
 
-	// Delete all keys in a pipeline
+	// SREM of exactly the hashes enumerated above, NOT DEL of the set key.
+	//
+	// A DEL would also discard a membership added between the SMEMBERS and
+	// here — a login (or a rotation) racing this revocation — and that
+	// token's record is NOT in the delete list, so it would survive as a
+	// live credential that no later DeleteUserRefreshTokens could name.
+	// SREM-ing only what was enumerated leaves such a token both live and
+	// indexed, which is the correct reading of "it arrived after the
+	// revocation ran": still revocable next time. Redis drops a set that
+	// becomes empty, so the ordinary case still leaves no key behind.
+	//
+	// The family-scoped analogue of this race needs a stronger primitive —
+	// see service.RefreshFamilyRevokedRetention. A user-scoped revocation
+	// marker is deliberately NOT the answer here: a user id is reused by
+	// every future login, so a marker would refuse legitimate logins for
+	// its whole retention, where a family id is single-use and can safely
+	// be remembered forever.
 	pipe := c.rdb.Pipeline()
 	for _, key := range keys {
 		pipe.Del(ctx, key)
 	}
+	pipe.SRem(ctx, userRefreshTokensKey(userID), stringsToAny(tokenHashes)...)
 	_, err = pipe.Exec(ctx)
 	return err
 }
 
 func (c *refreshTokenCache) DeleteTokenFamily(ctx context.Context, familyID string) error {
+	// Mark the family revoked BEFORE enumerating it, and fail the whole
+	// revocation if the mark cannot be written.
+	//
+	// Ordering is the entire point: PersistRefreshToken checks this key
+	// inside the same atomic operation that writes, so a rotation whose
+	// persist completes before the mark is visible is necessarily visible
+	// to the SMEMBERS below, and one that starts after it is refused. Any
+	// other order — or a mark written best-effort and ignored on failure —
+	// leaves the window where a rotation in flight re-creates the family it
+	// was just revoked from, holding only the surviving head. See
+	// service.RefreshFamilyRevokedRetention.
+	//
+	// Returning the error rather than logging it is deliberate: every
+	// caller of this method is revoking a credential (reuse detected, code
+	// replayed, user banned, password changed), and a revocation that
+	// cannot guarantee its own ordering must be reported as failed, not
+	// silently downgraded.
+	if err := c.rdb.Set(ctx, familyRevokedKey(familyID), "1", service.RefreshFamilyRevokedRetention).Err(); err != nil {
+		return fmt.Errorf("mark token family revoked: %w", err)
+	}
+
 	// Get all token hashes in this family
 	tokenHashes, err := c.GetFamilyTokenHashes(ctx, familyID)
 	if err != nil && err != redis.Nil {
@@ -319,6 +491,11 @@ func (c *refreshTokenCache) DeleteTokenFamily(ctx context.Context, familyID stri
 	if len(tokenHashes) == 0 {
 		return nil
 	}
+
+	// Read the owning user BEFORE the records are deleted — the record is
+	// the only place the user id is written, and the memberships have to be
+	// removed from the user's set too (see DeleteRefreshToken).
+	owners := c.ownersOf(ctx, tokenHashes)
 
 	// Build keys to delete
 	// Two keys per hash: the record and any grace-window replay pair, so a
@@ -333,6 +510,9 @@ func (c *refreshTokenCache) DeleteTokenFamily(ctx context.Context, familyID stri
 	pipe := c.rdb.Pipeline()
 	for _, key := range keys {
 		pipe.Del(ctx, key)
+	}
+	for userID, hashes := range owners {
+		pipe.SRem(ctx, userRefreshTokensKey(userID), stringsToAny(hashes)...)
 	}
 	_, err = pipe.Exec(ctx)
 	return err

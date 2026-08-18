@@ -127,6 +127,10 @@ func (s *refreshTokenCacheStub) StoreRefreshToken(context.Context, string, *Refr
 	return nil
 }
 
+func (s *refreshTokenCacheStub) PersistRefreshToken(context.Context, string, *RefreshTokenData, time.Duration) error {
+	return nil
+}
+
 func (s *refreshTokenCacheStub) GetRefreshToken(context.Context, string) (*RefreshTokenData, error) {
 	return nil, ErrRefreshTokenNotFound
 }

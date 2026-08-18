@@ -1463,6 +1463,10 @@ func (s *wechatOAuthRefreshTokenCacheStub) StoreRefreshToken(context.Context, st
 	return nil
 }
 
+func (s *wechatOAuthRefreshTokenCacheStub) PersistRefreshToken(context.Context, string, *service.RefreshTokenData, time.Duration) error {
+	return nil
+}
+
 func (s *wechatOAuthRefreshTokenCacheStub) GetRefreshToken(context.Context, string) (*service.RefreshTokenData, error) {
 	return nil, service.ErrRefreshTokenNotFound
 }

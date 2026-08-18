@@ -115,3 +115,65 @@ describe('checkAuthorize / decideAuthorize (F7)', () => {
     await expect(decideAuthorize(PARAMS, 'deny')).resolves.toBe(target)
   })
 })
+
+describe('rate-limit envelope on a text-response request (M-9)', () => {
+  beforeEach(() => {
+    vi.resetModules()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('surfaces the 429 envelope message even though responseType is text', async () => {
+    const { apiClient } = await import('@/api/client')
+    const { checkAuthorize } = await import('@/api/oauth')
+
+    // Exactly what the backend emits on this endpoint's rate-limit arm: the
+    // panel {code,message,data} envelope. Because the request sets
+    // responseType: 'text', axios never parses it, so it reaches the
+    // interceptor as a STRING -- which the old object-only guard discarded,
+    // leaving the user with axios's generic "Request failed with status
+    // code 429".
+    apiClient.defaults.adapter = vi.fn().mockRejectedValue({
+      isAxiosError: true,
+      config: { url: '/oauth/authorize' },
+      response: {
+        status: 429,
+        data: JSON.stringify({ code: 42901, message: 'Too many authorization requests' }),
+        headers: {},
+        config: {},
+        statusText: 'Too Many Requests'
+      }
+    })
+
+    await expect(checkAuthorize(PARAMS)).rejects.toMatchObject({
+      status: 429,
+      code: 42901,
+      message: 'Too many authorization requests'
+    })
+  })
+
+  it('still ignores a non-JSON error body', async () => {
+    const { apiClient } = await import('@/api/client')
+    const { checkAuthorize } = await import('@/api/oauth')
+
+    apiClient.defaults.adapter = vi.fn().mockRejectedValue({
+      isAxiosError: true,
+      message: 'Request failed with status code 502',
+      config: { url: '/oauth/authorize' },
+      response: {
+        status: 502,
+        data: '<!doctype html><html><body>Bad gateway</body></html>',
+        headers: {},
+        config: {},
+        statusText: 'Bad Gateway'
+      }
+    })
+
+    await expect(checkAuthorize(PARAMS)).rejects.toMatchObject({
+      status: 502,
+      message: 'Request failed with status code 502'
+    })
+  })
+})

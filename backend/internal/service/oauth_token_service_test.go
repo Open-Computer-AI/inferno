@@ -15,6 +15,10 @@ import (
 	"testing"
 	"time"
 
+	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/oauthauthorizationcode"
+	"github.com/Wei-Shaw/sub2api/ent/oauthclient"
+
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -30,6 +34,25 @@ type fakeRefreshTokenCache struct {
 	replays  map[string]fakeReplayEntry
 	families map[string]map[string]struct{}
 	users    map[int64]map[string]struct{}
+	// revokedFamilies mirrors the real family_revoked:{id} marker
+	// DeleteTokenFamily writes BEFORE it enumerates a family, and that
+	// PersistRefreshToken refuses under. Without it the fake would answer
+	// the I-3 interleaving differently from Redis and the test would be
+	// testing the fake.
+	revokedFamilies map[string]struct{}
+	// failIndexWrite makes the backing store accept a record write and then
+	// fail on the index writes that follow — a transient Redis error
+	// between the SET and the SADDs.
+	//
+	// It is deliberately honoured DIFFERENTLY by the two write paths,
+	// because that difference IS the defect under test: the three-write
+	// sequence (StoreRefreshToken -> AddToUserTokenSet ->
+	// AddToFamilyTokenSet) leaves the record committed and unindexed, while
+	// PersistRefreshToken, being one atomic operation, leaves nothing at
+	// all. A test asserting "no orphan survives" therefore passes against
+	// the atomic path and fails against the three-write path, which is what
+	// makes it a real guard rather than a restatement of the fake.
+	failIndexWrite bool
 }
 
 // fakeReplayEntry mirrors the refresh_replay:{hash} key the Redis
@@ -44,10 +67,11 @@ type fakeReplayEntry struct {
 
 func newFakeRefreshTokenCache() *fakeRefreshTokenCache {
 	return &fakeRefreshTokenCache{
-		tokens:   make(map[string]*RefreshTokenData),
-		replays:  make(map[string]fakeReplayEntry),
-		families: make(map[string]map[string]struct{}),
-		users:    make(map[int64]map[string]struct{}),
+		tokens:          make(map[string]*RefreshTokenData),
+		replays:         make(map[string]fakeReplayEntry),
+		families:        make(map[string]map[string]struct{}),
+		users:           make(map[int64]map[string]struct{}),
+		revokedFamilies: make(map[string]struct{}),
 	}
 }
 
@@ -56,6 +80,32 @@ func (f *fakeRefreshTokenCache) StoreRefreshToken(_ context.Context, tokenHash s
 	defer f.mu.Unlock()
 	cloned := *data
 	f.tokens[tokenHash] = &cloned
+	return nil
+}
+
+// PersistRefreshToken mirrors repository.refreshTokenPersistScript: the
+// revoked-family check and all three writes happen inside one critical
+// section, so either everything lands or nothing does.
+func (f *fakeRefreshTokenCache) PersistRefreshToken(_ context.Context, tokenHash string, data *RefreshTokenData, _ time.Duration) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, revoked := f.revokedFamilies[data.FamilyID]; revoked {
+		return ErrTokenFamilyRevoked
+	}
+	if f.failIndexWrite {
+		// Atomic: the failure leaves NOTHING behind, not even the record.
+		return errors.New("simulated redis failure persisting refresh token")
+	}
+	cloned := *data
+	f.tokens[tokenHash] = &cloned
+	if f.users[data.UserID] == nil {
+		f.users[data.UserID] = make(map[string]struct{})
+	}
+	f.users[data.UserID][tokenHash] = struct{}{}
+	if f.families[data.FamilyID] == nil {
+		f.families[data.FamilyID] = make(map[string]struct{})
+	}
+	f.families[data.FamilyID][tokenHash] = struct{}{}
 	return nil
 }
 
@@ -92,6 +142,10 @@ func (f *fakeRefreshTokenCache) DeleteUserRefreshTokens(_ context.Context, userI
 func (f *fakeRefreshTokenCache) DeleteTokenFamily(_ context.Context, familyID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	// Marked BEFORE the family is enumerated, exactly as the Redis
+	// implementation does, so a persist that arrives afterwards is refused
+	// rather than re-creating the family behind the revocation.
+	f.revokedFamilies[familyID] = struct{}{}
 	for hash := range f.families[familyID] {
 		delete(f.tokens, hash)
 		delete(f.replays, hash)
@@ -103,6 +157,10 @@ func (f *fakeRefreshTokenCache) DeleteTokenFamily(_ context.Context, familyID st
 func (f *fakeRefreshTokenCache) AddToUserTokenSet(_ context.Context, userID int64, tokenHash string, _ time.Duration) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.failIndexWrite {
+		// NOT atomic: whatever StoreRefreshToken already committed stays.
+		return errors.New("simulated redis failure adding to user set")
+	}
 	if f.users[userID] == nil {
 		f.users[userID] = make(map[string]struct{})
 	}
@@ -113,6 +171,10 @@ func (f *fakeRefreshTokenCache) AddToUserTokenSet(_ context.Context, userID int6
 func (f *fakeRefreshTokenCache) AddToFamilyTokenSet(_ context.Context, familyID, tokenHash string, _ time.Duration) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.failIndexWrite {
+		// NOT atomic: whatever StoreRefreshToken already committed stays.
+		return errors.New("simulated redis failure adding to family set")
+	}
 	if f.families[familyID] == nil {
 		f.families[familyID] = make(map[string]struct{})
 	}
@@ -1693,9 +1755,20 @@ func TestIssuerTrailingSlashIsNormalisedIntoTheIssClaim(t *testing.T) {
 // refused loudly (ErrPortalNotConfigured -> a logged 500), but this service
 // happily minted tokens carrying `iss: ""` -- unverifiable by the real
 // client, and diagnosed on the CLIENT as "Invalid issuer" with nothing at
-// all in our own logs. Both token-issuing grants are asserted: the guard
-// lives at the single point that stamps the claim precisely so no grant can
-// route around it.
+// all in our own logs.
+//
+// There are THREE token-issuing grants, and this test asserts the guard
+// fires on the two that can actually reach the mint from a cold fixture:
+// device_code and authorization_code. The refresh_token case below is a
+// NEGATIVE CONTROL, not a third assertion of the guard — it proves an
+// unknown refresh token is rejected BEFORE the mint, so it says nothing
+// about whether the guard would fire on that path.
+//
+// (An earlier version of this comment claimed "both token-issuing grants
+// are asserted", which was wrong twice over: there are three grants, and
+// the second assertion asserts the opposite of what the sentence says.
+// Recorded because an overstated coverage claim on a regression guard is
+// exactly how a defect gets re-introduced under a green test.)
 func TestMintRefusesWhenIssuerIsNotConfigured(t *testing.T) {
 	ctx, tokens, _, clientID, deviceCode := newDeviceFlowFixtureWithIssuer(t, "   ")
 
@@ -1709,5 +1782,432 @@ func TestMintRefusesWhenIssuerIsNotConfigured(t *testing.T) {
 	// error switch is built to avoid.
 	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, "art_deadbeef"); errors.Is(err, ErrIssuerNotConfigured) {
 		t.Fatal("refresh grant should reject an unknown token before it ever reaches the mint")
+	}
+}
+
+// TestMintRefusesWhenIssuerIsNotConfiguredOnAuthorizationCodeGrant is the
+// third grant, which the test above could not reach from its device-flow
+// fixture.
+//
+// It also pins the composition the Task 6 review called out: the guard
+// fires inside a rollbackConsumedCode branch, so an unconfigured issuer
+// must NOT burn the authorization code. Asserted by re-reading the row's
+// status, not merely by the error -- a rollback that silently stopped
+// working would leave the error identical.
+func TestMintRefusesWhenIssuerIsNotConfiguredOnAuthorizationCodeGrant(t *testing.T) {
+	ctx := context.Background()
+	entClient := newPaymentConfigServiceTestClient(t)
+	clients := NewOAuthClientService(entClient)
+	keys := NewOAuthKeyService(entClient)
+	devices := NewOAuthDeviceService(entClient, "https://portal.example.com")
+	authorize := NewOAuthAuthorizeService(entClient)
+	tokens := NewOAuthTokenService(entClient, keys, devices, newFakeRefreshTokenCache(), newUserLookupStub(), "   ")
+
+	oc, err := clients.RegisterSelfHosted(ctx, 1, 42, "https://agent.example.com", "")
+	if err != nil {
+		t.Fatalf("RegisterSelfHosted: %v", err)
+	}
+	redirectURI := "https://agent.example.com/auth/callback"
+	verifier, challenge := pkcePair()
+	code, err := authorize.IssueCode(ctx, IssueCodeInput{
+		ClientID:            oc.ClientID,
+		RedirectURI:         redirectURI,
+		Scope:               ScopeInferenceInvoke,
+		CodeChallenge:       challenge,
+		CodeChallengeMethod: "S256",
+		UserID:              42,
+	})
+	if err != nil {
+		t.Fatalf("IssueCode: %v", err)
+	}
+
+	if _, err := tokens.ExchangeAuthorizationCode(ctx, oc.ClientID, code, redirectURI, verifier); !errors.Is(err, ErrIssuerNotConfigured) {
+		t.Fatalf("authorization_code grant: expected ErrIssuerNotConfigured, got %v", err)
+	}
+
+	row, err := entClient.OAuthAuthorizationCode.Query().
+		Where(oauthauthorizationcode.Code(code)).
+		Only(ctx)
+	if err != nil {
+		t.Fatalf("query authorization code: %v", err)
+	}
+	if row.Status != authCodeStatusPending {
+		t.Fatalf("an operator misconfiguration must not burn the code: status = %q, want %q", row.Status, authCodeStatusPending)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Final fix wave: C-1, I-2, I-5, I-3.
+// ---------------------------------------------------------------------------
+
+// newDeviceFlowFixtureWithEnt is newDeviceFlowFixtureWithDeps plus the ent
+// client itself, which the tests below need in order to produce a genuine
+// database fault (closing it) or to remove a row out from under a grant.
+func newDeviceFlowFixtureWithEnt(t *testing.T) (context.Context, *OAuthTokenService, *OAuthDeviceService, string, string, *fakeRefreshTokenCache, *dbent.Client) {
+	t.Helper()
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	clients := NewOAuthClientService(client)
+	keys := NewOAuthKeyService(client)
+	devices := NewOAuthDeviceService(client, "https://portal.example.com")
+	cache := newFakeRefreshTokenCache()
+	users := newUserLookupStub()
+	tokens := NewOAuthTokenService(client, keys, devices, cache, users, "https://portal.example.com")
+
+	oc, err := clients.RegisterSelfHosted(ctx, 1, 42, "https://agent.example.com", "")
+	if err != nil {
+		t.Fatalf("RegisterSelfHosted: %v", err)
+	}
+	grant, err := devices.RequestCode(ctx, oc.ClientID, "inference:invoke")
+	if err != nil {
+		t.Fatalf("RequestCode: %v", err)
+	}
+	return ctx, tokens, devices, oc.ClientID, grant.DeviceCode, cache, client
+}
+
+// approveDeviceCode approves the pending device authorization behind
+// deviceCode, so the grant reaches its consuming CAS.
+func approveDeviceCode(t *testing.T, ctx context.Context, devices *OAuthDeviceService, deviceCode string) {
+	t.Helper()
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+}
+
+// TestDeviceGrantDoesNotReportAnInfrastructureFaultAsAccessDenied is C-1 for
+// the device_code grant.
+//
+// assertClientUsable bottoms out in entClient.OAuthClient.Query().Only(ctx),
+// which returns a RAW ent error on any database fault and ErrClientNotUsable
+// only for a genuinely revoked client. Collapsing both into access_denied
+// tells the CLI its login was refused when in fact nothing was decided.
+//
+// The fault is produced by deleting the oauth_client row rather than by
+// stubbing: it makes the client lookup — and nothing before it in this grant
+// — return an ent error, which is the exact shape a Postgres fault produces
+// at that call site.
+func TestDeviceGrantDoesNotReportAnInfrastructureFaultAsAccessDenied(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, _, entClient := newDeviceFlowFixtureWithEnt(t)
+	approveDeviceCode(t, ctx, devices, deviceCode)
+
+	if _, err := entClient.OAuthClient.Delete().Where(oauthclient.ClientID(clientID)).Exec(ctx); err != nil {
+		t.Fatalf("delete oauth client: %v", err)
+	}
+
+	_, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err == nil {
+		t.Fatal("expected the client lookup fault to surface as an error")
+	}
+	if errors.Is(err, ErrAccessDenied) {
+		t.Fatalf("an infrastructure fault must NOT be folded into access_denied, got %v", err)
+	}
+}
+
+// TestDeviceGrantStillReportsARevokedClientAsAccessDenied is the other half
+// of C-1: the split must not turn a genuine policy decision into a 500.
+func TestDeviceGrantStillReportsARevokedClientAsAccessDenied(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, _, entClient := newDeviceFlowFixtureWithEnt(t)
+	approveDeviceCode(t, ctx, devices, deviceCode)
+
+	if _, err := entClient.OAuthClient.Update().
+		Where(oauthclient.ClientID(clientID)).
+		SetStatus(ClientRevoked).
+		Save(ctx); err != nil {
+		t.Fatalf("revoke oauth client: %v", err)
+	}
+
+	if _, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode); !errors.Is(err, ErrAccessDenied) {
+		t.Fatalf("a revoked client must still be access_denied, got %v", err)
+	}
+}
+
+// TestRefreshGrantDoesNotReportAnInfrastructureFaultAsInvalidGrant is C-1 on
+// the path that matters most.
+//
+// The real hermes client treats invalid_grant as TERMINAL: auth.py's
+// _quarantine_nous_oauth_state erases the stored OAuth material, silently.
+// So folding a Postgres blip into invalid_grant here makes every agent
+// refreshing during an outage destroy its own credential, with nothing in
+// our logs, and recovery is a human re-running the device flow per agent.
+//
+// The fault is a CLOSED ent client, which is what a real outage looks like
+// to this call site and is the same technique the resource-server
+// middleware's 500 test uses. It is the first database call this grant
+// makes — GetRefreshToken and the client binding check are both served from
+// the cache — so it lands exactly on assertClientUsable.
+func TestRefreshGrantDoesNotReportAnInfrastructureFaultAsInvalidGrant(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, _, entClient := newDeviceFlowFixtureWithEnt(t)
+	approveDeviceCode(t, ctx, devices, deviceCode)
+
+	issued, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+	if err := entClient.Close(); err != nil {
+		t.Fatalf("close ent client: %v", err)
+	}
+
+	_, err = tokens.ExchangeRefreshToken(ctx, clientID, issued.RefreshToken)
+	if err == nil {
+		t.Fatal("expected the client lookup fault to surface as an error")
+	}
+	if errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("an infrastructure fault must NOT be folded into invalid_grant — the real client erases its credential on that code; got %v", err)
+	}
+}
+
+// TestRefreshGrantStillReportsARevokedClientAsInvalidGrant is C-1's negative
+// control on the refresh path.
+func TestRefreshGrantStillReportsARevokedClientAsInvalidGrant(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, _, entClient := newDeviceFlowFixtureWithEnt(t)
+	approveDeviceCode(t, ctx, devices, deviceCode)
+
+	issued, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+	if _, err := entClient.OAuthClient.Update().
+		Where(oauthclient.ClientID(clientID)).
+		SetStatus(ClientRevoked).
+		Save(ctx); err != nil {
+		t.Fatalf("revoke oauth client: %v", err)
+	}
+
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, issued.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("a revoked client must still be invalid_grant, got %v", err)
+	}
+}
+
+// TestDeviceCodeInternalFailureRollsBackTheApproval is I-2.
+//
+// The device grant has the same CAS-then-mint shape as the
+// authorization_code grant and, until this wave, none of its rollback: any
+// internal failure after the consuming UPDATE left the row permanently
+// `expired`, so the CLI's next poll was answered `expired_token` for a code
+// with ten minutes left and the human had to re-run the whole browser flow.
+//
+// Asserted on the ROW, not only on the error: a rollback that stopped
+// working would leave the error identical. And asserted by RETRYING — the
+// point of the rollback is that the same code is still redeemable once the
+// transient fault clears.
+func TestDeviceCodeInternalFailureRollsBackTheApproval(t *testing.T) {
+	ctx := context.Background()
+	entClient := newPaymentConfigServiceTestClient(t)
+	clients := NewOAuthClientService(entClient)
+	keys := NewOAuthKeyService(entClient)
+	devices := NewOAuthDeviceService(entClient, "https://portal.example.com")
+	cache := &failOnceRefreshTokenCache{fakeRefreshTokenCache: newFakeRefreshTokenCache(), armed: true}
+	tokens := NewOAuthTokenService(entClient, keys, devices, cache, newUserLookupStub(), "https://portal.example.com")
+
+	oc, err := clients.RegisterSelfHosted(ctx, 1, 42, "https://agent.example.com", "")
+	if err != nil {
+		t.Fatalf("RegisterSelfHosted: %v", err)
+	}
+	grant, err := devices.RequestCode(ctx, oc.ClientID, "inference:invoke")
+	if err != nil {
+		t.Fatalf("RequestCode: %v", err)
+	}
+	approveDeviceCode(t, ctx, devices, grant.DeviceCode)
+
+	// First attempt: fully valid, but the refresh-token write fails with an
+	// injected transient error.
+	if _, err := tokens.ExchangeDeviceCode(ctx, oc.ClientID, grant.DeviceCode); err == nil {
+		t.Fatal("expected the injected store failure to surface as an error")
+	} else if errors.Is(err, ErrExpiredToken) || errors.Is(err, ErrAccessDenied) {
+		t.Fatalf("an internal infrastructure failure must NOT be folded into an RFC 8628 error code, got %v", err)
+	}
+
+	row, err := devices.byDeviceCode(ctx, grant.DeviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode after failed exchange: %v", err)
+	}
+	if row.Status != "approved" {
+		t.Fatalf("an internal failure must not burn the human's approval: status = %q, want %q", row.Status, "approved")
+	}
+
+	// Second attempt, with the fault cleared: the same code still works.
+	got, err := tokens.ExchangeDeviceCode(ctx, oc.ClientID, grant.DeviceCode)
+	if err != nil {
+		t.Fatalf("retry after the transient fault cleared: %v", err)
+	}
+	if got.AccessToken == "" || got.RefreshToken == "" {
+		t.Fatal("retry returned an empty token pair")
+	}
+}
+
+// requireEveryStoredTokenIsIndexed is I-5's invariant, stated once:
+// a refresh-token record must never exist outside the sets every revocation
+// path enumerates. DeleteTokenFamily and DeleteUserRefreshTokens both work
+// by SMEMBERS -> DEL and there is no scan-based sweep anywhere, so a record
+// missing from those sets is a live 30-day credential that nothing can ever
+// name again.
+func requireEveryStoredTokenIsIndexed(t *testing.T, cache *fakeRefreshTokenCache) {
+	t.Helper()
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	for hash, data := range cache.tokens {
+		if _, ok := cache.families[data.FamilyID][hash]; !ok {
+			t.Fatalf("refresh token %s is stored but absent from its family set — no revocation path can ever reach it", hash[:8])
+		}
+		if _, ok := cache.users[data.UserID][hash]; !ok {
+			t.Fatalf("refresh token %s is stored but absent from its user set — logout-all-devices and password reset cannot reach it", hash[:8])
+		}
+	}
+}
+
+// TestPartialPersistLeavesNoUnindexedRefreshToken is I-5 on the issuing path.
+//
+// persistRefreshToken used to be three separate Redis writes with no
+// compensation: StoreRefreshToken committed first, and an error from
+// AddToUserTokenSet or AddToFamilyTokenSet was returned WITHOUT undoing it.
+// The in-code comment claimed returning the error was the mitigation
+// ("Fatal, not just logged"), which is precisely backwards — the record was
+// already committed with its full 30-day TTL.
+//
+// failIndexWrite models a store that accepts the record and then fails on
+// the index writes. The atomic path leaves nothing; the three-write path
+// leaves the record. That difference is the whole finding.
+func TestPartialPersistLeavesNoUnindexedRefreshToken(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, cache, _ := newDeviceFlowFixtureWithEnt(t)
+	approveDeviceCode(t, ctx, devices, deviceCode)
+
+	cache.failIndexWrite = true
+	if _, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode); err == nil {
+		t.Fatal("expected the injected index-write failure to surface as an error")
+	}
+
+	requireEveryStoredTokenIsIndexed(t, cache)
+	cache.mu.Lock()
+	stored := len(cache.tokens)
+	cache.mu.Unlock()
+	if stored != 0 {
+		t.Fatalf("a failed persist must leave NO record behind, found %d", stored)
+	}
+}
+
+// TestGraceNeverDeliversAnUnindexedSuccessor is I-5's Task-4/Task-5 seam:
+// the half that turned an inert leak into a delivered, unrevokable
+// credential.
+//
+// MarkRotated seals the successor pair BEFORE persistRefreshToken runs. So
+// with the old three-write persist: write 1 committed, write 2 failed, the
+// client got a 500, retried inside the 60s grace (a 500 is exactly what a
+// client retries), and the grace handed it back the pair that rotation
+// minted — a live 30-day refresh token in neither revocation index.
+//
+// The assertion is the invariant, not the wire response: whatever the client
+// is handed, no record may exist outside its indexes.
+func TestGraceNeverDeliversAnUnindexedSuccessor(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, cache, _ := newDeviceFlowFixtureWithEnt(t)
+	approveDeviceCode(t, ctx, devices, deviceCode)
+
+	issued, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+	freezeClock(tokens)
+
+	cache.failIndexWrite = true
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, issued.RefreshToken); err == nil {
+		t.Fatal("expected the injected index-write failure to surface as an error")
+	}
+	cache.failIndexWrite = false
+
+	// The client's ordinary retry of that 500, well inside the grace.
+	replayed, err := tokens.ExchangeRefreshToken(ctx, clientID, issued.RefreshToken)
+	if err != nil {
+		t.Fatalf("grace replay: %v", err)
+	}
+
+	requireEveryStoredTokenIsIndexed(t, cache)
+
+	// The successor the grace handed back was never persisted, so it is not
+	// redeemable — the client re-authenticates, exactly as it did before the
+	// grace existed. What must NOT happen is that it is redeemable and
+	// unrevokable.
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, replayed.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("the never-persisted successor must not be redeemable, got %v", err)
+	}
+}
+
+// revokeOnClaimRefreshTokenCache revokes a token family at the exact moment
+// a rotation claims it — i.e. in the window between MarkRotated returning
+// Claimed and persistRefreshToken running. That is I-3's interleaving,
+// made deterministic:
+//
+//	rotator:  MarkRotated(N1) -> Claimed
+//	attacker: DeleteTokenFamily(F)      (reuse detected on a stale token)
+//	rotator:  persist N2
+//
+// The revocation runs OUTSIDE the fake's critical section, exactly as a
+// separate Redis connection would.
+type revokeOnClaimRefreshTokenCache struct {
+	*fakeRefreshTokenCache
+	once sync.Once
+}
+
+func (c *revokeOnClaimRefreshTokenCache) MarkRotated(ctx context.Context, tokenHash string, tombstoned *RefreshTokenData, sealedReplay []byte, now time.Time) (*RefreshRotationResult, error) {
+	res, err := c.fakeRefreshTokenCache.MarkRotated(ctx, tokenHash, tombstoned, sealedReplay, now)
+	if err == nil && res.Outcome == RefreshRotationClaimed {
+		c.once.Do(func() { _ = c.fakeRefreshTokenCache.DeleteTokenFamily(ctx, tombstoned.FamilyID) })
+	}
+	return res, err
+}
+
+// TestConcurrentRotationCannotResurrectARevokedFamily is I-3.
+//
+// A family revocation is SMEMBERS -> DEL. A rotation that is mid-flight when
+// it runs used to re-create the family key behind it, holding only the
+// surviving head — so the live token of a family that was just revoked for
+// reuse kept rotating for the rest of its 30 days, and no later revocation
+// was even wrong: it revoked a family that was already supposed to be dead.
+//
+// Closed by a revocation marker written BEFORE the enumeration and checked
+// inside the same atomic operation that persists. See
+// RefreshFamilyRevokedRetention.
+func TestConcurrentRotationCannotResurrectARevokedFamily(t *testing.T) {
+	ctx := context.Background()
+	entClient := newPaymentConfigServiceTestClient(t)
+	clients := NewOAuthClientService(entClient)
+	keys := NewOAuthKeyService(entClient)
+	devices := NewOAuthDeviceService(entClient, "https://portal.example.com")
+	inner := newFakeRefreshTokenCache()
+	cache := &revokeOnClaimRefreshTokenCache{fakeRefreshTokenCache: inner}
+	tokens := NewOAuthTokenService(entClient, keys, devices, cache, newUserLookupStub(), "https://portal.example.com")
+
+	oc, err := clients.RegisterSelfHosted(ctx, 1, 42, "https://agent.example.com", "")
+	if err != nil {
+		t.Fatalf("RegisterSelfHosted: %v", err)
+	}
+	grant, err := devices.RequestCode(ctx, oc.ClientID, "inference:invoke")
+	if err != nil {
+		t.Fatalf("RequestCode: %v", err)
+	}
+	approveDeviceCode(t, ctx, devices, grant.DeviceCode)
+
+	issued, err := tokens.ExchangeDeviceCode(ctx, oc.ClientID, grant.DeviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+
+	// The rotation claims, the family is revoked underneath it, and the
+	// successor must not be written.
+	if _, err := tokens.ExchangeRefreshToken(ctx, oc.ClientID, issued.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("a rotation into a revoked family must be refused as invalid_grant, got %v", err)
+	}
+
+	inner.mu.Lock()
+	live := len(inner.tokens)
+	families := len(inner.families)
+	inner.mu.Unlock()
+	if live != 0 {
+		t.Fatalf("a revoked family must have no surviving token, found %d", live)
+	}
+	if families != 0 {
+		t.Fatalf("a revoked family must not be re-created by the rotation it raced, found %d family set(s)", families)
 	}
 }

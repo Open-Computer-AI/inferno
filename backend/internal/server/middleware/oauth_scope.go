@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -64,16 +65,65 @@ const (
 //
 // required == "" means "any validly-signed, unexpired OAuth token" — no
 // specific scope needed, just proof of a real OAuth-issued identity.
-func RequireOAuthScope(keySvc *service.OAuthKeyService, required string) gin.HandlerFunc {
+//
+// ISSUER AND AUDIENCE ARE BOTH VERIFIED, and neither was before.
+//
+// issuer is the same canonicalised string OAuthTokenService stamps into
+// `iss` — passed from the token service's own accessor rather than re-read
+// from config, so the minting side and the verifying side cannot drift the
+// way the two consumers of cfg.Server.FrontendURL did (Task 6, defect #1).
+// jwt.WithIssuer makes the claim REQUIRED as well as matched
+// (golang-jwt/v5 validator.go passes required=true whenever an expected
+// issuer is set), so a token minted before Task 6 with `iss: ""` is
+// rejected here rather than accepted as unattributed. An empty issuer is a
+// server misconfiguration and every request 500s — the same fail-closed,
+// loudly-diagnosable treatment ErrIssuerNotConfigured gives the mint, and
+// deliberately not "skip the check when unset", which would make the
+// verification vanish exactly when the configuration is wrong.
+//
+// The audience is the client_id the token was minted for
+// (mintAccessToken's doc comment: "so an agent can verify a token was
+// minted for it and no other instance"). This middleware then publishes it
+// as OAuthContextKeyClientID — the CALLER'S IDENTITY, which handlers act
+// on. Before this change it was read with a bare type assertion, so a token
+// with no aud claim, or an array-valued one, yielded "" and every handler
+// downstream was handed an empty client identity as though that were a
+// fact. It is now required to be a single, non-empty string, and it is
+// resolved against the client registry: a token whose audience names a
+// client that has since been revoked or deleted is refused HERE, at the
+// resource server, instead of remaining good for the rest of its 15
+// minutes. That is what turns the audience from a decorative claim into
+// one that carries a checkable property.
+//
+// A failure to resolve the audience is split the same way key resolution
+// is, and for the same reason: ErrClientNotUsable (or a missing row) is a
+// real credential rejection and 401s, while any OTHER error means the check
+// could not be performed — a Postgres blip must not be reported to every
+// agent in the fleet as "your token is invalid".
+func RequireOAuthScope(keySvc *service.OAuthKeyService, clientSvc *service.OAuthClientService, issuer string, required string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authz := c.GetHeader("Authorization")
-		if !strings.HasPrefix(authz, "Bearer ") {
+		// RFC 6750 §2.1 / RFC 7235 §2.1 make the auth-scheme token
+		// case-insensitive, so `bearer <tok>` is a well-formed credential
+		// and must not 401. The real client sends "Bearer", so this is
+		// interop hygiene — but a resource server that rejects a
+		// spec-conformant header is wrong regardless of who is calling it
+		// today.
+		const bearerPrefix = "Bearer "
+		if len(authz) < len(bearerPrefix) || !strings.EqualFold(authz[:len(bearerPrefix)], bearerPrefix) {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
 			return
 		}
-		raw := strings.TrimSpace(strings.TrimPrefix(authz, "Bearer "))
+		raw := strings.TrimSpace(authz[len(bearerPrefix):])
 		if raw == "" || keySvc == nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+			return
+		}
+		if issuer == "" || clientSvc == nil {
+			// Misconfigured server, not a bad token. Fail closed and say so
+			// where an operator will see it.
+			slog.Error("oauth: resource-server middleware is missing its issuer or client registry; refusing every token")
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
 			return
 		}
 
@@ -90,7 +140,11 @@ func RequireOAuthScope(keySvc *service.OAuthKeyService, required string) gin.Han
 		// exp, but that is a fact about one caller, not a property this
 		// middleware enforces; a future RS256-signing path that forgets exp
 		// must fail closed here, not mint an eternal credential.
-		parser := jwt.NewParser(jwt.WithValidMethods([]string{"RS256"}), jwt.WithExpirationRequired())
+		parser := jwt.NewParser(
+			jwt.WithValidMethods([]string{"RS256"}),
+			jwt.WithExpirationRequired(),
+			jwt.WithIssuer(issuer),
+		)
 		token, err := parser.ParseWithClaims(raw, claims, func(t *jwt.Token) (any, error) {
 			kid, _ := t.Header["kid"].(string)
 			if kid == "" {
@@ -141,7 +195,28 @@ func RequireOAuthScope(keySvc *service.OAuthKeyService, required string) gin.Han
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
 			return
 		}
-		aud, _ := claims["aud"].(string)
+		// Single-valued, non-empty aud only. `aud` is permitted by RFC 7519
+		// to be an array, and mintAccessToken never writes one — a token
+		// carrying an array here did not come from this server's mint, and
+		// the bare type assertion that used to read it would have quietly
+		// produced "" and handed that on as the caller's client identity.
+		aud, ok := claims["aud"].(string)
+		if !ok || aud == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+			return
+		}
+		if _, err := clientSvc.UsableByClientID(c.Request.Context(), aud); err != nil {
+			if !errors.Is(err, service.ErrClientNotUsable) && !dbent.IsNotFound(err) {
+				// Could not check — not "the check failed". Reporting this
+				// as invalid_token would make an outage indistinguishable
+				// from every agent's credential dying at once.
+				slog.Error("oauth: cannot resolve token audience for scope check", "error", err, "client_id", aud)
+				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+				return
+			}
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+			return
+		}
 
 		c.Set(OAuthContextKeyUserID, uid)
 		c.Set(OAuthContextKeyClientID, aud)

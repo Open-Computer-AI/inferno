@@ -90,6 +90,22 @@ func ValidateScope(scope string) error {
 	return nil
 }
 
+// ScopeContains reports whether a whitespace-delimited scope string grants
+// the exact entry named.
+//
+// Exact, whitespace-split equality — never strings.Contains, for the same
+// reason middleware.scopeSatisfies is written that way: a substring match
+// would let any scope that happens to be a prefix or infix of a more
+// powerful one silently satisfy it.
+func ScopeContains(scope, entry string) bool {
+	for _, s := range strings.Fields(scope) {
+		if s == entry {
+			return true
+		}
+	}
+	return false
+}
+
 // ScopeList splits a stored scope string into its individual entries, for
 // display on the approval screen. Returns a non-nil empty slice for an empty
 // scope so JSON encodes it as [] rather than null.

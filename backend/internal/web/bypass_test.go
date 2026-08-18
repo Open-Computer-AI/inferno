@@ -29,8 +29,14 @@ func TestEmbeddedFrontendBypassesBareVideoAPIRoutes(t *testing.T) {
 // §4.1.2.1 error-page/redirect split -- would never run.
 func TestEmbeddedFrontendBypassesOAuthAuthorize(t *testing.T) {
 	require.True(t, shouldBypassEmbeddedFrontend("/oauth/authorize"))
-	// Sibling paths must NOT bypass -- only the exact literal path is a real
-	// backend route; anything else at this prefix is still SPA territory.
+	// M-6: the trailing-slash form too. Gin's RedirectTrailingSlash never
+	// gets a chance -- the frontend middleware runs before registerRoutes
+	// (internal/server/router.go) -- so "/oauth/authorize/" was answered
+	// with a 200 text/html SPA shell, the same failure mode as the JWKS gap
+	// below, one character over.
+	require.True(t, shouldBypassEmbeddedFrontend("/oauth/authorize/"))
+	// Sibling paths must NOT bypass -- only the exact literal paths are real
+	// backend routes; anything else at this prefix is still SPA territory.
 	require.False(t, shouldBypassEmbeddedFrontend("/oauth/authorized"))
 	require.False(t, shouldBypassEmbeddedFrontend("/oauth/authorize/consent"))
 }

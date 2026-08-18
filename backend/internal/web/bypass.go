@@ -44,7 +44,12 @@ func shouldBypassEmbeddedFrontend(path string) bool {
 		// not a Vue route -- without this it would be served index.html
 		// like any other unmatched SPA path and the handler that does the
 		// RFC 6749 §4.1.2.1 error-page/redirect split would never run.
-		trimmed == "/oauth/authorize" ||
+		// The trailing-slash form too: gin's RedirectTrailingSlash never
+		// gets a chance, because the frontend middleware runs BEFORE
+		// registerRoutes (internal/server/router.go), so `/oauth/authorize/`
+		// was answered with a 200 text/html SPA shell -- the same failure
+		// mode as the JWKS gap below, one character over.
+		trimmed == "/oauth/authorize" || trimmed == "/oauth/authorize/" ||
 		// GET /.well-known/jwks.json (RegisterCommonRoutes, mounted at the
 		// server root by Task 2 of the OAuth-AS plan). Same failure mode as
 		// /oauth/authorize above and found the same way: verified that
