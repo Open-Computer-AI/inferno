@@ -411,29 +411,6 @@ type deviceDecisionRequest struct {
 	UserCode string `json:"user_code" binding:"required"`
 }
 
-// ApproveDevice handles POST /api/oauth/device/approve and DenyDevice handles
-// POST /api/oauth/device/deny — the device-flow approval screen's two
-// actions, session-authenticated (jwtAuth): a logged-in human is confirming
-// or rejecting a device-flow login in inferno-frontend's browser UI, not an
-// agent or CLI presenting a bearer token or a bare client_id.
-//
-// DELIBERATE ASYMMETRY, read before "fixing" this: every other handler in
-// this file (JWKS, DeviceCode, Token, Account, RegisterSelfHostedClient)
-// emits bare JSON and is barred from internal/pkg/response, because the
-// hermes client parses RFC-shaped JSON at the top level. These two handlers
-// are the opposite — they MUST use internal/pkg/response — because they are
-// NOT part of that wire contract at all. Nothing outside inferno-frontend
-// ever calls them; they exist solely for its device approval screen.
-// inferno-frontend/src/api/client.ts's response interceptor (its error path)
-// reads apiData.code and apiData.message to build the message it surfaces to
-// the user. A bare {"error":"not_found"} body has neither field, so every
-// failure here would otherwise reach the user as a generic, non-actionable
-// axios error instead of "that code doesn't exist" / "that code expired,
-// run the command again". Keep this pair on response.*; keep the rest of
-// this file bare.
-//
-// Neither handler ever logs user_code — it is a credential until redeemed,
-// same rule as DeviceCode/Token above.
 // PendingDeviceAuthorization handles GET /api/oauth/device/pending?user_code=…
 // — what the approval screen shows the human BEFORE the Approve button.
 //
@@ -448,11 +425,20 @@ type deviceDecisionRequest struct {
 // DenyDevice neighbours and for the same reason — see the asymmetry note on
 // ApproveDevice below.
 //
-// It never reveals whether a user_code exists to a caller without a session,
-// and the service layer collapses "no such code" and "not pending" so a
-// logged-in caller cannot enumerate other people's codes either. user_code is
-// read from the query string and, like everywhere else in this file, never
-// logged.
+// It never reveals whether a user_code exists to a caller WITHOUT a session.
+//
+// A session-holding caller CAN distinguish the states: this handler maps
+// not-found / expired / not-pending to distinct 404 / 410 / 409 responses,
+// deliberately, because the human on the approval screen needs to be told which
+// one happened — "that code does not exist" and "that code expired, run the
+// command again" are different remedies. ApproveDevice and DenyDevice already
+// drew the same distinction before this endpoint existed, so it adds no new
+// surface. Enumeration is not the threat being defended against here: the code
+// space is 31^8 (~8.5e11) with a 15-minute TTL, so guessing is infeasible, and
+// a caller who already holds a session gains nothing from probing it.
+//
+// user_code is read from the query string and, like everywhere else in this
+// file, never logged.
 func (h *OAuthHandler) PendingDeviceAuthorization(c *gin.Context) {
 	if _, ok := middleware2.GetAuthSubjectFromContext(c); !ok {
 		response.Unauthorized(c, "unauthorized")
@@ -486,6 +472,29 @@ func (h *OAuthHandler) PendingDeviceAuthorization(c *gin.Context) {
 	}
 }
 
+// ApproveDevice handles POST /api/oauth/device/approve and DenyDevice handles
+// POST /api/oauth/device/deny — the device-flow approval screen's two
+// actions, session-authenticated (jwtAuth): a logged-in human is confirming
+// or rejecting a device-flow login in inferno-frontend's browser UI, not an
+// agent or CLI presenting a bearer token or a bare client_id.
+//
+// DELIBERATE ASYMMETRY, read before "fixing" this: every other handler in
+// this file (JWKS, DeviceCode, Token, Account, RegisterSelfHostedClient)
+// emits bare JSON and is barred from internal/pkg/response, because the
+// hermes client parses RFC-shaped JSON at the top level. These two handlers
+// are the opposite — they MUST use internal/pkg/response — because they are
+// NOT part of that wire contract at all. Nothing outside inferno-frontend
+// ever calls them; they exist solely for its device approval screen.
+// inferno-frontend/src/api/client.ts's response interceptor (its error path)
+// reads apiData.code and apiData.message to build the message it surfaces to
+// the user. A bare {"error":"not_found"} body has neither field, so every
+// failure here would otherwise reach the user as a generic, non-actionable
+// axios error instead of "that code doesn't exist" / "that code expired,
+// run the command again". Keep this pair on response.*; keep the rest of
+// this file bare.
+//
+// Neither handler ever logs user_code — it is a credential until redeemed,
+// same rule as DeviceCode/Token above.
 func (h *OAuthHandler) ApproveDevice(c *gin.Context) {
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
 	if !ok {

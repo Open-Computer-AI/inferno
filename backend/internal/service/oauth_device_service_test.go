@@ -298,7 +298,13 @@ func TestRequestCodeRejectsUnknownScope(t *testing.T) {
 		ScopeBillingManage,
 		ScopeAgentsRead,
 		ScopeAgentsManage,
+		ScopeToolInvoke,
 		ScopeInferenceInvoke + " " + ScopeBillingRead,
+		// The real client's billing step-up fallback, verbatim:
+		// hermes_cli/auth.py:8561 builds this set when prior auth state carries
+		// no scope string, and :8540 documents it as the standard set. If this
+		// line ever fails, `oc` cannot elevate to billing:manage.
+		ScopeInferenceInvoke + " " + ScopeToolInvoke + " " + ScopeBillingManage,
 	} {
 		if _, err := svc.RequestCode(ctx, oc.ClientID, ok); err != nil {
 			t.Errorf("scope %q must be accepted, got %v", ok, err)
@@ -388,5 +394,35 @@ func TestPendingByUserCodeIsNotAnOracle(t *testing.T) {
 	}
 	if pending != nil {
 		t.Fatalf("no authorization details may be returned alongside an error, got %+v", pending)
+	}
+}
+
+// TestRequestCodeValidatesScopeBeforeClientLookup: if the client lookup ran
+// first, a caller sending a deliberately-bogus scope would get invalid_scope
+// for a real client_id and invalid_client for a fake one — turning the
+// difference between two error codes into a client_id existence oracle. Both
+// must report the SAME class of failure.
+func TestRequestCodeValidatesScopeBeforeClientLookup(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	clients := NewOAuthClientService(client)
+	svc := NewOAuthDeviceService(client, "https://portal.example.com")
+
+	oc, err := clients.RegisterSelfHosted(ctx, 1, 42, "https://agent.example.com", "")
+	if err != nil {
+		t.Fatalf("RegisterSelfHosted: %v", err)
+	}
+
+	const bogusScope = "definitely-not-a-real-scope"
+
+	_, realErr := svc.RequestCode(ctx, oc.ClientID, bogusScope)
+	_, fakeErr := svc.RequestCode(ctx, "agent:does-not-exist-at-all", bogusScope)
+
+	if !errors.Is(realErr, ErrInvalidScope) {
+		t.Fatalf("registered client with a bad scope: expected ErrInvalidScope, got %v", realErr)
+	}
+	if !errors.Is(fakeErr, ErrInvalidScope) {
+		t.Fatalf("unknown client with a bad scope: expected ErrInvalidScope too — "+
+			"a different error here leaks whether the client_id exists; got %v", fakeErr)
 	}
 }

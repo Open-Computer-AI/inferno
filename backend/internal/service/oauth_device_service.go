@@ -123,15 +123,20 @@ func (s *OAuthDeviceService) RequestCode(ctx context.Context, clientID, scope st
 		return nil, ErrPortalNotConfigured
 	}
 
+	// Scope is validated BEFORE the client lookup, and the order is load-bearing.
+	// Validating after it would mean a caller sending a deliberately-bogus scope
+	// gets invalid_scope when the client exists and invalid_client when it does
+	// not — turning the difference between the two errors into a client_id
+	// existence oracle, and defeating the collapse below.
+	if err := ValidateScope(scope); err != nil {
+		return nil, err
+	}
+
 	if _, err := s.clientSvc.UsableByClientID(ctx, clientID); err != nil {
 		// Unknown and not-usable (revoked) collapse into one wrapped error on
 		// purpose — the handler renders both as a single "invalid_client", so
 		// this endpoint is not a client_id existence oracle.
 		return nil, fmt.Errorf("client_id %q not usable: %w", clientID, err)
-	}
-
-	if err := ValidateScope(scope); err != nil {
-		return nil, err
 	}
 
 	row, err := s.createWithUniqueCodes(ctx, clientID, scope)

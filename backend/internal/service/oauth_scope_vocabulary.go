@@ -13,10 +13,18 @@ import (
 // near-miss spelling silently satisfies nothing.
 const (
 	ScopeInferenceInvoke = "inference:invoke"
-	ScopeBillingRead     = "billing:read"
-	ScopeBillingManage   = "billing:manage"
-	ScopeAgentsRead      = "agents:read"
-	ScopeAgentsManage    = "agents:manage"
+	// ScopeToolInvoke is requested by the real client's billing step-up
+	// fallback (hermes_cli/auth.py:8561) and is named in its own docstring at
+	// :8540 as part of the standard "inference:invoke tool:invoke
+	// billing:manage" set. Nothing in THIS branch gates on it — no route
+	// demands it — but the client may legitimately ask for it, and the client
+	// is the specification. Omitting it made the entire step-up fail with
+	// invalid_scope on the branch where prior state carries no scope string.
+	ScopeToolInvoke    = "tool:invoke"
+	ScopeBillingRead   = "billing:read"
+	ScopeBillingManage = "billing:manage"
+	ScopeAgentsRead    = "agents:read"
+	ScopeAgentsManage  = "agents:manage"
 )
 
 // knownScopes is the closed vocabulary a client may request.
@@ -37,6 +45,7 @@ const (
 // flow — expressible at all: you cannot enforce a policy over an open set.
 var knownScopes = map[string]struct{}{
 	ScopeInferenceInvoke: {},
+	ScopeToolInvoke:      {},
 	ScopeBillingRead:     {},
 	ScopeBillingManage:   {},
 	ScopeAgentsRead:      {},
