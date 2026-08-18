@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -27,9 +28,38 @@ const (
 	OAuthContextKeyScope    = "oauth_scope"
 )
 
-// RequireOAuthScope validates an OAuth-issued RS256 bearer token and enforces
-// a required scope, for the OAuth resource-server surface (currently just
-// GET /api/oauth/account).
+// OAuthBearer is the identity carried by a successfully verified OAuth
+// access token: the caller (UserID), the client it was minted for
+// (ClientID, the token's audience), and the whitespace-delimited scope
+// string it was granted (Scope). Returned by VerifyOAuthBearer.
+type OAuthBearer struct {
+	UserID   int64
+	ClientID string
+	Scope    string
+}
+
+// ErrOAuthInvalidToken means the credential itself is bad: unparseable,
+// wrongly signed, expired, missing a required claim, or naming an audience
+// that is not (or no longer) a usable client. Callers map this to
+// 401 {"error":"invalid_token"}.
+var ErrOAuthInvalidToken = errors.New("oauth: invalid token")
+
+// ErrOAuthServerFault means verification could not be completed — the
+// signing-key store or the client registry was unreachable — and says
+// nothing about whether the token itself is good or bad. Callers map this
+// to 500 {"error":"server_error"}, never to ErrOAuthInvalidToken: folding
+// an infrastructure outage into the same response as a bad credential would
+// make a Postgres blip indistinguishable, in logs and metrics, from every
+// agent's credential dying at once.
+var ErrOAuthServerFault = errors.New("oauth: cannot verify token")
+
+// VerifyOAuthBearer validates rawToken as an OAuth-issued RS256 bearer
+// token and, if it is good, returns the identity it carries. It is the one
+// verifier for OAuth access tokens in this server — every resource-server
+// surface that accepts an OAuth bearer (the panel-session-parallel
+// GET /api/oauth/account path via RequireOAuthScope today, and any future
+// caller) must go through this function rather than growing its own JWT
+// parsing, so the properties documented below are enforced exactly once.
 //
 // It accepts RS256 ONLY — the gateway-brokered flow the Hermes Desktop
 // client actually uses hard-codes algorithms=["RS256"] and rejects anything
@@ -62,9 +92,6 @@ const (
 // token). jwt.ParseWithClaims only ever surfaces its own parse/verify error
 // from a failing keyFunc, so the underlying cause is captured out of the
 // closure into keyResolutionErr and inspected after ParseWithClaims returns.
-//
-// required == "" means "any validly-signed, unexpired OAuth token" — no
-// specific scope needed, just proof of a real OAuth-issued identity.
 //
 // ISSUER AND AUDIENCE ARE BOTH VERIFIED, and neither was before.
 //
@@ -100,6 +127,130 @@ const (
 // real credential rejection and 401s, while any OTHER error means the check
 // could not be performed — a Postgres blip must not be reported to every
 // agent in the fleet as "your token is invalid".
+//
+// Scope is deliberately NOT checked here — VerifyOAuthBearer proves who the
+// caller is, not what they may do. Returning the granted scope on
+// OAuthBearer lets each caller (RequireOAuthScope today) enforce whatever
+// requirement is appropriate for its own surface via scopeSatisfies.
+func VerifyOAuthBearer(ctx context.Context, keySvc *service.OAuthKeyService, clientSvc *service.OAuthClientService, issuer string, rawToken string) (*OAuthBearer, error) {
+	if rawToken == "" || keySvc == nil {
+		return nil, ErrOAuthInvalidToken
+	}
+	if issuer == "" || clientSvc == nil {
+		// Misconfigured server, not a bad token. Fail closed and say so
+		// where an operator will see it.
+		slog.Error("oauth: resource-server middleware is missing its issuer or client registry; refusing every token")
+		return nil, ErrOAuthServerFault
+	}
+
+	var (
+		keyResolutionErr error
+		resolvedKid      string
+	)
+	claims := jwt.MapClaims{}
+	// WithExpirationRequired: golang-jwt/v5 only validates exp when the
+	// claim is PRESENT (validator.go's verifyExpiresAt defaults
+	// `required=false`) — a validly RS256-signed token that simply omits
+	// exp would otherwise be accepted as non-expiring forever. Today's
+	// only signer, mintAccessToken (oauth_token_service.go), always sets
+	// exp, but that is a fact about one caller, not a property this
+	// middleware enforces; a future RS256-signing path that forgets exp
+	// must fail closed here, not mint an eternal credential.
+	parser := jwt.NewParser(
+		jwt.WithValidMethods([]string{"RS256"}),
+		jwt.WithExpirationRequired(),
+		jwt.WithIssuer(issuer),
+	)
+	token, err := parser.ParseWithClaims(rawToken, claims, func(t *jwt.Token) (any, error) {
+		kid, _ := t.Header["kid"].(string)
+		if kid == "" {
+			return nil, errors.New("token has no kid")
+		}
+		resolvedKid = kid
+		key, err := keySvc.ByKid(ctx, kid)
+		if err != nil {
+			if !errors.Is(err, service.ErrUnknownKid) {
+				// Not "this kid doesn't exist" — a real failure to reach
+				// the key store. Captured for the fault branch below;
+				// still returned here so ParseWithClaims fails closed.
+				keyResolutionErr = err
+			}
+			return nil, err
+		}
+		return &key.Private.PublicKey, nil
+	})
+	if keyResolutionErr != nil {
+		slog.Error("oauth: cannot resolve signing key for scope check", "error", keyResolutionErr, "kid", resolvedKid)
+		return nil, ErrOAuthServerFault
+	}
+	// A bearer credential must never be logged, on any path — success or
+	// failure. Only kid (the key that verified it) and client_id (public by
+	// design, see oauth_client_service.go) are ever logged in this
+	// function.
+	if err != nil || !token.Valid {
+		return nil, ErrOAuthInvalidToken
+	}
+
+	granted, _ := claims["scope"].(string)
+
+	// sub is always a decimal user id string — mintAccessToken writes it
+	// via strconv.FormatInt (oauth_token_service.go). A token whose sub
+	// doesn't parse must be rejected outright, not defaulted to 0: a
+	// zero-valued oauth_user_id reaching a handler would read/act on
+	// another user's (id 0, or whatever a handler treats as "no user")
+	// data instead of failing closed.
+	sub, _ := claims["sub"].(string)
+	uid, err := strconv.ParseInt(sub, 10, 64)
+	if err != nil {
+		return nil, ErrOAuthInvalidToken
+	}
+	// Single-valued, non-empty aud only. `aud` is permitted by RFC 7519
+	// to be an array, and mintAccessToken never writes one — a token
+	// carrying an array here did not come from this server's mint, and
+	// the bare type assertion that used to read it would have quietly
+	// produced "" and handed that on as the caller's client identity.
+	aud, ok := claims["aud"].(string)
+	if !ok || aud == "" {
+		return nil, ErrOAuthInvalidToken
+	}
+	if _, err := clientSvc.UsableByClientID(ctx, aud); err != nil {
+		if !errors.Is(err, service.ErrClientNotUsable) && !dbent.IsNotFound(err) {
+			// Could not check — not "the check failed". Reporting this
+			// as invalid_token would make an outage indistinguishable
+			// from every agent's credential dying at once.
+			slog.Error("oauth: cannot resolve token audience for scope check", "error", err, "client_id", aud)
+			return nil, ErrOAuthServerFault
+		}
+		return nil, ErrOAuthInvalidToken
+	}
+
+	return &OAuthBearer{UserID: uid, ClientID: aud, Scope: granted}, nil
+}
+
+// RequireOAuthScope validates an OAuth-issued RS256 bearer token and
+// enforces a required scope, for the OAuth resource-server surface
+// (currently just GET /api/oauth/account).
+//
+// It is a thin wrapper around VerifyOAuthBearer: extract the bearer
+// credential from the Authorization header, verify it, apply scopeSatisfies
+// against the granted scope, and publish the resulting identity on the gin
+// context. All of the actual token-verification properties — algorithm
+// allowlist, kid dispatch, issuer/audience/expiry requirements, the
+// key-store and client-registry fault splits — live in VerifyOAuthBearer's
+// doc comment, not here, because this function no longer performs them
+// itself.
+//
+// required == "" means "any validly-signed, unexpired OAuth token" — no
+// specific scope needed, just proof of a real OAuth-issued identity.
+//
+// VerifyOAuthBearer returns one of two sentinel errors on failure, and this
+// wrapper maps each to a distinct response: ErrOAuthInvalidToken (the
+// credential is bad) becomes 401 {"error":"invalid_token"};
+// ErrOAuthServerFault (verification could not be completed — key store or
+// client registry unreachable) becomes 500 {"error":"server_error"}. Both
+// faults are already logged inside VerifyOAuthBearer at the point of
+// failure, with only kid and client_id — never the credential itself, on
+// any path, success or failure.
 func RequireOAuthScope(keySvc *service.OAuthKeyService, clientSvc *service.OAuthClientService, issuer string, required string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authz := c.GetHeader("Authorization")
@@ -115,102 +266,10 @@ func RequireOAuthScope(keySvc *service.OAuthKeyService, clientSvc *service.OAuth
 			return
 		}
 		raw := strings.TrimSpace(authz[len(bearerPrefix):])
-		if raw == "" || keySvc == nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
-			return
-		}
-		if issuer == "" || clientSvc == nil {
-			// Misconfigured server, not a bad token. Fail closed and say so
-			// where an operator will see it.
-			slog.Error("oauth: resource-server middleware is missing its issuer or client registry; refusing every token")
-			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
-			return
-		}
 
-		var (
-			keyResolutionErr error
-			resolvedKid      string
-		)
-		claims := jwt.MapClaims{}
-		// WithExpirationRequired: golang-jwt/v5 only validates exp when the
-		// claim is PRESENT (validator.go's verifyExpiresAt defaults
-		// `required=false`) — a validly RS256-signed token that simply omits
-		// exp would otherwise be accepted as non-expiring forever. Today's
-		// only signer, mintAccessToken (oauth_token_service.go), always sets
-		// exp, but that is a fact about one caller, not a property this
-		// middleware enforces; a future RS256-signing path that forgets exp
-		// must fail closed here, not mint an eternal credential.
-		parser := jwt.NewParser(
-			jwt.WithValidMethods([]string{"RS256"}),
-			jwt.WithExpirationRequired(),
-			jwt.WithIssuer(issuer),
-		)
-		token, err := parser.ParseWithClaims(raw, claims, func(t *jwt.Token) (any, error) {
-			kid, _ := t.Header["kid"].(string)
-			if kid == "" {
-				return nil, errors.New("token has no kid")
-			}
-			resolvedKid = kid
-			key, err := keySvc.ByKid(c.Request.Context(), kid)
-			if err != nil {
-				if !errors.Is(err, service.ErrUnknownKid) {
-					// Not "this kid doesn't exist" — a real failure to reach
-					// the key store. Captured for the 500 branch below;
-					// still returned here so ParseWithClaims fails closed.
-					keyResolutionErr = err
-				}
-				return nil, err
-			}
-			return &key.Private.PublicKey, nil
-		})
-		if keyResolutionErr != nil {
-			slog.Error("oauth: cannot resolve signing key for scope check", "error", keyResolutionErr, "kid", resolvedKid)
-			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
-			return
-		}
-		// A bearer credential must never be logged, on any path — success or
-		// failure. Only kid (the key that verified it) and client_id
-		// (public by design, see oauth_client_service.go) are ever logged
-		// below.
-		if err != nil || !token.Valid {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
-			return
-		}
-
-		granted, _ := claims["scope"].(string)
-		if !scopeSatisfies(granted, required) {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient_scope"})
-			return
-		}
-
-		// sub is always a decimal user id string — mintAccessToken writes it
-		// via strconv.FormatInt (oauth_token_service.go). A token whose sub
-		// doesn't parse must be rejected outright, not defaulted to 0: a
-		// zero-valued oauth_user_id reaching a handler would read/act on
-		// another user's (id 0, or whatever a handler treats as "no user")
-		// data instead of failing closed.
-		sub, _ := claims["sub"].(string)
-		uid, err := strconv.ParseInt(sub, 10, 64)
+		bearer, err := VerifyOAuthBearer(c.Request.Context(), keySvc, clientSvc, issuer, raw)
 		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
-			return
-		}
-		// Single-valued, non-empty aud only. `aud` is permitted by RFC 7519
-		// to be an array, and mintAccessToken never writes one — a token
-		// carrying an array here did not come from this server's mint, and
-		// the bare type assertion that used to read it would have quietly
-		// produced "" and handed that on as the caller's client identity.
-		aud, ok := claims["aud"].(string)
-		if !ok || aud == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
-			return
-		}
-		if _, err := clientSvc.UsableByClientID(c.Request.Context(), aud); err != nil {
-			if !errors.Is(err, service.ErrClientNotUsable) && !dbent.IsNotFound(err) {
-				// Could not check — not "the check failed". Reporting this
-				// as invalid_token would make an outage indistinguishable
-				// from every agent's credential dying at once.
-				slog.Error("oauth: cannot resolve token audience for scope check", "error", err, "client_id", aud)
+			if errors.Is(err, ErrOAuthServerFault) {
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
 				return
 			}
@@ -218,9 +277,14 @@ func RequireOAuthScope(keySvc *service.OAuthKeyService, clientSvc *service.OAuth
 			return
 		}
 
-		c.Set(OAuthContextKeyUserID, uid)
-		c.Set(OAuthContextKeyClientID, aud)
-		c.Set(OAuthContextKeyScope, granted)
+		if !scopeSatisfies(bearer.Scope, required) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient_scope"})
+			return
+		}
+
+		c.Set(OAuthContextKeyUserID, bearer.UserID)
+		c.Set(OAuthContextKeyClientID, bearer.ClientID)
+		c.Set(OAuthContextKeyScope, bearer.Scope)
 		c.Next()
 	}
 }

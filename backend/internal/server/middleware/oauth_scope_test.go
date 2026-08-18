@@ -603,3 +603,199 @@ func TestRequireOAuthScopeRejectsANonBearerScheme(t *testing.T) {
 		require.Equal(t, http.StatusUnauthorized, w.Code, "header=%q", header[:min(12, len(header))])
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Direct VerifyOAuthBearer tests (Task 1 of the OAuth-bearer-inference
+// plan). These bypass gin entirely and assert on the returned sentinel via
+// errors.Is, per the task brief — the RequireOAuthScope tests above are the
+// refactor's behavioural safety net; these are the new function's own
+// contract.
+// ---------------------------------------------------------------------------
+
+func TestVerifyOAuthBearerAcceptsValidToken(t *testing.T) {
+	env := newOAuthScopeTestEnv(t)
+	claims := baseTestClaims(42, testAudienceClientID, "inference billing:read", time.Now().Add(time.Hour))
+	tok := mintTestRS256Token(t, env.keySvc, claims)
+
+	bearer, err := VerifyOAuthBearer(context.Background(), env.keySvc, env.clientSvc, testIssuer, tok)
+
+	require.NoError(t, err)
+	require.NotNil(t, bearer)
+	require.Equal(t, int64(42), bearer.UserID)
+	require.Equal(t, testAudienceClientID, bearer.ClientID)
+	require.Equal(t, "inference billing:read", bearer.Scope)
+}
+
+// TestVerifyOAuthBearerRejectsAlgNoneToken is the same alg=none regression
+// TestRequireOAuthScopeRejectsUnsignedToken guards, exercised directly
+// against VerifyOAuthBearer.
+func TestVerifyOAuthBearerRejectsAlgNoneToken(t *testing.T) {
+	env := newOAuthScopeTestEnv(t)
+
+	_, err := VerifyOAuthBearer(context.Background(), env.keySvc, env.clientSvc, testIssuer, "eyJhbGciOiJub25lIn0.eyJzdWIiOiIxIn0.")
+
+	require.ErrorIs(t, err, ErrOAuthInvalidToken)
+}
+
+func TestVerifyOAuthBearerRejectsHS256Token(t *testing.T) {
+	env := newOAuthScopeTestEnv(t)
+	claims := baseTestClaims(42, testAudienceClientID, "inference:invoke", time.Now().Add(time.Hour))
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signed, err := tok.SignedString([]byte("some-hmac-secret-that-is-not-the-rs256-key"))
+	require.NoError(t, err)
+
+	_, err = VerifyOAuthBearer(context.Background(), env.keySvc, env.clientSvc, testIssuer, signed)
+
+	require.ErrorIs(t, err, ErrOAuthInvalidToken)
+}
+
+func TestVerifyOAuthBearerRejectsMissingKid(t *testing.T) {
+	env := newOAuthScopeTestEnv(t)
+	key, err := env.keySvc.Active(context.Background())
+	require.NoError(t, err)
+
+	claims := baseTestClaims(42, testAudienceClientID, "inference:invoke", time.Now().Add(time.Hour))
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	// Deliberately no tok.Header["kid"] set.
+	signed, err := tok.SignedString(key.Private)
+	require.NoError(t, err)
+
+	_, err = VerifyOAuthBearer(context.Background(), env.keySvc, env.clientSvc, testIssuer, signed)
+
+	require.ErrorIs(t, err, ErrOAuthInvalidToken)
+}
+
+func TestVerifyOAuthBearerRejectsUnknownKid(t *testing.T) {
+	env := newOAuthScopeTestEnv(t)
+	key, err := env.keySvc.Active(context.Background())
+	require.NoError(t, err)
+
+	claims := baseTestClaims(42, testAudienceClientID, "inference:invoke", time.Now().Add(time.Hour))
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	tok.Header["kid"] = "not-a-real-kid"
+	signed, err := tok.SignedString(key.Private)
+	require.NoError(t, err)
+
+	_, err = VerifyOAuthBearer(context.Background(), env.keySvc, env.clientSvc, testIssuer, signed)
+
+	require.ErrorIs(t, err, ErrOAuthInvalidToken)
+}
+
+// TestVerifyOAuthBearerReturnsServerFaultOnKeyStoreFailure is the direct
+// counterpart of TestRequireOAuthScopeReturns500OnKeyStoreFailure: a real,
+// validly-signed token presented after the underlying ent client is closed
+// must come back ErrOAuthServerFault, not ErrOAuthInvalidToken — this is
+// one of the two splits Step 5 mutation-proves.
+func TestVerifyOAuthBearerReturnsServerFaultOnKeyStoreFailure(t *testing.T) {
+	env := newOAuthScopeTestEnv(t)
+	claims := baseTestClaims(42, testAudienceClientID, "inference:invoke", time.Now().Add(time.Hour))
+	tok := mintTestRS256Token(t, env.keySvc, claims)
+
+	require.NoError(t, env.entClient.Close())
+
+	bearer, err := VerifyOAuthBearer(context.Background(), env.keySvc, env.clientSvc, testIssuer, tok)
+
+	require.Nil(t, bearer)
+	require.ErrorIs(t, err, ErrOAuthServerFault)
+	require.NotErrorIs(t, err, ErrOAuthInvalidToken)
+}
+
+func TestVerifyOAuthBearerRejectsMissingExp(t *testing.T) {
+	env := newOAuthScopeTestEnv(t)
+	claims := jwt.MapClaims{
+		"iss":   testIssuer,
+		"sub":   "42",
+		"aud":   testAudienceClientID,
+		"scope": "inference:invoke",
+		"iat":   time.Now().Unix(),
+		// no "exp" claim at all.
+	}
+	tok := mintTestRS256Token(t, env.keySvc, claims)
+
+	_, err := VerifyOAuthBearer(context.Background(), env.keySvc, env.clientSvc, testIssuer, tok)
+
+	require.ErrorIs(t, err, ErrOAuthInvalidToken)
+}
+
+func TestVerifyOAuthBearerRejectsWrongIssuer(t *testing.T) {
+	env := newOAuthScopeTestEnv(t)
+	claims := baseTestClaims(42, testAudienceClientID, "inference:invoke", time.Now().Add(time.Hour))
+	claims["iss"] = "https://someone-elses-portal.example.com"
+	tok := mintTestRS256Token(t, env.keySvc, claims)
+
+	_, err := VerifyOAuthBearer(context.Background(), env.keySvc, env.clientSvc, testIssuer, tok)
+
+	require.ErrorIs(t, err, ErrOAuthInvalidToken)
+}
+
+// TestVerifyOAuthBearerRejectsArrayAudience is the direct regression test
+// for the array-valued `aud` bug fixed on the RequireOAuthScope side:
+// RFC 7519 permits `aud` to be an array, mintAccessToken never writes one,
+// and a bare type assertion used to silently read an array as "".
+// VerifyOAuthBearer must reject it outright instead.
+func TestVerifyOAuthBearerRejectsArrayAudience(t *testing.T) {
+	env := newOAuthScopeTestEnv(t)
+	claims := baseTestClaims(42, testAudienceClientID, "inference:invoke", time.Now().Add(time.Hour))
+	claims["aud"] = []string{testAudienceClientID, "some-other-client"}
+	tok := mintTestRS256Token(t, env.keySvc, claims)
+
+	_, err := VerifyOAuthBearer(context.Background(), env.keySvc, env.clientSvc, testIssuer, tok)
+
+	require.ErrorIs(t, err, ErrOAuthInvalidToken)
+}
+
+func TestVerifyOAuthBearerRejectsNonNumericSubject(t *testing.T) {
+	env := newOAuthScopeTestEnv(t)
+	claims := jwt.MapClaims{
+		"iss":   testIssuer,
+		"sub":   "not-a-number",
+		"aud":   testAudienceClientID,
+		"scope": "inference:invoke",
+		"iat":   time.Now().Unix(),
+		"exp":   time.Now().Add(time.Hour).Unix(),
+	}
+	tok := mintTestRS256Token(t, env.keySvc, claims)
+
+	_, err := VerifyOAuthBearer(context.Background(), env.keySvc, env.clientSvc, testIssuer, tok)
+
+	require.ErrorIs(t, err, ErrOAuthInvalidToken)
+}
+
+func TestVerifyOAuthBearerRejectsRevokedClient(t *testing.T) {
+	env := newOAuthScopeTestEnv(t)
+	claims := baseTestClaims(42, testAudienceClientID, "inference:invoke", time.Now().Add(time.Hour))
+	tok := mintTestRS256Token(t, env.keySvc, claims)
+
+	_, err := env.entClient.OAuthClient.Update().
+		Where(oauthclient.ClientID(testAudienceClientID)).
+		SetStatus(service.ClientRevoked).
+		Save(context.Background())
+	require.NoError(t, err)
+
+	_, err = VerifyOAuthBearer(context.Background(), env.keySvc, env.clientSvc, testIssuer, tok)
+
+	require.ErrorIs(t, err, ErrOAuthInvalidToken)
+}
+
+// TestVerifyOAuthBearerReturnsServerFaultOnClientLookupFailure is the direct
+// counterpart of the client-registry half of the fault split — the other
+// half Step 5 mutation-proves. It must isolate the client-registry lookup
+// from key resolution (which also depends on ent), so it verifies the token
+// against env's healthy key service but resolves the audience against a
+// SEPARATE OAuthClientService backed by an already-closed ent client: key
+// resolution succeeds, only the client-registry lookup fails.
+func TestVerifyOAuthBearerReturnsServerFaultOnClientLookupFailure(t *testing.T) {
+	env := newOAuthScopeTestEnv(t)
+	claims := baseTestClaims(42, testAudienceClientID, "inference:invoke", time.Now().Add(time.Hour))
+	tok := mintTestRS256Token(t, env.keySvc, claims)
+
+	brokenClientEntClient := newOAuthScopeTestEntClient(t)
+	brokenClientSvc := service.NewOAuthClientService(brokenClientEntClient)
+	require.NoError(t, brokenClientEntClient.Close())
+
+	bearer, err := VerifyOAuthBearer(context.Background(), env.keySvc, brokenClientSvc, testIssuer, tok)
+
+	require.Nil(t, bearer)
+	require.ErrorIs(t, err, ErrOAuthServerFault)
+	require.NotErrorIs(t, err, ErrOAuthInvalidToken)
+}
