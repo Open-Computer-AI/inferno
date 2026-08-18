@@ -38,6 +38,102 @@ type RefreshTokenData struct {
 	// a replay of that same raw token can still be traced to FamilyID and
 	// the whole family revoked — see OAuthTokenService.ExchangeRefreshToken.
 	Rotated bool `json:"rotated,omitempty"`
+	// RotatedAtUnix is the wall-clock second at which Rotated was set. It is
+	// the anchor of the reuse grace window (RefreshReuseGracePeriod): a
+	// replay is inside the grace iff now - RotatedAtUnix <= the grace.
+	//
+	// Unix seconds, not a time.Time, on purpose: the comparison is made
+	// inside the Redis Lua script (see repository.refreshTokenMarkRotatedScript),
+	// and Lua's cjson can compare a JSON number but cannot parse RFC 3339.
+	// Zero on a record that was never rotated, and on any tombstone written
+	// before this field existed — both are treated as "outside the grace",
+	// which is the fail-secure direction.
+	RotatedAtUnix int64 `json:"rotated_at_unix,omitempty"`
+}
+
+const (
+	// RefreshReuseGracePeriod is how long after a refresh token is rotated a
+	// replay of that same token is forgiven instead of treated as reuse.
+	//
+	// This exists because instant revocation kills healthy sessions: a
+	// desktop agent that retries a refresh whose response was lost in
+	// flight, or two windows of the same session refreshing at once, both
+	// present an already-rotated token through no fault of anyone's. Portal
+	// documents the same 60s window (plugins/dashboard_auth/nous/__init__.py),
+	// and the hermes client is written against that contract.
+	//
+	// 60 seconds is defined HERE and only here — the Lua script's window and
+	// the replay key's TTL are both derived from this constant rather than
+	// restating the literal.
+	//
+	// The grace is deliberately narrow: it forgives ONE token (the one whose
+	// own rotation was less than a minute ago), it returns the pair that
+	// rotation already minted rather than minting another, and it is never
+	// extended or restarted by a replay. Anything broader would blunt reuse
+	// detection, which is the only reason rotation exists.
+	RefreshReuseGracePeriod = 60 * time.Second
+
+	// RefreshReplayRetention is how long the RefreshReplayPair is kept.
+	//
+	// The pair contains RAW tokens — the only place in this system where a
+	// usable refresh token is written to Redis rather than only its SHA256
+	// hash — so its lifetime is bounded to roughly the grace instead of the
+	// tombstone's remaining 30 days. Deliberately a little LONGER than the
+	// grace so that the script's explicit RotatedAtUnix comparison, not key
+	// expiry, is what decides the window; the TTL is cleanup and blast-radius
+	// containment, not policy.
+	RefreshReplayRetention = 2 * RefreshReuseGracePeriod
+)
+
+// RefreshReplayPair is the token pair minted by a rotation, stashed so that a
+// replay of the rotated token inside RefreshReuseGracePeriod can be answered
+// with the SAME pair rather than either minting a second one (which would
+// fork the family into two live branches — the race MarkRotated exists to
+// close) or revoking the family (which is what the grace is softening).
+type RefreshReplayPair struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	Scope        string `json:"scope"`
+	// AccessExpiresAtUnix lets a replay report the access token's REMAINING
+	// lifetime. Re-reporting the full TTL would overstate it by however long
+	// into the grace the replay arrived, and a client that trusted that would
+	// hold a dead access token for that long.
+	AccessExpiresAtUnix int64 `json:"access_expires_at_unix"`
+}
+
+// RefreshRotationOutcome is what MarkRotated's single atomic claim decided.
+type RefreshRotationOutcome int
+
+const (
+	// RefreshRotationUnknown is the zero value and is never returned by a
+	// correct implementation. It exists so that a result struct that was
+	// never populated cannot be mistaken for RefreshRotationClaimed —
+	// callers must treat it as an internal error, not as permission to mint.
+	RefreshRotationUnknown RefreshRotationOutcome = iota
+	// RefreshRotationClaimed: this call won the race. The record was not
+	// rotated; the tombstone and the replay pair have been stored.
+	RefreshRotationClaimed
+	// RefreshRotationGraceReplay: the record was already rotated, but less
+	// than RefreshReuseGracePeriod ago and the pair that rotation minted is
+	// still stored. Nothing was written. The caller must return that pair
+	// verbatim.
+	RefreshRotationGraceReplay
+	// RefreshRotationReuse: the record was already rotated, outside the
+	// grace (or with no stored pair). Nothing was written. This is the
+	// reuse signal: the caller must revoke the family.
+	RefreshRotationReuse
+)
+
+// RefreshRotationResult is MarkRotated's single return value.
+type RefreshRotationResult struct {
+	// Data is the record as it stood immediately BEFORE this call, whatever
+	// the outcome — still carrying FamilyID, which is what a reuse
+	// revocation needs.
+	Data *RefreshTokenData
+	// Outcome is the decision the atomic claim reached.
+	Outcome RefreshRotationOutcome
+	// Replay is non-nil iff Outcome is RefreshRotationGraceReplay.
+	Replay *RefreshReplayPair
 }
 
 // RefreshTokenCache 管理Refresh Token的Redis缓存
@@ -92,30 +188,44 @@ type RefreshTokenCache interface {
 	// 用于验证Token家族关系
 	IsTokenInFamily(ctx context.Context, familyID string, tokenHash string) (bool, error)
 
-	// MarkRotated atomically marks a refresh token record as rotated,
-	// GETting its current value and SETting the tombstoned replacement in
-	// ONE operation. Implementations MUST make the get-and-set atomic (e.g.
-	// a Redis Lua script) — NOT a separate GetRefreshToken() followed by
-	// StoreRefreshToken(), which race under concurrent redemption of the
-	// same token: two simultaneous presentations of one refresh token could
-	// otherwise both observe Rotated=false and both proceed to mint a token
-	// pair from it. See OAuthTokenService.ExchangeRefreshToken, which uses
-	// this as the single serialization point deciding who gets to rotate.
+	// MarkRotated atomically claims the right to rotate a refresh token, and
+	// classifies a losing caller as either a forgivable replay inside the
+	// reuse grace or genuine reuse.
 	//
-	// tombstoned is the value to store IF this call wins the race (i.e. the
-	// record was not already rotated) — callers derive it from a prior read
-	// with Rotated set true. The record's existing TTL is preserved
-	// unchanged.
+	// Implementations MUST make the whole read-decide-write ONE operation
+	// (e.g. a single Redis Lua EVAL) — NOT a GetRefreshToken() followed by a
+	// StoreRefreshToken(), and NOT a read here plus a decision in Go. Two
+	// simultaneous presentations of one refresh token (an attacker replaying
+	// a stolen token at the same instant the legitimate client refreshes on
+	// schedule) could otherwise both observe Rotated=false and both mint a
+	// pair from it, forking the family into two live branches that never
+	// again present an already-rotated token to each other — which silently
+	// disables reuse detection for good. This method is the single
+	// serialization point that prevents that; see
+	// OAuthTokenService.ExchangeRefreshToken.
 	//
-	// Returns:
-	//   - (data, false, nil): this call won. data reflects the record as it
-	//     stood immediately before the mark (Rotated=false). tombstoned has
-	//     been stored.
-	//   - (data, true, nil): this call lost — the record was already
-	//     rotated, by either a genuine replay of an old token or the losing
-	//     side of a concurrent double-presentation. Nothing was written.
-	//     data reflects the (already-rotated) record as found — still
-	//     useful for its FamilyID.
-	//   - (nil, false, ErrRefreshTokenNotFound): no record exists for this hash.
-	MarkRotated(ctx context.Context, tokenHash string, tombstoned *RefreshTokenData) (data *RefreshTokenData, alreadyRotated bool, err error)
+	// tombstoned is the value to store IF this call wins: callers derive it
+	// from a prior read with Rotated set true and RotatedAtUnix set to now.
+	// The record's existing TTL is preserved unchanged, so the tombstone
+	// outlives the grace and a much later replay is still traceable to its
+	// FamilyID.
+	//
+	// replay is the pair the caller has just minted for THIS rotation. It is
+	// stored by the same atomic operation that writes the tombstone,
+	// deliberately: if it were written afterwards, a concurrent presentation
+	// landing in between would find a rotated record with no pair to hand
+	// back and would revoke the family — exactly the healthy-session kill
+	// the grace exists to prevent. It must not be nil.
+	//
+	// now is the caller's clock reading, and MUST be the same instant
+	// stamped into tombstoned.RotatedAtUnix. It is passed in rather than read
+	// inside so the grace boundary is decided by one clock the caller
+	// controls, which is also what makes it testable without sleeping.
+	//
+	// Returns (nil, ErrRefreshTokenNotFound) when no record exists for this
+	// hash. Any other error is an infrastructure fault and must be surfaced
+	// as such by callers — never collapsed into an OAuth invalid_grant,
+	// which would make a Redis outage indistinguishable from a client
+	// presenting a bad token.
+	MarkRotated(ctx context.Context, tokenHash string, tombstoned *RefreshTokenData, replay *RefreshReplayPair, now time.Time) (*RefreshRotationResult, error)
 }

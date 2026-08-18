@@ -2902,8 +2902,8 @@ func (s *oauthPendingFlowRefreshTokenCacheStub) IsTokenInFamily(context.Context,
 	return false, nil
 }
 
-func (s *oauthPendingFlowRefreshTokenCacheStub) MarkRotated(context.Context, string, *service.RefreshTokenData) (*service.RefreshTokenData, bool, error) {
-	return nil, false, service.ErrRefreshTokenNotFound
+func (s *oauthPendingFlowRefreshTokenCacheStub) MarkRotated(context.Context, string, *service.RefreshTokenData, *service.RefreshReplayPair, time.Time) (*service.RefreshRotationResult, error) {
+	return nil, service.ErrRefreshTokenNotFound
 }
 
 type oauthPendingFlowRedeemCodeRepo struct {

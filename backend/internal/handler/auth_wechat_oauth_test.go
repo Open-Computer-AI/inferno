@@ -1499,6 +1499,6 @@ func (s *wechatOAuthRefreshTokenCacheStub) IsTokenInFamily(context.Context, stri
 	return false, nil
 }
 
-func (s *wechatOAuthRefreshTokenCacheStub) MarkRotated(context.Context, string, *service.RefreshTokenData) (*service.RefreshTokenData, bool, error) {
-	return nil, false, service.ErrRefreshTokenNotFound
+func (s *wechatOAuthRefreshTokenCacheStub) MarkRotated(context.Context, string, *service.RefreshTokenData, *service.RefreshReplayPair, time.Time) (*service.RefreshRotationResult, error) {
+	return nil, service.ErrRefreshTokenNotFound
 }

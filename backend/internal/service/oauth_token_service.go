@@ -108,6 +108,12 @@ type OAuthTokenService struct {
 	refreshCache RefreshTokenCache
 	userRepo     OAuthUserLookup
 	issuer       string
+	// now is this service's only clock. Injected as a field rather than read
+	// from the wall clock at each site so the refresh-reuse grace window
+	// (RefreshReuseGracePeriod) can be crossed in tests deterministically,
+	// by moving the clock rather than by sleeping through a real minute.
+	// Production never replaces it.
+	now func() time.Time
 }
 
 // NewOAuthTokenService constructs the token-endpoint service. issuer is the
@@ -125,6 +131,7 @@ func NewOAuthTokenService(entClient *dbent.Client, keySvc *OAuthKeyService, devi
 		refreshCache: refreshCache,
 		userRepo:     userRepo,
 		issuer:       issuer,
+		now:          time.Now,
 	}
 }
 
@@ -150,7 +157,7 @@ func (s *OAuthTokenService) mintAccessToken(ctx context.Context, userID int64, c
 		return "", err
 	}
 
-	now := time.Now()
+	now := s.now()
 	claims := jwt.MapClaims{
 		"iss":                    s.issuer,
 		"sub":                    strconv.FormatInt(userID, 10),
@@ -205,25 +212,57 @@ func newFamilyID() (string, error) {
 // in-app password or email change kill an OAuth agent credential, exactly as
 // AuthService.RefreshTokenPair does for panel sessions.
 func (s *OAuthTokenService) issueRefreshToken(ctx context.Context, userID int64, clientID, scope, familyID string, tokenVersion int64) (string, error) {
+	prepared, err := s.prepareRefreshToken(userID, clientID, scope, familyID, tokenVersion)
+	if err != nil {
+		return "", err
+	}
+	if err := s.persistRefreshToken(ctx, prepared); err != nil {
+		return "", err
+	}
+	return prepared.raw, nil
+}
+
+// preparedRefreshToken is a refresh token that exists but has not been
+// persisted yet. The split exists for ExchangeRefreshToken, which must have
+// the successor token IN HAND before it claims the rotation (the claim
+// stores the successor pair for the grace window) but must not have STORED
+// it, so that a caller which loses the claim leaves no second live token
+// behind — the family fork MarkRotated exists to prevent.
+type preparedRefreshToken struct {
+	raw  string
+	hash string
+	data *RefreshTokenData
+}
+
+// prepareRefreshToken mints a raw refresh token and the record that would
+// describe it, without writing anything anywhere.
+func (s *OAuthTokenService) prepareRefreshToken(userID int64, clientID, scope, familyID string, tokenVersion int64) (*preparedRefreshToken, error) {
 	raw, err := newOAuthRefreshToken()
 	if err != nil {
-		return "", fmt.Errorf("refresh token entropy: %w", err)
+		return nil, fmt.Errorf("refresh token entropy: %w", err)
 	}
-	tokenHash := hashToken(raw)
+	now := s.now()
+	return &preparedRefreshToken{
+		raw:  raw,
+		hash: hashToken(raw),
+		data: &RefreshTokenData{
+			UserID:       userID,
+			TokenVersion: tokenVersion,
+			FamilyID:     familyID,
+			ClientID:     clientID,
+			Scope:        scope,
+			CreatedAt:    now,
+			ExpiresAt:    now.Add(oauthRefreshTokenTTL),
+		},
+	}, nil
+}
 
-	now := time.Now()
-	data := &RefreshTokenData{
-		UserID:       userID,
-		TokenVersion: tokenVersion,
-		FamilyID:     familyID,
-		ClientID:     clientID,
-		Scope:        scope,
-		CreatedAt:    now,
-		ExpiresAt:    now.Add(oauthRefreshTokenTTL),
-	}
-
-	if err := s.refreshCache.StoreRefreshToken(ctx, tokenHash, data, oauthRefreshTokenTTL); err != nil {
-		return "", fmt.Errorf("store refresh token: %w", err)
+// persistRefreshToken writes a prepared token: only its SHA256 hash (via
+// hashToken, shared with the panel-session refresh flow in auth_service.go)
+// reaches Redis as a key, never the raw value.
+func (s *OAuthTokenService) persistRefreshToken(ctx context.Context, p *preparedRefreshToken) error {
+	if err := s.refreshCache.StoreRefreshToken(ctx, p.hash, p.data, oauthRefreshTokenTTL); err != nil {
+		return fmt.Errorf("store refresh token: %w", err)
 	}
 	// Shares the user's token set with panel sessions, so an explicit
 	// logout-all-devices / forgot-password RESET (both of which call
@@ -236,19 +275,18 @@ func (s *OAuthTokenService) issueRefreshToken(ctx context.Context, userID int64,
 	// UserService.ChangePassword writes the new hash and returns without
 	// calling RevokeAllUserSessions. Panel sessions still die there because
 	// AuthService.RefreshTokenPair compares TokenVersion, a fingerprint of
-	// email+password_hash. The TokenVersion stamped above, and the matching
-	// comparison in ExchangeRefreshToken, is what gives the OAuth path the
-	// same property — without it a stolen ~/.hermes/auth.json kept
-	// self-rotating for its full 30 days after the victim changed their
+	// email+password_hash. The TokenVersion stamped in prepareRefreshToken,
+	// and the matching comparison in ExchangeRefreshToken, is what gives the
+	// OAuth path the same property — without it a stolen ~/.hermes/auth.json
+	// kept self-rotating for its full 30 days after the victim changed their
 	// password, with no UI anywhere listing OAuth grants to tell them.
-	if err := s.refreshCache.AddToUserTokenSet(ctx, userID, tokenHash, oauthRefreshTokenTTL); err != nil {
-		return "", fmt.Errorf("add refresh token to user set: %w", err)
+	if err := s.refreshCache.AddToUserTokenSet(ctx, p.data.UserID, p.hash, oauthRefreshTokenTTL); err != nil {
+		return fmt.Errorf("add refresh token to user set: %w", err)
 	}
-	if err := s.refreshCache.AddToFamilyTokenSet(ctx, familyID, tokenHash, oauthRefreshTokenTTL); err != nil {
-		return "", fmt.Errorf("add refresh token to family: %w", err)
+	if err := s.refreshCache.AddToFamilyTokenSet(ctx, p.data.FamilyID, p.hash, oauthRefreshTokenTTL); err != nil {
+		return fmt.Errorf("add refresh token to family: %w", err)
 	}
-
-	return raw, nil
+	return nil
 }
 
 // ExchangeDeviceCode implements the device_code grant (RFC 8628 §3.5).
@@ -271,7 +309,7 @@ func (s *OAuthTokenService) ExchangeDeviceCode(ctx context.Context, clientID, de
 		return nil, ErrAccessDenied
 	}
 
-	if time.Now().After(row.ExpiresAt) {
+	if s.now().After(row.ExpiresAt) {
 		return nil, ErrExpiredToken
 	}
 
@@ -285,7 +323,7 @@ func (s *OAuthTokenService) ExchangeDeviceCode(ctx context.Context, clientID, de
 		if row.LastPolledAt != nil && time.Since(*row.LastPolledAt) < time.Duration(devicePollInterval)*time.Second {
 			return nil, ErrSlowDown
 		}
-		if _, uerr := row.Update().SetLastPolledAt(time.Now()).Save(ctx); uerr != nil {
+		if _, uerr := row.Update().SetLastPolledAt(s.now()).Save(ctx); uerr != nil {
 			return nil, fmt.Errorf("update poll timestamp: %w", uerr)
 		}
 		return nil, ErrAuthorizationPending
@@ -384,6 +422,28 @@ func (s *OAuthTokenService) ExchangeDeviceCode(ctx context.Context, clientID, de
 // that exact raw token indistinguishable from "never existed", which loses
 // the FamilyID needed to revoke the rest of the session. Keeping a
 // tombstone is what makes the reuse branch below possible at all.
+//
+// Not every replay is an attack, so there is a 60-second grace
+// (RefreshReuseGracePeriod): a replay of a token rotated less than a minute
+// ago is answered with the pair that rotation minted — the SAME pair,
+// verbatim — instead of revoking the family. Without it a desktop agent
+// retrying a refresh whose response was lost in flight, or two windows of
+// one session refreshing together, would kill a healthy session; Portal
+// documents the same window and the hermes client is written against it.
+//
+// The grace is kept as narrow as it can be, because every widening of it is
+// a narrowing of reuse detection, which is the only reason rotation exists:
+// it forgives ONE token (the one whose own rotation is less than a minute
+// old), it returns the already-minted pair rather than minting another (two
+// live tokens in one family is the fork that permanently disables the
+// detector), and a replay writes nothing at all — so the window never
+// restarts and never extends. Outside it, reuse revokes the family exactly
+// as before.
+//
+// The window is decided inside MarkRotated's single atomic operation, not
+// here: reading a rotation timestamp in one round trip and deciding on it in
+// a second is the same read-then-write split this function's whole design
+// exists to avoid.
 func (s *OAuthTokenService) ExchangeRefreshToken(ctx context.Context, clientID, refreshToken string) (*OAuthTokens, error) {
 	if clientID == "" || !strings.HasPrefix(refreshToken, oauthRefreshTokenPrefix) {
 		return nil, ErrInvalidGrant
@@ -416,7 +476,7 @@ func (s *OAuthTokenService) ExchangeRefreshToken(ctx context.Context, clientID, 
 	if err := s.assertClientUsable(ctx, clientID); err != nil {
 		return nil, ErrInvalidGrant
 	}
-	if time.Now().After(data.ExpiresAt) {
+	if s.now().After(data.ExpiresAt) {
 		_ = s.refreshCache.DeleteRefreshToken(ctx, tokenHash)
 		return nil, ErrInvalidGrant
 	}
@@ -459,13 +519,55 @@ func (s *OAuthTokenService) ExchangeRefreshToken(ctx context.Context, clientID, 
 		return nil, ErrInvalidGrant
 	}
 
-	// Atomically claim the right to rotate THIS token, before minting
-	// anything: a crash between here and the end of this function costs at
-	// most the one token being rotated (the client must re-authenticate),
-	// never a forked family with two live tokens.
+	// Mint the successor pair BEFORE claiming the rotation — but store
+	// nothing yet.
+	//
+	// The claim below has to carry the pair with it: a replay that lands
+	// inside the grace window is answered with the pair the rotation already
+	// minted, so that pair must be written by the SAME atomic operation that
+	// writes the tombstone. Were it written afterwards, a second
+	// presentation arriving in the gap would find a rotated record with no
+	// pair to hand back and would revoke the family — precisely the
+	// healthy-session kill this grace exists to prevent, and precisely the
+	// two-window / lost-response case it is aimed at.
+	//
+	// Minting early is not the same as committing early: prepareRefreshToken
+	// writes nothing, so a caller that goes on to LOSE the claim leaves no
+	// second live token behind and the family cannot fork. Only the winner
+	// reaches persistRefreshToken. A crash between the claim and that
+	// persist costs the one token being rotated (the client must
+	// re-authenticate), the same worst case as before this change.
+	//
+	// Scope, user and family are carried forward from data unchanged — a
+	// refresh must never silently widen (privilege escalation) or narrow
+	// (surprise downgrade) scope. data is the pre-rotation record, and on
+	// the winning path it is necessarily identical to what MarkRotated
+	// observed: a non-rotated record is only ever written by a rotation, and
+	// there can be only one of those.
+	now := s.now()
+	access, err := s.mintAccessToken(ctx, data.UserID, clientID, data.Scope)
+	if err != nil {
+		return nil, err
+	}
+	successor, err := s.prepareRefreshToken(data.UserID, clientID, data.Scope, data.FamilyID, resolvedTokenVersion(user))
+	if err != nil {
+		return nil, err
+	}
+
 	tomb := *data
 	tomb.Rotated = true
-	winner, alreadyRotated, err := s.refreshCache.MarkRotated(ctx, tokenHash, &tomb)
+	tomb.RotatedAtUnix = now.Unix()
+	replay := &RefreshReplayPair{
+		AccessToken:         access,
+		RefreshToken:        successor.raw,
+		Scope:               data.Scope,
+		AccessExpiresAtUnix: now.Add(oauthAccessTokenTTL).Unix(),
+	}
+
+	// The single serialization point: exactly one caller is told it claimed
+	// the rotation, and every other caller is told, in the same round trip,
+	// whether it is a forgivable replay or reuse.
+	res, err := s.refreshCache.MarkRotated(ctx, tokenHash, &tomb, replay, now)
 	if err != nil {
 		if errors.Is(err, ErrRefreshTokenNotFound) {
 			// Deleted between the GetRefreshToken above and here (e.g. a
@@ -475,39 +577,79 @@ func (s *OAuthTokenService) ExchangeRefreshToken(ctx context.Context, clientID, 
 		}
 		return nil, fmt.Errorf("mark refresh token rotated: %w", err)
 	}
-	if alreadyRotated {
-		// REPLAY, or the loser of a concurrent double-presentation of this
-		// exact token: someone else's mint may already be complete, or
-		// still in flight. Either way, kill the whole family so whatever
-		// token that caller receives (or received) also dies — the
-		// legitimate client is forced to notice and re-authenticate rather
-		// than an attacker silently riding along on a stolen token.
+
+	switch res.Outcome {
+	case RefreshRotationClaimed:
+		// Fall through to the mint-and-persist below.
+	case RefreshRotationGraceReplay:
+		// A replay of a token rotated less than RefreshReuseGracePeriod ago:
+		// an agent retrying a refresh whose response never arrived, or a
+		// second window of the same session refreshing at the same time.
+		// Hand back the pair that rotation minted — the SAME pair, not a new
+		// one. Minting again here would put two live tokens in one family,
+		// which is the fork that permanently disables reuse detection; and
+		// revoking here would kill a session that did nothing wrong.
+		//
+		// Nothing is written on this path, so the grace neither restarts nor
+		// extends: it stays anchored to the one rotation that opened it.
+		if res.Replay == nil {
+			// Only reachable from an implementation that breaks
+			// MarkRotated's contract. An infrastructure fault, so it must
+			// surface as a 500 rather than as an invalid_grant that would
+			// blame the client.
+			return nil, fmt.Errorf("mark refresh token rotated: grace replay without a stored token pair")
+		}
+		slog.Info("oauth: refresh token replayed inside reuse grace, returning current pair", "client_id", clientID)
+		return &OAuthTokens{
+			AccessToken:  res.Replay.AccessToken,
+			RefreshToken: res.Replay.RefreshToken,
+			Scope:        res.Replay.Scope,
+			// The access token was minted when the rotation happened, so
+			// what is left of its 15 minutes is less than a full TTL.
+			// Reporting the full TTL would leave a client holding a token it
+			// believes is live for longer than it is.
+			ExpiresIn: remainingSeconds(res.Replay.AccessExpiresAtUnix, now),
+		}, nil
+	case RefreshRotationReuse:
+		// REPLAY outside the grace: someone else's mint completed more than
+		// a minute ago, and this presentation is either an attacker with a
+		// stolen token or a client that has fallen far enough behind to be
+		// indistinguishable from one. Kill the whole family so whatever
+		// token the earlier caller received also dies — the legitimate
+		// client is forced to notice and re-authenticate rather than an
+		// attacker silently riding along on a stolen token.
 		slog.Warn("oauth: refresh token reuse detected, revoking family", "client_id", clientID)
-		if delErr := s.refreshCache.DeleteTokenFamily(ctx, winner.FamilyID); delErr != nil {
+		if delErr := s.refreshCache.DeleteTokenFamily(ctx, res.Data.FamilyID); delErr != nil {
 			return nil, fmt.Errorf("revoke token family after reuse: %w", delErr)
 		}
 		return nil, ErrRefreshTokenReused
+	default:
+		// Includes RefreshRotationUnknown, the zero value: an unpopulated
+		// result must never be read as permission to mint.
+		return nil, fmt.Errorf("mark refresh token rotated: unexpected rotation outcome %d", res.Outcome)
 	}
 
-	// Scope is carried forward unchanged — a refresh must never silently
-	// widen (privilege escalation) or narrow (surprise downgrade) it. Uses
-	// winner (the value MarkRotated observed atomically), not the earlier
-	// data read, though in practice they agree — winner is simply the freshest.
-	access, err := s.mintAccessToken(ctx, winner.UserID, clientID, winner.Scope)
-	if err != nil {
-		return nil, err
-	}
-	newRefresh, err := s.issueRefreshToken(ctx, winner.UserID, clientID, winner.Scope, winner.FamilyID, resolvedTokenVersion(user))
-	if err != nil {
+	if err := s.persistRefreshToken(ctx, successor); err != nil {
 		return nil, err
 	}
 
 	return &OAuthTokens{
 		AccessToken:  access,
-		RefreshToken: newRefresh,
-		Scope:        winner.Scope,
+		RefreshToken: successor.raw,
+		Scope:        data.Scope,
 		ExpiresIn:    int(oauthAccessTokenTTL.Seconds()),
 	}, nil
+}
+
+// remainingSeconds reports how many whole seconds are left until a unix
+// timestamp, floored at zero so an already-expired stamp never reports a
+// negative expires_in.
+func remainingSeconds(deadlineUnix int64, now time.Time) int {
+	remaining := deadlineUnix - now.Unix()
+	if remaining < 0 {
+		return 0
+	}
+	return int(remaining)
 }
 
 // pkceChallengeMatches reports whether verifier hashes (RFC 7636 S256:
@@ -608,7 +750,7 @@ func (s *OAuthTokenService) ExchangeAuthorizationCode(ctx context.Context, clien
 	if row.RedirectURI != redirectURI {
 		return nil, ErrInvalidGrant
 	}
-	if time.Now().After(row.ExpiresAt) {
+	if s.now().After(row.ExpiresAt) {
 		return nil, ErrInvalidGrant
 	}
 	if !pkceChallengeMatches(codeVerifier, row.CodeChallenge) {

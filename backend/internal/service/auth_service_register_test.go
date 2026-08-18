@@ -163,8 +163,8 @@ func (s *refreshTokenCacheStub) IsTokenInFamily(context.Context, string, string)
 	return false, nil
 }
 
-func (s *refreshTokenCacheStub) MarkRotated(context.Context, string, *RefreshTokenData) (*RefreshTokenData, bool, error) {
-	return nil, false, ErrRefreshTokenNotFound
+func (s *refreshTokenCacheStub) MarkRotated(context.Context, string, *RefreshTokenData, *RefreshReplayPair, time.Time) (*RefreshRotationResult, error) {
+	return nil, ErrRefreshTokenNotFound
 }
 
 func (s *emailCacheStub) GetVerificationCode(ctx context.Context, email string) (*VerificationCodeData, error) {

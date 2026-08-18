@@ -59,6 +59,7 @@ func newOAuthHandlerTestEntClient(t *testing.T) *dbent.Client {
 type oauthHandlerTestRefreshCache struct {
 	mu       sync.Mutex
 	tokens   map[string]*service.RefreshTokenData
+	replays  map[string]service.RefreshReplayPair
 	families map[string]map[string]struct{}
 	users    map[int64]map[string]struct{}
 }
@@ -66,6 +67,7 @@ type oauthHandlerTestRefreshCache struct {
 func newOAuthHandlerTestRefreshCache() *oauthHandlerTestRefreshCache {
 	return &oauthHandlerTestRefreshCache{
 		tokens:   map[string]*service.RefreshTokenData{},
+		replays:  map[string]service.RefreshReplayPair{},
 		families: map[string]map[string]struct{}{},
 		users:    map[int64]map[string]struct{}{},
 	}
@@ -164,20 +166,35 @@ func (c *oauthHandlerTestRefreshCache) IsTokenInFamily(_ context.Context, family
 	return ok, nil
 }
 
-func (c *oauthHandlerTestRefreshCache) MarkRotated(_ context.Context, hash string, tombstoned *service.RefreshTokenData) (*service.RefreshTokenData, bool, error) {
+// MarkRotated mirrors the Redis Lua script closely enough for the handler
+// tests: the whole decision happens under c.mu, and a replay inside
+// service.RefreshReuseGracePeriod is answered with the stored pair rather
+// than treated as reuse. The grace semantics themselves are asserted at the
+// service layer (internal/service/oauth_token_service_test.go); this stub
+// only has to avoid contradicting them.
+func (c *oauthHandlerTestRefreshCache) MarkRotated(_ context.Context, hash string, tombstoned *service.RefreshTokenData, replay *service.RefreshReplayPair, now time.Time) (*service.RefreshRotationResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	data, ok := c.tokens[hash]
 	if !ok {
-		return nil, false, service.ErrRefreshTokenNotFound
+		return nil, service.ErrRefreshTokenNotFound
 	}
 	cloned := *data
 	if data.Rotated {
-		return &cloned, true, nil
+		stored, inGrace := c.replays[hash]
+		if inGrace && data.RotatedAtUnix > 0 && now.Unix()-data.RotatedAtUnix <= int64(service.RefreshReuseGracePeriod/time.Second) {
+			pair := stored
+			return &service.RefreshRotationResult{Data: &cloned, Outcome: service.RefreshRotationGraceReplay, Replay: &pair}, nil
+		}
+		return &service.RefreshRotationResult{Data: &cloned, Outcome: service.RefreshRotationReuse}, nil
 	}
 	tomb := *tombstoned
 	c.tokens[hash] = &tomb
-	return &cloned, false, nil
+	if c.replays == nil {
+		c.replays = make(map[string]service.RefreshReplayPair)
+	}
+	c.replays[hash] = *replay
+	return &service.RefreshRotationResult{Data: &cloned, Outcome: service.RefreshRotationClaimed}, nil
 }
 
 // oauthHandlerTestUserLookup always reports every user active — account

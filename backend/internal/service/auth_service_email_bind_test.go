@@ -854,20 +854,23 @@ func (s *emailBindRefreshTokenCacheStub) IsTokenInFamily(_ context.Context, fami
 	return ok, nil
 }
 
-func (s *emailBindRefreshTokenCacheStub) MarkRotated(_ context.Context, tokenHash string, tombstoned *service.RefreshTokenData) (*service.RefreshTokenData, bool, error) {
+func (s *emailBindRefreshTokenCacheStub) MarkRotated(_ context.Context, tokenHash string, tombstoned *service.RefreshTokenData, _ *service.RefreshReplayPair, _ time.Time) (*service.RefreshRotationResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	data, ok := s.tokens[tokenHash]
 	if !ok {
-		return nil, false, service.ErrRefreshTokenNotFound
+		return nil, service.ErrRefreshTokenNotFound
 	}
 	cloned := *data
 	if data.Rotated {
-		return &cloned, true, nil
+		// This stub backs panel-session tests, which never exercise the
+		// OAuth reuse grace; classifying every replay as reuse keeps it at
+		// the pre-grace behavior.
+		return &service.RefreshRotationResult{Data: &cloned, Outcome: service.RefreshRotationReuse}, nil
 	}
 	tomb := *tombstoned
 	s.tokens[tokenHash] = &tomb
-	return &cloned, false, nil
+	return &service.RefreshRotationResult{Data: &cloned, Outcome: service.RefreshRotationClaimed}, nil
 }
 
 type emailBindUserRepoStub struct {

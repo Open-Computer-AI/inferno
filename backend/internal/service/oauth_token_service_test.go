@@ -20,13 +20,23 @@ import (
 type fakeRefreshTokenCache struct {
 	mu       sync.Mutex
 	tokens   map[string]*RefreshTokenData
+	replays  map[string]fakeReplayEntry
 	families map[string]map[string]struct{}
 	users    map[int64]map[string]struct{}
+}
+
+// fakeReplayEntry mirrors the refresh_replay:{hash} key the Redis
+// implementation writes: the pair a rotation minted, plus the moment Redis
+// would expire it (service.RefreshReplayRetention after the rotation).
+type fakeReplayEntry struct {
+	pair      RefreshReplayPair
+	expiresAt time.Time
 }
 
 func newFakeRefreshTokenCache() *fakeRefreshTokenCache {
 	return &fakeRefreshTokenCache{
 		tokens:   make(map[string]*RefreshTokenData),
+		replays:  make(map[string]fakeReplayEntry),
 		families: make(map[string]map[string]struct{}),
 		users:    make(map[int64]map[string]struct{}),
 	}
@@ -55,6 +65,7 @@ func (f *fakeRefreshTokenCache) DeleteRefreshToken(_ context.Context, tokenHash 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.tokens, tokenHash)
+	delete(f.replays, tokenHash)
 	return nil
 }
 
@@ -63,6 +74,7 @@ func (f *fakeRefreshTokenCache) DeleteUserRefreshTokens(_ context.Context, userI
 	defer f.mu.Unlock()
 	for hash := range f.users[userID] {
 		delete(f.tokens, hash)
+		delete(f.replays, hash)
 	}
 	delete(f.users, userID)
 	return nil
@@ -73,6 +85,7 @@ func (f *fakeRefreshTokenCache) DeleteTokenFamily(_ context.Context, familyID st
 	defer f.mu.Unlock()
 	for hash := range f.families[familyID] {
 		delete(f.tokens, hash)
+		delete(f.replays, hash)
 	}
 	delete(f.families, familyID)
 	return nil
@@ -125,26 +138,36 @@ func (f *fakeRefreshTokenCache) IsTokenInFamily(_ context.Context, familyID, tok
 	return ok, nil
 }
 
-// MarkRotated mirrors the real Redis Lua script's atomicity: the whole
-// get-decide-set happens while holding f.mu, so exactly one concurrent
-// caller ever observes alreadyRotated=false for a given token. This is what
-// makes TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins a
-// meaningful test of OAuthTokenService.ExchangeRefreshToken's own locking
-// (or lack of it) rather than of this fake's.
-func (f *fakeRefreshTokenCache) MarkRotated(_ context.Context, tokenHash string, tombstoned *RefreshTokenData) (*RefreshTokenData, bool, error) {
+// MarkRotated mirrors the real Redis Lua script
+// (repository.refreshTokenMarkRotatedScript) statement for statement: the
+// whole read-decide-write happens while holding f.mu, so exactly one
+// concurrent caller ever claims a given token, and the grace verdict is
+// reached in the same critical section from the same injected clock. That is
+// what makes TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins a
+// meaningful test of OAuthTokenService.ExchangeRefreshToken's own
+// serialization rather than of this fake's.
+func (f *fakeRefreshTokenCache) MarkRotated(_ context.Context, tokenHash string, tombstoned *RefreshTokenData, replay *RefreshReplayPair, now time.Time) (*RefreshRotationResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	data, ok := f.tokens[tokenHash]
 	if !ok {
-		return nil, false, ErrRefreshTokenNotFound
+		return nil, ErrRefreshTokenNotFound
 	}
 	cloned := *data
 	if data.Rotated {
-		return &cloned, true, nil
+		graceSeconds := int64(RefreshReuseGracePeriod / time.Second)
+		if data.RotatedAtUnix > 0 && now.Unix() >= data.RotatedAtUnix && now.Unix()-data.RotatedAtUnix <= graceSeconds {
+			if entry, stored := f.replays[tokenHash]; stored && now.Before(entry.expiresAt) {
+				pair := entry.pair
+				return &RefreshRotationResult{Data: &cloned, Outcome: RefreshRotationGraceReplay, Replay: &pair}, nil
+			}
+		}
+		return &RefreshRotationResult{Data: &cloned, Outcome: RefreshRotationReuse}, nil
 	}
 	tomb := *tombstoned
 	f.tokens[tokenHash] = &tomb
-	return &cloned, false, nil
+	f.replays[tokenHash] = fakeReplayEntry{pair: *replay, expiresAt: now.Add(RefreshReplayRetention)}
+	return &RefreshRotationResult{Data: &cloned, Outcome: RefreshRotationClaimed}, nil
 }
 
 // userLookupStub is a minimal OAuthUserLookup for tests: every ID not
@@ -241,6 +264,41 @@ func newDeviceFlowFixtureWithDeps(t *testing.T) (context.Context, *OAuthTokenSer
 		t.Fatalf("RequestCode: %v", err)
 	}
 	return ctx, tokens, devices, oc.ClientID, grant.DeviceCode, cache, users
+}
+
+// testClock is the codebase's way of crossing OAuthTokenService's
+// refresh-reuse grace window without sleeping through a real minute: the
+// service reads its clock through the injected OAuthTokenService.now, so a
+// test can simply move time. Sleeping would make these tests take >60s each
+// AND make them flaky under load, which is how a grace-window test quietly
+// stops discriminating.
+//
+// Mutex-guarded because TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins
+// reads it from N goroutines under -race.
+type testClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *testClock) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+func (c *testClock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = c.t.Add(d)
+}
+
+// freezeClock puts the service on a stopped clock starting at the real
+// current time, so unrelated real-time deadlines in the fixture (device code
+// expiry, authorization code expiry) stay valid.
+func freezeClock(tokens *OAuthTokenService) *testClock {
+	clock := &testClock{t: time.Now()}
+	tokens.now = clock.now
+	return clock
 }
 
 func newDeviceFlowFixture(t *testing.T) (context.Context, *OAuthTokenService, *OAuthDeviceService, string, string) {
@@ -375,6 +433,7 @@ func TestRefreshTokenReuseIsRejected(t *testing.T) {
 	}
 
 	// Legitimate client rotates once.
+	clock := freezeClock(tokens)
 	rotated, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
 	if err != nil {
 		t.Fatalf("legitimate rotation: %v", err)
@@ -384,7 +443,16 @@ func TestRefreshTokenReuseIsRejected(t *testing.T) {
 	}
 
 	// An attacker (or a retried request) replays the ORIGINAL, now-rotated
-	// token.
+	// token — from OUTSIDE the reuse grace, which is what makes this the
+	// reuse case rather than the forgiven one. A replay inside the grace is
+	// a different, deliberately non-fatal outcome; see
+	// TestRefreshReplayInsideGraceReturnsCurrentPair.
+	//
+	// 90 seconds is written as a literal, not as RefreshReuseGracePeriod+1:
+	// a test whose clock is expressed in terms of the constant it is
+	// checking moves with that constant, so widening the window would slide
+	// the test along with it and the test would stop discriminating.
+	clock.advance(90 * time.Second)
 	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); !errors.Is(err, ErrRefreshTokenReused) {
 		t.Fatalf("(a) expected ErrRefreshTokenReused on replay, got %v", err)
 	}
@@ -398,6 +466,151 @@ func TestRefreshTokenReuseIsRejected(t *testing.T) {
 	// outcome is ErrInvalidGrant (not found), not ErrRefreshTokenReused.
 	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, rotated.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
 		t.Fatalf("(b) expected ErrInvalidGrant for the legitimately-rotated token after reuse revoked its family, got %v", err)
+	}
+}
+
+// grantedTokens runs the device flow to completion and returns the first
+// token pair, so the refresh tests can start from a real issued credential.
+func grantedTokens(t *testing.T, ctx context.Context, tokens *OAuthTokenService, devices *OAuthDeviceService, clientID, deviceCode string) *OAuthTokens {
+	t.Helper()
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	got, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+	return got
+}
+
+// TestRefreshReplayInsideGraceReturnsCurrentPair is one half of the
+// 60-second reuse grace.
+//
+// Instant revocation punishes benign clients: a desktop agent whose refresh
+// response was lost in flight retries with the token it still holds, and two
+// windows of one session refresh at the same moment. Both present an
+// already-rotated token. Within RefreshReuseGracePeriod that must return the
+// pair the rotation ALREADY minted — the same access token and the same
+// refresh token, not a second pair (two live tokens in one family is the
+// fork that permanently disables reuse detection) — and must leave the
+// family alive.
+//
+// The assertions to keep: the returned pair is byte-identical to the
+// rotation's, no additional token record was created, and the current token
+// still works afterwards. An implementation that quietly minted a fresh pair
+// would satisfy "the replay succeeded" but fails all three.
+func TestRefreshReplayInsideGraceReturnsCurrentPair(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, cache, _ := newDeviceFlowFixtureWithDeps(t)
+	original := grantedTokens(t, ctx, tokens, devices, clientID, deviceCode)
+
+	clock := freezeClock(tokens)
+	rotated, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err != nil {
+		t.Fatalf("legitimate rotation: %v", err)
+	}
+
+	cache.mu.Lock()
+	recordsAfterRotation := len(cache.tokens)
+	cache.mu.Unlock()
+
+	clock.advance(30 * time.Second)
+
+	replayed, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err != nil {
+		t.Fatalf("replay 30s after rotation must be forgiven, got %v", err)
+	}
+	if replayed.RefreshToken != rotated.RefreshToken {
+		t.Fatal("a replay inside the grace must return the CURRENT refresh token, not a newly minted one")
+	}
+	if replayed.AccessToken != rotated.AccessToken {
+		t.Fatal("a replay inside the grace must return the CURRENT access token, not a newly minted one")
+	}
+	if replayed.Scope != rotated.Scope {
+		t.Fatalf("scope must survive a grace replay unchanged: rotated %q, replayed %q", rotated.Scope, replayed.Scope)
+	}
+	// The access token was minted 30s ago, so what is left of it is 30s
+	// less than a full TTL. Re-reporting the full TTL would leave the client
+	// believing a dead token is still live.
+	if want := rotated.ExpiresIn - 30; replayed.ExpiresIn != want {
+		t.Fatalf("expected expires_in %d (the remaining lifetime of the already-minted access token), got %d", want, replayed.ExpiresIn)
+	}
+
+	// Nothing new was stored: minting on this path is exactly the family
+	// fork the grace is designed NOT to create.
+	cache.mu.Lock()
+	recordsAfterReplay := len(cache.tokens)
+	cache.mu.Unlock()
+	if recordsAfterReplay != recordsAfterRotation {
+		t.Fatalf("a grace replay must not create a token record: had %d before, %d after", recordsAfterRotation, recordsAfterReplay)
+	}
+
+	// The family is alive: the legitimate client's current token still
+	// rotates. This is the assertion that fails if the grace path were to
+	// revoke as a side effect.
+	next, err := tokens.ExchangeRefreshToken(ctx, clientID, rotated.RefreshToken)
+	if err != nil {
+		t.Fatalf("the family must survive a forgiven replay, but the current token failed with %v", err)
+	}
+	if next.RefreshToken == rotated.RefreshToken {
+		t.Fatal("rotation must issue a NEW refresh token")
+	}
+}
+
+// TestRefreshReplayOutsideGraceRevokesFamily is the other half: past
+// RefreshReuseGracePeriod, a replay is indistinguishable from a stolen token
+// and reuse detection must fire exactly as it did before the grace existed —
+// revoking the whole family, not just the replayed token.
+//
+// Assertion (b) is the one that matters: an implementation that failed only
+// the replayer would still pass (a).
+func TestRefreshReplayOutsideGraceRevokesFamily(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode := newDeviceFlowFixture(t)
+	original := grantedTokens(t, ctx, tokens, devices, clientID, deviceCode)
+
+	clock := freezeClock(tokens)
+	rotated, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err != nil {
+		t.Fatalf("legitimate rotation: %v", err)
+	}
+
+	clock.advance(90 * time.Second)
+
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); !errors.Is(err, ErrRefreshTokenReused) {
+		t.Fatalf("(a) expected ErrRefreshTokenReused 90s after rotation, got %v", err)
+	}
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, rotated.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("(b) expected the whole family to be revoked (ErrInvalidGrant for the current token), got %v", err)
+	}
+}
+
+// TestRefreshGraceIsNotExtendedByReplay pins the narrowness of the window:
+// the grace is anchored to the one rotation that opened it and is measured
+// from that instant, so replaying inside it must not push the deadline out.
+// A "reset the timer on every replay" implementation would let a stolen
+// token be replayed forever, one minute at a time, and never trip reuse
+// detection — which is the whole property rotation exists to provide.
+func TestRefreshGraceIsNotExtendedByReplay(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode := newDeviceFlowFixture(t)
+	original := grantedTokens(t, ctx, tokens, devices, clientID, deviceCode)
+
+	clock := freezeClock(tokens)
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); err != nil {
+		t.Fatalf("legitimate rotation: %v", err)
+	}
+
+	clock.advance(30 * time.Second)
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); err != nil {
+		t.Fatalf("replay at t+30s must be forgiven, got %v", err)
+	}
+
+	// t+60s from the REPLAY, but t+90s from the rotation: outside.
+	clock.advance(60 * time.Second)
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); !errors.Is(err, ErrRefreshTokenReused) {
+		t.Fatalf("the grace must be measured from the rotation, not restarted by a replay: got %v", err)
 	}
 }
 
@@ -638,18 +851,27 @@ func TestRefreshRejectsMissingUser(t *testing.T) {
 }
 
 // TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins is C1's
-// verification: N goroutines present the SAME refresh token at once. Without
-// an atomic claim (RefreshTokenCache.MarkRotated), a read-then-write
-// ExchangeRefreshToken lets multiple goroutines all observe "not yet
-// rotated" before any of them writes, so multiple would succeed — forking
-// the family into live, independently-rotating branches that never again
-// trip the reuse detector. Exactly one must succeed; every other caller must
-// see ErrRefreshTokenReused, and the family must have been revoked exactly
-// once (not once per loser).
+// verification: N goroutines present the SAME refresh token at once.
 //
-// Run with -race; see task-5-report.md for the before/after mutation
-// evidence proving this test actually discriminates the fix from the race
-// it replaces.
+// The failure it guards against is a FORK. Without an atomic claim
+// (RefreshTokenCache.MarkRotated), a read-then-write ExchangeRefreshToken
+// lets several goroutines all observe "not yet rotated" before any of them
+// writes, so several mint — leaving the family with multiple live,
+// independently-rotating branches that never again present an
+// already-rotated token to each other, i.e. reuse detection silently dead
+// for the rest of the family's 30 days.
+//
+// Since the 60-second reuse grace landed, the losers no longer see an error:
+// simultaneous presentations are by definition inside the grace, so each
+// loser is handed the pair the winner already minted. That is the intended
+// outcome — it is the two-windows-at-once case the grace exists for — and it
+// does NOT weaken this test, because the invariant being checked was never
+// "the losers get an error". It is that exactly ONE token pair exists
+// afterwards. Hence the assertions below: every caller that succeeded got
+// the byte-identical refresh token, and exactly one new record was stored. A
+// forking implementation fails both.
+//
+// Run with -race; see task-5-report.md for the mutation evidence.
 func TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins(t *testing.T) {
 	ctx, tokens, devices, clientID, deviceCode, cache, _ := newDeviceFlowFixtureWithDeps(t)
 
@@ -665,12 +887,10 @@ func TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins(t *testing.T) {
 		t.Fatalf("ExchangeDeviceCode: %v", err)
 	}
 
-	// Captured BEFORE the race: once reuse detection fires, DeleteTokenFamily
-	// removes every token in the family from the cache, so there is nothing
-	// left to recover FamilyID from afterward.
 	originalHash := hashToken(original.RefreshToken)
 	cache.mu.Lock()
 	familyID := cache.tokens[originalHash].FamilyID
+	recordsBefore := len(cache.tokens)
 	cache.mu.Unlock()
 	if familyID == "" {
 		t.Fatal("expected the original token's cache record to carry a family id")
@@ -680,8 +900,7 @@ func TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins(t *testing.T) {
 	var (
 		wg          sync.WaitGroup
 		mu          sync.Mutex
-		successes   int
-		losers      int
+		issued      = map[string]int{}
 		otherErrors []error
 	)
 	start := make(chan struct{})
@@ -695,21 +914,7 @@ func TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins(t *testing.T) {
 			defer mu.Unlock()
 			switch {
 			case err == nil && got != nil:
-				successes++
-			case errors.Is(err, ErrRefreshTokenReused):
-				// This goroutine's own MarkRotated call was the one that
-				// observed alreadyRotated=true.
-				losers++
-			case errors.Is(err, ErrInvalidGrant):
-				// Also a legitimate loser outcome: by the time this
-				// goroutine reached MarkRotated, an EARLIER loser's
-				// DeleteTokenFamily had already removed the cache entry
-				// entirely, so this call sees "not found" rather than
-				// "already rotated". Which of the two a given loser sees is
-				// a race between its own MarkRotated and another loser's
-				// cleanup — both mean "you did not win", which is the
-				// invariant this test actually cares about.
-				losers++
+				issued[got.RefreshToken]++
 			default:
 				otherErrors = append(otherErrors, err)
 			}
@@ -719,30 +924,39 @@ func TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins(t *testing.T) {
 	wg.Wait()
 
 	if len(otherErrors) != 0 {
-		t.Fatalf("unexpected errors (want only nil, ErrRefreshTokenReused, or ErrInvalidGrant): %v", otherErrors)
+		t.Fatalf("every concurrent presentation is inside the reuse grace and must succeed, got errors: %v", otherErrors)
 	}
-	if successes != 1 {
-		t.Fatalf("expected exactly 1 winner out of %d concurrent presentations of one refresh token, got %d", n, successes)
+	// THE anti-fork assertion: one token, handed to everyone.
+	if len(issued) != 1 {
+		t.Fatalf("expected all %d concurrent presentations to receive the SAME refresh token (a fork would produce several), got %d distinct tokens", n, len(issued))
 	}
-	if losers != n-1 {
-		t.Fatalf("expected %d losers, got %d", n-1, losers)
+	for token := range issued {
+		if token == original.RefreshToken {
+			t.Fatal("rotation must issue a NEW refresh token, not return the presented one")
+		}
 	}
 
-	// A real DeleteTokenFamily call must actually have fired (revoked, not
-	// merely reported as revoked) — otherwise a loser observing
-	// ErrRefreshTokenReused without any real cleanup would still pass the
-	// assertions above. Checking specifically for the ORIGINAL token's entry
-	// is deliberate and race-free: unlike the winner's newly-minted token
-	// (whose own AddToFamilyTokenSet call can interleave with a loser's
-	// DeleteTokenFamily in either order — a narrower, separate ordering
-	// hazard noted in task-5-report.md and out of scope for this test),
-	// nothing ever re-adds the original hash once MarkRotated tombstones it,
-	// so its presence/absence unambiguously reflects whether revocation ran.
+	// Exactly one record was added — the single successor. A fork would have
+	// stored one per winning goroutine, which is the state that kills reuse
+	// detection for good.
+	cache.mu.Lock()
+	recordsAfter := len(cache.tokens)
+	familySize := len(cache.families[familyID])
+	cache.mu.Unlock()
+	if recordsAfter != recordsBefore+1 {
+		t.Fatalf("expected exactly one new token record after %d concurrent presentations, had %d before and %d after", n, recordsBefore, recordsAfter)
+	}
+	if familySize != 2 {
+		t.Fatalf("expected the family to hold exactly 2 tokens (the rotated original and its single successor), got %d", familySize)
+	}
+	// The family was NOT revoked: a simultaneous double-presentation is the
+	// benign case, and killing the session for it is the behavior the grace
+	// replaced.
 	cache.mu.Lock()
 	_, originalStillPresent := cache.tokens[originalHash]
 	cache.mu.Unlock()
-	if originalStillPresent {
-		t.Fatal("expected DeleteTokenFamily to have actually removed the original token's cache entry")
+	if !originalStillPresent {
+		t.Fatal("a concurrent double-presentation must not revoke the family; the rotated original should still be tombstoned in cache")
 	}
 }
 
