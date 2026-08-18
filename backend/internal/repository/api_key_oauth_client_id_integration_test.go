@@ -3,10 +3,15 @@
 package repository
 
 import (
+	"errors"
 	"testing"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/apikey"
+	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -112,4 +117,115 @@ func (s *APIKeyOAuthClientIDSuite) TestTwoOrdinaryKeysWithNullOAuthClientIDBothI
 		SetName("Ordinary key 2").
 		Save(s.ctx)
 	s.Require().NoError(err, "second ordinary (NULL oauth_client_id) key for the SAME user should also insert")
+}
+
+// ---------------------------------------------------------------------------
+// Fix round 1 — migration 910 and the PostgreSQL-only credential leak channel.
+// ---------------------------------------------------------------------------
+
+// TestSoftDeletedBackingRowReleasesTheSlot proves migration 910 against real
+// PostgreSQL.
+//
+// Under 909's predicate (`WHERE oauth_client_id IS NOT NULL`) this insert was
+// refused: ent's soft-delete interceptor hides a tombstoned row from every read,
+// but the index counted it, so a tombstone held the (user_id, oauth_client_id)
+// slot forever and the agent could never resolve again. 910 adds
+// `AND deleted_at IS NULL`, so the slot is released and the agent self-heals.
+//
+// This runs against the real migrations (TestMain calls ApplyMigrations), so
+// what is under test is the shipped index, not a copy of it.
+func (s *APIKeyOAuthClientIDSuite) TestSoftDeletedBackingRowReleasesTheSlot() {
+	user := mustCreateUser(s.T(), s.client, &service.User{})
+
+	first, err := s.client.APIKey.Create().
+		SetUserID(user.ID).
+		SetKey("sk-oauth-tombstone-1").
+		SetName("agent:tombstoned backing row").
+		SetOauthClientID("agent:tombstoned").
+		Save(s.ctx)
+	s.Require().NoError(err)
+
+	// Tombstone it the way APIKeyService.Delete's repository call does.
+	s.Require().NoError(s.client.APIKey.UpdateOneID(first.ID).SetDeletedAt(time.Now()).Exec(s.ctx))
+
+	replacement, err := s.client.APIKey.Create().
+		SetUserID(user.ID).
+		SetKey("sk-oauth-tombstone-2").
+		SetName("agent:tombstoned backing row (replacement)").
+		SetOauthClientID("agent:tombstoned").
+		Save(s.ctx)
+	s.Require().NoError(err, "a tombstone must not hold the identity slot; migration 910 scopes the index to live rows")
+	s.Require().NotEqual(first.ID, replacement.ID)
+
+	// The tombstone still exists, so the usage history hanging off it via
+	// usage_logs_api_key_id_fkey (ON DELETE CASCADE) is untouched.
+	tombstoned, err := s.client.APIKey.Query().
+		Where(apikey.IDEQ(first.ID)).
+		Only(mixins.SkipSoftDelete(s.ctx))
+	s.Require().NoError(err, "nothing may hard-delete a backing row")
+	s.Require().NotNil(tombstoned.DeletedAt)
+
+	// And two LIVE rows for the same pair are still refused: 910 narrowed the
+	// index, it did not weaken the identity rule.
+	_, err = s.client.APIKey.Create().
+		SetUserID(user.ID).
+		SetKey("sk-oauth-tombstone-3").
+		SetName("agent:tombstoned backing row (third)").
+		SetOauthClientID("agent:tombstoned").
+		Save(s.ctx)
+	s.Require().Error(err)
+	s.Require().True(dbent.IsConstraintError(err))
+}
+
+// TestPostgresUniqueViolationHidesTheKeyInErrorTextButNotInTheErrorValue
+// records what real PostgreSQL + lib/pq actually do, because the Task 3
+// review's premise was half wrong and the difference changes what the guard in
+// service.sanitizeBackingKeyError has to be.
+//
+// A unique violation on api_keys.key gives:
+//
+//	err.Error() = ent: constraint failed: pq: duplicate key value violates
+//	              unique constraint "api_keys_key_key"
+//	pqError.Detail = Key (key)=(sk-...) already exists.
+//
+// So the credential is NOT in the error's TEXT -- lib/pq's Error() renders only
+// Severity and Message, never Detail -- but it IS in the error VALUE, sitting on
+// an exported *pq.Error.Detail field that travels up every wrapped chain. A
+// redaction that only rewrites err.Error() therefore never sees it, while
+// anything that serialises the error structurally (zap.Any("err", err),
+// %#v, a JSON error reporter) prints it in full.
+//
+// This test is a canary in both directions:
+//   - if lib/pq ever starts rendering Detail in Error(), the first assertion
+//     fails and the text-level redaction stops being defence-in-depth;
+//   - if PostgreSQL ever stops populating Detail, the second fails and the
+//     value-level flattening can be reconsidered.
+func (s *APIKeyOAuthClientIDSuite) TestPostgresUniqueViolationHidesTheKeyInErrorTextButNotInTheErrorValue() {
+	user := mustCreateUser(s.T(), s.client, &service.User{})
+	// A literal test string, not a generated secret: nothing real is printed
+	// even when an assertion fails.
+	const secret = "sk-detail-line-carries-this-value"
+
+	_, err := s.client.APIKey.Create().
+		SetUserID(user.ID).
+		SetKey(secret).
+		SetName("first key").
+		Save(s.ctx)
+	s.Require().NoError(err)
+
+	_, err = s.client.APIKey.Create().
+		SetUserID(user.ID).
+		SetKey(secret).
+		SetName("colliding key").
+		Save(s.ctx)
+	s.Require().Error(err)
+	s.Require().True(dbent.IsConstraintError(err))
+
+	s.Require().NotContains(err.Error(), secret,
+		"lib/pq renders only Severity+Message, so the credential is not in the error text")
+
+	var pqErr *pq.Error
+	s.Require().True(errors.As(err, &pqErr), "the driver error must still be in the chain")
+	s.Require().Contains(pqErr.Detail, secret,
+		"PostgreSQL puts the offending key in DETAIL, and lib/pq keeps it on an exported field -- this is the real leak channel, and it is why service.sanitizeBackingKeyError flattens the error value instead of only rewriting its text")
 }

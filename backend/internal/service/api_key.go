@@ -28,14 +28,21 @@ func IsWindowExpired(windowStart *time.Time, duration time.Duration) bool {
 }
 
 type APIKey struct {
-	ID          int64
-	UserID      int64
-	Key         string
-	Name        string
-	GroupID     *int64
-	Status      string
-	IPWhitelist []string
-	IPBlacklist []string
+	ID      int64
+	UserID  int64
+	Key     string
+	Name    string
+	GroupID *int64
+	// OAuthClientID is non-nil only on an internal OAuth backing row -- the
+	// api_keys row an OAuth access token resolves to (see
+	// OAuthBackingKeyService). It is NULL for every ordinary user-created key.
+	// Callers use it to refuse operations that must never touch a backing row:
+	// usage_logs_api_key_id_fkey is ON DELETE CASCADE and the row IS the quota
+	// ledger, so deleting one erases an agent's whole usage history.
+	OAuthClientID *string
+	Status        string
+	IPWhitelist   []string
+	IPBlacklist   []string
 	// 预编译的 IP 规则，用于认证热路径避免重复 ParseIP/ParseCIDR。
 	CompiledIPWhitelist *ip.CompiledIPRules `json:"-"`
 	CompiledIPBlacklist *ip.CompiledIPRules `json:"-"`

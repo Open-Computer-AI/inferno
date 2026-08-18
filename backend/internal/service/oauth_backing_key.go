@@ -11,6 +11,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
 // ErrNoGroupForOAuthKey reports that no group could be resolved for an OAuth
@@ -22,6 +23,21 @@ import (
 // panics. Failing here is the cheap failure; returning the row is the expensive
 // one.
 var ErrNoGroupForOAuthKey = errors.New("oauth backing key: no group configured")
+
+// ErrOAuthBackingKeyUndeletable rejects any attempt to delete an OAuth backing
+// row through a user-facing path.
+//
+// The row is owned by the user, so ownership alone is not a sufficient
+// authorization check: it IS that agent's quota and rate-limit ledger, and
+// usage_logs_api_key_id_fkey (ON DELETE CASCADE) hangs the agent's entire usage
+// history off it. Even a soft delete is destructive, because migration 909's
+// identity index and ent's soft-delete interceptor disagree about tombstones
+// (migration 910 fixes the recoverability half of that; this error is the half
+// that stops the state being reached at all).
+var ErrOAuthBackingKeyUndeletable = infraerrors.Forbidden(
+	"OAUTH_BACKING_KEY_UNDELETABLE",
+	"this API key backs an OAuth agent and cannot be deleted; revoke the agent's authorization instead",
+)
 
 // backingKeyNameMaxLen mirrors api_keys.name's MaxLen(100) (ent/schema/api_key.go).
 const backingKeyNameMaxLen = 100
@@ -89,9 +105,21 @@ func (s *OAuthBackingKeyService) Resolve(ctx context.Context, userID int64, clie
 	if err != nil {
 		return nil, err
 	}
-	// Happy path: the row exists and is complete. No group query needed, which
-	// keeps steady-state inference at one round trip.
-	if existing != nil && existing.Edges.Group != nil {
+	// Happy path: the row exists and its group is usable. No group query is
+	// issued, which matters for two reasons. It keeps steady-state inference at
+	// one round trip -- and, without it, EVERY steady-state request would fall
+	// through to a create whose INSERT the identity index refuses, producing a
+	// dead tuple per request on the hottest path in the system. It also means
+	// an already-provisioned agent keeps serving if an operator later mistypes
+	// or removes the group policy: a config typo must not 403 every agent that
+	// already has a backing row. (TestResolveKeepsServingAnAlreadyProvisionedAgentAfterThePolicyBreaks
+	// pins that; it is a deliberate choice for continuity, not an accident.)
+	//
+	// An inactive group is treated like a missing one and rebound below: the
+	// status is already loaded on the edge, so checking it is free, and the
+	// alternative -- agents quietly billing through a group the operator has
+	// switched off -- is the surprising behaviour.
+	if existing != nil && existing.Edges.Group != nil && existing.Edges.Group.Status == domain.StatusActive {
 		return existing, nil
 	}
 
@@ -101,8 +129,10 @@ func (s *OAuthBackingKeyService) Resolve(ctx context.Context, userID int64, clie
 	}
 
 	if existing != nil {
-		// The row lost its group (its group was deleted, or an older row
-		// predates the policy). Rebind rather than hand back a nil Group.
+		// The row has no usable group: its group was soft-deleted (the
+		// interceptor filters it, so the edge comes back nil), or deactivated,
+		// or the row predates the policy. Rebind rather than hand back a row
+		// routing cannot use.
 		if err := s.entClient.APIKey.UpdateOneID(existing.ID).SetGroupID(grp.ID).Exec(ctx); err != nil {
 			return nil, fmt.Errorf("oauth backing key: bind group to row %d: %w", existing.ID, err)
 		}
@@ -146,7 +176,7 @@ func (s *OAuthBackingKeyService) createOrAdoptWinner(ctx context.Context, userID
 	if !dbent.IsConstraintError(err) {
 		// scrub before the error travels: a unique violation on api_keys.key
 		// would otherwise carry the freshly generated credential in its DETAIL.
-		return nil, fmt.Errorf("oauth backing key: create: %w", scrubBackingKeySecret(err, secret))
+		return nil, fmt.Errorf("oauth backing key: create: %w", sanitizeBackingKeyError(err, secret))
 	}
 
 	winner, lookupErr := s.lookup(ctx, userID, clientID)
@@ -154,15 +184,17 @@ func (s *OAuthBackingKeyService) createOrAdoptWinner(ctx context.Context, userID
 		return nil, lookupErr
 	}
 	if winner == nil {
-		// The index rejected the insert but no *live* row matches. The index
-		// does not filter deleted_at, so a soft-deleted backing row still
-		// occupies the (user_id, oauth_client_id) slot. That is an operator
-		// situation, not a race; report it rather than looping.
+		// A constraint fired but no live row matches the pair. Since migration
+		// 910 scoped the identity index to "deleted_at IS NULL", a tombstone no
+		// longer holds the slot, so the remaining reachable cause is a
+		// collision on api_keys.key itself -- which is exactly the case whose
+		// Postgres DETAIL line carries the freshly generated credential, hence
+		// the scrub. Report rather than loop.
 		return nil, fmt.Errorf(
-			"oauth backing key: insert for user %d client %q was rejected by the (user_id, oauth_client_id) unique index but no live row matches; a soft-deleted backing row still occupies that slot: %w",
-			userID, clientID, scrubBackingKeySecret(err, secret))
+			"oauth backing key: insert for user %d client %q was rejected by a unique constraint but no live backing row matches the pair: %w",
+			userID, clientID, sanitizeBackingKeyError(err, secret))
 	}
-	if winner.Edges.Group == nil {
+	if winner.Edges.Group == nil || winner.Edges.Group.Status != domain.StatusActive {
 		if bindErr := s.entClient.APIKey.UpdateOneID(winner.ID).SetGroupID(groupID).Exec(ctx); bindErr != nil {
 			return nil, fmt.Errorf("oauth backing key: bind group to row %d: %w", winner.ID, bindErr)
 		}
@@ -191,7 +223,7 @@ func (s *OAuthBackingKeyService) lookup(ctx context.Context, userID int64, clien
 	if row.Edges.User == nil {
 		return nil, fmt.Errorf("oauth backing key: backing row %d has no live owner (user %d)", row.ID, userID)
 	}
-	return row, nil
+	return redactBackingKeySecret(row), nil
 }
 
 // reload re-reads a row with User and Group eager-loaded. Create/Update return
@@ -211,7 +243,7 @@ func (s *OAuthBackingKeyService) reload(ctx context.Context, id int64) (*dbent.A
 	if row.Edges.Group == nil {
 		return nil, fmt.Errorf("oauth backing key: backing row %d has no group after binding", id)
 	}
-	return row, nil
+	return redactBackingKeySecret(row), nil
 }
 
 // policyGroup resolves the configured group by name, the same way the
@@ -258,20 +290,70 @@ func backingKeyName(clientID string) string {
 	return name
 }
 
-// scrubBackingKeySecret removes a freshly generated credential from an error
-// before it travels anywhere a log or an API response can see it.
+// redactBackingKeySecret blanks api_keys.key on a row about to leave this
+// service.
 //
-// Postgres puts the offending value in a unique violation's DETAIL line, so an
-// INSERT that collided on api_keys.key would otherwise carry the secret upward
-// verbatim. Call it only after any errors.Is/IsConstraintError checks: it
-// returns a flat error and does not preserve wrapping.
-func scrubBackingKeySecret(err error, secret string) error {
-	if err == nil || secret == "" {
-		return err
+// The design rule is that a backing key's secret is never handed out, by any
+// endpoint, ever -- and a struct field is a hand-out. *dbent.APIKey.String()
+// writes "key=<secret>" verbatim (ent/apikey.go) and the field is
+// `json:"key,omitempty"`, so one careless %v, one c.JSON of the row, or one gin
+// error dump that serializes the context is a credential leak. Task 4 puts this
+// exact struct into the gin context, so the blast radius is a single format
+// verb. Emptying the field means String() and JSON marshalling have nothing to
+// leak.
+//
+// This is done here rather than with ent's .Sensitive() on the schema field,
+// because ordinary key creation must still return its secret to its owner
+// exactly once; marking the field sensitive globally would break that. The
+// redaction belongs at this boundary, which is the only one that must never
+// emit a secret.
+//
+// Nothing in the gateway pipeline reads api_keys.key functionally -- the only
+// consumers are handler/ops display paths calling keyPrefix(apiKey.Key, 8),
+// which now render empty for OAuth-backed requests. That is the intended
+// trade: an ops log should not carry the leading bytes of a credential the
+// server promised never to surface.
+// It is applied in exactly two places -- lookup and reload, the only two
+// functions in this file that produce a row -- so no return path can forget it,
+// and there is no second redundant guard to make a test pass for the wrong
+// reason.
+func redactBackingKeySecret(row *dbent.APIKey) *dbent.APIKey {
+	if row == nil {
+		return nil
+	}
+	row.Key = ""
+	return row
+}
+
+// sanitizeBackingKeyError makes an error from the create path safe to return,
+// log or serialise, by two separate measures.
+//
+// **It flattens the error value.** This is the one that matters, and it is not
+// what the original version did. A PostgreSQL unique violation on api_keys.key
+// arrives as a *pq.Error whose exported Detail field reads
+// `Key (key)=(sk-...) already exists.` -- verified against real PostgreSQL 18 in
+// repository.APIKeyOAuthClientIDSuite.TestPostgresUniqueViolationHidesTheKeyInErrorTextButNotInTheErrorValue.
+// lib/pq's Error() renders only Severity and Message, so the credential is
+// absent from err.Error() and %+v, but present on the value that every wrapped
+// chain carries upward. Anything that serialises an error structurally --
+// zap.Any("err", err), %#v, a JSON error reporter -- prints it in full. Rewriting
+// the message can never reach that; dropping the chain can, so this returns a
+// flat errors.New and the driver error does not escape.
+//
+// **It redacts the message text.** Defence in depth for a driver that does
+// render DETAIL (pgx formats differently, and lib/pq's rendering is not a
+// contract), and for any wrapper that has already folded the value into a
+// string.
+//
+// Call it only after any errors.Is / dbent.IsConstraintError checks: by design
+// nothing survives for errors.As to find.
+func sanitizeBackingKeyError(err error, secret string) error {
+	if err == nil {
+		return nil
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, secret) {
-		return err
+	if secret != "" {
+		msg = strings.ReplaceAll(msg, secret, "[redacted]")
 	}
-	return errors.New(strings.ReplaceAll(msg, secret, "[redacted]"))
+	return errors.New(msg)
 }

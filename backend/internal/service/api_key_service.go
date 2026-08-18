@@ -924,15 +924,34 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 }
 
 // Delete 删除API Key
+//
+// GetByID rather than the lighter GetKeyAndOwnerID: the decision needs
+// oauth_client_id as well as the owner, because an OAuth backing row is not the
+// user's to delete (see ErrOAuthBackingKeyUndeletable). Delete is a rare,
+// user-initiated operation, so the extra columns cost nothing that matters.
 func (s *APIKeyService) Delete(ctx context.Context, id int64, userID int64) error {
-	key, ownerID, err := s.apiKeyRepo.GetKeyAndOwnerID(ctx, id)
+	apiKey, err := s.apiKeyRepo.GetByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("get api key: %w", err)
 	}
+	if apiKey == nil {
+		return ErrAPIKeyNotFound
+	}
+	key, ownerID := apiKey.Key, apiKey.UserID
 
 	// 验证当前用户是否为该 API Key 的所有者
 	if ownerID != userID {
 		return ErrInsufficientPerms
+	}
+
+	// An OAuth backing row is owned by the user but is not theirs to delete.
+	// Ownership alone used to authorize this, which meant a user who learned
+	// their backing row's id could tombstone it -- and a tombstone is not
+	// harmless here: the row IS that agent's quota and rate-limit ledger, and
+	// usage_logs_api_key_id_fkey (ON DELETE CASCADE) hangs the agent's whole
+	// usage history off it. Refuse before authorization even reaches the repo.
+	if apiKey.OAuthClientID != nil {
+		return ErrOAuthBackingKeyUndeletable
 	}
 
 	// 事务内:写审计 + 软删除(tombstone)。

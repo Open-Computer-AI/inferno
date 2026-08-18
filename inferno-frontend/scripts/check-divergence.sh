@@ -319,6 +319,23 @@ backend/internal/config/config.go
 backend/internal/service/api_key_service.go
 backend/internal/service/oauth_backing_key.go
 backend/internal/service/oauth_backing_key_test.go
+# D5 -- OAuth AS (oauth-bearer-inference plan, Task 3 fix round 1: review
+# findings F1-F9). Migration 910 recreates 909 identity index with an added
+# AND deleted_at IS NULL predicate -- ent soft-delete interceptor hides a
+# tombstoned row from every read while 909 index still counted it, so a
+# tombstone held the (user_id, oauth_client_id) slot forever and bricked the
+# agent; the state was USER-reachable, because APIKeyService.Delete authorized
+# on ownership alone. api_key_service.go now refuses to delete a backing row
+# (the other half), which needed oauth_client_id on the domain struct:
+# api_key.go adds the field and api_key_repo.go maps it (both already declared
+# under D1). config.yaml documents oauth_backing_key.group_name so the feature
+# does not ship dark. api_key_service_delete_test.go covers the new refusal. The
+# repository integration suite gains migration 910 behaviour against real
+# Postgres plus a canary recording that lib/pq hides the credential in Error()
+# but carries it on pq.Error.Detail (that file is already declared above).
+backend/migrations/910_api_key_oauth_client_uniq_live_only.sql
+backend/internal/service/api_key_service_delete_test.go
+backend/config.yaml
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }
