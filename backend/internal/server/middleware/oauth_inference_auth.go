@@ -137,27 +137,65 @@ const statusClientClosedRequest = 499
 //     token holding both scopes, and admitting a known-exhausted credential to
 //     the inference chain to preserve that narrow case is the worse trade.
 //  2. Status codes differ. The API-key path answers quota exhaustion 429 and
-//     expiry 403 API_KEY_EXPIRED; this branch answers both 403. 429 would also
-//     stay out of the client's refresh loop, but 403 keeps every
-//     "a refresh cannot fix this" condition on one code.
-//  3. There is no auth-time balance gate. The API-key path rejects
-//     balance <= 0 at auth; this branch leaves balance entirely to
-//     CheckBillingEligibility, whose MinimumBalanceReserve floor is stricter --
-//     the safe direction.
+//     expiry 403 API_KEY_EXPIRED; this branch answers both 403. It also answers
+//     403 account_inactive where the API-key path answers 401 USER_INACTIVE /
+//     401 USER_NOT_FOUND, for a deactivated and for a DELETED owner alike.
+//     429 would also stay out of the client's refresh loop, but 403 keeps every
+//     "a refresh cannot fix this" condition on one code -- and 401 is reserved,
+//     absolutely, for the one thing a token refresh can fix, because the real
+//     client force-refreshes on 401 and only on 401.
+//  3. Balance diverges in BOTH directions, and the earlier version of this note
+//     claimed only one of them. The API-key path rejects balance <= 0 at auth.
+//     This branch leaves balance entirely to CheckBillingEligibility, which is
+//     STRICTER on every billable endpoint (its MinimumBalanceReserve floor is
+//     above zero) and LOOSER on the ~two dozen routes whose handler never calls
+//     CheckBillingEligibility at all and which are not in the API-key path's
+//     skipBilling set -- GET /v1/models and /models, the batch-image job
+//     surface, the video status/content reads, the custom-voice GETs,
+//     /v1/live/:call_id, GET /v1/responses, GET /v1/realtime. On those, a
+//     zero-balance user is refused with an API key and passes with an OAuth
+//     token.
+//     ADJUDICATED, twice, and deliberately not "fixed" in either direction: an
+//     auth-time balance gate would stop an agent at zero balance from even
+//     DISCOVERING it is at zero balance (model listing is on the client's
+//     startup path), and removing the gate from the API-key path would break
+//     "API-key auth keeps working everywhere it works today". No billable work
+//     is reachable at zero balance via OAuth -- POST /v1/images/batches is the
+//     one that looked like a bypass and is not, because
+//     reserveBatchImageBalanceHold enforces balance at the database with
+//     `... AND balance >= $1`. The full class, the trace that clears
+//     images/batches, and the reasoning are in
+//     backend/scripts/oauth-conformance.md section 10, and the class is pinned
+//     by routes/gateway_billing_divergence_test.go.
 //  4. MarkOpsClientBusinessLimited is not called. Its rejections therefore do
 //     not appear in the client-business-limited ops metric that the API-key
 //     path's group/IP rejections feed; the OAuth-specific ingress-reject
 //     reasons carry that signal instead.
+//  5. On skipBilling routes, this branch is STRICTER about a failed
+//     subscription load. The API-key path tolerates a subscription lookup that
+//     fails on /v1/usage, /v1/sub2api/billing and async image-task reads (its
+//     `if !skipBilling` guard lets the request through so the handler can still
+//     return data). This branch skips the load only for /v1/sub2api/billing,
+//     so on GET /v1/usage and GET /v1/images/tasks/:task_id with a
+//     subscription-type policy group and no active subscription, an OAuth token
+//     is refused 403 subscription_not_found where an API key is served.
+//     Recorded rather than changed: the divergence list is only worth anything
+//     if it is complete, and this direction is fail-closed on two read-only
+//     endpoints, which is the cheap end of the trade.
 //
 // # Nil dependencies fail closed, on purpose
 //
 // There is no "OAuth is not wired, so let JWTs through to the API-key path"
-// branch. A nil keySvc makes VerifyOAuthBearer answer ErrOAuthInvalidToken; a
-// nil clientSvc or an empty issuer makes it answer ErrOAuthServerFault; a nil
-// backingSvc makes Resolve answer ErrInvalidBackingKeyRequest. Each of those
-// maps to a visible failure below rather than to a silent fallthrough, which is
-// the safe direction for an auth check and keeps F-B true even under
-// misconfiguration.
+// branch. A nil keySvc, a nil clientSvc or an empty issuer all make
+// VerifyOAuthBearer answer ErrOAuthServerFault -> 500; a nil backingSvc makes
+// Resolve answer ErrInvalidBackingKeyRequest, also 500. Each of those maps to a
+// visible failure below rather than to a silent fallthrough, which is the safe
+// direction for an auth check and keeps F-B true even under misconfiguration.
+//
+// 500 and not 401, for all of them. An unwired server is not a dead credential,
+// and answering 401 would drive every agent into the force-refresh loop that
+// ends in the IP-wide 429 -- the outcome F-B exists to prevent. (keySvc == nil
+// answered 401 until the final review; see verifyOAuthBearer.)
 func OAuthOrAPIKeyAuth(
 	apiKeyAuth APIKeyAuthMiddleware,
 	apiKeyService *service.APIKeyService,
@@ -229,7 +267,7 @@ func authenticateOAuthInference(c *gin.Context, deps oauthInferenceDeps, raw str
 		// discarded. Without this the most common way a request dies mid-flight
 		// -- the client hanging up during token verification -- would be
 		// reported as a 500.
-		if abortIfOAuthInferenceRequestEnded(c, err) {
+		if abortIfOAuthRequestEnded(c, err) {
 			return
 		}
 		if errors.Is(err, ErrOAuthInvalidToken) {
@@ -258,7 +296,7 @@ func authenticateOAuthInference(c *gin.Context, deps oauthInferenceDeps, raw str
 	row, err := deps.backingSvc.Resolve(c.Request.Context(), bearer.UserID, bearer.ClientID)
 	if err != nil {
 		switch {
-		case abortIfOAuthInferenceRequestEnded(c, err):
+		case abortIfOAuthRequestEnded(c, err):
 			// The client hung up (or its deadline expired) mid-resolve. That is
 			// not a failed request and must not be reported as a 500 --
 			// OAuthBackingKeyService.sanitizeBackingKeyError preserves both
@@ -340,6 +378,9 @@ func authenticateOAuthInference(c *gin.Context, deps oauthInferenceDeps, raw str
 		// A deactivated owner must not keep serving inference for the
 		// remaining lifetime of an already-minted token.
 		abortOAuthInference(c, http.StatusForbidden, "account_inactive", IngressRejectUserInactive)
+		return
+	}
+	if abortIfOAuthInferenceGroupNotAllowed(c, apiKey) {
 		return
 	}
 	if abortIfOAuthInferenceIPDenied(c, apiKey, deps.cfg) {
@@ -452,15 +493,102 @@ func resolveOAuthInferenceSubscription(
 		// subscription data, and an uninjected service is not a client fault.
 		return nil, true
 	}
+	if deps.cfg != nil && deps.cfg.RunMode == config.RunModeSimple {
+		// D-2. The API-key path has a SimpleMode early return that fires BEFORE
+		// its subscription load, so in SimpleMode a subscription-type group
+		// never queries the subscription service and can never answer
+		// SUBSCRIPTION_NOT_FOUND. Without this line, a deployment running
+		// RUN_MODE=simple with a subscription-type group named in
+		// oauth_backing_key.group_name would 403 every OAuth agent while every
+		// API key succeeded -- same user, same route, opposite outcome.
+		//
+		// Skipping the load is the whole of the fix, and it is safe: in
+		// SimpleMode BillingCacheService.CheckBillingEligibility returns nil
+		// immediately, so a subscription this middleware did not publish is a
+		// subscription nothing downstream would have read.
+		return nil, true
+	}
 	subscription, err := deps.subscriptionService.GetActiveSubscription(c.Request.Context(), apiKey.User.ID, apiKey.Group.ID)
 	if err != nil {
-		if abortIfOAuthInferenceRequestEnded(c, err) {
+		if abortIfOAuthRequestEnded(c, err) {
+			return nil, false
+		}
+		if !errors.Is(err, service.ErrSubscriptionNotFound) {
+			// F-2. SubscriptionService.GetActiveSubscription passes its
+			// repository's already-translated error straight through -- its own
+			// comment says so -- so a genuine miss and a Postgres failure
+			// arrive here indistinguishable unless they are split. Answering
+			// 403 subscription_not_found to a database blip would tell every
+			// agent in a subscription-group fleet "you have no subscription",
+			// which is the exact inversion (an infrastructure fault becoming an
+			// authorization answer) that VerifyOAuthBearer's key-store and
+			// client-registry fault splits exist to prevent, and that this
+			// branch was written under a global rule against.
+			//
+			// The API-key path has the identical flaw. That is parity, not a
+			// licence: this is the half written under the rule.
+			slog.Error("oauth inference: subscription lookup failed; this is an infrastructure fault, not a missing subscription",
+				"error", err, "user_id", apiKey.User.ID, "group_id", apiKey.Group.ID)
+			abortOAuthInference(c, http.StatusInternalServerError, "server_error", "")
 			return nil, false
 		}
 		abortOAuthInference(c, http.StatusForbidden, "subscription_not_found", IngressRejectOAuthSubscriptionNotFound)
 		return nil, false
 	}
 	return subscription, true
+}
+
+// abortIfOAuthInferenceGroupNotAllowed replicates the API-key path's
+// exclusive-group entitlement check (abortIfAPIKeyGroupNotAllowed ->
+// validateAPIKeyGroupAllowed -> User.CanBindGroup), which is the ONLY runtime
+// enforcement of users.allowed_groups anywhere on the request path -- the other
+// two CanBindGroup call sites are key-creation-time.
+//
+// Why the OAuth branch needs it (final review F-1). policyGroup resolves
+// oauth_backing_key.group_name on name and active status only; nothing stops an
+// operator naming an EXCLUSIVE group. Without this check, every OAuth user of
+// every registered client would bill against that group regardless of
+// users.allowed_groups, while an ordinary API key bound to the same group got
+// 403 GROUP_NOT_ALLOWED for the same user -- and since apiKey.Group is the sole
+// input to platform routing, channel-pool selection, model mapping and pricing,
+// that is a premium upstream pool reachable by a credential path that never
+// checks entitlement.
+//
+// The counter-argument was considered and rejected: one can argue the operator,
+// not the user, binds this group, so a per-user entitlement check is
+// inapplicable by design. But `users.allowed_groups` is the platform's answer to
+// "may this user use this pool", and an OAuth agent acts for a user. Enforcing
+// it makes the two credential paths agree; declining to would have to be
+// written into the divergence list, and silence was the only option that was
+// certainly wrong.
+//
+// It CANNOT be added without withBackingKeyAllowedGroups in
+// oauth_backing_key.go: AllowedGroups arrives empty otherwise and this denies
+// everyone. TestOAuthExclusiveGroupEntitlementIsEnforced asserts both
+// directions for that reason.
+//
+// The mirrored predicate's two exemptions are kept verbatim: a subscription-type
+// group is entitlement-free (the subscription IS the entitlement), and a row
+// with no GroupID is out of scope. Resolve guarantees a non-nil Group, so the
+// nil arms are unreachable here and are kept only so the two functions stay
+// diff-able.
+//
+// abortIfAPIKeyGroupUnavailable (GROUP_DELETED / GROUP_DISABLED) is deliberately
+// NOT mirrored: Resolve already rebinds a row whose group is missing or
+// inactive, which is the genuine equivalent, and R-3.4 pinned it with mutation
+// evidence.
+func abortIfOAuthInferenceGroupNotAllowed(c *gin.Context, apiKey *service.APIKey) bool {
+	if apiKey == nil || apiKey.GroupID == nil || apiKey.User == nil || apiKey.Group == nil {
+		return false
+	}
+	if apiKey.Group.IsSubscriptionType() {
+		return false
+	}
+	if apiKey.User.CanBindGroup(apiKey.Group.ID, apiKey.Group.IsExclusive) {
+		return false
+	}
+	abortOAuthInference(c, http.StatusForbidden, "group_not_allowed", IngressRejectGroupNotAllowed)
+	return true
 }
 
 // abortIfOAuthInferenceIPDenied enforces the backing row's IP allow/deny lists,
@@ -505,8 +633,16 @@ func abortIfOAuthInferenceIPDenied(c *gin.Context, apiKey *service.APIKey, cfg *
 	return true
 }
 
-// abortIfOAuthInferenceRequestEnded answers a request whose caller is already
+// abortIfOAuthRequestEnded answers a request whose caller is already
 // gone, and reports whether it did.
+//
+// It serves EVERY consumer of VerifyOAuthBearer, not just this middleware --
+// RequireOAuthScope (oauth_scope.go) calls it too. It was named
+// ...Inference... when it had one caller, and R-4.1 was then recorded as closed
+// while it was closed on only one of the two branches that needed it: a client
+// that hung up during token verification on GET /api/oauth/account still got
+// 500. The name is neutral now so the next surface to adopt VerifyOAuthBearer
+// copies the right thing rather than whichever caller it happens to read first.
 //
 // It consults the REQUEST context first and the error second. VerifyOAuthBearer
 // normalises everything that is not a bad credential to the bare
@@ -521,7 +657,7 @@ func abortIfOAuthInferenceIPDenied(c *gin.Context, apiKey *service.APIKey, cfg *
 // as a malformed success and which the ops error logger never sees. 499 for a
 // cancelled caller (nginx's "client closed request"; discarded outright if the
 // socket really is gone) and 504 for an expired deadline.
-func abortIfOAuthInferenceRequestEnded(c *gin.Context, err error) bool {
+func abortIfOAuthRequestEnded(c *gin.Context, err error) bool {
 	cause := c.Request.Context().Err()
 	if cause == nil {
 		switch {

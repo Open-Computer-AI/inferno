@@ -19,11 +19,29 @@ import (
 // jwtShapedCredential is three non-empty base64url segments -- the shape that
 // routes a request to the OAuth branch. It is deliberately NOT a real token:
 // this file asserts WHERE the branch is mounted, not what it does with a valid
-// credential (middleware/oauth_inference_auth_test.go covers that). With no
-// OAuth key service wired, the branch answers 401 {"error":"invalid_token"},
-// which is exactly the observable that distinguishes "the OAuth branch ran"
-// from "the API-key middleware ran".
+// credential (middleware/oauth_inference_auth_test.go covers that).
+//
+// This fixture wires no OAuth services at all, so the branch answers
+// 500 {"error":"server_error"}: an unwired verifier is a server
+// misconfiguration, not a bad credential (final review F-3 -- it answered 401
+// invalid_token until then, which would have driven every hermes agent into the
+// force-refresh loop that ends in an IP-wide 429). That body is what
+// distinguishes "the OAuth branch ran" from "the API-key middleware ran": the
+// API-key path never emits it, and it is not the shape of any API-key error.
+//
+// The load-bearing assertion in every test below is nevertheless
+// require.Zero(delegateCalls) -- an independent observation of WHICH middleware
+// ran, which does not depend on this status code at all. That is deliberate:
+// these tests were anchored on 401 and had to be rewritten when the
+// classification was corrected, and the counter is the half that did not.
 const jwtShapedCredential = "eyJhbGciOiJSUzI1NiIsImtpZCI6ImsxIn0.eyJzdWIiOiIxIn0.c2lnbmF0dXJl"
+
+// oauthBranchAnswer is the response an unwired OAuth branch gives. Spelled once
+// so a future change to the classification is a one-line edit here rather than
+// four scattered literals.
+const oauthBranchAnswer = `{"error":"server_error"}`
+
+const oauthBranchStatus = http.StatusInternalServerError
 
 type mountRoute struct {
 	method string
@@ -118,6 +136,7 @@ var oauthMountedRoutes = []mountRoute{
 	{http.MethodPost, "/v1/messages"},
 	{http.MethodPost, "/v1/chat/completions"},
 	{http.MethodPost, "/v1/embeddings"},
+	{http.MethodPost, "/v1/messages/count_tokens"},
 	{http.MethodGet, "/v1/models"},
 	{http.MethodGet, "/v1/usage"},
 	{http.MethodGet, "/v1/sub2api/billing"},
@@ -139,6 +158,12 @@ var oauthMountedRoutes = []mountRoute{
 // This is not an assertion that the boundary is in the right place -- it is an
 // assertion that it is where it is documented to be, so widening it later is a
 // deliberate edit to this list rather than an accident.
+// Note the count_tokens asymmetry, which is real and was mis-described in
+// gateway.go until this fix wave: the ROOT alias POST /messages/count_tokens is
+// on the bare apiKeyAuth, while POST /v1/messages/count_tokens is on the OAuth
+// chain -- because the /v1 mount is a group-level Use that covers every route in
+// the group, count_tokens included. Both spellings now appear in the list they
+// actually belong to.
 var oauthUnmountedRoutes = []mountRoute{
 	{http.MethodPost, "/messages/count_tokens"},
 	{http.MethodPost, "/backend-api/codex/responses"},
@@ -157,8 +182,8 @@ func TestOAuthCredentialBranchIsMountedOnTheInferenceRoutes(t *testing.T) {
 
 			w := requestWithBearer(t, router, route, jwtShapedCredential)
 
-			require.Equal(t, http.StatusUnauthorized, w.Code, "body: %s", w.Body.String())
-			require.JSONEq(t, `{"error":"invalid_token"}`, w.Body.String(),
+			require.Equal(t, oauthBranchStatus, w.Code, "body: %s", w.Body.String())
+			require.JSONEq(t, oauthBranchAnswer, w.Body.String(),
 				"a JWT-shaped credential must be answered by the OAuth branch, not the API-key path")
 			require.Zero(t, delegateCalls.Load(),
 				"the OAuth branch must not fall through to the API-key middleware")
@@ -181,7 +206,7 @@ func TestOrdinaryAPIKeyStillReachesTheAPIKeyPathOnTheInferenceRoutes(t *testing.
 			// What the stub handlers do afterwards is not this test's business
 			// -- several of them answer their own 401/500 with no services
 			// wired. The property is that the OAuth branch did not answer.
-			require.NotEqual(t, `{"error":"invalid_token"}`, strings.TrimSpace(w.Body.String()),
+			require.NotEqual(t, oauthBranchAnswer, strings.TrimSpace(w.Body.String()),
 				"the OAuth branch must not have answered an API-key credential")
 		})
 	}
@@ -226,8 +251,8 @@ func TestEveryClientReachablePathIsMounted(t *testing.T) {
 
 				w := requestWithBearer(t, router, full, jwtShapedCredential)
 
-				require.Equal(t, http.StatusUnauthorized, w.Code, "body: %s", w.Body.String())
-				require.JSONEq(t, `{"error":"invalid_token"}`, w.Body.String(),
+				require.Equal(t, oauthBranchStatus, w.Code, "body: %s", w.Body.String())
+				require.JSONEq(t, oauthBranchAnswer, w.Body.String(),
 					"a client path must not depend on NOUS_INFERENCE_BASE_URL carrying a /v1 suffix")
 				require.Zero(t, delegateCalls.Load())
 			})

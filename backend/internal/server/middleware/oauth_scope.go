@@ -81,6 +81,11 @@ var ErrOAuthServerFault = errors.New("oauth: cannot verify token")
 // active key. This is also what makes key rotation possible later: adding a
 // second key only ever requires a change inside ByKid, never here.
 //
+// A MISSING DEPENDENCY IS A SERVER FAULT, NEVER A BAD CREDENTIAL. A nil
+// keySvc, an empty issuer and a nil clientSvc are all ErrOAuthServerFault ->
+// 500. Only an empty credential is ErrOAuthInvalidToken -> 401. See the
+// grouped guard in verifyOAuthBearer for why keySvc moved to the fault side.
+//
 // A failure to resolve the key is NOT automatically "the token is invalid".
 // A missing kid header, or a kid that ByKid reports as unknown
 // (service.ErrUnknownKid), really is a bad token: 401 invalid_token. But any
@@ -175,13 +180,33 @@ func classifyOAuthVerificationError(err error) error {
 // separate so classifyOAuthVerificationError has a single choke point to
 // normalize through (see VerifyOAuthBearer's doc comment).
 func verifyOAuthBearer(ctx context.Context, keySvc *service.OAuthKeyService, clientSvc *service.OAuthClientService, issuer string, rawToken string) (*OAuthBearer, error) {
-	if rawToken == "" || keySvc == nil {
+	if rawToken == "" {
+		// The only genuinely credential-shaped failure of the three: the caller
+		// presented nothing.
 		return nil, ErrOAuthInvalidToken
 	}
-	if issuer == "" || clientSvc == nil {
+	if keySvc == nil || issuer == "" || clientSvc == nil {
 		// Misconfigured server, not a bad token. Fail closed and say so
 		// where an operator will see it.
-		slog.Error("oauth: bearer verifier is missing its issuer or client registry; refusing every token")
+		//
+		// keySvc used to be grouped with the empty-token check and answered
+		// 401 invalid_token, which R-1.1 had already ruled on in the abstract
+		// and which contradicts every other line in this file: a missing
+		// signing-key service is a server misconfiguration exactly as much as a
+		// missing client registry is, and telling the caller "your credential
+		// is bad" about a server that never looked at it is the one direction
+		// this codebase treats as unsafe. Concretely, a deployment shipped with
+		// the OAuth handler unwired would 401 every JWT-shaped credential on
+		// /v1, put every hermes agent into force-refresh, and end in the
+		// IP-wide 429 that finding F-B commits absolutely to not creating a
+		// second path into. Reachable today only from test literals --
+		// wire_gen.go always constructs a real keySvc -- which is why it is
+		// being corrected now, while it is cheap, rather than after a caller
+		// depends on the wrong answer.
+		slog.Error("oauth: bearer verifier is missing its key service, issuer or client registry; refusing every token",
+			"key_service_missing", keySvc == nil,
+			"issuer_missing", issuer == "",
+			"client_registry_missing", clientSvc == nil)
 		return nil, ErrOAuthServerFault
 	}
 
@@ -334,6 +359,17 @@ func RequireOAuthScope(keySvc *service.OAuthKeyService, clientSvc *service.OAuth
 
 		bearer, err := VerifyOAuthBearer(c.Request.Context(), keySvc, clientSvc, issuer, raw)
 		if err != nil {
+			// R-4.1, closed here as well as on the inference branch (final
+			// review F-4). VerifyOAuthBearer's classifier collapses every
+			// non-credential failure to the bare ErrOAuthServerFault sentinel,
+			// discarding the cause -- so a signing-key lookup that died because
+			// the CLIENT hung up arrives indistinguishable from a genuine
+			// outage, and was answered 500. The request context is the only
+			// place that signal survives, which is why this is checked on
+			// c.Request.Context() and not only on the error.
+			if abortIfOAuthRequestEnded(c, err) {
+				return
+			}
 			if errors.Is(err, ErrOAuthInvalidToken) {
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
 				return

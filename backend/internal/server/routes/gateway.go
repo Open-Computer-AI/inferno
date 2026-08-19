@@ -387,10 +387,18 @@ func RegisterGatewayRoutes(
 	// mounted too: they are what the gap evidence reproduced against, and a
 	// single path answering differently by method is a shape nobody expects.
 	//
-	// Deliberately NOT mounted: /messages/count_tokens, /backend-api/codex/*
-	// and /antigravity/* -- other platforms, none of them in the client's
-	// allowlist. TestOAuthCredentialBranchIsNotMountedOutsideTask4sScope pins
-	// that line.
+	// Deliberately NOT mounted: the ROOT alias POST /messages/count_tokens,
+	// /backend-api/codex/* and /antigravity/* -- other platforms, none of them
+	// in the client's allowlist. TestOAuthCredentialBranchIsNotMountedOutsideTask4sScope
+	// pins that line.
+	//
+	// count_tokens is an asymmetry, not a blanket exclusion, and this comment
+	// said otherwise until the final whole-branch review. POST
+	// /v1/messages/count_tokens IS on the OAuth chain: the /v1 mount above is a
+	// group-level Use, so it covers every route in the group and there is no
+	// per-route opt-out. Only the root alias, registered individually below on
+	// the bare apiKeyAuth, is excluded. Both spellings are now listed in
+	// gateway_oauth_mount_test.go, each in the list it actually belongs to.
 
 	// OpenAI Responses API（不带v1前缀的别名）— auto-route based on group platform
 	responsesHandler := func(c *gin.Context) {

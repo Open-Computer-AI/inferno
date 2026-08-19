@@ -28,10 +28,21 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// Both of the tests below now run against REAL key and client services.
+//
+// They used to pass `nil, nil`, and that made the second one vacuous in exactly
+// this project's recurring shape: with a nil keySvc, verifyOAuthBearer returned
+// before parsing anything, so "an alg=none token must never be accepted" was
+// asserted by a code path that never looked at the token. It would have passed
+// against a verifier that accepted alg=none. The final review's F-3 fix (a nil
+// keySvc is now a 500 server fault, not a 401) is what surfaced it: the test
+// started failing, and the reason it started failing was that it had never been
+// testing what it named.
 func TestRequireOAuthScopeRejectsMissingBearer(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	env := newOAuthScopeTestEnv(t)
 	r := gin.New()
-	r.GET("/x", RequireOAuthScope(nil, nil, testIssuer, "billing:manage"), func(c *gin.Context) {
+	r.GET("/x", RequireOAuthScope(env.keySvc, env.clientSvc, testIssuer, "billing:manage"), func(c *gin.Context) {
 		c.Status(http.StatusOK)
 	})
 
@@ -45,8 +56,9 @@ func TestRequireOAuthScopeRejectsMissingBearer(t *testing.T) {
 
 func TestRequireOAuthScopeRejectsUnsignedToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	env := newOAuthScopeTestEnv(t)
 	r := gin.New()
-	r.GET("/x", RequireOAuthScope(nil, nil, testIssuer, "billing:manage"), func(c *gin.Context) {
+	r.GET("/x", RequireOAuthScope(env.keySvc, env.clientSvc, testIssuer, "billing:manage"), func(c *gin.Context) {
 		c.Status(http.StatusOK)
 	})
 
@@ -60,6 +72,87 @@ func TestRequireOAuthScopeRejectsUnsignedToken(t *testing.T) {
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 for an unsigned token, got %d", w.Code)
 	}
+}
+
+// TestRequireOAuthScopeAnswers500WhenTheVerifierIsUnwired is F-3's own test.
+//
+// A deployment that ships without the OAuth key service must answer "this
+// server is broken", not "your credential is bad". The distinction is not
+// cosmetic: the real hermes client force-refreshes on 401 and only on 401, and
+// that loop is what the gap evidence drove to an IP-wide 429. Each of the three
+// dependencies is exercised separately, because they were not always classified
+// the same way -- keySvc answered 401 until the final review while the other two
+// answered 500.
+func TestRequireOAuthScopeAnswers500WhenTheVerifierIsUnwired(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	env := newOAuthScopeTestEnv(t)
+	claims := baseTestClaims(42, testAudienceClientID, "billing:manage", time.Now().Add(time.Hour))
+	tok := mintTestRS256Token(t, env.keySvc, claims)
+
+	cases := []struct {
+		name      string
+		keySvc    *service.OAuthKeyService
+		clientSvc *service.OAuthClientService
+		issuer    string
+	}{
+		{"no key service", nil, env.clientSvc, testIssuer},
+		{"no client registry", env.keySvc, nil, testIssuer},
+		{"no issuer", env.keySvc, env.clientSvc, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := gin.New()
+			reached := false
+			r.GET("/x", RequireOAuthScope(tc.keySvc, tc.clientSvc, tc.issuer, "billing:manage"), func(c *gin.Context) {
+				reached = true
+				c.Status(http.StatusOK)
+			})
+
+			req := httptest.NewRequest(http.MethodGet, "/x", nil)
+			req.Header.Set("Authorization", "Bearer "+tok)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			require.Equal(t, http.StatusInternalServerError, w.Code,
+				"an unwired verifier is a server fault, never a bad credential: body %s", w.Body.String())
+			require.JSONEq(t, `{"error":"server_error"}`, w.Body.String())
+			require.False(t, reached, "the handler must not run")
+		})
+	}
+}
+
+// TestRequireOAuthScopeAnswersACancelledRequestWithout500 is F-4: R-4.1 was
+// recorded as closed while it was closed on only one of VerifyOAuthBearer's two
+// callers.
+//
+// VerifyOAuthBearer's classifier collapses every non-credential failure to the
+// bare ErrOAuthServerFault sentinel, so a client that hung up mid-verification
+// is indistinguishable from a real outage unless the REQUEST CONTEXT is
+// consulted. Before this fix that request got 500 server_error here, while the
+// inference branch answered 499 for the identical condition.
+func TestRequireOAuthScopeAnswersACancelledRequestWithout500(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	env := newOAuthScopeTestEnv(t)
+	claims := baseTestClaims(42, testAudienceClientID, "billing:manage", time.Now().Add(time.Hour))
+	tok := mintTestRS256Token(t, env.keySvc, claims)
+
+	r := gin.New()
+	reached := false
+	r.GET("/x", RequireOAuthScope(env.keySvc, env.clientSvc, testIssuer, "billing:manage"), func(c *gin.Context) {
+		reached = true
+		c.Status(http.StatusOK)
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest(http.MethodGet, "/x", nil).WithContext(ctx)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, statusClientClosedRequest, w.Code,
+		"a caller that hung up is not a failed request and must not be reported as a 500")
+	require.False(t, reached)
 }
 
 // newOAuthScopeTestEntClient is this package's equivalent of

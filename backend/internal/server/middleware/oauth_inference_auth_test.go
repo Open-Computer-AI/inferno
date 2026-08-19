@@ -5,6 +5,7 @@ package middleware
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -90,6 +91,15 @@ type oauthInferenceOptions struct {
 	seededGroup      string
 	subscriptionType string
 	subscriptions    OAuthSubscriptionLoader
+	// exclusiveGroup seeds the policy group as an EXCLUSIVE group, which is
+	// what makes users.allowed_groups load-bearing (F-1).
+	exclusiveGroup bool
+	// allowOwnerOnGroup adds the seeded group to the owning user's
+	// allowed_groups, i.e. entitles them to an exclusive group.
+	allowOwnerOnGroup bool
+	// runMode is what the AUTH middleware's config carries. Empty means
+	// standard. config.RunModeSimple exercises D-2.
+	runMode string
 }
 
 type oauthInferenceFixture struct {
@@ -152,15 +162,19 @@ func newOAuthInferenceFixtureWith(t *testing.T, opts oauthInferenceOptions) *oau
 		SetPlatform(service.PlatformAnthropic).
 		SetStatus(domain.StatusActive).
 		SetSubscriptionType(opts.subscriptionType).
+		SetIsExclusive(opts.exclusiveGroup).
 		SetRateMultiplier(1.0).
 		Save(context.Background())
 	require.NoError(t, err, "seed the policy group")
 
-	user, err := entClient.User.Create().
+	userCreate := entClient.User.Create().
 		SetEmail("agent-owner@example.com").
 		SetUsername("agent-owner").
-		SetPasswordHash("hash").
-		Save(context.Background())
+		SetPasswordHash("hash")
+	if opts.allowOwnerOnGroup {
+		userCreate = userCreate.AddAllowedGroupIDs(group.ID)
+	}
+	user, err := userCreate.Save(context.Background())
 	require.NoError(t, err, "seed the owning user")
 
 	backingCfg := &config.Config{}
@@ -205,7 +219,7 @@ func newOAuthInferenceFixtureWith(t *testing.T, opts oauthInferenceOptions) *oau
 		f.clientSvc,
 		f.backingSvc,
 		testIssuer,
-		&config.Config{},
+		&config.Config{RunMode: opts.runMode},
 	)
 
 	// captureReject wraps the auth middleware so the ingress-reject reason can
@@ -1017,4 +1031,139 @@ func TestOAuthSuccessIsNotMarkedAsAnIngressReject(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, f.do(t, "Bearer "+token).Code)
 	require.False(t, f.captured.rejectOK, "a successful request is not an ingress rejection")
+}
+
+// ---------------------------------------------------------------------------
+// Final whole-branch review: F-1, F-2, D-2
+// ---------------------------------------------------------------------------
+
+// TestOAuthExclusiveGroupEntitlementIsEnforced is F-1, and it asserts BOTH
+// directions because either alone is satisfiable by a broken implementation.
+//
+//   - "denies an unentitled user" alone passes against a check that denies
+//     everyone -- which is exactly what would happen if the entitlement check
+//     were added without withBackingKeyAllowedGroups, since AllowedGroups would
+//     arrive empty on every request.
+//   - "allows an entitled user" alone passes against no check at all.
+//
+// The property: users.allowed_groups is the platform's only runtime answer to
+// "may this user bill against this pool", and apiKey.Group is the sole input to
+// platform routing, channel-pool selection, model mapping and pricing. Before
+// this, an operator naming an exclusive group in oauth_backing_key.group_name
+// gave every OAuth user of every registered client a premium pool that an
+// ordinary API key would have been refused for the same user.
+func TestOAuthExclusiveGroupEntitlementIsEnforced(t *testing.T) {
+	t.Run("denies a user who is not entitled to the exclusive policy group", func(t *testing.T) {
+		f := newOAuthInferenceFixtureWith(t, oauthInferenceOptions{exclusiveGroup: true})
+		token := f.inferenceToken(t, service.ScopeInferenceInvoke)
+
+		w := f.do(t, "Bearer "+token)
+
+		require.Equal(t, http.StatusForbidden, w.Code, "body: %s", w.Body.String())
+		require.JSONEq(t, `{"error":"group_not_allowed"}`, w.Body.String())
+		require.False(t, f.captured.ran)
+		require.Equal(t, IngressRejectGroupNotAllowed, f.captured.rejectReason,
+			"the same ingress reason the API-key path marks, so one grep finds both paths")
+	})
+
+	t.Run("allows a user who IS entitled", func(t *testing.T) {
+		f := newOAuthInferenceFixtureWith(t, oauthInferenceOptions{
+			exclusiveGroup:    true,
+			allowOwnerOnGroup: true,
+		})
+		token := f.inferenceToken(t, service.ScopeInferenceInvoke)
+
+		w := f.do(t, "Bearer "+token)
+
+		require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
+		require.True(t, f.captured.ran,
+			"users.allowed_groups must actually be loaded onto the backing row's owner; "+
+				"without withBackingKeyAllowedGroups this denies everyone")
+	})
+
+	t.Run("a non-exclusive group needs no entitlement", func(t *testing.T) {
+		f := newOAuthInferenceFixtureWith(t, oauthInferenceOptions{})
+		token := f.inferenceToken(t, service.ScopeInferenceInvoke)
+
+		require.Equal(t, http.StatusOK, f.do(t, "Bearer "+token).Code)
+		require.True(t, f.captured.ran)
+	})
+}
+
+// TestOAuthSubscriptionInfrastructureFaultIs500NotForbidden is F-2.
+//
+// SubscriptionService.GetActiveSubscription passes its repository's
+// already-translated error straight through -- its own comment says so -- so a
+// genuine miss and a Postgres failure arrive here indistinguishable unless the
+// caller splits them. Before this fix a database blip told every agent in a
+// subscription-group fleet "you have no subscription", which is an
+// infrastructure fault becoming an authorization answer: the exact inversion
+// VerifyOAuthBearer's own fault splits exist to prevent.
+//
+// The companion test, TestOAuthSubscriptionGroupWithNoActiveSubscriptionIsForbidden,
+// pins the other half with service.ErrSubscriptionNotFound and must keep
+// answering 403 -- a "fix" that sent everything to 500 would break it.
+func TestOAuthSubscriptionInfrastructureFaultIs500NotForbidden(t *testing.T) {
+	loader := &stubOAuthSubscriptionLoader{err: errors.New("dial tcp 10.0.0.5:5432: connect: connection refused")}
+	f := newOAuthInferenceFixtureWith(t, oauthInferenceOptions{
+		subscriptionType: service.SubscriptionTypeSubscription,
+		subscriptions:    loader,
+	})
+	token := f.inferenceToken(t, service.ScopeInferenceInvoke)
+
+	w := f.do(t, "Bearer "+token)
+
+	require.Equal(t, http.StatusInternalServerError, w.Code, "body: %s", w.Body.String())
+	require.JSONEq(t, `{"error":"server_error"}`, w.Body.String())
+	require.False(t, f.captured.ran)
+	require.False(t, f.captured.rejectOK,
+		"a server fault must NOT be marked as an ingress rejection -- it has to stay visible in ops_error_logs")
+}
+
+// TestOAuthSimpleModeSkipsTheSubscriptionLoad is D-2.
+//
+// The API-key path has a SimpleMode early return that fires BEFORE its
+// subscription load, so in SimpleMode a subscription-type group never queries
+// the subscription service and can never answer SUBSCRIPTION_NOT_FOUND. The
+// OAuth branch had no RunMode branch at all, so a deployment running
+// RUN_MODE=simple with a subscription-type group named in
+// oauth_backing_key.group_name 403'd every OAuth agent while every API key
+// succeeded -- identical route, same user, opposite outcome.
+//
+// The loader is armed to fail. Both assertions matter: the request must succeed,
+// AND the loader must not have been called at all -- the second is what
+// distinguishes "SimpleMode skips the load" from "the error happened to be
+// tolerated", which are different fixes with different failure modes.
+// (The two halves are subtests because the fixture's in-memory sqlite database
+// is named after t.Name(); two fixtures under one name would share a database
+// and collide on oauth_clients.client_id.)
+func TestOAuthSimpleModeSkipsTheSubscriptionLoad(t *testing.T) {
+	t.Run("simple mode serves a subscription group with no subscription", func(t *testing.T) {
+		loader := &stubOAuthSubscriptionLoader{err: service.ErrSubscriptionNotFound}
+		f := newOAuthInferenceFixtureWith(t, oauthInferenceOptions{
+			subscriptionType: service.SubscriptionTypeSubscription,
+			subscriptions:    loader,
+			runMode:          config.RunModeSimple,
+		})
+		token := f.inferenceToken(t, service.ScopeInferenceInvoke)
+
+		w := f.do(t, "Bearer "+token)
+
+		require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
+		require.True(t, f.captured.ran)
+		require.Zero(t, loader.calls.Load(),
+			"SimpleMode must not query the subscription service at all, exactly as the API-key path does not")
+	})
+
+	// The control: outside SimpleMode the identical setup is refused, so the
+	// half above cannot pass by the subscription group having quietly become a
+	// no-op for every run mode.
+	t.Run("standard mode still refuses the identical setup", func(t *testing.T) {
+		f := newOAuthInferenceFixtureWith(t, oauthInferenceOptions{
+			subscriptionType: service.SubscriptionTypeSubscription,
+			subscriptions:    &stubOAuthSubscriptionLoader{err: service.ErrSubscriptionNotFound},
+		})
+		require.Equal(t, http.StatusForbidden,
+			f.do(t, "Bearer "+f.inferenceToken(t, service.ScopeInferenceInvoke)).Code)
+	})
 }

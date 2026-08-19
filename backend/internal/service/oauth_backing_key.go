@@ -327,6 +327,27 @@ func (s *OAuthBackingKeyService) createOrAdoptWinner(ctx context.Context, userID
 	return winner, nil
 }
 
+// withBackingKeyAllowedGroups eager-loads users.allowed_groups (ids only)
+// alongside the owner, exactly as api_key_repo.go's GetByKey and GetByKeyForAuth
+// do for an ordinary key.
+//
+// It is not decoration. repository.APIKeyEntityToService maps this edge onto
+// service.User.AllowedGroups, and User.CanBindGroup -- the ONLY runtime
+// enforcement of exclusive-group entitlement on the request path -- reads
+// nothing else. Without it the middleware's entitlement check would see an
+// empty AllowedGroups on every OAuth request and deny every user of an
+// exclusive policy group (final review F-1: "adding the check alone would deny
+// everyone"). The check and this load are one change and must not be separated.
+//
+// Ids only, via gq.Select(group.FieldID): CanBindGroup compares ids, and
+// hydrating whole group rows per request on the hottest path in the system
+// would be a pointless cost.
+func withBackingKeyAllowedGroups(q *dbent.UserQuery) {
+	q.WithAllowedGroups(func(gq *dbent.GroupQuery) {
+		gq.Select(group.FieldID)
+	})
+}
+
 // lookup returns the live backing row for the pair, or (nil, nil) when there is
 // none. The soft-delete interceptor scopes it to deleted_at IS NULL.
 func (s *OAuthBackingKeyService) lookup(ctx context.Context, userID int64, clientID string) (*dbent.APIKey, error) {
@@ -335,7 +356,7 @@ func (s *OAuthBackingKeyService) lookup(ctx context.Context, userID int64, clien
 			apikey.UserIDEQ(userID),
 			apikey.OauthClientIDEQ(clientID),
 		).
-		WithUser().
+		WithUser(withBackingKeyAllowedGroups).
 		WithGroup().
 		Only(ctx)
 	switch {
@@ -359,7 +380,7 @@ func (s *OAuthBackingKeyService) lookup(ctx context.Context, userID int64, clien
 func (s *OAuthBackingKeyService) reload(ctx context.Context, id int64) (*dbent.APIKey, error) {
 	row, err := s.entClient.APIKey.Query().
 		Where(apikey.IDEQ(id)).
-		WithUser().
+		WithUser(withBackingKeyAllowedGroups).
 		WithGroup().
 		Only(ctx)
 	if err != nil {
