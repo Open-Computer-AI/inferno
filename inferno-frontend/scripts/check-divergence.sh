@@ -379,6 +379,22 @@ backend/internal/server/routes/gateway_test.go
 backend/internal/server/routes/gateway_key_billing_test.go
 backend/internal/server/routes/gateway_oauth_mount_test.go
 backend/internal/server/http.go
+# D5 -- OAuth-bearer inference (Task 5: the backing row is invisible and
+# untouchable on every user-facing surface). The listing half is a SQL
+# predicate, so it is tested against real PostgreSQL rather than sqlite -- a
+# stub repository cannot observe a WHERE clause. admin_group.go carries the
+# admin half: /api/v1/admin/api-keys/:id reaches the same rows through a
+# different service, and its handler serialises the result through dto.APIKey,
+# whose Key field is json:"key" -- with groupID nil the method returned the
+# row BEFORE changing anything, so an admin PUT of a backing row's id was a
+# one-request disclosure of a live credential.
+backend/internal/service/admin_user.go
+backend/internal/service/admin_group.go
+backend/internal/service/api_key_service_oauth_backing_test.go
+backend/internal/service/admin_oauth_backing_guard_test.go
+backend/internal/repository/usage_log_repo_query.go
+backend/internal/repository/api_key_repo_oauth_backing_integration_test.go
+backend/internal/repository/fixtures_integration_test.go
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }

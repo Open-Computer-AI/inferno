@@ -1119,6 +1119,25 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 	if err != nil {
 		return nil, err
 	}
+	// An OAuth backing row is server-managed and is refused here for two
+	// independent reasons, either of which is sufficient.
+	//
+	// Disclosure: this method returns the row, and the handler serialises it
+	// through dto.APIKey, whose Key field is `json:"key"`. With groupID nil
+	// the method returns immediately -- so without this guard, an admin
+	// PUTting a backing row's id with no changes at all is handed that row's
+	// live api_keys.key. The backing key's secret is never returned to
+	// anyone, by any endpoint; that rule is what makes a non-expiring bearer
+	// row safe (see oauth_backing_key.go).
+	//
+	// Routing: apiKey.Group is the ONLY input to platform routing, channel
+	// pool selection, model mapping and pricing, so rebinding a backing row's
+	// group silently re-points a running agent's inference at a different
+	// upstream. The row's group is chosen by the configured policy at resolve
+	// time and is not an admin's to override piecemeal.
+	if apiKey != nil && apiKey.OAuthClientID != nil {
+		return nil, ErrOAuthBackingKeyUnmodifiable
+	}
 
 	if groupID == nil {
 		// nil 表示不修改，直接返回
@@ -1222,6 +1241,13 @@ func (s *adminServiceImpl) AdminResetAPIKeyRateLimitUsage(ctx context.Context, k
 	apiKey, err := s.apiKeyRepo.GetByID(ctx, keyID)
 	if err != nil {
 		return nil, err
+	}
+	// Same refusal as AdminUpdateAPIKeyGroupID, and reachable from the same
+	// handler: this method also returns the row, and the caller serialises it
+	// through a DTO that carries `json:"key"`. A backing row's rate-limit
+	// ledger is server-managed state.
+	if apiKey != nil && apiKey.OAuthClientID != nil {
+		return nil, ErrOAuthBackingKeyUnmodifiable
 	}
 	apiKey.Usage5h = 0
 	apiKey.Usage1d = 0
