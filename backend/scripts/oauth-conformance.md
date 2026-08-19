@@ -835,6 +835,74 @@ presents the same first-party `client_id`, so one user's instances share a backi
 row and its quota/rate-limit ledger. Per-instance attribution needs per-instance
 `client_id`s via self-hosted client registration.
 
+## Non-loopback hostname — the production configuration (added 2026-08-19)
+
+Every earlier leg in this runbook used `127.0.0.1`, which is one of exactly three
+hostnames hardcoded in the CLIENT's allowlist:
+
+```
+_NOUS_PORTAL_ALLOWED_HOSTS = {portal.nousresearch.com, localhost, 127.0.0.1}
+```
+
+So no earlier run ever exercised the configuration production actually uses: a
+real hostname, permitted only by the operator env override. This leg does.
+
+Use a hostname that resolves to 127.0.0.1 without touching `/etc/hosts` —
+`portal.localtest.me`, `127.0.0.1.nip.io` and `oc.lvh.me` all do publicly. Bind
+the server with `SERVER_HOST=0.0.0.0` and set
+`SERVER_FRONTEND_URL=http://portal.localtest.me:18480`.
+
+### Positive — WITH the override, the agent reaches Inferno
+
+```
+[driver] allowlist      = ['127.0.0.1', 'localhost', 'portal.nousresearch.com']
+[driver] default portal = https://portal.nousresearch.com
+[driver] env override   = http://portal.localtest.me:18480
+```
+
+Device grant completes against our server (a pending row appears in
+`oauth_device_authorizations`; the access log records two `device/code` hits),
+and the minted token carries:
+
+```
+iss   = http://portal.localtest.me:18480      <- ours, not Nous
+aud   = hermes-cli   sub = 1   scope = inference:invoke
+stored portal_base_url = http://portal.localtest.me:18480
+agent_key == access_token: True
+```
+
+`/v1` through the same hostname: `GET /v1/models` **200**,
+`POST /v1/chat/completions` 403 insufficient balance — both past auth, backing
+row resolved as `id=1 user=1 client=hermes-cli`.
+
+### Negative — WITHOUT the override, it silently goes to Nous
+
+Same auth store, `HERMES_PORTAL_BASE_URL` and `NOUS_PORTAL_BASE_URL` unset:
+
+```
+[neg] env override           = None
+[neg] stored portal_base_url = http://portal.localtest.me:18480
+[neg] stored host            = portal.localtest.me
+[neg] host in allowlist?     = False
+[neg] => the client would use: https://portal.nousresearch.com
+```
+
+### What this proves, and the operational rule it forces
+
+The allowlist is REAL and enforced — the negative case is not a no-op — and the
+env override is precisely what bypasses it. Both halves matter: had the positive
+case passed with the allowlist simply absent, any poisoned `portal_base_url`
+persisted to `auth.json` would be trusted.
+
+> **`HERMES_PORTAL_BASE_URL` (or `NOUS_PORTAL_BASE_URL`) is MANDATORY in every
+> agent's environment.** If it is unset, misspelled, or dropped by a deployment
+> change, the agent does not fail — it silently authenticates against
+> `portal.nousresearch.com`, logging one warning and behaving normally otherwise.
+> Every dashboard stays green while no agent is talking to Inferno at all.
+
+Treat it as a required deploy-time assertion, not a default: fail agent startup
+when it is unset, rather than letting the fallback happen.
+
 ## Teardown
 
 ```bash
