@@ -789,6 +789,52 @@ minutes, on infrastructure that already exists — but it is a live-upstream
 dependency, so it belongs to whoever runs this against a real deployment, not to
 a hermetic runbook.
 
+## Attribution demonstrated (spec done-criterion 2) — closed 2026-08-19
+
+The earlier pass could not close this: a `usage_logs` row is written only when a
+billable request *completes*, and every billable endpoint 403'd on balance before
+reaching the metering write. Closed here by funding the user and pointing a group
+at a mock upstream, so the write path actually runs.
+
+Setup beyond steps 1-3: create an `accounts` row (`platform=anthropic`,
+**`type=apikey`** — `api_key` is not a valid value and fails late, at
+`gateway.forward_failed`, with `unsupported account type`), point its
+`credentials.base_url` at a local mock returning a well-formed Anthropic response
+with a real `usage` block, link it via `account_groups` to the policy group, and
+fund `users.balance`. **Restart the server after editing `accounts`** — account
+rows are cached in the scheduler snapshot and a live UPDATE is not picked up.
+
+```
+POST /v1/messages   (Authorization: Bearer <OAuth access token>)   status=200
+```
+
+```
+usage_logs
+ id | user_id | api_key_id | account_id | group_id | model                      | input_tokens | output_tokens | total_cost
+  1 |       1 |          1 |          1 |        1 | claude-3-5-sonnet-20241022 |           11 |             7 | 0.0001380000
+
+token claims   sub = 1   aud = hermes-cli   scope = inference:invoke
+api_keys       id = 1    oauth_client_id = hermes-cli
+users.balance  100.00000000 -> 99.99986200   (exactly total_cost)
+```
+
+Every link in the chain is closed by that row:
+
+- `usage_logs.user_id` = the token's `sub`. **This is the per-user attribution the
+  whole portal swap exists for** — inference is billed to the human whose OAuth
+  token paid for it, with no shared API key baked into a VM anywhere.
+- `usage_logs.api_key_id` = the backing row resolved from the token's `aud`.
+- `input_tokens`/`output_tokens` are the values the upstream actually returned,
+  so the metering read the real response rather than defaulting.
+- The balance moved by exactly `total_cost`, so the money path is live, not just
+  the log write.
+
+What this does NOT show, and is a real limitation recorded in the spec: attribution
+is per `(user, client application)`, not per agent instance. Every hermes install
+presents the same first-party `client_id`, so one user's instances share a backing
+row and its quota/rate-limit ledger. Per-instance attribution needs per-instance
+`client_id`s via self-hosted client registration.
+
 ## Teardown
 
 ```bash
