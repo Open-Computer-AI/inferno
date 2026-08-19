@@ -430,6 +430,24 @@ func (r *apiKeyRepository) deleteWithTombstone(ctx context.Context, exec *dbent.
 func (r *apiKeyRepository) apiKeyListByUserIDQuery(userID int64, filters service.APIKeyListFilters) *dbent.APIKeyQuery {
 	q := r.activeQuery().Where(apikey.UserIDEQ(userID))
 
+	// oauth_client_id IS NULL -- the one predicate that keeps OAuth backing rows
+	// out of every key listing built from this query (ListByUserID and
+	// ListAllByUserID, i.e. both of APIKeyService.List's paths plus the admin
+	// user-key view).
+	//
+	// It lives here, on the shared query, rather than in each service or
+	// handler: a backing row's api_keys.key is a real non-expiring credential
+	// the server promised never to return, and dto.APIKey marshals `key`
+	// verbatim, so one listing that forgot the predicate would be a credential
+	// leak. Putting it where the query is built means there is no listing that
+	// can forget it.
+	//
+	// filters.IncludeOAuthBacking is the deliberate opt-out; see its doc
+	// comment for why the zero value is the safe one.
+	if !filters.IncludeOAuthBacking {
+		q = q.Where(apikey.OauthClientIDIsNil())
+	}
+
 	if filters.Search != "" {
 		q = q.Where(apikey.Or(
 			apikey.NameContainsFold(filters.Search),

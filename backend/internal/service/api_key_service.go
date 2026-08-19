@@ -703,16 +703,60 @@ func (s *APIKeyService) VerifyOwnership(ctx context.Context, userID int64, apiKe
 	return validIDs, nil
 }
 
-// GetByID 根据ID获取API Key
-func (s *APIKeyService) GetByID(ctx context.Context, id int64) (*APIKey, error) {
+// managedAPIKey reads one api_keys row on behalf of a user-facing key-management
+// endpoint. It is the ONLY by-id read those endpoints do, which is the point:
+// the OAuth backing-row refusal below is a single line that a new endpoint
+// cannot forget, because a new endpoint has nowhere else to get the row.
+//
+// ownerID > 0 also enforces ownership; pass 0 to skip it (APIKeyService.GetByID
+// has never checked ownership -- its callers do, and they answer 404 rather
+// than 403 for someone else's key).
+//
+// backingErr is what the caller wants back when the row turns out to be an
+// OAuth backing row. Read paths pass ErrAPIKeyNotFound, because the row is
+// invisible on every user-facing surface and a read that answered 403 would
+// turn id enumeration into a discovery channel for nothing gained. Write paths
+// pass ErrOAuthBackingKey{Undeletable,Unmodifiable}, because someone trying to
+// mutate server-managed state is owed an answer that says so.
+//
+// NOTE this deliberately does NOT push oauth_client_id IS NULL down into
+// apiKeyRepository.GetByID. That method is also the billing hot path's
+// (UpdateQuotaUsed re-reads the row to decide quota exhaustion) and the OAuth
+// backing row is precisely the row that path must still find. The predicate
+// belongs on the user-facing side of the repository call, not inside it.
+func (s *APIKeyService) managedAPIKey(ctx context.Context, id, ownerID int64, backingErr error) (*APIKey, error) {
 	apiKey, err := s.apiKeyRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get api key: %w", err)
 	}
-	s.compileAPIKeyIPRules(apiKey)
-	if apiKey != nil {
-		apiKey.CurrentConcurrency = s.currentConcurrencyForAPIKey(ctx, apiKey.ID)
+	if apiKey == nil {
+		return nil, ErrAPIKeyNotFound
 	}
+	if ownerID > 0 && apiKey.UserID != ownerID {
+		return nil, ErrInsufficientPerms
+	}
+	if apiKey.OAuthClientID != nil {
+		if backingErr == nil {
+			return nil, ErrAPIKeyNotFound
+		}
+		return nil, backingErr
+	}
+	return apiKey, nil
+}
+
+// GetByID 根据ID获取API Key
+//
+// An OAuth backing row is reported as not found: it is filtered out of every
+// listing, so a user can only arrive here by guessing an id, and the row is not
+// theirs to read -- its api_keys.key is a live credential the server promised
+// never to return.
+func (s *APIKeyService) GetByID(ctx context.Context, id int64) (*APIKey, error) {
+	apiKey, err := s.managedAPIKey(ctx, id, 0, ErrAPIKeyNotFound)
+	if err != nil {
+		return nil, err
+	}
+	s.compileAPIKeyIPRules(apiKey)
+	apiKey.CurrentConcurrency = s.currentConcurrencyForAPIKey(ctx, apiKey.ID)
 	return apiKey, nil
 }
 
@@ -772,18 +816,18 @@ func (s *APIKeyService) GetByKey(ctx context.Context, key string) (*APIKey, erro
 }
 
 // Update 更新API Key
+//
+// An OAuth backing row is refused outright (ErrOAuthBackingKeyUnmodifiable);
+// that error's doc comment carries the reasoning, the short version being that
+// group_id is a permanent silent re-route of an agent's inference and the rest
+// are user-reachable bricks.
 func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req UpdateAPIKeyRequest) (*APIKey, error) {
 	if err := validateUpdateAPIKeyRequest(req); err != nil {
 		return nil, err
 	}
-	apiKey, err := s.apiKeyRepo.GetByID(ctx, id)
+	apiKey, err := s.managedAPIKey(ctx, id, userID, ErrOAuthBackingKeyUnmodifiable)
 	if err != nil {
-		return nil, fmt.Errorf("get api key: %w", err)
-	}
-
-	// 验证所有权
-	if apiKey.UserID != userID {
-		return nil, ErrInsufficientPerms
+		return nil, err
 	}
 
 	// 验证 IP 白名单格式
@@ -931,34 +975,26 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 
 // Delete 删除API Key
 //
-// GetByID rather than the lighter GetKeyAndOwnerID: the decision needs
-// oauth_client_id as well as the owner, because an OAuth backing row is not the
-// user's to delete (see ErrOAuthBackingKeyUndeletable). Delete is a rare,
-// user-initiated operation, so the extra columns cost nothing that matters.
+// managedAPIKey (i.e. the repository's GetByID) rather than the lighter
+// GetKeyAndOwnerID: the decision needs oauth_client_id as well as the owner,
+// because an OAuth backing row is not the user's to delete (see
+// ErrOAuthBackingKeyUndeletable). Delete is a rare, user-initiated operation,
+// so the extra columns cost nothing that matters.
 func (s *APIKeyService) Delete(ctx context.Context, id int64, userID int64) error {
-	apiKey, err := s.apiKeyRepo.GetByID(ctx, id)
+	// managedAPIKey applies the ownership check and, with
+	// ErrOAuthBackingKeyUndeletable, the backing-row refusal that closed the
+	// Task 3 review's Finding 1: an OAuth backing row is owned by the user but
+	// is not theirs to delete. Ownership alone used to authorize this, which
+	// meant a user who learned their backing row's id could tombstone it -- and
+	// a tombstone is not harmless here: the row IS that agent's quota and
+	// rate-limit ledger, and usage_logs_api_key_id_fkey (ON DELETE CASCADE)
+	// hangs the agent's whole usage history off it. The refusal happens before
+	// anything reaches the repository.
+	apiKey, err := s.managedAPIKey(ctx, id, userID, ErrOAuthBackingKeyUndeletable)
 	if err != nil {
-		return fmt.Errorf("get api key: %w", err)
+		return err
 	}
-	if apiKey == nil {
-		return ErrAPIKeyNotFound
-	}
-	key, ownerID := apiKey.Key, apiKey.UserID
-
-	// 验证当前用户是否为该 API Key 的所有者
-	if ownerID != userID {
-		return ErrInsufficientPerms
-	}
-
-	// An OAuth backing row is owned by the user but is not theirs to delete.
-	// Ownership alone used to authorize this, which meant a user who learned
-	// their backing row's id could tombstone it -- and a tombstone is not
-	// harmless here: the row IS that agent's quota and rate-limit ledger, and
-	// usage_logs_api_key_id_fkey (ON DELETE CASCADE) hangs the agent's whole
-	// usage history off it. Refuse before authorization even reaches the repo.
-	if apiKey.OAuthClientID != nil {
-		return ErrOAuthBackingKeyUndeletable
-	}
+	key := apiKey.Key
 
 	// 事务内:写审计 + 软删除(tombstone)。
 	if err := s.apiKeyRepo.DeleteWithAudit(ctx, id); err != nil {

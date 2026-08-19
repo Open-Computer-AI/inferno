@@ -51,6 +51,41 @@ var ErrOAuthBackingKeyUndeletable = infraerrors.Forbidden(
 	"this API key backs an OAuth agent and cannot be deleted; revoke the agent's authorization instead",
 )
 
+// ErrOAuthBackingKeyUnmodifiable rejects any attempt to EDIT an OAuth backing
+// row through a user-facing key-management path.
+//
+// Why refuse the whole edit rather than the dangerous columns:
+//
+//   - group_id is the dangerous one, and it is dangerous in a way the system
+//     cannot heal from. apiKey.Group is the only routing input in the entire
+//     gateway pipeline -- platform selection, channel pool, model mapping and
+//     pricing all read it -- and OAuthBackingKeyService.Resolve only rebinds a
+//     backing row's group when that group is MISSING or INACTIVE. Point a
+//     backing row at a different *active* group and it stays there forever, so
+//     one guessed PUT silently and permanently re-routes and re-prices an
+//     agent's inference.
+//   - expires_at, status and the IP ACL are all user-reachable bricks. Task 4
+//     closed finding F1 by making the IP ACL actually apply to OAuth-backed
+//     requests, which means a whitelist edit can now lock an agent out -- and
+//     with edits refused there is no way back in, exactly the shape of brick
+//     Task 3 closed for Delete.
+//   - name is the operator's only marker that the row is agent-backed
+//     (backingKeyName), so renaming it degrades the one signal an operator has.
+//
+// That leaves no edit worth allowing. And the user cannot reach the row through
+// the UI at all -- it is filtered out of every listing and every by-id read --
+// so any Update that arrives for one came from id guessing, not from a feature.
+// An operation no interface can initiate is not a capability being removed.
+//
+// It is a 403 rather than the 404 the read paths give, matching
+// ErrOAuthBackingKeyUndeletable: a write against server-managed state deserves
+// an answer that says what happened, while a read deserves the row's
+// invisibility.
+var ErrOAuthBackingKeyUnmodifiable = infraerrors.Forbidden(
+	"OAUTH_BACKING_KEY_UNMODIFIABLE",
+	"this API key backs an OAuth agent and is managed by the server; it cannot be edited",
+)
+
 // backingKeyNameMaxLen mirrors api_keys.name's MaxLen(100) (ent/schema/api_key.go).
 const backingKeyNameMaxLen = 100
 

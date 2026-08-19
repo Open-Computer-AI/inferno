@@ -149,4 +149,21 @@ type APIKeyListFilters struct {
 	Search  string
 	Status  string
 	GroupID *int64 // nil=不筛选, 0=无分组, >0=指定分组
+
+	// IncludeOAuthBacking asks for OAuth backing rows to be listed too.
+	//
+	// The ZERO VALUE EXCLUDES THEM, and that default is deliberately the
+	// enforcement point for "a backing row appears in no key listing": a caller
+	// that has never heard of backing rows gets the safe behaviour, so a future
+	// endpoint cannot leak one by omission. The unsafe behaviour has to be
+	// asked for by name.
+	//
+	// It matters because a backing row carries a real, non-expiring
+	// api_keys.key that the server promised never to hand out (see
+	// OAuthBackingKeyService), and dto.APIKey serialises `key` verbatim --
+	// so listing one IS handing the secret out.
+	//
+	// Exactly one caller sets it: admin user deletion, which must tombstone
+	// every one of the user's rows, backing rows included.
+	IncludeOAuthBacking bool
 }
