@@ -265,6 +265,32 @@ func authenticateOAuthInference(c *gin.Context, deps oauthInferenceDeps, raw str
 			// sentinels through its error flattening precisely so this branch
 			// can exist.
 			return
+		case errors.Is(err, service.ErrBackingKeyOwnerGone):
+			// The owning user has been deleted. That is an authorization
+			// outcome, not an infrastructure fault, and it is the same class of
+			// answer a DEACTIVATED owner gets a few lines below -- so it gets
+			// the same code and the same ingress reason, which also means the
+			// response does not disclose whether the account was disabled or
+			// removed.
+			//
+			// 403 rather than the API-key path's 401 USER_NOT_FOUND: the real
+			// hermes client treats 401 -- and only 401 -- as "the bearer is
+			// stale, force-refresh and retry", and no refresh can resurrect a
+			// deleted user. A 401 here would put every agent of that user into
+			// the refresh loop that the evidence drove to an IP-wide 429, which
+			// F-B commits absolutely to not creating a second path into. This
+			// is the same deliberate 401->403 divergence already documented for
+			// a deactivated owner, applied to the deleted case for the same
+			// reason.
+			//
+			// Logged at ERROR, not swallowed: the alternative reading -- that
+			// this is Resolve refusing to resurrect a row -- is exactly the
+			// thing an operator wants to see in the log once, per token
+			// lifetime, rather than never.
+			slog.Error("oauth inference: backing key owner is no longer live; refusing to provision",
+				"error", err, "client_id", bearer.ClientID, "user_id", bearer.UserID)
+			abortOAuthInference(c, http.StatusForbidden, "account_inactive", IngressRejectUserInactive)
+			return
 		case errors.Is(err, service.ErrNoGroupForOAuthKey):
 			// An operator configuration problem, not a client one. Logged at
 			// ERROR with the reason so it is diagnosable, and answered 403 so

@@ -9,6 +9,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -35,6 +36,38 @@ var ErrNoGroupForOAuthKey = errors.New("oauth backing key: no group configured")
 // A caller also gets a clean signal instead of a misleading "rejected by a
 // unique constraint" 500.
 var ErrInvalidBackingKeyRequest = errors.New("oauth backing key: invalid request")
+
+// ErrBackingKeyOwnerGone reports that the user the token names is no longer
+// live: their users row is soft-deleted (or absent entirely). The caller
+// answers 403 account_inactive, exactly as it does for a deactivated owner.
+//
+// # Why this needs its own sentinel (final review C-1)
+//
+// Three individually-correct decisions composed into a defect that no
+// single-task review could see:
+//
+//   - Task 5 made user deletion tombstone the user's OAuth backing rows, so a
+//     deleted user leaves no live, never-expiring credentials behind.
+//   - Migration 910 scoped the identity index to `deleted_at IS NULL`, so a
+//     tombstone RELEASES the (user_id, oauth_client_id) slot and an
+//     accidentally-deleted backing row self-heals on the next request.
+//   - Task 4 mapped every unrecognised Resolve error to 500.
+//
+// Composed, user deletion undid its own cleanup. The next request on a
+// still-valid access token missed the lookup (the interceptor hides the
+// tombstone), found the slot free (910), and INSERTed a brand-new LIVE
+// api_keys row with a freshly generated secret owned by a deleted user --
+// and only then failed, 500, forever. Verified empirically by the whole-branch
+// review: `live backing rows after user deletion: 0` ... `AFTER: live backing
+// rows=1  total incl tombstones=2`.
+//
+// Both halves of the fix are needed and neither is sufficient alone. The
+// pre-INSERT liveness check in createOrAdoptWinner stops the resurrection; this
+// sentinel stops a deliberate administrative revocation being reported to the
+// operator as an infrastructure fault. It fails CLOSED either way -- inference
+// never proceeded -- which is why C-1 was rated critical for correctness and
+// explicitly NOT as a security hole.
+var ErrBackingKeyOwnerGone = errors.New("oauth backing key: owner is no longer live")
 
 // ErrOAuthBackingKeyUndeletable rejects any attempt to delete an OAuth backing
 // row through a user-facing path.
@@ -131,9 +164,13 @@ func NewOAuthBackingKeyService(entClient *dbent.Client, cfg *config.Config) *OAu
 // gateway pipeline reads both.
 //
 // Errors: ErrNoGroupForOAuthKey (wrapped, with the configured name) when the
-// group policy resolves to nothing -- the caller's 403. Everything else is an
-// infrastructure fault and must surface as a 500; in particular a database
-// error while resolving the group is NOT ErrNoGroupForOAuthKey.
+// group policy resolves to nothing -- the caller's 403.
+// ErrBackingKeyOwnerGone when the owning user has been deleted -- also the
+// caller's 403, and NOT a 500: a deliberate administrative revocation must not
+// be reported as an infrastructure fault. Everything else is an infrastructure
+// fault and must surface as a 500; in particular a database error while
+// resolving the group is NOT ErrNoGroupForOAuthKey, and a database error while
+// checking owner liveness is NOT ErrBackingKeyOwnerGone.
 func (s *OAuthBackingKeyService) Resolve(ctx context.Context, userID int64, clientID string) (*dbent.APIKey, error) {
 	if s == nil || s.entClient == nil {
 		return nil, fmt.Errorf("%w: no database client", ErrInvalidBackingKeyRequest)
@@ -200,6 +237,35 @@ func (s *OAuthBackingKeyService) Resolve(ctx context.Context, userID int64, clie
 // an agent's first two concurrent inference calls from producing one success
 // and one 500.
 func (s *OAuthBackingKeyService) createOrAdoptWinner(ctx context.Context, userID int64, clientID string, groupID int64) (*dbent.APIKey, error) {
+	// PRE-INSERT OWNER LIVENESS (final review C-1). Do not remove.
+	//
+	// api_keys.user_id has a real foreign key, but users carries
+	// SoftDeleteMixin too -- a deleted user's row is still physically present,
+	// so the FK stays satisfied and the database will happily accept a live
+	// backing row owned by a user who no longer exists. The only thing that
+	// distinguishes "the tombstone released the slot so this agent can
+	// self-heal" from "an administrator revoked this user" is whether the OWNER
+	// is still live; migration 910's index cannot tell those apart, and it is
+	// not its job to.
+	//
+	// This check is what makes user deletion actually stick. Without it,
+	// DeleteUser tombstones the backing rows and the very next request on a
+	// still-valid access token recreates one, with a fresh 32-byte secret,
+	// owned by a deleted user -- and no future deletion will ever sweep it,
+	// because that user is already gone.
+	//
+	// There is a narrow race: a user deleted between this check and the INSERT
+	// below still gets a row. That window is closed one layer down rather than
+	// widened here -- reload's own owner check answers ErrBackingKeyOwnerGone,
+	// so no request ever proceeds on such a row.
+	live, err := s.entClient.User.Query().Where(user.IDEQ(userID)).Exist(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("oauth backing key: check owner %d is live: %w", userID, err)
+	}
+	if !live {
+		return nil, fmt.Errorf("%w: user %d, client %q, no row created", ErrBackingKeyOwnerGone, userID, clientID)
+	}
+
 	prefix := ""
 	if s.cfg != nil {
 		prefix = s.cfg.Default.APIKeyPrefix
@@ -279,7 +345,11 @@ func (s *OAuthBackingKeyService) lookup(ctx context.Context, userID int64, clien
 		return nil, fmt.Errorf("oauth backing key: look up row for user %d client %q: %w", userID, clientID, err)
 	}
 	if row.Edges.User == nil {
-		return nil, fmt.Errorf("oauth backing key: backing row %d has no live owner (user %d)", row.ID, userID)
+		// The soft-delete interceptor filters eager-loaded edges too
+		// (ent/apikey_query.go loadUser builds a UserQuery and calls All, which
+		// ends in withInterceptors), so a nil User edge on a row that exists
+		// means the owner is tombstoned -- not that the join is broken.
+		return nil, fmt.Errorf("%w: backing row %d, user %d", ErrBackingKeyOwnerGone, row.ID, userID)
 	}
 	return redactBackingKeySecret(row), nil
 }
@@ -296,7 +366,7 @@ func (s *OAuthBackingKeyService) reload(ctx context.Context, id int64) (*dbent.A
 		return nil, fmt.Errorf("oauth backing key: reload row %d: %w", id, err)
 	}
 	if row.Edges.User == nil {
-		return nil, fmt.Errorf("oauth backing key: backing row %d has no live owner", id)
+		return nil, fmt.Errorf("%w: backing row %d", ErrBackingKeyOwnerGone, id)
 	}
 	if row.Edges.Group == nil {
 		return nil, fmt.Errorf("oauth backing key: backing row %d has no group after binding", id)

@@ -949,3 +949,94 @@ func TestResolveStopsEveryAgentWhenThePolicyGroupItselfIsDeactivated(t *testing.
 	require.NoError(t, err)
 	require.Equal(t, first.ID, restored.ID)
 }
+
+// ---------------------------------------------------------------------------
+// C-1 (final whole-branch review): a deleted OWNER must not resurrect a live
+// backing row, and must not be reported as an infrastructure fault.
+// ---------------------------------------------------------------------------
+
+// TestResolveRefusesToResurrectABackingRowForADeletedOwner reproduces the exact
+// composition the final review found, and pins BOTH halves of its fix.
+//
+// The sequence is what AdminService.DeleteUser actually does -- tombstone the
+// user's api_keys rows (backing rows included, IncludeOAuthBacking: true) and
+// tombstone the user -- followed by the next request on a still-valid access
+// token. Before the fix, that request INSERTed a brand-new LIVE api_keys row
+// with a fresh 32-byte secret owned by a deleted user, and only then failed,
+// 500, forever; and because that user is already gone, no future deletion would
+// ever sweep the orphan.
+//
+// The two assertions are deliberately independent, one per half of the fix:
+//
+//   - ErrorIs(ErrBackingKeyOwnerGone) fails if the typed sentinel is removed
+//     from lookup/reload/createOrAdoptWinner. It does NOT prove the resurrection
+//     is stopped -- reload returns the same sentinel AFTER inserting the row.
+//   - the live/total row counts fail if the pre-INSERT liveness check in
+//     createOrAdoptWinner is removed, and they are the only assertions here
+//     that do.
+//
+// This case falls exactly between the two tests that already existed --
+// TestOAuthInactiveOwnerIsForbidden covers a DISABLED owner (a status flag) and
+// TestResolveSoftDeletedBackingRowSelfHeals covers a deleted ROW with a live
+// owner -- which is why five reviews passed over it.
+func TestResolveRefusesToResurrectABackingRowForADeletedOwner(t *testing.T) {
+	svc, cli := newBackingKeyTestService(t)
+	ctx := context.Background()
+	userID := seedBackingKeyUser(t, cli)
+
+	first, err := svc.Resolve(ctx, userID, "agent:deleted-owner")
+	require.NoError(t, err)
+
+	// Exactly what user deletion leaves behind.
+	deletedAt := time.Now()
+	require.NoError(t, cli.APIKey.UpdateOneID(first.ID).SetDeletedAt(deletedAt).Exec(ctx))
+	require.NoError(t, cli.User.UpdateOneID(userID).SetDeletedAt(deletedAt).Exec(ctx))
+
+	live, err := cli.APIKey.Query().Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, live, "precondition: user deletion left no live backing row")
+
+	row, err := svc.Resolve(ctx, userID, "agent:deleted-owner")
+	requireNoBackingRow(t, row, "a deleted owner gets no backing row")
+	require.ErrorIs(t, err, ErrBackingKeyOwnerGone,
+		"a deliberate administrative revocation must be typed, not an unclassified 500")
+
+	live, err = cli.APIKey.Query().Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, live,
+		"Resolve must not INSERT a live api_keys row -- with a fresh secret -- for a user who no longer exists")
+
+	total, err := cli.APIKey.Query().Count(mixins.SkipSoftDelete(ctx))
+	require.NoError(t, err)
+	require.Equal(t, 1, total,
+		"only the original tombstone may remain; a second row means the resurrection happened and was merely rejected afterwards")
+}
+
+// TestResolveRefusesALiveBackingRowWhoseOwnerWasDeleted is the other arrival at
+// the same state: the row survived (nothing tombstoned it) but its owner did
+// not. This is the steady state the defect settled into after its first
+// request, and it is the lookup half of the sentinel.
+//
+// It also proves the mechanism the review established from generated code
+// rather than assuming it: ent's soft-delete interceptor DOES filter
+// eager-loaded edges, so WithUser() on a live row owned by a tombstoned user
+// yields Edges.User == nil rather than the user.
+func TestResolveRefusesALiveBackingRowWhoseOwnerWasDeleted(t *testing.T) {
+	svc, cli := newBackingKeyTestService(t)
+	ctx := context.Background()
+	userID := seedBackingKeyUser(t, cli)
+
+	first, err := svc.Resolve(ctx, userID, "agent:orphaned-row")
+	require.NoError(t, err)
+
+	require.NoError(t, cli.User.UpdateOneID(userID).SetDeletedAt(time.Now()).Exec(ctx))
+
+	row, err := svc.Resolve(ctx, userID, "agent:orphaned-row")
+	requireNoBackingRow(t, row, "an orphaned live row must not be served")
+	require.ErrorIs(t, err, ErrBackingKeyOwnerGone)
+
+	total, err := cli.APIKey.Query().Count(mixins.SkipSoftDelete(ctx))
+	require.NoError(t, err)
+	require.Equal(t, 1, total, "the existing row is reported, not duplicated")
+	require.Equal(t, first.ID, cli.APIKey.Query().FirstIDX(mixins.SkipSoftDelete(ctx)))
+}

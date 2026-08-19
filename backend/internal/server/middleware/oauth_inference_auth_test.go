@@ -653,6 +653,55 @@ func TestOAuthInactiveOwnerIsForbidden(t *testing.T) {
 	require.Equal(t, IngressRejectUserInactive, f.captured.rejectReason)
 }
 
+// TestOAuthDeletedOwnerIsForbiddenAndProvisionsNothing is C-1's middleware half.
+//
+// It is NOT a duplicate of TestOAuthInactiveOwnerIsForbidden. That one covers a
+// status flag on a user who still exists; this one covers a user who has been
+// DELETED, which before the fix travelled a completely different route: past
+// the status check entirely, into OAuthBackingKeyService.Resolve, which
+// INSERTed a fresh live backing row and only then failed -- 500 server_error,
+// on every subsequent request, forever, for what is a deliberate
+// administrative revocation.
+//
+// Three assertions, three distinct claims:
+//
+//   - 403 account_inactive, not 500: the classification. Removing the
+//     ErrBackingKeyOwnerGone arm from the middleware's switch drops this to the
+//     default 500 arm and this fails.
+//   - IngressRejectUserInactive: the request is marked as an ingress rejection,
+//     so a revoked user's agent does not fill ops_error_logs with what looks
+//     like an outage.
+//   - no live api_keys row afterwards: the resurrection is stopped. This is the
+//     one that fails if the pre-INSERT liveness check is removed while the
+//     sentinel stays (reload returns the same sentinel, so the status code
+//     alone would not notice).
+func TestOAuthDeletedOwnerIsForbiddenAndProvisionsNothing(t *testing.T) {
+	f := newOAuthInferenceFixture(t)
+	token := f.inferenceToken(t, service.ScopeInferenceInvoke)
+	ctx := context.Background()
+
+	rowID := f.provision(t, token)
+
+	// What AdminService.DeleteUser leaves behind: the backing row tombstoned
+	// (it lists with IncludeOAuthBacking: true) and the user tombstoned.
+	deletedAt := time.Now()
+	require.NoError(t, f.entClient.APIKey.UpdateOneID(rowID).SetDeletedAt(deletedAt).Exec(ctx))
+	require.NoError(t, f.entClient.User.UpdateOneID(f.userID).SetDeletedAt(deletedAt).Exec(ctx))
+
+	w := f.do(t, "Bearer "+token)
+
+	require.Equal(t, http.StatusForbidden, w.Code, "body: %s", w.Body.String())
+	require.JSONEq(t, `{"error":"account_inactive"}`, w.Body.String(),
+		"a deleted owner is an authorization outcome, not an infrastructure fault")
+	require.False(t, f.captured.ran)
+	require.Equal(t, IngressRejectUserInactive, f.captured.rejectReason)
+
+	live, err := f.entClient.APIKey.Query().Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, live,
+		"the request must not have provisioned a fresh live backing row -- with a fresh secret -- for a deleted user")
+}
+
 // TestOAuthBackingKeyIPRestrictionIsEnforced is the fix for the review's
 // highest finding. api_keys.ip_whitelist / ip_blacklist are editable on a
 // backing row through the ordinary key-management surface (only Delete refuses
