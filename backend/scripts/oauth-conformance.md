@@ -523,3 +523,113 @@ rm -rf /tmp/t8-data /tmp/t8-hermes-home /tmp/t8-hermes-home-2 \
 
 Verify nothing named `t8*` remains (`docker ps -a`) and ports
 15932/16979/18480 are free before considering the run finished.
+
+---
+
+# 10. OAuth-bearer inference on `/v1` (sub-project #0)
+
+Added 2026-08-19. This is the leg that proves the access token Inferno issues
+is accepted by Inferno's own inference endpoint. Before sub-project #0 every
+row in the table below was `401 {"code":"INVALID_API_KEY"}` — the server
+issued a credential its own money endpoint refused.
+
+Run steps 1-3 above first (throwaway infra, personal org, real device login).
+Add `OAUTH_BACKING_KEY_GROUP_NAME=<an active group name>` to the server env;
+without it every OAuth request is refused with a deliberate, operator-readable
+`403 oauth_backing_group_unavailable` rather than a nil-group panic downstream.
+
+## The credential under test
+
+Driven by the unmodified `hermes_cli.auth._nous_device_code_login`:
+
+```
+client_id 'hermes-cli'   scope 'inference:invoke'
+header    {"alg":"RS256","kid":"P5vo96WcGCkuGC0UHyDc-Q","typ":"JWT"}
+claims    {"aud":"hermes-cli","exp":…,"iat":…,"iss":"http://127.0.0.1:18480",
+           "oauth_contract_version":1,"scope":"inference:invoke","sub":"1"}
+agent_key == access_token: True
+len("Bearer " + token) = 628
+```
+
+That last line is the point of finding F-A: `maxAPIKeyAuthorizationHeaderBytes`
+is 256, so the API-key path aborts a real token before `GetByKey` is ever
+called. The OAuth shape test must run ahead of that cap. A regression guard
+that uses a short fake token proves nothing.
+
+## Result — every endpoint past auth
+
+| Request | Status | Body |
+|---|---|---|
+| `GET /v1/models` | **200** | real model list |
+| `GET /models` | **200** | real model list |
+| `POST /v1/messages` | 403 | `insufficient balance` (billing_error) |
+| `POST /v1/chat/completions` | 403 | `insufficient balance` |
+| `POST /v1/responses` | 403 | `insufficient balance` |
+| `POST /responses` | 403 | `insufficient balance` |
+| `POST /chat/completions` | 403 | `insufficient balance` |
+| `POST /v1/alpha/search` | 404 | `only available for OpenAI groups` |
+| `POST /alpha/search` | 404 | `only available for OpenAI groups` |
+| `POST /embeddings` | 404 | `not supported for this platform` |
+
+`403 insufficient balance` and `404 wrong platform` are PASSES: both are
+reached only *after* authentication, and are what a real API key gets for the
+same unfunded user on the same group. `401 INVALID_API_KEY` is the failure.
+
+## The backing row
+
+```
+id | user_id | name                   | group_id | status | oauth_client_id | key_len
+ 1 |       1 | OAuth agent hermes-cli |        1 | active | hermes-cli      |      67
+```
+
+`user_id` is the token's `sub`; `oauth_client_id` is its `aud`; `group_id`
+comes from the configured policy.
+
+**Row reuse:** two independent device logins, in two separate `HERMES_HOME`s,
+produced two different access tokens and still exactly ONE backing row. Rows
+do not accumulate per login.
+
+## Disclosure sweep — 0 leaks
+
+With the backing row's real 67-character secret read straight out of Postgres:
+
+| Request | Status | Secret present? |
+|---|---|---|
+| `GET /api/v1/keys` | 200 | clean — `items: []`, the row is hidden |
+| `GET /api/v1/keys/1` | 404 | clean — `api key not found` |
+| `PUT /api/v1/keys/1` | 403 | clean — `backs an OAuth agent and is managed by the server` |
+| `DELETE /api/v1/keys/1` | 403 | clean — `cannot be deleted` |
+| `PUT /api/v1/admin/api-keys/1` | 423 | clean — blocked earlier by the admin compliance ack |
+
+The admin route returns 423 before reaching the backing-row guard added in
+`f4917699`, so this run does not exercise that guard; it is mutation-proven at
+the unit level instead (both guards reduced to `if false`, four tests fail).
+
+## Ordinary API keys still work
+
+A freshly created ordinary key reaches `403 INSUFFICIENT_BALANCE` on `/v1` —
+past auth, same as before this sub-project.
+
+## KNOWN DIVERGENCE found by this run — not yet fixed
+
+`GET /v1/models` answers **200 for an OAuth token** and **403
+INSUFFICIENT_BALANCE for an ordinary API key**, for the same user with the
+same zero balance.
+
+Cause: `api_key_auth.go:264` gates on balance at AUTH time
+(`apiKeyBalanceBelowAuthThreshold`, `balance <= 0`). The OAuth branch does not
+replicate that gate; it relies on `CheckBillingEligibility`, which runs
+downstream in the billing-bearing handlers and which `/v1/models` never calls.
+
+Not a security hole — listing models is not billable, and every billable
+endpoint is correctly refused. But the two credential paths are meant to reach
+identical outcomes on identical routes, and here they do not. Deliberately
+left for the whole-branch review rather than changed unreviewed: altering an
+auth-time gate is exactly the kind of edit that wants a second pair of eyes.
+
+## Teardown
+
+```bash
+docker rm -f t8-pg t8-redis && docker network rm t8net
+rm -rf /tmp/t8-data /tmp/t8-hermes-home /tmp/t8-hermes-home2 /tmp/sub2api-t8
+```
