@@ -610,22 +610,184 @@ the unit level instead (both guards reduced to `if false`, four tests fail).
 A freshly created ordinary key reaches `403 INSUFFICIENT_BALANCE` on `/v1` —
 past auth, same as before this sub-project.
 
-## KNOWN DIVERGENCE found by this run — not yet fixed
+## ADJUDICATED DIVERGENCE — the zero-balance non-billable class
 
 `GET /v1/models` answers **200 for an OAuth token** and **403
-INSUFFICIENT_BALANCE for an ordinary API key**, for the same user with the
+`INSUFFICIENT_BALANCE` for an ordinary API key**, for the same user with the
 same zero balance.
 
-Cause: `api_key_auth.go:264` gates on balance at AUTH time
+Cause: `api_key_auth.go` gates on balance at AUTH time
 (`apiKeyBalanceBelowAuthThreshold`, `balance <= 0`). The OAuth branch does not
 replicate that gate; it relies on `CheckBillingEligibility`, which runs
-downstream in the billing-bearing handlers and which `/v1/models` never calls.
+downstream inside the billing-bearing handlers — and `/v1/models` never calls it.
 
-Not a security hole — listing models is not billable, and every billable
-endpoint is correctly refused. But the two credential paths are meant to reach
-identical outcomes on identical routes, and here they do not. Deliberately
-left for the whole-branch review rather than changed unreviewed: altering an
-auth-time gate is exactly the kind of edit that wants a second pair of eyes.
+**Ruling (two independent whole-branch reviews, same recommendation, accepted):
+document it. Add no auth-time balance gate to either path.**
+
+- **Not to the OAuth branch.** An auth-time `balance <= 0` gate blocks
+  non-billable endpoints too — model discovery, batch-status polling, video
+  status, sideband reads. An agent that has run its balance to zero would lose
+  the ability to *discover* it has run to zero, and the hermes client's
+  model-listing call is on its startup path. That turns a recoverable "top up
+  your account" into an agent that cannot start.
+- **Not removed from the API-key path either.** It is load-bearing, pre-existing
+  and outside this branch's blast radius, whose binding constraint is
+  *"API-key auth keeps working everywhere it works today."*
+
+**Read the direction correctly.** The OAuth branch is not *missing* a check. The
+API-key path gates a **non-billable** endpoint at auth time — a pre-existing
+over-restriction — and the OAuth branch declined to copy it. Every path that
+does billable work is refused at zero balance on both credential types.
+
+### It is a CLASS of routes, not one endpoint
+
+The divergence appears wherever a route is (a) **not** in the API-key path's
+`skipBilling` set and (b) reaches no handler that calls
+`CheckBillingEligibility`. `skipBilling` (`api_key_auth.go`) is exactly
+`/v1/usage`, `/v1/sub2api/billing` and `isAsyncImageTaskRead`
+(`GET /v1/images/tasks/:task_id`) — those three are already equivalent on both
+paths.
+
+**This list was re-derived for the fix wave rather than copied from either
+review, and both reviews over-counted it.** Membership was traced handler by
+handler; the four groups that are NOT members are recorded below, because
+getting this wrong in the safe direction is still getting it wrong.
+
+| Route(s) | Handler | Evidence |
+|---|---|---|
+| `GET /v1/models`, `GET /models` | `modelsHandler` → `GatewayHandler.Models` (`gateway_handler.go:1073`) / `OpenAIGatewayHandler.CodexModels` | `gateway_handler.go`'s three `CheckBillingEligibility` calls are at `:242`, `:968` (both inside `Messages`) and `:2040` (`CountTokens`); `openai_codex_models_handler.go` has zero |
+| `GET /v1/images/batches` | `BatchImage.List` | zero `CheckBillingEligibility` in `batch_image_handler.go` |
+| `GET /v1/images/batches/models` | `BatchImage.Models` | as above |
+| `GET /v1/images/batches/:id` | `BatchImage.Get` | as above |
+| `GET /v1/images/batches/:id/items` | `BatchImage.Items` | as above |
+| `GET /v1/images/batches/:id/items/:custom_id/content` | `BatchImage.ItemContent` | as above |
+| `GET /v1/images/batches/:id/download` | `BatchImage.Download` | as above |
+| `POST /v1/images/batches/:id/cancel` | `BatchImage.Cancel` | as above |
+| `DELETE /v1/images/batches/:id` | `BatchImage.DeleteRecord` | as above |
+| `DELETE /v1/images/batches/:id/outputs` | `BatchImage.DeleteOutputs` | as above |
+| `GET /v1/live/:call_id` | `OpenAIGateway.LiveSideband` (`openai_live.go:188`) | the file's only `CheckBillingEligibility` is at `:71`, inside `Live` (the POST) |
+
+Twelve routes. On each, a zero-balance user is refused `403
+INSUFFICIENT_BALANCE` at auth with an API key and passes with an OAuth token.
+None is billable and none reaches an upstream.
+
+### Four groups both reviews listed that are NOT members
+
+Both reviews warned that *"the handler has no `CheckBillingEligibility`" is not
+a sufficient membership test* — and then both made the mirror-image error, by
+reading the route's immediate handler rather than following it through:
+
+| Route(s) | Actually reaches | Billing call |
+|---|---|---|
+| `GET /v1/videos/**` (status + content, 8 routes) | `videoStatusHandler` / `videoContentHandler` → `GrokVideoStatus` / `GrokVideoContent` → `handleGrokMedia` (`grok_media.go:54`) | **`grok_media.go:153`** |
+| `GET /v1/custom-voices`, `/:voice_id`, `/:voice_id/audio` | `voiceHandler` / `customVoicePathHandler` → `GrokVoice` (`grok_audio.go:132`) | **`grok_audio.go:142`** |
+| `GET /v1/realtime` | `GrokRealtime` (`grok_audio.go:24`) | **`grok_audio.go:38`** |
+| `GET /v1/responses` (websocket upgrade) | `ResponsesWebSocket` (`openai_gateway_handler.go:1605`) | **`openai_gateway_handler.go:1824`** |
+
+These are still divergent at **auth time** — an API key is refused before the
+handler runs, an OAuth token reaches it — but the **outcome** is not divergent,
+because the handler refuses a zero-balance caller itself. (On a non-Grok group
+the first three gate on platform and answer `404 not supported for this
+platform` before billing; a 404 is not billable work either.) The distinction is
+worth keeping: for this group the documented divergence is about the error
+*shape*, not about access. `TestZeroBalanceAuthDivergenceOnTheNearMissRoutes`
+pins it.
+
+The root-level aliases of the video, voice and realtime routes are not in either
+group: they are mounted on the bare `apiKeyAuth`, so no OAuth token reaches them
+at all.
+
+### The one that would have made this negligent, and why it does not
+
+`POST /v1/images/batches` (`BatchImage.Submit`) also has no
+`CheckBillingEligibility`, and it *does* billable work. It is nevertheless **not
+divergent**, and this was verified independently for this fix wave rather than
+taken from either review:
+
+- `BatchImagePublicService.Submit` (`internal/service/batch_image_public.go`)
+  calls `reserveBatchImageBalanceHold` before anything is queued.
+- `reserveBatchImageBalanceHold` (`internal/service/batch_image_billing_hold.go`)
+  calls `UsageBillingRepository.ReserveBatchImageBalance`.
+- `reserveUsageBillingBatchImageBalance` (`internal/repository/usage_billing_repo.go`)
+  is literally
+  `UPDATE users SET balance = balance - $1, frozen_balance = ... WHERE id = $2 AND deleted_at IS NULL AND balance >= $1 RETURNING ...`,
+  and turns `sql.ErrNoRows` into `service.ErrBatchImageInsufficientBalance`.
+
+So balance is enforced on that route by a different mechanism, at the database,
+in a single atomic statement. A zero-balance caller is refused regardless of
+which credential they present; only the error *shape* differs. (The one
+short-circuit, `if cmd.HoldAmount <= 0 { return nil }`, means a job whose
+estimated cost is zero skips the hold — a zero-cost job is by definition not
+billable work.)
+
+**Net: no billable work is reachable at zero balance via OAuth.** That is the
+fact that makes documenting this acceptable rather than negligent. Note also
+that "the handler has no `CheckBillingEligibility`" is **not** a sufficient test
+for "unbilled" — both reviews raised this route as a suspected bypass and both
+cleared it. A future reader who repeats the grep without repeating the trace
+will repeat the false positive.
+
+### It is pinned by a test, and the test exists to make a reversal loud
+
+`internal/server/routes/gateway_billing_divergence_test.go`.
+
+The reason for the test is not that the current behaviour is fragile — it is
+that **adding the auth-time gate to the OAuth branch would break nothing
+today.** A well-meaning future edit ("the two paths should agree") could
+silently reverse a decision that took two whole-branch reviews to make, and
+nothing would fail. The test makes that reversal loud, and makes a new /v1 route
+joining the class impossible to add silently.
+
+## Spec done-criterion 3 — this run DISPROVED it, and the spec was corrected
+
+The "Row reuse" observation above (two logins → exactly ONE backing row) is the
+precise negation of the design doc's original done-criterion 3, *"a second agent
+instance for the same user resolves to a different backing row"*, which the same
+document sold as a headline benefit ("one row per agent instance").
+
+The implementation is right and the spec was wrong: identity is
+`(user_id, oauth_client_id)` and `oauth_client_id` is the token's `aud` — the
+**application's** client id. The device grant presents `hermes-cli` for every
+install. The spec has been corrected
+(`docs/superpowers/specs/2026-08-19-oauth-bearer-inference-design.md`, "What the
+identity actually is"): per-**user** attribution is delivered and is what this
+work exists for; per-**agent-instance** attribution is not, and the quota and
+rate-limit ledger is shared across one user's instances.
+
+## Spec done-criterion 2 (`usage_logs`) — NOT demonstrated, and precisely why
+
+Criterion 2 is *"a `usage_logs` row exists for an OAuth-served request,
+attributed to the right `user_id`, with its `api_key_id` naming the backing
+row."* It is **not** demonstrated by this runbook, and the honest reason is:
+
+**A `usage_logs` row is only written when a billable request COMPLETES**, and a
+completed billable request needs a real upstream provider account with real
+credit behind the configured group. This runbook stands up throwaway Postgres
+and Redis; it does not and cannot stand up a funded upstream. Every billable
+endpoint in the table above answered `403 insufficient balance` *before* any
+metering write, which is exactly the expected outcome for an unfunded user — so
+the metering path was never reached, on either credential type.
+
+What IS pinned, and where, so this is not mistaken for "untested":
+
+- The `usage_logs` **read/hydration** side is covered by
+  `TestUsageLogHydrationBlanksOnlyTheBackingSecret`
+  (`internal/repository/api_key_repo_oauth_backing_integration_test.go`), which
+  inserts the row by hand and proves the backing row's secret is blanked while
+  the attribution survives.
+- The **write** side is unexercised with an OAuth-resolved backing row. Reading
+  it, it should work — no metering code keys on `apiKey.Key` (which is blank on a
+  backing row), and the row carries a real `ID`, `UserID` and `Group`, which is
+  everything the write path reads. That is a code-reading argument, not
+  evidence, and it is recorded here as such.
+
+**To close it** requires one leg this runbook cannot supply: point the policy
+group at a real upstream account with credit, fund the test user, issue a single
+OAuth-served inference call, and
+`SELECT user_id, api_key_id FROM usage_logs ORDER BY id DESC LIMIT 1`. Ten
+minutes, on infrastructure that already exists — but it is a live-upstream
+dependency, so it belongs to whoever runs this against a real deployment, not to
+a hermetic runbook.
 
 ## Teardown
 

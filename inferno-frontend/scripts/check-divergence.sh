@@ -395,6 +395,18 @@ backend/internal/service/admin_oauth_backing_guard_test.go
 backend/internal/repository/usage_log_repo_query.go
 backend/internal/repository/api_key_repo_oauth_backing_integration_test.go
 backend/internal/repository/fixtures_integration_test.go
+# D5 -- OAuth-bearer inference, final whole-branch fix wave. C-1 (a deleted
+# owner must not resurrect a live backing row), F-1..F-4, D-2, and the tests
+# that close the review conditions. The three new test files exist for reasons
+# the review named: the listing predicate had coverage in NEITHER mandated gate
+# (only under -tags integration, whose harness exits 0 without Docker), so the
+# repository test is deliberately untagged; and the zero-balance divergence was
+# an adjudicated DECISION that nothing would have failed if a future edit
+# reversed, so it is now pinned behaviourally in middleware and structurally
+# over the /v1 route table in routes.
+backend/internal/repository/api_key_repo_oauth_backing_listing_test.go
+backend/internal/server/middleware/oauth_billing_divergence_test.go
+backend/internal/server/routes/gateway_billing_divergence_test.go
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }

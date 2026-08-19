@@ -750,6 +750,17 @@ func (s *APIKeyService) managedAPIKey(ctx context.Context, id, ownerID int64, ba
 // listing, so a user can only arrive here by guessing an id, and the row is not
 // theirs to read -- its api_keys.key is a live credential the server promised
 // never to return.
+//
+// CONTRACT CHANGE, recorded because it happened silently (m-14). Before Task 5
+// this returned (nil, nil) for a row that does not exist; via managedAPIKey it
+// now returns (nil, ErrAPIKeyNotFound). That is a deliberate improvement and it
+// fixed three latent nil-pointer dereferences rather than causing any: all
+// three callers -- APIKeyHandler.GetByID and the two in UsageHandler -- read
+// `key.UserID` immediately after checking err, so under the old contract a
+// missing row PANICKED, and under the new one they answer 404 through
+// response.ErrorFrom. No caller inspects the row for nil. It is written down
+// here because a (nil, nil) contract is the kind of thing a reader assumes is
+// still true.
 func (s *APIKeyService) GetByID(ctx context.Context, id int64) (*APIKey, error) {
 	apiKey, err := s.managedAPIKey(ctx, id, 0, ErrAPIKeyNotFound)
 	if err != nil {

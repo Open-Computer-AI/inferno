@@ -148,11 +148,10 @@ const statusClientClosedRequest = 499
 //     claimed only one of them. The API-key path rejects balance <= 0 at auth.
 //     This branch leaves balance entirely to CheckBillingEligibility, which is
 //     STRICTER on every billable endpoint (its MinimumBalanceReserve floor is
-//     above zero) and LOOSER on the ~two dozen routes whose handler never calls
-//     CheckBillingEligibility at all and which are not in the API-key path's
-//     skipBilling set -- GET /v1/models and /models, the batch-image job
-//     surface, the video status/content reads, the custom-voice GETs,
-//     /v1/live/:call_id, GET /v1/responses, GET /v1/realtime. On those, a
+//     above zero) and LOOSER on the TWELVE routes that reach no handler calling
+//     CheckBillingEligibility at all and that are not in the API-key path's
+//     skipBilling set -- GET /v1/models and GET /models, the batch-image job
+//     read/cancel/delete surface, and GET /v1/live/:call_id. On those, a
 //     zero-balance user is refused with an API key and passes with an OAuth
 //     token.
 //     ADJUDICATED, twice, and deliberately not "fixed" in either direction: an
@@ -163,10 +162,15 @@ const statusClientClosedRequest = 499
 //     is reachable at zero balance via OAuth -- POST /v1/images/batches is the
 //     one that looked like a bypass and is not, because
 //     reserveBatchImageBalanceHold enforces balance at the database with
-//     `... AND balance >= $1`. The full class, the trace that clears
-//     images/batches, and the reasoning are in
-//     backend/scripts/oauth-conformance.md section 10, and the class is pinned
-//     by routes/gateway_billing_divergence_test.go.
+//     `... AND balance >= $1`. The class was re-derived handler by handler for
+//     the fix wave, because BOTH whole-branch reviews over-counted it: the
+//     video status/content reads, the custom-voice GETs, GET /v1/realtime and
+//     the websocket GET /v1/responses all DO reach a CheckBillingEligibility,
+//     so they diverge at auth time but not in outcome. The full trace, those
+//     four near-misses, and the reasoning that clears POST /v1/images/batches
+//     are in backend/scripts/oauth-conformance.md section 10. Behaviour is
+//     pinned by oauth_billing_divergence_test.go; route-set membership by
+//     routes/gateway_billing_divergence_test.go.
 //  4. MarkOpsClientBusinessLimited is not called. Its rejections therefore do
 //     not appear in the client-business-limited ops metric that the API-key
 //     path's group/IP rejections feed; the OAuth-specific ingress-reject

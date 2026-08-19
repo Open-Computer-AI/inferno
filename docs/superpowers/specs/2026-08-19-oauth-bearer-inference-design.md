@@ -139,7 +139,49 @@ Falling through would let an attacker probe both universes with one request.
 |---|---|
 | Keyless inference (`api_key_id` nullable) | Rejected. Three `NOT NULL`s, an FK, a unique constraint, and the entire quota ledger. This is a schema rewrite of the metering core to serve one caller. |
 | Reuse the user's existing default API key | Rejected. Users may have none; it conflates agent usage with the user's own key; and revoking one revokes the other. |
-| **Backing row per (user, client_id), created on first use** | **Chosen.** Preserves every downstream invariant, gives per-agent attribution for free (one row per agent instance), and makes quota, billing and routing work with no new code. |
+| **Backing row per (user, client_id), created on first use** | **Chosen.** Preserves every downstream invariant, gives **per-user** attribution for free (one row per *(user, client application)* — see "What the identity actually is" below), and makes quota, billing and routing work with no new code. |
+
+### What the identity actually is (corrected after the whole-branch review)
+
+**The identity is `(user_id, oauth_client_id)`, and `oauth_client_id` is the
+token's `aud` — the CLIENT APPLICATION's id, not an agent instance's.** The
+device grant every hermes install uses presents the same first-party client id,
+`hermes-cli`. So every agent instance a single user runs resolves to **one**
+backing row.
+
+This paragraph exists because an earlier version of this document said the
+opposite ("one row per agent instance") and made it a done-criterion, and the
+conformance run then measured the real behaviour — *two independent device
+logins, in two separate `HERMES_HOME`s, two different access tokens, exactly ONE
+backing row* — and recorded it as a **success**. Both cannot be true. The
+implementation is right; this spec was wrong. Correcting it here rather than
+changing the implementation, because row reuse is what keeps `api_keys` from
+growing one row per login, and a row per instance would need an instance
+identifier that the token does not carry.
+
+**What IS delivered — and it is the thing this work exists for.** Per-**user**
+attribution. `usage_logs.user_id` names the real user behind every OAuth-served
+request, resolved from the token's `sub`. That is the whole point of the portal
+swap: the previous arrangement hardcoded one API key into every VM, so all usage
+was attributed to that key and to nobody. It is now attributed to a person.
+
+**What is NOT delivered — say it plainly.** Per-**agent-instance** attribution.
+Two consequences, both real and both consequences of the identity choice rather
+than of any defect:
+
+1. **Per-instance usage is not separable.** `usage_logs.api_key_id` is identical
+   for every instance one user runs. An operator cannot attribute usage, cost or
+   abuse to a single agent instance — only to the user.
+2. **The quota and rate-limit ledger is shared** across all of that user's
+   instances. `api_keys.quota_used`, `usage_5h|1d|7d` and `window_*_start` are
+   one row, so two agents running concurrently contend for one per-key rate
+   limit and draw down one quota.
+
+**What per-instance attribution would take**, if it is ever wanted: a distinct
+`client_id` per agent instance, i.e. self-hosted (dynamic) client registration
+at install time, so each install presents its own audience. That is sub-project
+#1's territory, not this one's. Nothing in this design blocks it — the identity
+tuple already has the right shape; only the value it receives would change.
 
 ### The security property that makes the backing row safe
 
@@ -211,8 +253,14 @@ picking an arbitrary group — and a user with no resolvable group gets a clear
    is what a funded-less user should see.
 2. A `usage_logs` row exists for an OAuth-served request, attributed to the right
    `user_id`, and its `api_key_id` names the backing row.
-3. A second agent instance for the same user resolves to a **different** backing
-   row, so per-agent usage is separable.
+3. The backing-row identity is `(user_id, oauth_client_id)`, where
+   `oauth_client_id` is the token's `aud` — the **client application's** id.
+   A second agent instance for the same user, logging in independently,
+   therefore resolves to the **same** backing row, and `api_keys` does not grow
+   one row per login. Per-**user** attribution is what this delivers;
+   per-**agent-instance** attribution and a per-instance quota/rate-limit ledger
+   are explicitly NOT delivered, and would require per-instance `client_id`s via
+   self-hosted client registration. See "What the identity actually is" above.
 4. An API key still works on every one of those routes, unchanged.
 5. A JWT that fails verification is rejected without being retried as an API key,
    and without a response that is indistinguishable from `INVALID_API_KEY`.

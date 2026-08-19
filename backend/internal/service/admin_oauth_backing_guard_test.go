@@ -99,29 +99,64 @@ func TestAdminPathsStillReachOrdinaryKeys(t *testing.T) {
 	require.Zero(t, got.Usage5h, "the reset must still do its job")
 }
 
-// The property, stated directly: whatever an admin path returns for a backing
-// row, the secret is not in it.
+// TestAdminPathsNeverHandBackTheBackingSecret states the property over the SET
+// of admin paths, rather than one path at a time.
+//
+// It was vacuous, and that is worth recording rather than quietly fixing (m-13):
+// while the guards hold, every call returns a nil row, so the old version's loop
+// body never executed and the test asserted NOTHING. It would have failed if a
+// guard were removed -- the row would come back and require.NotEqual would fire
+// -- but a test that asserts nothing in the passing case is a test whose green
+// means nothing, and this project has twelve recorded instances of that class.
+//
+// It now asserts in BOTH states, and the two assertions are different claims:
+//
+//   - Today's behaviour: every admin path refuses a backing row outright, with
+//     ErrOAuthBackingKeyUnmodifiable and no row at all. Remove a guard and this
+//     fails immediately, on the assertion, naming disclosure.
+//   - Future-proofing: IF a path ever returns a row alongside its error, that
+//     row must not carry the secret. Vacuous today by construction, and labelled
+//     as such instead of being presented as the point.
+//
+// It is table-driven so that adding a third admin read path means adding a row
+// here, which is the thing the four single-path tests above cannot make anyone
+// do.
 func TestAdminPathsNeverHandBackTheBackingSecret(t *testing.T) {
 	svc := adminSvcWithRow(adminBackingRow())
 	ctx := context.Background()
-	target := int64(9)
 
-	// Only the paths that return without touching collaborators this stub
-	// does not provide. The rebind path has its own test; exercising it here
-	// under a disabled guard reaches a nil groupRepo and panics, which would
-	// make this test "fail" for a reason that says nothing about disclosure.
-	_ = target
-	result1, _ := svc.AdminUpdateAPIKeyGroupID(ctx, 42, nil)
-	got, _ := svc.AdminResetAPIKeyRateLimitUsage(ctx, 42)
+	// Only paths that return without touching collaborators this stub does not
+	// provide. AdminUpdateAPIKeyGroupID with a non-nil target has its own test;
+	// exercising it here under a disabled guard reaches a nil groupRepo and
+	// panics, which would make this test "fail" for a reason that says nothing
+	// about disclosure -- and a mutation that kills a test by panicking has
+	// proved nothing.
+	updateResult, updateErr := svc.AdminUpdateAPIKeyGroupID(ctx, 42, nil)
+	resetResult, resetErr := svc.AdminResetAPIKeyRateLimitUsage(ctx, 42)
 
-	for i, key := range []*APIKey{
-		keyOf(result1), got,
-	} {
-		if key == nil {
-			continue
-		}
-		require.NotEqual(t, adminBackingSecret, key.Key,
-			"admin path %d handed back the backing row's live credential", i)
+	paths := []struct {
+		name string
+		key  *APIKey
+		err  error
+	}{
+		{"AdminUpdateAPIKeyGroupID(nil groupID)", keyOf(updateResult), updateErr},
+		{"AdminResetAPIKeyRateLimitUsage", resetResult, resetErr},
+	}
+
+	for _, p := range paths {
+		t.Run(p.name, func(t *testing.T) {
+			require.ErrorIs(t, p.err, ErrOAuthBackingKeyUnmodifiable,
+				"an admin path must refuse a backing row outright; without the guard it returns the "+
+					"row, and the handler serialises it through dto.APIKey whose Key field is json:\"key\"")
+			require.Nil(t, p.key,
+				"no row means nothing for the handler to serialise")
+			if p.key != nil {
+				// Unreachable while the assertion above holds. Kept as the
+				// backstop for a future path that returns a row WITH an error.
+				require.NotEqual(t, adminBackingSecret, p.key.Key,
+					"admin path handed back the backing row's live credential")
+			}
+		})
 	}
 }
 

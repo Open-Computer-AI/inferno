@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -100,6 +101,27 @@ type oauthInferenceOptions struct {
 	// runMode is what the AUTH middleware's config carries. Empty means
 	// standard. config.RunModeSimple exercises D-2.
 	runMode string
+	// apiKeyRunMode is what the DELEGATE (the real API-key middleware) runs in.
+	// It defaults to config.RunModeSimple, which is what every test written
+	// before the divergence work expects: SimpleMode returns before the API-key
+	// path's billing block, so those tests never had to fund anything. Set it to
+	// config.RunModeStandard to exercise that block -- notably the auth-time
+	// balance gate.
+	apiKeyRunMode string
+	// delegateAPIKey is what the stub repository hands the delegate for any key
+	// string. Nil leaves GetByKey unimplemented, as before.
+	delegateAPIKey *service.APIKey
+	// extraRoutes are registered on the same auth chain as /v1/responses. The
+	// middleware keys off the exact path only for scope selection, so this is
+	// how a test covers a whole class of routes without standing up their
+	// handlers.
+	extraRoutes []extraRoute
+}
+
+// extraRoute is a method+path to register on the fixture's auth chain.
+type extraRoute struct {
+	method string
+	path   string
 }
 
 type oauthInferenceFixture struct {
@@ -181,13 +203,26 @@ func newOAuthInferenceFixtureWith(t *testing.T, opts oauthInferenceOptions) *oau
 	backingCfg.Default.APIKeyPrefix = "sk-"
 	backingCfg.OAuthBackingKey.GroupName = opts.configuredGroup
 
-	apiKeyCfg := &config.Config{RunMode: config.RunModeSimple}
+	if opts.apiKeyRunMode == "" {
+		opts.apiKeyRunMode = config.RunModeSimple
+	}
+	apiKeyCfg := &config.Config{RunMode: opts.apiKeyRunMode}
 	touched := &atomic.Int64{}
 	apiKeyRepo := &stubApiKeyRepo{
 		updateLastUsed: func(_ context.Context, id int64, _ time.Time) error {
 			touched.Store(id)
 			return nil
 		},
+	}
+	if opts.delegateAPIKey != nil {
+		delegateKey := opts.delegateAPIKey
+		apiKeyRepo.getByKey = func(_ context.Context, _ string) (*service.APIKey, error) {
+			// A copy per call: the middleware mutates what it is handed
+			// (compiled IP rules), and a shared pointer would leak state
+			// between requests.
+			copied := *delegateKey
+			return &copied, nil
+		}
 	}
 	apiKeySvc := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, nil, apiKeyCfg)
 
@@ -251,6 +286,9 @@ func newOAuthInferenceFixtureWith(t *testing.T, opts oauthInferenceOptions) *oau
 	// the fixture because requiredOAuthInferenceScope keys off the exact path.
 	r.GET("/v1/usage", captureReject, auth, probe)
 	r.GET("/v1/sub2api/billing", captureReject, auth, probe)
+	for _, route := range opts.extraRoutes {
+		r.Handle(route.method, route.path, captureReject, auth, probe)
+	}
 	f.router = r
 	return f
 }
@@ -1166,4 +1204,37 @@ func TestOAuthSimpleModeSkipsTheSubscriptionLoad(t *testing.T) {
 		require.Equal(t, http.StatusForbidden,
 			f.do(t, "Bearer "+f.inferenceToken(t, service.ScopeInferenceInvoke)).Code)
 	})
+}
+
+// TestOAuthInferenceUniqueIndexDDLMatchesMigration910 is the second half of
+// m-10: migration 910's DDL is duplicated in three places (the migration,
+// internal/service's backingKeyUniqueIndexDDL, and this package's copy) and
+// nothing connected them.
+//
+// It matters more than ordinary duplication. Migration 910's
+// `AND deleted_at IS NULL` is what makes a tombstone RELEASE the identity slot,
+// which is the mechanism behind both the self-heal behaviour and the C-1 seam.
+// A harness copy that drifted back to 909's predicate would stop exercising the
+// behaviour these tests are about, and would go on passing.
+func TestOAuthInferenceUniqueIndexDDLMatchesMigration910(t *testing.T) {
+	raw, err := os.ReadFile("../../../migrations/910_api_key_oauth_client_uniq_live_only.sql")
+	require.NoError(t, err, "read migration 910")
+
+	// The LAST CREATE UNIQUE INDEX: 910 drops and recreates, and the recreate
+	// is the one that describes the live schema.
+	idx := strings.LastIndex(string(raw), "CREATE UNIQUE INDEX")
+	require.GreaterOrEqual(t, idx, 0, "migration 910 has no CREATE UNIQUE INDEX")
+	stmt := string(raw)[idx:]
+	if end := strings.Index(stmt, ";"); end >= 0 {
+		stmt = stmt[:end]
+	}
+
+	// Normalised on whitespace and on IF NOT EXISTS: the harness applies this
+	// to a table it just created, the migration to one that may already have
+	// the index.
+	normalize := func(s string) string {
+		return strings.Join(strings.Fields(strings.ReplaceAll(s, "IF NOT EXISTS ", "")), " ")
+	}
+	require.Equal(t, normalize(stmt), normalize(oauthInferenceUniqueIndexDDL),
+		"this package's copy of the identity index has drifted from migration 910")
 }

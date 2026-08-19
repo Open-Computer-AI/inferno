@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -1039,4 +1040,47 @@ func TestResolveRefusesALiveBackingRowWhoseOwnerWasDeleted(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, total, "the existing row is reported, not duplicated")
 	require.Equal(t, first.ID, cli.APIKey.Query().FirstIDX(mixins.SkipSoftDelete(ctx)))
+}
+
+// TestBackingKeyUniqueIndexDDLMatchesMigration910 pins this file's copy of the
+// identity index to the migration that actually creates it (m-10).
+//
+// The DDL is duplicated in three places: migration 910 (authoritative),
+// backingKeyUniqueIndexDDL here, and oauthInferenceUniqueIndexDDL in
+// internal/server/middleware. Nothing connected them. That matters more than
+// ordinary duplication, because migration 910's `AND deleted_at IS NULL` is
+// exactly what makes the C-1 seam reachable: a test harness whose copy silently
+// drifted back to 909's predicate would stop exercising the behaviour every
+// "self-heals" and "does not resurrect" assertion on this file depends on, and
+// would still pass.
+//
+// The comparison is normalised on whitespace and on `IF NOT EXISTS`, because
+// the harness applies the statement to a table it has just created and the
+// migration applies it to one that may already have the index.
+func TestBackingKeyUniqueIndexDDLMatchesMigration910(t *testing.T) {
+	require.Equal(t,
+		normalizeBackingKeyIndexDDL(readMigration910CreateIndex(t, "../../migrations/910_api_key_oauth_client_uniq_live_only.sql")),
+		normalizeBackingKeyIndexDDL(backingKeyUniqueIndexDDL),
+		"this file's copy of the identity index has drifted from migration 910")
+}
+
+// readMigration910CreateIndex returns the LAST `CREATE UNIQUE INDEX` statement
+// in the migration -- 910 drops and recreates, and the recreate is the one that
+// describes the live schema.
+func readMigration910CreateIndex(t *testing.T, path string) string {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err, "read migration 910")
+	idx := strings.LastIndex(string(raw), "CREATE UNIQUE INDEX")
+	require.GreaterOrEqual(t, idx, 0, "migration 910 has no CREATE UNIQUE INDEX")
+	stmt := string(raw)[idx:]
+	if end := strings.Index(stmt, ";"); end >= 0 {
+		stmt = stmt[:end]
+	}
+	return stmt
+}
+
+func normalizeBackingKeyIndexDDL(stmt string) string {
+	stmt = strings.ReplaceAll(stmt, "IF NOT EXISTS ", "")
+	return strings.Join(strings.Fields(stmt), " ")
 }
