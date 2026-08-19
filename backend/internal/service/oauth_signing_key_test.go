@@ -2,13 +2,18 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 )
 
 func TestActiveIsRSA(t *testing.T) {
@@ -214,5 +219,125 @@ func TestActiveIsConcurrencySafe(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("expected exactly 1 persisted signing key row, got %d", count)
+	}
+}
+
+// TestSigningKeyCacheNeverServesARotatedKey is the safety proof for the parse
+// cache added under Task 4's fix round.
+//
+// The cache is keyed by the stored PEM, not by kid, precisely so this holds
+// without any rotation hook: replacing the security_secrets row -- by any
+// means, since there is no rotation code in this tree to hook -- must make the
+// old key unresolvable and the new one authoritative on the very next call, not
+// after a TTL. A cache keyed by kid, or one that also cached the SELECT, would
+// keep verifying tokens signed by the retired key.
+func TestSigningKeyCacheNeverServesARotatedKey(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := NewOAuthKeyService(client)
+
+	before, err := svc.Active(ctx)
+	if err != nil {
+		t.Fatalf("Active: %v", err)
+	}
+	// Warm the cache the way every request does.
+	if _, err := svc.ByKid(ctx, before.Kid); err != nil {
+		t.Fatalf("ByKid before rotation: %v", err)
+	}
+
+	// Rotate: overwrite the row with a different key.
+	replacement, err := rsa.GenerateKey(rand.Reader, rsaKeyBits)
+	if err != nil {
+		t.Fatalf("generate replacement: %v", err)
+	}
+	replacementPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(replacement),
+	})
+	if _, err := client.SecuritySecret.Update().
+		Where(securitysecret.Key(activeKeySecretName)).
+		SetValue(string(replacementPEM)).
+		Save(ctx); err != nil {
+		t.Fatalf("rotate stored key: %v", err)
+	}
+
+	after, err := svc.Active(ctx)
+	if err != nil {
+		t.Fatalf("Active after rotation: %v", err)
+	}
+	if after.Kid == before.Kid {
+		t.Fatal("rotation did not change the resolved key: the cache served a stale key")
+	}
+	if after.Private.N.Cmp(replacement.N) != 0 {
+		t.Fatal("Active returned a key that is not the newly stored one")
+	}
+	// The retired kid must no longer resolve at all — this is the security
+	// property. A kid-keyed cache would still answer here.
+	if _, err := svc.ByKid(ctx, before.Kid); !errors.Is(err, ErrUnknownKid) {
+		t.Fatalf("a rotated-out kid must be unknown, got %v", err)
+	}
+	if _, err := svc.ByKid(ctx, after.Kid); err != nil {
+		t.Fatalf("ByKid for the new key: %v", err)
+	}
+}
+
+// TestSigningKeyCacheReturnsTheSameParsedKeyForAnUnchangedRow pins that the
+// cache is actually consulted. Without it every call re-parses and returns a
+// distinct *rsa.PrivateKey, so pointer identity is the observable.
+func TestSigningKeyCacheReturnsTheSameParsedKeyForAnUnchangedRow(t *testing.T) {
+	ctx := context.Background()
+	svc := NewOAuthKeyService(newPaymentConfigServiceTestClient(t))
+
+	first, err := svc.Active(ctx)
+	if err != nil {
+		t.Fatalf("first Active: %v", err)
+	}
+	second, err := svc.Active(ctx)
+	if err != nil {
+		t.Fatalf("second Active: %v", err)
+	}
+	if first.Private != second.Private {
+		t.Fatal("the stored key was re-parsed even though the row did not change")
+	}
+}
+
+// BenchmarkSigningKeyParse and BenchmarkSigningKeyCached are the before/after
+// for the parse cache. The first is what every OAuth-authenticated request used
+// to pay in ByKid -> Active; the second is what it pays now.
+func BenchmarkSigningKeyParse(b *testing.B) {
+	priv, err := rsa.GenerateKey(rand.Reader, rsaKeyBits)
+	if err != nil {
+		b.Fatal(err)
+	}
+	encoded := string(pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(priv),
+	}))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := signingKeyFromPEM(encoded); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkSigningKeyCached(b *testing.B) {
+	priv, err := rsa.GenerateKey(rand.Reader, rsaKeyBits)
+	if err != nil {
+		b.Fatal(err)
+	}
+	encoded := string(pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(priv),
+	}))
+	svc := &OAuthKeyService{}
+	if _, err := svc.signingKeyFor(encoded); err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := svc.signingKeyFor(encoded); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

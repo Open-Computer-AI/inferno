@@ -51,13 +51,23 @@ func RegisterGatewayRoutes(
 	// keySvc/clientSvc/issuer come off h.OAuth, the same accessors
 	// RegisterOAuthAccountRoutes uses for RequireOAuthScope, so the mint and
 	// both verifying surfaces share one issuer string by construction.
+	// Converted explicitly rather than passed straight through: a nil
+	// *SubscriptionService assigned to an interface parameter is a NON-nil
+	// interface holding a nil pointer, and the middleware's nil guard would
+	// miss it. Two route tests construct this with no subscription service.
+	var oauthSubscriptions middleware.OAuthSubscriptionLoader
+	if subscriptionService != nil {
+		oauthSubscriptions = subscriptionService
+	}
 	oauthOrAPIKeyAuth := middleware.OAuthOrAPIKeyAuth(
 		apiKeyAuth,
 		apiKeyService,
+		oauthSubscriptions,
 		h.OAuth.KeyService(),
 		h.OAuth.ClientService(),
 		oauthBackingKeyService,
 		h.OAuth.TokenIssuer(),
+		cfg,
 	)
 	compositeGeminiTarget := compositeGeminiTargetPlatformMiddleware(compositeResolver)
 
@@ -361,6 +371,27 @@ func RegisterGatewayRoutes(
 		gemini.POST("/models/*modelAction", h.Gateway.GeminiV1BetaModels)
 	}
 
+	// ── Root-level aliases (no /v1 prefix) ──────────────────────────────
+	//
+	// The OAuth credential branch is mounted on the subset of these that the
+	// real hermes client can actually reach. Its adapter allowlists
+	// {"/chat/completions", "/completions", "/embeddings", "/models"} and
+	// appends them to a base URL whose default is /v1-suffixed -- but
+	// NOUS_INFERENCE_BASE_URL deliberately bypasses the host allowlist and gets
+	// no normalisation that would append /v1, so an operator who sets it
+	// without the suffix moves the client onto exactly these paths. Leaving
+	// them on the bare apiKeyAuth would make a total, silent 401 outage
+	// depend on a config string ending in the right four characters.
+	// (/completions is not a route this server serves at all -- a pre-existing
+	// 404, not an auth gap.) POST and GET /responses and /alpha/search are
+	// mounted too: they are what the gap evidence reproduced against, and a
+	// single path answering differently by method is a shape nobody expects.
+	//
+	// Deliberately NOT mounted: /messages/count_tokens, /backend-api/codex/*
+	// and /antigravity/* -- other platforms, none of them in the client's
+	// allowlist. TestOAuthCredentialBranchIsNotMountedOutsideTask4sScope pins
+	// that line.
+
 	// OpenAI Responses API（不带v1前缀的别名）— auto-route based on group platform
 	responsesHandler := func(c *gin.Context) {
 		if isOpenAIResponsesCompatibleGatewayPlatform(c) {
@@ -372,10 +403,10 @@ func RegisterGatewayRoutes(
 	r.POST("/responses", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, oauthOrAPIKeyAuth, compositeTarget, requireGroupAnthropic, responsesHandler)
 	r.POST("/responses/*subpath", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, oauthOrAPIKeyAuth, compositeTarget, requireGroupAnthropic, guardResponsesSubpath(responsesHandler))
 	r.POST("/alpha/search", textBodyLimit, clientRequestID, opsErrorLogger, endpointNorm, oauthOrAPIKeyAuth, compositeTarget, requireGroupAnthropic, h.OpenAIGateway.AlphaSearch)
-	r.GET("/responses", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+	r.GET("/responses", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, oauthOrAPIKeyAuth, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		h.OpenAIGateway.ResponsesWebSocket(c)
 	})
-	r.GET("/models", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, modelsHandler)
+	r.GET("/models", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, oauthOrAPIKeyAuth, requireGroupAnthropic, modelsHandler)
 	r.POST("/messages/count_tokens", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, countTokensHandler)
 	codexDirect := r.Group("/backend-api/codex")
 	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic)
@@ -391,14 +422,14 @@ func RegisterGatewayRoutes(
 		codexDirect.GET("/models", h.OpenAIGateway.CodexModels)
 	}
 	// OpenAI Chat Completions API（不带v1前缀的别名）— auto-route based on group platform
-	r.POST("/chat/completions", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+	r.POST("/chat/completions", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, oauthOrAPIKeyAuth, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		if isOpenAIResponsesCompatibleGatewayPlatform(c) {
 			h.OpenAIGateway.ChatCompletions(c)
 			return
 		}
 		h.Gateway.ChatCompletions(c)
 	})
-	r.POST("/embeddings", textBodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+	r.POST("/embeddings", textBodyLimit, clientRequestID, opsErrorLogger, endpointNorm, oauthOrAPIKeyAuth, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		if !isOpenAIOnlyEndpointGatewayPlatform(c) {
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 			c.JSON(http.StatusNotFound, gin.H{

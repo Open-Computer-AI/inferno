@@ -25,6 +25,13 @@ import (
 // from "the API-key middleware ran".
 const jwtShapedCredential = "eyJhbGciOiJSUzI1NiIsImtpZCI6ImsxIn0.eyJzdWIiOiIxIn0.c2lnbmF0dXJl"
 
+type mountRoute struct {
+	method string
+	path   string
+}
+
+func (r mountRoute) name() string { return r.method + " " + r.path }
+
 // newOAuthMountTestRouter registers the real gateway routes with a delegate
 // that records every entry into the API-key middleware, so a test can tell
 // which of the two credential paths a request took.
@@ -32,6 +39,13 @@ func newOAuthMountTestRouter(t *testing.T) (*gin.Engine, *atomic.Int32) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
+	// The handlers in this fixture are zero-value stubs with no services wired,
+	// so a request that gets PAST auth can panic inside them. That is fine and
+	// expected -- these tests assert which of the two credential paths ran, not
+	// what the handler does -- but the panic has to be contained or it takes
+	// the whole test binary down. Registered before RegisterGatewayRoutes so
+	// every route and group it creates inherits it.
+	router.Use(gin.Recovery())
 	var delegateCalls atomic.Int32
 
 	cfg := &config.Config{
@@ -68,9 +82,9 @@ func newOAuthMountTestRouter(t *testing.T) (*gin.Engine, *atomic.Int32) {
 	return router, &delegateCalls
 }
 
-func postWithBearer(t *testing.T, router *gin.Engine, path, credential string) *httptest.ResponseRecorder {
+func requestWithBearer(t *testing.T, router *gin.Engine, route mountRoute, credential string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"gpt-5","input":"hi"}`))
+	req := httptest.NewRequest(route.method, route.path, strings.NewReader(`{"model":"gpt-5","input":"hi"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+credential)
 	w := httptest.NewRecorder()
@@ -78,27 +92,70 @@ func postWithBearer(t *testing.T, router *gin.Engine, path, credential string) *
 	return w
 }
 
-// TestOAuthCredentialBranchIsMountedOnTheInferenceRoutes is the mount
-// assertion for Task 4's declared route set: the /v1 group (a group-level
-// Use, so it covers every /v1 endpoint) plus the three root-level aliases the
-// gap evidence reproduced against.
+// oauthMountedRoutes is Task 4's declared mount set after fix round 1.
 //
-// It fails if any of those mounts is reverted to the bare apiKeyAuth, because
-// the request would then reach the delegate and be authenticated as an API key.
+// The /v1 group carries the branch through a single group-level Use, so every
+// /v1 endpoint is covered -- including the two that are not inference
+// (/v1/usage, /v1/sub2api/billing), which the middleware gates on billing:read
+// instead.
+//
+// The root-level aliases are the ones the real hermes client can actually
+// reach. Its adapter allowlists {"/chat/completions", "/completions",
+// "/embeddings", "/models"} and appends them to a base URL whose default is
+// /v1-suffixed -- but NOUS_INFERENCE_BASE_URL bypasses the host allowlist and
+// receives no normalisation that would append /v1, so an operator who sets it
+// without the suffix moves the client onto exactly these paths. Leaving them on
+// the bare apiKeyAuth would make a total, silent 401 outage depend on a config
+// string ending in the right four characters. /responses and /alpha/search are
+// here because they are what the gap evidence reproduced against.
+//
+// /completions is absent because this server does not serve that route at all
+// -- a pre-existing 404, not an auth gap.
+var oauthMountedRoutes = []mountRoute{
+	{http.MethodPost, "/v1/responses"},
+	{http.MethodPost, "/v1/responses/compact"},
+	{http.MethodPost, "/v1/alpha/search"},
+	{http.MethodPost, "/v1/messages"},
+	{http.MethodPost, "/v1/chat/completions"},
+	{http.MethodPost, "/v1/embeddings"},
+	{http.MethodGet, "/v1/models"},
+	{http.MethodGet, "/v1/usage"},
+	{http.MethodGet, "/v1/sub2api/billing"},
+	{http.MethodPost, "/responses"},
+	{http.MethodPost, "/responses/compact"},
+	{http.MethodGet, "/responses"},
+	{http.MethodPost, "/alpha/search"},
+	{http.MethodPost, "/chat/completions"},
+	{http.MethodPost, "/embeddings"},
+	{http.MethodGet, "/models"},
+}
+
+// oauthUnmountedRoutes is the declared boundary. These are other platforms'
+// surfaces and none of them appears in the client's path allowlist:
+// /v1beta runs APIKeyAuthWithSubscriptionGoogle (a different middleware
+// entirely, and an explicit non-goal), and the rest still run the bare
+// apiKeyAuth.
+//
+// This is not an assertion that the boundary is in the right place -- it is an
+// assertion that it is where it is documented to be, so widening it later is a
+// deliberate edit to this list rather than an accident.
+var oauthUnmountedRoutes = []mountRoute{
+	{http.MethodPost, "/messages/count_tokens"},
+	{http.MethodPost, "/backend-api/codex/responses"},
+	{http.MethodPost, "/antigravity/v1/messages"},
+	{http.MethodGet, "/antigravity/models"},
+	{http.MethodPost, "/web_search"},
+}
+
+// TestOAuthCredentialBranchIsMountedOnTheInferenceRoutes fails if any mount is
+// reverted to the bare apiKeyAuth, because the request would then reach the
+// delegate and be authenticated as an API key.
 func TestOAuthCredentialBranchIsMountedOnTheInferenceRoutes(t *testing.T) {
-	for _, path := range []string{
-		"/v1/responses",
-		"/v1/responses/compact",
-		"/v1/alpha/search",
-		"/v1/messages",
-		"/responses",
-		"/responses/compact",
-		"/alpha/search",
-	} {
-		t.Run(path, func(t *testing.T) {
+	for _, route := range oauthMountedRoutes {
+		t.Run(route.name(), func(t *testing.T) {
 			router, delegateCalls := newOAuthMountTestRouter(t)
 
-			w := postWithBearer(t, router, path, jwtShapedCredential)
+			w := requestWithBearer(t, router, route, jwtShapedCredential)
 
 			require.Equal(t, http.StatusUnauthorized, w.Code, "body: %s", w.Body.String())
 			require.JSONEq(t, `{"error":"invalid_token"}`, w.Body.String(),
@@ -113,44 +170,67 @@ func TestOAuthCredentialBranchIsMountedOnTheInferenceRoutes(t *testing.T) {
 // half: mounting the branch must not change how a non-JWT credential is
 // handled on those same routes.
 func TestOrdinaryAPIKeyStillReachesTheAPIKeyPathOnTheInferenceRoutes(t *testing.T) {
-	for _, path := range []string{
-		"/v1/responses",
-		"/v1/alpha/search",
-		"/responses",
-		"/alpha/search",
-	} {
-		t.Run(path, func(t *testing.T) {
+	for _, route := range oauthMountedRoutes {
+		t.Run(route.name(), func(t *testing.T) {
 			router, delegateCalls := newOAuthMountTestRouter(t)
 
-			w := postWithBearer(t, router, path, "sk-an-ordinary-api-key")
+			w := requestWithBearer(t, router, route, "sk-an-ordinary-api-key")
 
 			require.Equal(t, int32(1), delegateCalls.Load(),
 				"a credential with no JWT shape belongs to the API-key path")
-			require.NotEqual(t, http.StatusUnauthorized, w.Code, "body: %s", w.Body.String())
+			// What the stub handlers do afterwards is not this test's business
+			// -- several of them answer their own 401/500 with no services
+			// wired. The property is that the OAuth branch did not answer.
+			require.NotEqual(t, `{"error":"invalid_token"}`, strings.TrimSpace(w.Body.String()),
+				"the OAuth branch must not have answered an API-key credential")
 		})
 	}
 }
 
 // TestOAuthCredentialBranchIsNotMountedOutsideTask4sScope pins the declared
-// scope boundary rather than leaving it implicit. /v1beta is an explicit
-// non-goal (it runs APIKeyAuthWithSubscriptionGoogle, a different middleware
-// entirely), and the root-level aliases outside the evidence's reproduction set
-// still run the bare apiKeyAuth. If a later task widens the branch, this test
-// is the one that should be updated deliberately -- it is not an assertion that
-// the current boundary is correct, only that it is where it is documented to be.
+// boundary. See oauthUnmountedRoutes.
 func TestOAuthCredentialBranchIsNotMountedOutsideTask4sScope(t *testing.T) {
-	for _, path := range []string{
-		"/chat/completions",
-		"/messages/count_tokens",
-		"/backend-api/codex/responses",
-	} {
-		t.Run(path, func(t *testing.T) {
+	for _, route := range oauthUnmountedRoutes {
+		t.Run(route.name(), func(t *testing.T) {
 			router, delegateCalls := newOAuthMountTestRouter(t)
 
-			postWithBearer(t, router, path, jwtShapedCredential)
+			requestWithBearer(t, router, route, jwtShapedCredential)
 
 			require.Equal(t, int32(1), delegateCalls.Load(),
 				"this route is outside Task 4's declared mount set and still runs apiKeyAuth")
 		})
+	}
+}
+
+// TestEveryClientReachablePathIsMounted states the client-coverage argument as
+// an executable claim rather than as prose in a report.
+//
+// The hermes nous adapter allowlists these four relative paths and joins them
+// to its configured base URL. Both spellings -- with and without the /v1 suffix
+// the default base URL carries -- must reach the OAuth branch, because
+// NOUS_INFERENCE_BASE_URL can legitimately be set either way and the difference
+// is invisible until every request 401s in production.
+func TestEveryClientReachablePathIsMounted(t *testing.T) {
+	// "/completions" is deliberately absent: this server has no such route, so
+	// it 404s on both spellings regardless of auth.
+	clientPaths := []mountRoute{
+		{http.MethodPost, "/chat/completions"},
+		{http.MethodPost, "/embeddings"},
+		{http.MethodGet, "/models"},
+	}
+	for _, base := range []string{"", "/v1"} {
+		for _, route := range clientPaths {
+			full := mountRoute{route.method, base + route.path}
+			t.Run(full.name(), func(t *testing.T) {
+				router, delegateCalls := newOAuthMountTestRouter(t)
+
+				w := requestWithBearer(t, router, full, jwtShapedCredential)
+
+				require.Equal(t, http.StatusUnauthorized, w.Code, "body: %s", w.Body.String())
+				require.JSONEq(t, `{"error":"invalid_token"}`, w.Body.String(),
+					"a client path must not depend on NOUS_INFERENCE_BASE_URL carrying a /v1 suffix")
+				require.Zero(t, delegateCalls.Load())
+			})
+		}
 	}
 }

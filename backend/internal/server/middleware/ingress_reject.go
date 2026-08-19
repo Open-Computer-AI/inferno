@@ -38,6 +38,15 @@ const (
 	IngressRejectOAuthInvalidToken            IngressRejectReason = "oauth_invalid_token"
 	IngressRejectOAuthInsufficientScope       IngressRejectReason = "oauth_insufficient_scope"
 	IngressRejectOAuthBackingGroupUnavailable IngressRejectReason = "oauth_backing_group_unavailable"
+	// Backing-row expiry and quota exhaustion get their own reasons rather than
+	// sharing IngressRejectAPIKeyDisabled: this field is what an operator greps,
+	// and collapsing three distinct conditions onto one value makes "why did
+	// this agent stop" unanswerable from the access log. A DISABLED backing row
+	// keeps IngressRejectAPIKeyDisabled, which is exactly what it is and is
+	// worth aggregating together with the API-key path's version.
+	IngressRejectOAuthBackingKeyExpired        IngressRejectReason = "oauth_backing_key_expired"
+	IngressRejectOAuthBackingKeyQuotaExhausted IngressRejectReason = "oauth_backing_key_quota_exhausted"
+	IngressRejectOAuthSubscriptionNotFound     IngressRejectReason = "oauth_subscription_not_found"
 )
 
 const ingressRejectReasonContextKey = "ingress_reject_reason"

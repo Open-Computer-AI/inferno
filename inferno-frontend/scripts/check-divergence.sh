@@ -361,6 +361,16 @@ deploy/config.example.yaml
 # pipeline reads *service.APIKey. handler/oauth_handler.go (already declared
 # above) makes its three accessors nil-receiver safe, since route tests build a
 # Handlers literal with no OAuth handler.
+# Task 4 fix round 1 (review findings F1-F11 + escalation 3) touched only files
+# already declared here: oauth_inference_auth{,_test}.go and ingress_reject.go
+# (IP ACL enforcement, per-endpoint billing:read, the subscription load, 499/504
+# for a dead caller, three more ingress reasons), gateway.go +
+# gateway_oauth_mount_test.go (the branch also mounts on the root-level aliases
+# the real client reaches when NOUS_INFERENCE_BASE_URL carries no /v1 suffix),
+# and service/oauth_signing_key{,_test}.go (declared under Task 2 above -- the
+# parsed RS256 key is now memoised by its stored PEM, which took ~128us of
+# private-key re-parsing off every OAuth request without opening any window in
+# which a rotated-out key still verifies).
 backend/internal/server/middleware/oauth_inference_auth.go
 backend/internal/server/middleware/oauth_inference_auth_test.go
 backend/internal/server/middleware/ingress_reject.go
