@@ -1737,3 +1737,275 @@ re-litigated.
 
 **Last reviewed upstream SHA: `baeac1f3de21d37b129405f092ef86c24b3f203d`**
 (2026-08-15 13:40:21 UTC, "chore: sync VERSION to 0.1.177 [skip ci]").
+
+### 2026-08-19 — fifth sync, CN providers + channel-monitor quota mode
+
+**4,629 commits behind** (`git rev-list --count HEAD..upstream/main`), a sharp
+jump from the 124 the previous entry recorded three days earlier. Confirmed
+real, not a stale ref or a rewritten history: `git rev-list --count
+--first-parent baeac1f3d..upstream/main` is only 43 (43 merge/direct commits
+landed on `main` in those three days, consistent with upstream's own rate),
+but several of those merges are old, long-lived branches merged with full
+history rather than squashed (PR numbers as low as #2148, #4005, #4006,
+dated back to 2026-01-11) — that's what balloons the flat commit count without
+implying 43x the actual review surface. Range `baeac1f3d` (2026-08-15) ..
+`82f7dd14f` (2026-08-19 03:23 UTC, "Merge pull request #5794 from
+Dessalines39394/fix/star-history-chart"), the new last-reviewed SHA.
+
+**Rebase: clean.** All 137 of our commits replayed; one dropped as empty
+(`chore: align Docker Go toolchain -- patch contents already upstream`, since
+upstream's own Go-toolchain bump already carried the same change). Verified
+`git merge-base HEAD upstream/main` lands exactly on `baeac1f3d`, confirming
+the rebase reattached at the expected point.
+
+**Gate 5 asserted post-rebase:** `check-divergence.sh` exits 0 — 40 files
+differ against the merge-base, all 38 `DECLARED` lines matched (some are
+globs covering multiple files: D5's Razorpay globs and D1's `ent/` list).
+No accidental backend drift; D1-D6 unchanged from the existing ledger.
+
+**Backend gate, run because upstream's commits touched `backend/` heavily
+during the rebase (230 files under `backend/` differ from the previous
+base):** `go build ./...` clean. `go test -tags unit ./internal/...
+./ent/...` all packages `ok`, no failures.
+
+**Frontend gate before port:** `june-lint` 867 violation(s) across 278
+converted file(s) (up from 845/273 at the previous sync — consistent with
+ordinary June-conversion work landing on `inferno-redesign` between syncs,
+not this reconcile). `vue-tsc --noEmit` 0 errors. `vitest run` 230 files /
+1620 tests, **2 pre-existing failures** (see below, not from this sync).
+`vite build` succeeded (only the pre-existing >500kB chunk warnings).
+
+#### The upstream-relevant diff: CN provider support (Kimi/Zhipu/DeepSeek) + channel-monitor quota mode
+
+Per the runbook, diffed `frontend/src/{api,stores,composables,utils,types}`
+between `baeac1f3d` and `upstream/main`:
+
+- 12 files changed, all in `api/`, `composables/`, `utils/`, `types/` — no
+  `stores/` changes.
+- `frontend/src/{App.vue,main.ts,router,index.html,tailwind.config.js}` --
+  zero changes. `frontend/src/style.css` -- one small change (see below).
+- `backend/internal/handler/dto`, `backend/internal/handler/admin` -- 12
+  files changed, all corresponding to (and verified against) the TS changes
+  below; no surprise shape changes.
+- `backend/internal/handler` as a whole -- 8 more files, all gateway-path
+  logic (`openai_gateway_handler.go`, `openai_chat_completions.go`,
+  `openai_gateway_count_tokens.go`, `handler.go`, `wire.go`,
+  `setting_handler.go`) or server-side-only validation
+  (`account_handler.go`'s OpenAI-Responses probe eligibility now also covers
+  CN-provider accounts; `group_handler.go`'s platform `oneof` validator
+  widened to match the TS union below) -- no admin/user SPA-facing contract
+  change beyond what's already covered.
+
+Two upstream features drove essentially all of it: **first-class CN provider
+support** (Kimi/Zhipu/DeepSeek, admin-only account management + scheduling)
+and **channel-monitor quota mode** (a monitor can now watch an account's
+quota/balance instead of just probing liveness).
+
+## Ported (6 files wholesale, 4 hand-merged)
+
+Wholesale copy (mirror differed, we had never touched these -- verified
+byte-identical against the merge-base mirror snapshot before copying):
+
+1. `inferno-frontend/src/utils/platformColors.ts` -- adds `kimi`, `zhipu`,
+   `deepseek` to the `Platform` union and every color map (badge, border,
+   accent hex, gradient, text, icon, button, discount). `ModelTagInput.vue`
+   (converted) reads only `platformAccentColor()`, which returns a literal
+   hex per platform (`#ec4899` etc.) in the same format as the existing
+   entries -- not a Tailwind class, so no lint violation. The rest of the
+   file (Tailwind-class maps) has no converted consumer.
+2. `inferno-frontend/src/utils/featureFlags.ts` -- adds
+   `isChannelMonitorQuotaVisible()`. Pure addition, zero risk.
+3. `inferno-frontend/src/api/admin/accounts.ts` -- adds optional
+   `long_context_inherited_count?: number` to `bulkUpdate()`'s response.
+4. `inferno-frontend/src/api/admin/channels.ts` -- adds
+   `ChannelTimePricing`/`ChannelTimePricingPeriod` types and a required
+   `time_pricing: ChannelTimePricing | null` field on `ChannelModelPricing`.
+   Verified against `backend/internal/handler/admin/channel_handler.go`:
+   request and response both carry it as an optional pointer, so `null` is
+   the correct empty value.
+5. `inferno-frontend/src/api/channelMonitor.ts` -- adds `MonitorQuotaSnapshot`
+   type and optional `latest_quota?: MonitorQuotaSnapshot | null` on
+   `UserMonitorView`.
+6. `inferno-frontend/src/api/admin/channelMonitor.ts` -- adds `CheckMode`,
+   `MonitorQuotaTier`, `MonitorBalance`, `MonitorQuotaSnapshot` types; adds
+   `check_mode`/`account_id`/`latest_quota` fields to `ChannelMonitor`,
+   `CreateParams`, `CheckResult`, `HistoryItem`; widens the `Provider` union
+   with `antigravity`, `kimi`, `zhipu`, `deepseek`.
+
+Hand-merged (file is in our own touched history, so this was a targeted
+insertion preserving our customization, never a wholesale copy):
+
+7. `inferno-frontend/src/composables/useModelWhitelist.ts` (+ its spec,
+   which upstream did not change) -- added `kimi-for-coding` and `kimi-k2`
+   to `moonshotModels`, and a `case 'kimi':` fallthrough to
+   `getModelsByPlatform`'s existing `case 'moonshot':`. This file already
+   carries our June-token color rewrite from an earlier cycle (the "keep
+   ours, hand-add the new row" example GOAL.md documents); this port kept
+   that rewrite untouched and inserted only the 5 new lines.
+8. `inferno-frontend/src/api/admin/settings.ts` -- added `kimi`, `zhipu` to
+   `SchedulingThresholdPlatformType` and `SCHEDULING_THRESHOLD_PLATFORMS`
+   (deepseek is balance-based and uses a different detection path per
+   upstream's own comment), and `channel_monitor_show_quota?: boolean` to
+   both `SystemSettings` and `UpdateSettingsRequest`.
+9. `inferno-frontend/src/types/index.ts` -- added `kimi`, `zhipu`,
+   `deepseek` to `GroupPlatform` and `AccountPlatform`, and
+   `channel_monitor_show_quota?: boolean` to `PublicSettings`. Verified
+   against `dto/settings.go` and `group_handler.go` -- matches exactly.
+10. `inferno-frontend/src/style.css` -- added `color-scheme: light` on
+    `html` and `color-scheme: dark` on `.dark`, matching upstream's addition
+    verbatim (native form-control/scrollbar theming, orthogonal to the June
+    design system, no conflict with our token work).
+
+## Fallout fixed (compile errors from the ports above, in files we do not own)
+
+Porting #4 and #6 above added a required field and widened a union type that
+three **unconverted** files construct/consume as object literals or exhaustive
+records. `vue-tsc --noEmit` is a whole-tree gate, not scoped to converted
+files, so these had to be fixed to keep Gate 1 green even though the files
+themselves are on the views/components ignore list:
+
+11. `inferno-frontend/src/components/admin/monitor/MonitorTemplateManagerDialog.vue`
+    -- `countByProvider`'s `Record<Provider, number>` literal was missing the
+    4 new provider keys. Added `antigravity: 0, kimi: 0, zhipu: 0, deepseek: 0`.
+12. `inferno-frontend/src/components/user/monitor/ProviderIcon.vue` --
+    `PROVIDER_ICONS: Record<Provider, IconData>` was missing icon art (SVG
+    paths) for the 4 new providers, and none exists to add honestly. Relaxed
+    the type to `Partial<Record<Provider, IconData>>`; the component already
+    falls back to a text initial (`fallbackText`) when `PROVIDER_ICONS[key]`
+    is `undefined`, so the 4 new providers degrade to that instead of a type
+    error or a fabricated icon.
+13. `inferno-frontend/src/views/admin/ChannelsView.vue` (2 call sites,
+    `accountStatsRulesToAPI` and `formToAPI`) -- added `time_pricing: null`
+    to the `ChannelModelPricing` object literals the form serializer builds.
+    The form has no time-pricing UI yet (that's real feature work, out of
+    scope for a port), so `null` ("no time-based pricing configured") is the
+    correct value, not a placeholder masking anything.
+
+## Skipped, with reasons
+
+1. **`inferno-frontend/src/api/admin/cnProviders.ts`** (new upstream file) --
+   the CN-provider account-management API client. Zero references anywhere
+   in `inferno-frontend/src` (grepped `cnProviders|CnProvider|CNProvider`).
+   Its only upstream consumers -- `CreateAccountModal.vue`,
+   `EditAccountModal.vue` (both on the standing ignore list) and two brand
+   new cell components, `CNProviderBalanceCell.vue` /
+   `CNProviderQuotaCell.vue`, which don't exist in our tree at all -- are all
+   under the ignored `components/account/` bucket. Matched-pair skip: same
+   pattern as `opsFormatters.ts` on 2026-08-16.
+2. **`inferno-frontend/src/api/admin/index.ts`**'s `cnProviders` registration
+   -- three lines wiring the file above into the `adminAPI` object. Skipped
+   together with it; porting the registration alone would import a file we
+   didn't port.
+3. **`inferno-frontend/src/composables/useChannelMonitorFormat.ts`'s new
+   capabilities** (`checkModeLabel`, `checkModeBadgeClass`,
+   `formatMonitorModel`, and badge/picker/gradient `case`s for the 4 new
+   providers) -- deliberately NOT hand-merged, unlike the other 4
+   hand-merges above. This is real feature UI work, not a mechanical port:
+   - Upstream's version is raw Tailwind (`bg-pink-100 text-pink-700
+     dark:bg-pink-500/15...`); ours is June-tokenized. Doing this correctly
+     means picking June tokens for 4 new provider identities and a new
+     check-mode badge, which is a design decision, not a transcription.
+   - It depends on `src/constants/channelMonitor.ts` (a new `PROVIDERS`
+     array and `CHECK_MODE_*` constants), which is outside the declared
+     port scope (`api/stores/composables/utils/types`) and untouched here.
+   - It needs new i18n keys (`monitorCommon.checkMode.*`,
+     `monitorCommon.providers.{kimi,zhipu,deepseek}`) that CONVENTIONS
+     reserves for the orchestrator, not a reconcile script.
+   - The UI that would actually let an admin create a quota-mode monitor
+     lives entirely in the ignored `components/`/`views/` bucket, so porting
+     only the composable's formatting helpers would add capability with
+     zero callers -- the same shape as the `cnProviders.ts` skip above.
+
+   Not silently ignored: the ported API types (#5, #6) already carry
+   `check_mode`, `latest_quota`, and the widened `Provider` union, and I
+   verified the composable's existing `switch` statements all have a
+   `default:` branch (`NEUTRAL_BADGE`, neutral picker styling) and
+   `providerLabel` falls back to the raw string -- so a monitor with one of
+   the 4 new providers, or a quota-mode monitor, renders today with a
+   neutral badge and a plain-text label rather than crashing, throwing, or
+   silently misrendering. Recorded as owed UI work below.
+4. **Backend-only, verified, no client-visible contract change**:
+   `account_handler.go` (`scheduleOpenAIResponsesProbe` eligibility widened
+   to CN-provider accounts -- server-side gateway logic only, nothing under
+   `frontend/src/api` reads it), `group_handler.go` (the `platform` binding
+   `oneof` validator widened to `... kimi zhipu deepseek ...`, which only
+   duplicates server-side what `GroupPlatform` in `types/index.ts` already
+   states, ported as #9 above), `handler.go`/`wire.go`/gateway-path files
+   (`openai_gateway_handler.go`, `openai_chat_completions.go`,
+   `openai_gateway_count_tokens.go`) -- same category as prior syncs'
+   gateway-only skips.
+5. **`PublicSettings.SoraClientEnabled` removal** -- upstream deleted this
+   field from both `SystemSettings` and `PublicSettings` in `dto/settings.go`
+   (part of the merged `chore/remove-sora-leftovers` PR). Grepped both
+   `frontend/src` and `inferno-frontend/src` for `sora` outside `i18n/locales`
+   -- zero matches in either tree. The field was never wired to a live
+   consumer on our side, so its removal is a no-op for us. The only trace
+   left is two now-fully-orphaned i18n keys,
+   `admin.settings...soraClient` in `i18n/locales/{en,zh}/admin/settings.ts`.
+   Not removed here (i18n deletions are the orchestrator's call per
+   CONVENTIONS rule 6, and this one is cosmetic, not broken) -- flagged for
+   a future i18n cleanup pass.
+
+## Gate output (real, not carried forward)
+
+Before port: `june-lint` 867 violation(s) across 278 converted file(s) ·
+`vue-tsc --noEmit` 0 errors · `vitest run` 230 files / 1620 tests, 1618
+passed / 2 failed (pre-existing, see below) · `vite build` succeeded.
+
+After port: `june-lint` 867 violation(s) across 278 converted file(s) --
+**identical count**, confirming the ports and fallout fixes added zero new
+violations and the lint's scope (which of the ~13 touched files count as
+"converted") didn't shift. `vue-tsc --noEmit` 0 errors (after the 3 fallout
+fixes above; was 5 errors immediately after the wholesale ports, before
+fixing). `vitest run` 230 files / 1620 tests, 1618 passed / 2 failed --
+same 2 as before port, same file, confirmed unrelated (see below). No test
+count drop. `vite build` succeeded, only the pre-existing >500kB chunk
+warnings.
+
+Backend gate re-run not needed after the frontend-only ports above (zero
+files under `backend/` touched past the rebase); the post-rebase run already
+covered above stands.
+
+## Pre-existing test failures, not from this sync
+
+`src/components/layout/__tests__/siteLogoSanitization.spec.ts` -- 2 of its 4
+tests fail (`AppSidebar imports sanitizeUrl and applies it to siteLogo`, and
+`all three pass allowRelative and allowDataUrl options`). Root cause: local
+commit `b2ee90e68` ("fix(ui): remove sidebar brand mark") deleted the logo
+`<img>` from `AppSidebar.vue` entirely as a deliberate June-redesign
+decision (the rail nav has no logo slot), but nobody updated this spec,
+which still expects `AppSidebar.vue`'s source to contain
+`sanitizeUrl(appStore.siteLogo...)`. `HomeView.vue` and `KeyUsageView.vue`
+(the other two files the spec checks) still pass.
+
+Confirmed pre-existing, not introduced by this sync: `git checkout
+pre-sync-backup -- inferno-frontend` (then reverted) produced zero diff
+against the current tree, meaning `inferno-frontend/`'s content -- and
+therefore this test's pass/fail outcome -- is byte-identical before and
+after the rebase. This is local-branch drift between two of our own
+commits, unrelated to upstream reconciliation. Not fixed here: deciding
+whether to update the test (drop the AppSidebar assertion, since the logo
+is deliberately gone) or restore some other logo affordance is a product
+call, not a mechanical port fix.
+
+## Unsure about / flagging for review
+
+- The CN-provider and channel-monitor-quota-mode API types are now ahead of
+  any UI that uses them (by design -- see skip #3). This is intentionally
+  the same posture as the 2026-08-15 `types/index.ts` `model_pricing` port:
+  keep the contract honest, let real UI work land later. Flagging in case a
+  reviewer would rather these stayed unported until the UI work is
+  scheduled.
+- **The PR diff will look large relative to "12 relevant files changed" --
+  say so up front.** This branch is a straight rebase of `inferno-redesign`
+  onto 4,629 new upstream commits (137 of ours replayed on top). The actual
+  new content is: 13 file changes/fixes above (10 ports + 3 fallout fixes)
+  plus this log entry. Recommend the reviewer fast-forward
+  `inferno-redesign` to this branch's tip rather than attempting a merge,
+  same as the 2026-08-16 entry recommended and for the same reason.
+- Nothing else surfaced with a real judgement call beyond what's written
+  above and in the skip list.
+
+**Last reviewed upstream SHA: `82f7dd14f717bef480879f73cba288791b9b9663`**
+(2026-08-19 03:23:33 UTC, "Merge pull request #5794 from
+Dessalines39394/fix/star-history-chart").

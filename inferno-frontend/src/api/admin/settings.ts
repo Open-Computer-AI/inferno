@@ -36,13 +36,19 @@ export type SchedulingThresholdPlatformType =
   | "openai"
   | "anthropic"
   | "grok"
+  | "kimi"
+  | "zhipu"
 
 export type AccountSchedulingThresholdsMap = Record<SchedulingThresholdPlatformType, number>
 
+// Matches the backend's AllowedSchedulingThresholdPlatforms (deepseek is
+// balance-based and uses balance detection instead of a usage threshold).
 export const SCHEDULING_THRESHOLD_PLATFORMS: SchedulingThresholdPlatformType[] = [
   "openai",
   "anthropic",
   "grok",
+  "kimi",
+  "zhipu",
 ]
 
 export function normalizeAccountSchedulingThresholdsMap(
@@ -712,6 +718,7 @@ export interface SystemSettings {
   channel_monitor_mode?: 'v1' | 'v2';
   channel_monitor_default_interval_seconds: number;
   channel_monitor_hide_throughput?: boolean;
+  channel_monitor_show_quota?: boolean;
 
   // Available Channels feature switch
   available_channels_enabled: boolean;
@@ -1010,6 +1017,7 @@ export interface UpdateSettingsRequest {
   channel_monitor_mode?: 'v1' | 'v2';
   channel_monitor_default_interval_seconds?: number;
   channel_monitor_hide_throughput?: boolean;
+  channel_monitor_show_quota?: boolean;
 
   // Available Channels feature switch
   available_channels_enabled?: boolean;
