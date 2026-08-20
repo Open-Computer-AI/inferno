@@ -2009,3 +2009,141 @@ call, not a mechanical port fix.
 **Last reviewed upstream SHA: `82f7dd14f717bef480879f73cba288791b9b9663`**
 (2026-08-19 03:23:33 UTC, "Merge pull request #5794 from
 Dessalines39394/fix/star-history-chart").
+
+### 2026-08-20 — sixth sync, small incremental cycle, one deliberate skip
+
+**Built on top of the already-open PR #7 (`sync/reconcile-2026-08-19`)
+rather than re-deriving its work.** At the start of this run, three sync PRs
+sat open and unmerged: #5 (BLOCKED, resolved by the owner's D5/D6
+declaration two days ago but never closed), #6 (superseded by #7's larger
+port, never closed), and #7 itself (covers `baeac1f3d..82f7dd14f`, based on
+current `inferno-redesign` tip `68ef97c7d`, still green, still unmerged).
+Redoing #7's already-correct analysis from scratch would have been pure
+waste, so this run checked out `sync/reconcile-2026-08-19` and continued
+forward from there. Recovery tag `pre-sync-backup` set at that branch's tip
+(`aa51c674b`) before touching anything.
+
+**46 commits behind** (only 15 by `--first-parent`, i.e. real upstream
+volume, not a rewritten-history artifact -- checked the way the 2026-08-19
+entry taught, since the same ballooning trick could apply here too). Range
+`82f7dd14f` (2026-08-19, PR #7's endpoint) .. `1b5dc676a` (2026-08-20 10:13
++0800, new last-reviewed SHA).
+
+**Rebase: clean.** All 137 commits (PR #7's plus everything under it)
+replayed with zero conflicts onto today's `upstream/main`.
+`git merge-base HEAD upstream/main` lands exactly on `upstream/main`'s tip,
+confirming the rebase is current, not stale.
+
+**Gate 5: exit 0.** `check-divergence.sh` -- 40 files differ against the
+merge-base, 38 declared, 0 undeclared. Same D1/D2/D4/D5/D6 ledger as #7,
+untouched by this cycle.
+
+## Diffed for portable work -- one candidate, deliberately skipped
+
+Per the runbook, diffed the port-policy paths between `82f7dd14f` and
+`upstream/main`:
+
+- `frontend/src/{api,stores,composables,utils,types}` -- **one file
+  changed**: `api/admin/channels.ts`. Everything else in this bucket:
+  zero files.
+- `frontend/src/{App.vue,main.ts,router,style.css,styles,index.html,tailwind.config.js}`
+  -- zero files changed.
+- `backend/internal/handler/{dto,admin}` -- `channel_handler.go` (+test),
+  `group_handler.go` (+test), matching the same feature as the TS change
+  below plus a composite-platform fix. No other admin/user SPA contract
+  drift.
+- The one upstream feature this cycle, `feat/channel-pricing-tier-multipliers`
+  (PR #5851), adds four required per-interval multiplier fields
+  (`input_multiplier`, `output_multiplier`, `cache_write_multiplier`,
+  `cache_read_multiplier` on `PricingInterval`) and two optional
+  per-model multiplier fields (`fast_multiplier`, `flex_multiplier` on
+  `ChannelModelPricing`), plus widens `compositePlatforms` in
+  `ChannelsView.vue` to include kimi/zhipu/deepseek.
+
+### Skipped: `api/admin/channels.ts`'s new multiplier fields
+
+Traced every consumer before deciding. `PricingInterval` and
+`ChannelModelPricing` (from `api/admin/channels.ts`, not itself an ignored
+path) are read by exactly two files in our tree: `views/admin/ChannelsView.vue`
+and `components/admin/channel/types.ts` -- both under the standing
+`components/`/`views/` ignore rule, both unconverted. Nothing outside that
+bucket touches these two types: `PlazaModelPricingTable.vue` and
+`SupportedModelChip.vue` (both converted, both consumers of a
+*different* file, `api/channels.ts`'s `UserPricingInterval`) are
+unaffected -- upstream did not touch that file this cycle.
+
+Unlike the `time_pricing` port on 2026-08-19 (wholesale-copied, then
+patched two ignored-bucket call sites to keep `vue-tsc` green), this run
+chose **not** to wholesale-copy at all: `input_multiplier` and its three
+siblings are non-optional on `PricingInterval`, and `components/admin/channel/types.ts`
+constructs `PricingInterval[]` via `formIntervalsToAPI()` without them, so
+copying the type alone would break the build immediately. Porting correctly
+means also porting `types.ts`'s new `isValidPositiveMultiplier()` validator
+and its two call-site updates in `ChannelsView.vue` (`addPricingEntry`,
+`syncLatestModels`, `formToAPI`, `apiToForm`, plus a new validation branch
+in `handleSubmit`) -- real feature work inside the ignored bucket, not a
+mechanical fallout fix. Same call as the 2026-08-15 `backup.ts` skip: a
+type-only port helps nobody without the view work alongside it, and the
+view work is out of scope for a reconcile. Left `api/admin/channels.ts`
+at its pre-sync shape (still carries the 2026-08-19 `time_pricing` port).
+
+No other candidate this cycle -- `backup.ts`, `admin/groups.ts`
+`getUsageSummary`, `opsFormatters.ts`, `cnProviders.ts` wiring: rechecked
+against `upstream/main`, none changed since their last-logged skip reason,
+still stands verbatim.
+
+## Gate output, real
+
+**Frontend:** `june-lint` 867 violation(s) across 279 converted file(s) --
+same 867 total as PR #7's baseline (+1 file is `api/admin/channels.ts`
+entering scope from the earlier `time_pricing` port aging one day, not
+anything from this cycle -- confirmed zero violations in that file before
+and after). `vue-tsc --noEmit` 0 errors. `vitest run` 230 files / 1620
+tests, 1618 passed / 2 failed -- the same pre-existing
+`siteLogoSanitization.spec.ts` failure PR #7 documented and deliberately
+left unfixed (product call, not a sync regression); re-verified unchanged.
+No test-count drop. `vite build` succeeded, only the pre-existing >500kB
+chunk-size warnings.
+
+**Backend** (gated -- upstream touched `backend/` in the rebase):
+`go build ./...` clean. `go test -tags unit ./internal/... ./ent/...` --
+every package with tests `ok`, including `internal/server` (carries D2's
+golden fixture) and `internal/handler/admin` (carries the channel/group
+handler changes from this cycle).
+
+## The open-PR backlog -- flagged for the owner, not solved here
+
+Three prior sync PRs were open and unreviewed when this run started, none
+merged or closed in 1-3 days despite green gates on all of them:
+
+- **#5** (`sync/reconcile-2026-08-17`, BLOCKED) -- its blocker (undeclared
+  Razorpay divergence) was resolved by the owner declaring D5/D6 directly on
+  `inferno-redesign` the same day. #6's own body already said "recommend
+  closing #5"; it is still open three days later.
+- **#6** (`sync/reconcile-2026-08-18-b`) -- superseded by #7, which starts
+  from the same base and ports a strict superset (CN providers +
+  monitor-quota-mode vs. #6's CN providers only). #7's body already said
+  "recommend closing #5" (did not address #6 directly, but the supersession
+  is total).
+- **#7** (`sync/reconcile-2026-08-19`) -- this run's own starting point.
+  Still fully current: its `82f7dd14f` endpoint plus this cycle's one
+  incremental commit is exactly what today's PR contains.
+
+Recommend: close #5 and #6 as superseded, and treat today's PR as the
+single candidate for fast-forwarding `inferno-redesign` -- it is #7 plus
+one small, clean increment, not a fourth independent line of work.
+
+## Unsure about / flagging for review
+
+- The multiplier-field skip above is a judgement call, not a fact --
+  reasonable people could decide the fallout fix is small enough to do
+  anyway (four fields plus a validator, mirroring what #7 already did for
+  `time_pricing`). Chose not to because it's real feature validation logic,
+  not a type-shape fallout fix, and the ignore-bucket rule exists precisely
+  to keep reconcile cycles from creeping into product work.
+- Everything else resolved cleanly to "unchanged, still applies" or "out of
+  tree, not reachable" -- no other open judgement calls this cycle.
+
+**Last reviewed upstream SHA: `1b5dc676a9d35532ac2d88dbbe0ee2638b2ab05f`**
+(2026-08-20 10:13:17 +0800, "Merge pull request #5851 from
+IanShaw027/feat/channel-pricing-tier-multipliers").
