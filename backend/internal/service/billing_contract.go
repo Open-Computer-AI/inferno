@@ -33,6 +33,8 @@ type BillingContractService struct {
 	orgSvc     BillingOrgSource
 	usageSvc   BillingUsageSource
 	paymentSvc BillingPaymentSource
+	planSvc    BillingPlanSource
+	subSvc     BillingSubscriptionSource
 
 	// portalBaseURL is cfg.Server.FrontendURL -- the browser-facing base URL
 	// this deployment is reachable at. See BillingStateView.PortalURL.
@@ -69,11 +71,34 @@ type BillingPaymentSource interface {
 	IsPaymentEnabled(ctx context.Context) bool
 }
 
+// BillingPlanSource is the purchasable-plan catalog used to build the
+// GET /api/billing/subscription tier picker. Satisfied by
+// *PaymentConfigService -- the SAME concrete service as BillingPaymentSource,
+// but kept as its own narrow interface (not folded into BillingPaymentSource)
+// so a test can break the plan catalog without also breaking the top-up
+// bounds, matching the rest of this file's one-interface-per-concern rule.
+type BillingPlanSource interface {
+	// ListPlans returns EVERY plan, not just ForSale ones: a grandfathered
+	// plan the caller is still on but that can no longer be purchased must
+	// still appear in `tiers` (isEnabled:false) or the picker cannot render
+	// the caller's own current row. See resolveTiers.
+	ListPlans(ctx context.Context) ([]*dbent.SubscriptionPlan, error)
+	GetGroupInfoMap(ctx context.Context, plans []*dbent.SubscriptionPlan) map[int64]PlanGroupInfo
+}
+
+// BillingSubscriptionSource is the caller's own active subscriptions.
+// Satisfied by *SubscriptionService.
+type BillingSubscriptionSource interface {
+	ListActiveUserSubscriptions(ctx context.Context, userID int64) ([]UserSubscription, error)
+}
+
 func NewBillingContractService(
 	balanceSvc BillingBalanceSource,
 	orgSvc BillingOrgSource,
 	usageSvc BillingUsageSource,
 	paymentSvc BillingPaymentSource,
+	planSvc BillingPlanSource,
+	subSvc BillingSubscriptionSource,
 	portalBaseURL string,
 ) *BillingContractService {
 	return &BillingContractService{
@@ -81,6 +106,8 @@ func NewBillingContractService(
 		orgSvc:        orgSvc,
 		usageSvc:      usageSvc,
 		paymentSvc:    paymentSvc,
+		planSvc:       planSvc,
+		subSvc:        subSvc,
 		portalBaseURL: portalBaseURL,
 		now:           timezone.Now,
 	}
@@ -259,26 +286,29 @@ func (s *BillingContractService) State(ctx context.Context, userID int64) (*Bill
 		PortalURL:     billingPortalURL(s.portalBaseURL),
 	}
 
-	out.Org, out.CanChangePlan = s.resolveOrg(ctx, userID)
+	_, out.Org, out.CanChangePlan = s.resolvePrimaryOrg(ctx, userID)
 	out.MonthlyCap = s.resolveMonthlyCap(ctx, userID)
 	out.Bounds, out.CLIBillingEnabled = s.resolvePayment(ctx)
 
 	return out, nil
 }
 
-// resolveOrg returns the primary org and the plan-change capability, or
-// (nil, nil) when the org could not be resolved.
-func (s *BillingContractService) resolveOrg(ctx context.Context, userID int64) (*BillingOrgView, *bool) {
+// resolvePrimaryOrg returns the caller's primary org record, its wire view,
+// and the plan-change capability. All three are nil/empty together only when
+// the org could not be resolved at all; the raw record is returned alongside
+// the view so a caller that needs a field the view does not carry (Subscription
+// needs IsPersonal, for `context`) does not have to query a second time.
+func (s *BillingContractService) resolvePrimaryOrg(ctx context.Context, userID int64) (*dbent.Org, *BillingOrgView, *bool) {
 	orgs, err := s.orgSvc.OrgsForUser(ctx, userID)
 	if err != nil {
 		slog.Error("billing contract: org lookup failed", "user_id", userID, "error", err)
-		return nil, nil
+		return nil, nil, nil
 	}
 	if len(orgs) == 0 {
 		// Post-C1 every session provisions a personal org, so this is not
 		// expected; a missing org is still "unknown", not an empty one.
 		slog.Error("billing contract: user has no org", "user_id", userID)
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	primary := orgs[0]
@@ -294,12 +324,12 @@ func (s *BillingContractService) resolveOrg(ctx context.Context, userID int64) (
 		// canChangePlan entirely, so the client falls back to its own role
 		// check instead of being told "no" by a lookup failure.
 		slog.Error("billing contract: org role lookup failed", "user_id", userID, "org_id", primary.ID, "error", err)
-		return view, nil
+		return primary, view, nil
 	}
 	view.Role = role
 
 	canChangePlan := role == OrgRoleOwner || role == OrgRoleAdmin
-	return view, &canChangePlan
+	return primary, view, &canChangePlan
 }
 
 // resolveMonthlyCap aggregates month-to-date spend, or returns nil when the
@@ -377,4 +407,248 @@ func billingPortalURL(base string) string {
 		return ""
 	}
 	return strings.TrimRight(base, "/") + "/purchase"
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/billing/subscription -- the CLI's /subscription screen.
+//
+// THESE JSON KEYS ARE NOT OURS TO CHOOSE EITHER. The only consumer is
+// agent/subscription_view.py's subscription_state_from_payload (:214), plus
+// its helpers _parse_current (:141) and _parse_tier (:176). Every field below
+// is the exact camelCase key that parser reads. Two of them fail SILENTLY on
+// a type mistake, same as billing/state:
+//
+//   - `tiers` must be a JSON array, even when empty ([], never null) -- a
+//     non-list silently becomes () (subscription_view.py:224-229), an empty
+//     plan picker with no error anywhere.
+//   - `canChangePlan` must be a real JSON bool -- a string "true" parses to
+//     None, not true (:236-240).
+//
+// `current` is the other sharp edge: "no plan" is wire-represented as
+// `current: null`, NOT an object of nulls (the old all-null-object shape is
+// gone per the comment at subscription_view.py:142-144). A present `current`
+// is discarded entirely unless it carries a truthy tierId/id (:147-149).
+// ---------------------------------------------------------------------------
+
+// BillingSubscriptionView is GET /api/billing/subscription's body.
+type BillingSubscriptionView struct {
+	// Org mirrors BillingStateView.Org -- same struct, same resolution. The
+	// subscription parser only reads .name/.id/.role from it
+	// (subscription_view.py:218-220); .slug is unread here but still a real,
+	// cited field (billing_view.py, Task 1), not an invented one.
+	Org *BillingOrgView `json:"org,omitempty"`
+
+	// Context is EXACTLY "personal" or "team" -- any other string silently
+	// becomes "personal" on the client (subscription_view.py:221-222), so an
+	// unresolved org still emits a valid value rather than an empty string.
+	Context string `json:"context"`
+
+	// Tiers is the selectable plan catalog. Never nil: an empty Go slice
+	// marshals to `[]`, which is what a `list` guard downstream requires.
+	Tiers []BillingTierView `json:"tiers"`
+
+	// CanChangePlan mirrors BillingStateView.CanChangePlan: omitted (not
+	// false) when the role lookup failed, so the client falls back to its own
+	// role check instead of being told "no" by a lookup failure.
+	CanChangePlan *bool `json:"canChangePlan,omitempty"`
+
+	// Current is the caller's active subscription, or nil (-> JSON `null`)
+	// when there is none. Deliberately NOT omitempty: the client's "no plan"
+	// state is a present `current: null` key, and an omitted key is only
+	// coincidentally equivalent (payload.get("current") on a missing key also
+	// returns None) -- being explicit is what the type-fidelity test pins.
+	Current *BillingCurrentSubscriptionView `json:"current"`
+
+	// PortalURL reuses BillingStateView's exact deep link (billingPortalURL):
+	// read at agent/subscription_view.py:292 by the CALLER of
+	// subscription_state_from_payload (build_subscription_state), not by the
+	// parser itself, but it is a real read site all the same. Downstream,
+	// subscription_manage_url (subscription_view.py:302-345) only keeps this
+	// URL's scheme+host and replaces the path with /manage-subscription, so
+	// the exact path we send here (/purchase, same as billing/state) does not
+	// matter -- only that host is never nousresearch.com.
+	PortalURL string `json:"portalUrl,omitempty"`
+}
+
+// BillingTierView is one row of the plan picker
+// (subscription_view.py's _parse_tier, :176-189).
+type BillingTierView struct {
+	// TierID is the owning GROUP's id, not a SubscriptionPlan id. Inferno has
+	// no subscription-to-plan link -- a UserSubscription is keyed to
+	// (userID, groupID) -- so the only identity BillingCurrentSubscriptionView
+	// can ever report is the group. For the client's `tier.tier_id ===
+	// current.tier_id` picker-highlight match to work AT ALL, every tier row's
+	// id must be that same group id, not the underlying plan's own id.
+	TierID string `json:"tierId"`
+	Name   string `json:"name"`
+	// TierOrder is the SubscriptionPlan's SortOrder, the same field the panel's
+	// own /api/v1/payment/plans already orders by.
+	TierOrder int `json:"tierOrder"`
+	// DollarsPerMonthDisplay is the plan's Price as-is. Inferno's SubscriptionPlan
+	// has no notion of "normalize to a monthly rate" -- the panel's own
+	// /api/v1/payment/plans response (payment_handler.go's GetPlans) shows the
+	// same raw Price with no such normalization -- so a non-monthly-validity
+	// plan's price is shown unmodified, consistent with how the rest of this
+	// product already displays it.
+	DollarsPerMonthDisplay string `json:"dollarsPerMonthDisplay"`
+	// MonthlyCredits is absent when the plan's group has no MonthlyLimitUSD
+	// configured (an uncapped group has no "credits" concept to report) --
+	// same not-invented pattern as BillingStateView.MonthlyCap.LimitUSD.
+	MonthlyCredits *string `json:"monthlyCredits,omitempty"`
+	IsCurrent      bool    `json:"isCurrent"`
+	// IsEnabled is the plan's ForSale flag. False marks a grandfathered plan
+	// the caller may still be on but that can no longer be newly selected --
+	// exactly the semantics _parse_tier's isEnabled documents.
+	IsEnabled bool `json:"isEnabled"`
+}
+
+// BillingCurrentSubscriptionView is the caller's active plan
+// (subscription_view.py's _parse_current, :141-159).
+//
+// pendingDowngradeTierName, pendingDowngradeAt and cancellationEffectiveAt are
+// DELIBERATELY ABSENT FIELDS, not zero values: Inferno's UserSubscription has
+// no scheduled-downgrade or cancellation model at all (service/user_subscription.go
+// has no such column), so there is nothing to report and inventing "never
+// pending" would be indistinguishable from "we don't know". CancelAtPeriodEnd
+// is the one exception -- see its own comment.
+type BillingCurrentSubscriptionView struct {
+	// TierID is the GROUP id -- see BillingTierView.TierID's comment. Always
+	// non-empty when Current is non-nil: strconv.FormatInt on a real group id
+	// can never produce the empty string the client's truthy-tierId guard
+	// (subscription_view.py:147-149) would discard.
+	TierID   string `json:"tierId"`
+	TierName string `json:"tierName,omitempty"`
+
+	// MonthlyCredits / CreditsRemaining map Group.MonthlyLimitUSD (the plan's
+	// monthly spend ceiling) and MonthlyLimitUSD-minus-MonthlyUsageUSD. This is
+	// a judgment call, not a literal reading: Inferno has no "credits" unit
+	// separate from its dollar balance, so the group's own monthly USD cap is
+	// the closest honest analog -- and, like MonthlyCredits, both are absent
+	// (nil) when the group has no cap, because "uncapped" has no credits
+	// figure to report. CreditsRemaining is clamped at 0 rather than going
+	// negative, and is NEVER nil merely because it IS zero -- a real 0
+	// remaining is a different fact than "unknown", so this does not reuse
+	// billingOptionalMoney (which treats 0 as "no bound").
+	MonthlyCredits   *string `json:"monthlyCredits,omitempty"`
+	CreditsRemaining *string `json:"creditsRemaining,omitempty"`
+
+	// CycleEndsAt is the subscription's ExpiresAt, RFC 3339. The parser stores
+	// it as an opaque string with no format validation (subscription_view.py:150),
+	// so any ISO 8601 rendering is safe; RFC3339 matches every other timestamp
+	// this codebase emits over JSON.
+	CycleEndsAt string `json:"cycleEndsAt,omitempty"`
+
+	// CancelAtPeriodEnd is always false. Unlike the three omitted fields
+	// above, this one IS always knowable: Inferno has no cancellation flow at
+	// all, so "is a cancellation scheduled" is always, definitely, no --
+	// not "unknown". bool(raw.get(...)) on a missing key also defaults to
+	// False, so this is emitted explicitly rather than relying on that.
+	CancelAtPeriodEnd bool `json:"cancelAtPeriodEnd"`
+}
+
+// Subscription composes the client's /subscription screen.
+//
+// Unlike State, nothing here is fatal: there is no single field this endpoint
+// cannot proceed without (no analogue of "the balance"). Every section
+// degrades independently -- log the real error, leave that section at its
+// zero value (nil org, "personal" context, empty tiers, null current) -- so
+// this never 500s. The error return exists for signature symmetry with State
+// and as a seam for a future genuinely-fatal source; nothing today triggers it.
+func (s *BillingContractService) Subscription(ctx context.Context, userID int64) (*BillingSubscriptionView, error) {
+	out := &BillingSubscriptionView{
+		Context:   "personal",
+		Tiers:     []BillingTierView{},
+		PortalURL: billingPortalURL(s.portalBaseURL),
+	}
+
+	primaryOrg, orgView, canChangePlan := s.resolvePrimaryOrg(ctx, userID)
+	out.Org = orgView
+	out.CanChangePlan = canChangePlan
+	if primaryOrg != nil && !primaryOrg.IsPersonal {
+		out.Context = "team"
+	}
+
+	current, activeGroupID, hasActive := s.resolveCurrentSubscription(ctx, userID)
+	out.Current = current
+	out.Tiers = s.resolveTiers(ctx, activeGroupID, hasActive)
+
+	return out, nil
+}
+
+// resolveCurrentSubscription returns the caller's current plan (nil when the
+// caller has none or the lookup failed), the group id it belongs to, and
+// whether one was actually found -- the group id alone cannot distinguish
+// "no subscription" from "subscription in group 0", though group ids in
+// practice start above 0.
+func (s *BillingContractService) resolveCurrentSubscription(ctx context.Context, userID int64) (*BillingCurrentSubscriptionView, int64, bool) {
+	subs, err := s.subSvc.ListActiveUserSubscriptions(ctx, userID)
+	if err != nil {
+		slog.Error("billing contract: active subscription lookup failed", "user_id", userID, "error", err)
+		return nil, 0, false
+	}
+	if len(subs) == 0 {
+		return nil, 0, false
+	}
+
+	sub := subs[0]
+	if sub.Group == nil {
+		// ListActiveUserSubscriptions eager-loads Group; a nil Group here
+		// means the row is unusable for identity purposes -- degrade rather
+		// than report a subscription with no name and no group id.
+		slog.Error("billing contract: active subscription has no group loaded", "user_id", userID, "subscription_id", sub.ID)
+		return nil, 0, false
+	}
+
+	view := &BillingCurrentSubscriptionView{
+		TierID:            strconv.FormatInt(sub.GroupID, 10),
+		TierName:          sub.Group.Name,
+		CycleEndsAt:       sub.ExpiresAt.UTC().Format(time.RFC3339),
+		CancelAtPeriodEnd: false,
+	}
+
+	if sub.Group.MonthlyLimitUSD != nil {
+		limit := *sub.Group.MonthlyLimitUSD
+		limitStr := billingMoney(limit)
+		view.MonthlyCredits = &limitStr
+
+		remaining := limit - sub.MonthlyUsageUSD
+		if remaining < 0 {
+			remaining = 0
+		}
+		remainingStr := billingMoney(remaining)
+		view.CreditsRemaining = &remainingStr
+	}
+
+	return view, sub.GroupID, true
+}
+
+// resolveTiers builds the plan picker from EVERY plan (not just ForSale ones
+// -- see BillingPlanSource.ListPlans), marking the caller's own group current
+// and every non-ForSale plan disabled.
+func (s *BillingContractService) resolveTiers(ctx context.Context, activeGroupID int64, hasActive bool) []BillingTierView {
+	plans, err := s.planSvc.ListPlans(ctx)
+	if err != nil {
+		slog.Error("billing contract: plan catalog lookup failed", "error", err)
+		return []BillingTierView{}
+	}
+
+	groupInfo := s.planSvc.GetGroupInfoMap(ctx, plans)
+
+	tiers := make([]BillingTierView, 0, len(plans))
+	for _, p := range plans {
+		view := BillingTierView{
+			TierID:                 strconv.FormatInt(p.GroupID, 10),
+			Name:                   p.Name,
+			TierOrder:              p.SortOrder,
+			DollarsPerMonthDisplay: billingMoney(p.Price),
+			IsCurrent:              hasActive && p.GroupID == activeGroupID,
+			IsEnabled:              p.ForSale,
+		}
+		if gi, ok := groupInfo[p.GroupID]; ok && gi.MonthlyLimitUSD != nil {
+			mc := billingMoney(*gi.MonthlyLimitUSD)
+			view.MonthlyCredits = &mc
+		}
+		tiers = append(tiers, view)
+	}
+	return tiers
 }

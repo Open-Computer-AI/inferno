@@ -316,7 +316,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	oAuthTokenService := service.ProvideOAuthTokenService(client, oAuthKeyService, oAuthDeviceService, refreshTokenCache, userRepository, configConfig)
 	oAuthAuthorizeService := service.NewOAuthAuthorizeService(client)
 	handlerOAuthHandler := handler.ProvideOAuthHandler(oAuthKeyService, oAuthClientService, orgService, oAuthDeviceService, oAuthTokenService, userRepository, oAuthAuthorizeService)
-	billingContractService := service.ProvideBillingContractService(billingCacheService, orgService, usageService, paymentConfigService, configConfig)
+	billingContractService := service.ProvideBillingContractService(billingCacheService, orgService, usageService, paymentConfigService, subscriptionService, configConfig)
 	billingContractHandler := handler.NewBillingContractHandler(billingContractService)
 	idempotencyCoordinator := service.ProvideIdempotencyCoordinator(idempotencyRepository, configConfig)
 	idempotencyCleanupService := service.ProvideIdempotencyCleanupService(idempotencyRepository, configConfig)

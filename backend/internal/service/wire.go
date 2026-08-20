@@ -133,18 +133,25 @@ func ProvideOAuthTokenService(entClient *dbent.Client, keySvc *OAuthKeyService, 
 // supported value: BillingStateView.PortalURL is then omitted rather than
 // emitted as a relative path.
 //
-// SubscriptionService is deliberately NOT a dependency -- see
-// task-1-report.md F4: nothing in the client's BillingState is
-// subscription-derived, so wiring it here would be an unused dependency
-// belonging to the later GET /api/billing/subscription task.
+// SubscriptionService IS now a dependency, added by GET /api/billing/subscription
+// (Task 3): task-1-report.md F4 deferred it because nothing in
+// BillingStateView is subscription-derived, but BillingSubscriptionView is
+// entirely subscription-derived.
+//
+// paymentCfgSvc is threaded in TWICE, once per narrow interface it satisfies:
+// BillingPaymentSource (top-up bounds) and BillingPlanSource (the plan
+// catalog). Same concrete service, two call sites in Go's eyes -- kept
+// separate so a test can break one without the other, per this file's
+// one-interface-per-concern convention.
 func ProvideBillingContractService(
 	billingCache *BillingCacheService,
 	orgSvc *OrgService,
 	usageSvc *UsageService,
 	paymentCfgSvc *PaymentConfigService,
+	subSvc *SubscriptionService,
 	cfg *config.Config,
 ) *BillingContractService {
-	return NewBillingContractService(billingCache, orgSvc, usageSvc, paymentCfgSvc, cfg.Server.FrontendURL)
+	return NewBillingContractService(billingCache, orgSvc, usageSvc, paymentCfgSvc, paymentCfgSvc, subSvc, cfg.Server.FrontendURL)
 }
 
 // ProvideOAuthRefreshAPI creates OAuthRefreshAPI with the default lock TTL.

@@ -77,6 +77,42 @@ func (f *fakeBillingPaymentSource) GetAvailableMethodLimits(_ context.Context) (
 
 func (f *fakeBillingPaymentSource) IsPaymentEnabled(_ context.Context) bool { return f.enabled }
 
+// fakeBillingPlanSource stands in for PaymentConfigService's BillingPlanSource
+// half: ListPlans + GetGroupInfoMap.
+type fakeBillingPlanSource struct {
+	plans     []*dbent.SubscriptionPlan
+	groupInfo map[int64]PlanGroupInfo
+	err       error
+}
+
+func (f *fakeBillingPlanSource) ListPlans(_ context.Context) ([]*dbent.SubscriptionPlan, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.plans, nil
+}
+
+func (f *fakeBillingPlanSource) GetGroupInfoMap(_ context.Context, _ []*dbent.SubscriptionPlan) map[int64]PlanGroupInfo {
+	return f.groupInfo
+}
+
+// fakeBillingSubscriptionSource stands in for SubscriptionService's
+// ListActiveUserSubscriptions, keyed by user id so a test can seed TWO
+// different users' rows in the same fake store and prove one user's
+// response never reflects the other's data -- the isolation guarantee the
+// task-3 brief calls for.
+type fakeBillingSubscriptionSource struct {
+	byUser map[int64][]UserSubscription
+	err    error
+}
+
+func (f *fakeBillingSubscriptionSource) ListActiveUserSubscriptions(_ context.Context, userID int64) ([]UserSubscription, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.byUser[userID], nil
+}
+
 // billingContractFixture holds the fakes so a test can reach in and break one
 // source at a time -- that is what the partial-degradation test needs.
 type billingContractFixture struct {
@@ -84,6 +120,8 @@ type billingContractFixture struct {
 	org     *fakeBillingOrgSource
 	usage   *fakeBillingUsageSource
 	payment *fakeBillingPaymentSource
+	plan    *fakeBillingPlanSource
+	sub     *fakeBillingSubscriptionSource
 	now     time.Time
 }
 
@@ -107,10 +145,12 @@ func newBillingContractFixture(t *testing.T) (*BillingContractService, *billingC
 			limits:  &MethodLimitsResponse{GlobalMin: 5, GlobalMax: 500},
 			enabled: true,
 		},
-		now: time.Date(2026, 8, 19, 13, 45, 0, 0, time.UTC),
+		plan: &fakeBillingPlanSource{groupInfo: map[int64]PlanGroupInfo{}},
+		sub:  &fakeBillingSubscriptionSource{byUser: map[int64][]UserSubscription{}},
+		now:  time.Date(2026, 8, 19, 13, 45, 0, 0, time.UTC),
 	}
 
-	svc := NewBillingContractService(fx.balance, fx.org, fx.usage, fx.payment, "https://portal.example.com")
+	svc := NewBillingContractService(fx.balance, fx.org, fx.usage, fx.payment, fx.plan, fx.sub, "https://portal.example.com")
 	svc.now = func() time.Time { return fx.now }
 	return svc, fx
 }
@@ -324,6 +364,8 @@ func TestBillingCacheServiceSatisfiesBillingBalanceSource(t *testing.T) {
 	var _ BillingOrgSource = (*OrgService)(nil)
 	var _ BillingUsageSource = (*UsageService)(nil)
 	var _ BillingPaymentSource = (*PaymentConfigService)(nil)
+	var _ BillingPlanSource = (*PaymentConfigService)(nil)
+	var _ BillingSubscriptionSource = (*SubscriptionService)(nil)
 }
 
 // TestBillingStatePortalURLPointsAtThisDeployment covers the live bug this
@@ -351,4 +393,319 @@ func TestBillingStateOmitsPortalURLWhenUnconfigured(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, got.PortalURL)
 	_ = fx
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/billing/subscription -- Subscription()
+// ---------------------------------------------------------------------------
+
+// TestBillingSubscriptionReportsCurrentPlanTiersAndContext is the happy path:
+// an active subscription surfaces as `current` with a real tierId, and the
+// plan catalog lists it as `isCurrent`.
+func TestBillingSubscriptionReportsCurrentPlanTiersAndContext(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.org.orgs = []*dbent.Org{{ID: 1, Slug: "acme-1a2b", Name: "Acme", IsPersonal: false}}
+	fx.org.role = OrgRoleOwner
+
+	limit := 100.0
+	fx.sub.byUser[7] = []UserSubscription{{
+		ID:              42,
+		UserID:          7,
+		GroupID:         9,
+		ExpiresAt:       time.Date(2026, 9, 19, 0, 0, 0, 0, time.UTC),
+		MonthlyUsageUSD: 30,
+		Group:           &Group{ID: 9, Name: "Pro", MonthlyLimitUSD: &limit},
+	}}
+	fx.plan.plans = []*dbent.SubscriptionPlan{
+		{ID: 100, GroupID: 9, Name: "Pro", Price: 20, SortOrder: 2, ForSale: true},
+		{ID: 101, GroupID: 5, Name: "Starter", Price: 5, SortOrder: 1, ForSale: true},
+	}
+	fx.plan.groupInfo = map[int64]PlanGroupInfo{
+		9: {MonthlyLimitUSD: &limit},
+	}
+
+	got, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+
+	require.Equal(t, "team", got.Context, "IsPersonal:false must map to team")
+	require.NotNil(t, got.Org)
+	require.Equal(t, "OWNER", got.Org.Role)
+	require.NotNil(t, got.CanChangePlan)
+	require.True(t, *got.CanChangePlan)
+
+	require.NotNil(t, got.Current, "an active subscription must produce a non-nil current")
+	require.Equal(t, "9", got.Current.TierID)
+	require.Equal(t, "Pro", got.Current.TierName)
+	require.NotNil(t, got.Current.MonthlyCredits)
+	require.Equal(t, "100", *got.Current.MonthlyCredits)
+	require.NotNil(t, got.Current.CreditsRemaining)
+	require.Equal(t, "70", *got.Current.CreditsRemaining)
+	require.Equal(t, "2026-09-19T00:00:00Z", got.Current.CycleEndsAt)
+	require.False(t, got.Current.CancelAtPeriodEnd)
+
+	require.Len(t, got.Tiers, 2)
+	byID := map[string]BillingTierView{}
+	for _, tier := range got.Tiers {
+		byID[tier.TierID] = tier
+	}
+	require.True(t, byID["9"].IsCurrent)
+	require.False(t, byID["5"].IsCurrent)
+	require.Equal(t, "20", byID["9"].DollarsPerMonthDisplay)
+	require.Equal(t, 2, byID["9"].TierOrder)
+	require.True(t, byID["9"].IsEnabled)
+}
+
+// TestBillingSubscriptionReportsNoPlanAsNilCurrent pins the exact shape
+// agent/subscription_view.py:142-144 documents: "no plan" is current:null,
+// never an object of nulls -- the all-null-object shape is gone. A caller
+// with zero active subscriptions must get a nil *BillingCurrentSubscriptionView
+// (which marshals to JSON null; the wire-byte assertion lives in the route
+// test), not a zero-valued struct.
+func TestBillingSubscriptionReportsNoPlanAsNilCurrent(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.sub.byUser[7] = nil // no active subscriptions
+
+	got, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+
+	require.Nil(t, got.Current, "no active subscription must produce a nil current, not a zero-valued object")
+}
+
+// TestBillingSubscriptionTiersIsNeverNilEvenWhenTheCatalogIsEmpty: `tiers`
+// must be a JSON array even with zero plans -- a nil Go slice marshals to
+// `null`, which subscription_view.py:224-229 silently turns into an empty
+// picker with no error, but the Go-level contract is that Tiers is always a
+// non-nil (possibly zero-length) slice.
+func TestBillingSubscriptionTiersIsNeverNilEvenWhenTheCatalogIsEmpty(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.plan.plans = nil
+
+	got, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+
+	require.NotNil(t, got.Tiers)
+	require.Empty(t, got.Tiers)
+}
+
+// TestBillingSubscriptionMarksAGrandfatheredPlanDisabledButStillCurrent: a
+// plan the caller is on but that is no longer ForSale must still appear in
+// `tiers` (isEnabled:false) so the picker can render the caller's own row --
+// this is why resolveTiers uses ListPlans, not ListPlansForSale.
+func TestBillingSubscriptionMarksAGrandfatheredPlanDisabledButStillCurrent(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.sub.byUser[7] = []UserSubscription{{
+		ID: 1, UserID: 7, GroupID: 9,
+		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
+		Group:     &Group{ID: 9, Name: "Legacy Pro"},
+	}}
+	fx.plan.plans = []*dbent.SubscriptionPlan{
+		{ID: 100, GroupID: 9, Name: "Legacy Pro", Price: 20, SortOrder: 1, ForSale: false},
+	}
+
+	got, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+
+	require.Len(t, got.Tiers, 1)
+	require.True(t, got.Tiers[0].IsCurrent)
+	require.False(t, got.Tiers[0].IsEnabled, "a no-longer-sold plan must still show, but disabled")
+}
+
+// TestBillingSubscriptionCreditsRemainingCanBeZero: a real zero remaining is
+// a different fact than "unknown" and must NOT be nulled out the way
+// billingOptionalMoney treats an unset bound.
+func TestBillingSubscriptionCreditsRemainingCanBeZero(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	limit := 50.0
+	fx.sub.byUser[7] = []UserSubscription{{
+		ID: 1, UserID: 7, GroupID: 9,
+		ExpiresAt:       time.Now().Add(time.Hour),
+		MonthlyUsageUSD: 75, // over the cap
+		Group:           &Group{ID: 9, Name: "Pro", MonthlyLimitUSD: &limit},
+	}}
+
+	got, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+
+	require.NotNil(t, got.Current)
+	require.NotNil(t, got.Current.CreditsRemaining)
+	require.Equal(t, "0", *got.Current.CreditsRemaining, "over-cap usage must clamp to 0, not go negative")
+}
+
+// TestBillingSubscriptionOmitsMonthlyCreditsWhenTheGroupHasNoCap: an
+// uncapped group has no credits figure to report -- same not-invented
+// pattern as BillingStateView.MonthlyCap.LimitUSD.
+func TestBillingSubscriptionOmitsMonthlyCreditsWhenTheGroupHasNoCap(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.sub.byUser[7] = []UserSubscription{{
+		ID: 1, UserID: 7, GroupID: 9,
+		ExpiresAt: time.Now().Add(time.Hour),
+		Group:     &Group{ID: 9, Name: "Unlimited", MonthlyLimitUSD: nil},
+	}}
+
+	got, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+
+	require.NotNil(t, got.Current)
+	require.Nil(t, got.Current.MonthlyCredits)
+	require.Nil(t, got.Current.CreditsRemaining)
+}
+
+// TestBillingSubscriptionContextIsPersonalForAPersonalOrg is the other half
+// of the context mapping.
+func TestBillingSubscriptionContextIsPersonalForAPersonalOrg(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.org.orgs = []*dbent.Org{{ID: 1, Slug: "me-1a2b", Name: "Personal", IsPersonal: true}}
+
+	got, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+
+	require.Equal(t, "personal", got.Context)
+}
+
+// TestBillingSubscriptionDefaultsContextToPersonalWhenOrgLookupFails: the
+// client silently defaults an unrecognized context to "personal"
+// (subscription_view.py:221-222); the server side matches that default
+// rather than emitting an empty string on a lookup failure.
+func TestBillingSubscriptionDefaultsContextToPersonalWhenOrgLookupFails(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.org.orgsErr = errors.New("org query failed")
+
+	got, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+
+	require.Equal(t, "personal", got.Context)
+	require.Nil(t, got.Org)
+	require.Nil(t, got.CanChangePlan)
+}
+
+// TestBillingSubscriptionOmitsCanChangePlanWhenTheRoleLookupFails mirrors
+// State's identical guarantee: a lookup failure must not be reported as a
+// denied capability.
+func TestBillingSubscriptionOmitsCanChangePlanWhenTheRoleLookupFails(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.org.roleErr = errors.New("membership query failed")
+
+	got, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+
+	require.NotNil(t, got.Org)
+	require.Nil(t, got.CanChangePlan)
+}
+
+// TestBillingSubscriptionDegradesWhenTheSubscriptionLookupFails: Subscription
+// never fails the whole response -- there is no field here as load-bearing as
+// State's balance. Current degrades to nil and everything else still resolves.
+//
+// MUTATION CHECK: propagating the subscription lookup's error out of
+// Subscription (so it returns (nil, err) instead of degrading) fails this
+// test on require.NoError, the same FailNow()-before-dereference shape as
+// TestBillingStateDegradesWhenTheUsageRollupFails.
+func TestBillingSubscriptionDegradesWhenTheSubscriptionLookupFails(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.sub.err = errors.New("user_subscriptions query timed out")
+	fx.plan.plans = []*dbent.SubscriptionPlan{{ID: 100, GroupID: 9, Name: "Pro", Price: 20, ForSale: true}}
+
+	got, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+	require.Nil(t, got.Current)
+	require.NotEmpty(t, got.Tiers, "the plan catalog is independent of the subscription lookup and must still resolve")
+}
+
+// TestBillingSubscriptionDegradesWhenThePlanCatalogFails: the inverse -- a
+// broken plan catalog must not take `current` down with it.
+func TestBillingSubscriptionDegradesWhenThePlanCatalogFails(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.plan.err = errors.New("subscription_plans query failed")
+	fx.sub.byUser[7] = []UserSubscription{{
+		ID: 1, UserID: 7, GroupID: 9,
+		ExpiresAt: time.Now().Add(time.Hour),
+		Group:     &Group{ID: 9, Name: "Pro"},
+	}}
+
+	got, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+	require.NotNil(t, got.Current)
+	require.Equal(t, "9", got.Current.TierID)
+	require.NotNil(t, got.Tiers)
+	require.Empty(t, got.Tiers)
+}
+
+// TestBillingSubscriptionDegradesWhenTheGroupIsNotEagerLoaded: a defensive
+// case -- ListActiveUserSubscriptions is documented to eager-load Group, but
+// if a row ever arrives without one, Subscription must degrade to nil rather
+// than emit a current object with an empty tierId (which the client would
+// treat as no-plan on the id check anyway, but a name-only leak with a blank
+// id is worse than an honest nil).
+func TestBillingSubscriptionDegradesWhenTheGroupIsNotEagerLoaded(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.sub.byUser[7] = []UserSubscription{{
+		ID: 1, UserID: 7, GroupID: 9,
+		ExpiresAt: time.Now().Add(time.Hour),
+		Group:     nil,
+	}}
+
+	got, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+	require.Nil(t, got.Current)
+}
+
+// TestBillingSubscriptionIsolatesBetweenTwoUsers is the isolation proof the
+// task-3 brief requires: a second user's rows are present in the SAME fake
+// store (byUser is keyed by user id, exactly like the real repository's
+// WHERE user_id = ? predicate), and user 7's response must never reflect
+// user 8's plan.
+//
+// MUTATION CHECK: hardcoding resolveCurrentSubscription's lookup to always
+// read fx.sub.byUser[8] (or any id other than the caller's) makes user 7's
+// assertion below fail -- TierID flips from "9" to "40", and IsCurrent on
+// tier 9 flips from true to false. See task-3-report.md for the literal diff
+// and failing output.
+func TestBillingSubscriptionIsolatesBetweenTwoUsers(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.sub.byUser[7] = []UserSubscription{{
+		ID: 1, UserID: 7, GroupID: 9,
+		ExpiresAt: time.Now().Add(time.Hour),
+		Group:     &Group{ID: 9, Name: "User7Plan"},
+	}}
+	fx.sub.byUser[8] = []UserSubscription{{
+		ID: 2, UserID: 8, GroupID: 40,
+		ExpiresAt: time.Now().Add(time.Hour),
+		Group:     &Group{ID: 40, Name: "User8Plan"},
+	}}
+	fx.plan.plans = []*dbent.SubscriptionPlan{
+		{ID: 100, GroupID: 9, Name: "User7Plan", Price: 20, ForSale: true},
+		{ID: 200, GroupID: 40, Name: "User8Plan", Price: 40, ForSale: true},
+	}
+
+	got7, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+	require.NotNil(t, got7.Current)
+	require.Equal(t, "9", got7.Current.TierID)
+	require.Equal(t, "User7Plan", got7.Current.TierName)
+
+	got8, err := svc.Subscription(context.Background(), 8)
+	require.NoError(t, err)
+	require.NotNil(t, got8.Current)
+	require.Equal(t, "40", got8.Current.TierID)
+	require.Equal(t, "User8Plan", got8.Current.TierName)
+
+	for _, tier := range got7.Tiers {
+		if tier.TierID == "9" {
+			require.True(t, tier.IsCurrent)
+		}
+		if tier.TierID == "40" {
+			require.False(t, tier.IsCurrent, "user 7's response must never mark user 8's plan current")
+		}
+	}
+}
+
+// TestBillingSubscriptionPortalURLMatchesState: same deep link, same
+// deployment, for the same reason State's does.
+func TestBillingSubscriptionPortalURLMatchesState(t *testing.T) {
+	svc, _ := newBillingContractFixture(t)
+
+	got, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+	require.Equal(t, "https://portal.example.com/purchase", got.PortalURL)
+	require.NotContains(t, got.PortalURL, "nousresearch.com")
 }
