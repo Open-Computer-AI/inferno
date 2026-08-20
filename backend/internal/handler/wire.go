@@ -158,9 +158,11 @@ func ProvideOAuthHandler(
 	tokenSvc *service.OAuthTokenService,
 	userRepo service.UserRepository,
 	authorizeSvc *service.OAuthAuthorizeService,
+	billingSvc *service.BillingContractService,
 ) *OAuthHandler {
 	h := NewOAuthHandler(keySvc, clientSvc, orgSvc, deviceSvc, tokenSvc, userRepo)
 	h.SetAuthorizeService(authorizeSvc)
+	h.SetBillingContractService(billingSvc)
 	return h
 }
 

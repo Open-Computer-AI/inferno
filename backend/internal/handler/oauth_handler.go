@@ -41,6 +41,13 @@ type OAuthHandler struct {
 	// ProvideSettingHandler/ProvideBatchImageHandler's existing
 	// construct-then-set pattern in handler/wire.go.
 	authorizeSvc *service.OAuthAuthorizeService
+	// billingSvc supplies the `subscription` object on Account (Task 4,
+	// GET /api/oauth/account). Set via SetBillingContractService for the same
+	// reason authorizeSvc is a setter, not a constructor parameter -- see that
+	// field's comment. Callers may leave it nil; Account then omits
+	// `subscription` entirely, which the client already treats identically to
+	// "no subscription" (see billing_contract.go's AccountSubscription doc).
+	billingSvc *service.BillingContractService
 }
 
 func NewOAuthHandler(keySvc *service.OAuthKeyService, clientSvc *service.OAuthClientService, orgSvc *service.OrgService, deviceSvc *service.OAuthDeviceService, tokenSvc *service.OAuthTokenService, userSvc service.OAuthUserLookup) *OAuthHandler {
@@ -52,6 +59,13 @@ func NewOAuthHandler(keySvc *service.OAuthKeyService, clientSvc *service.OAuthCl
 // for why this is a setter and not a constructor parameter.
 func (h *OAuthHandler) SetAuthorizeService(svc *service.OAuthAuthorizeService) {
 	h.authorizeSvc = svc
+}
+
+// SetBillingContractService wires the billing contract adapter used by
+// Account to populate `subscription`. See the billingSvc field comment for
+// why this is a setter and not a constructor parameter.
+func (h *OAuthHandler) SetBillingContractService(svc *service.BillingContractService) {
+	h.billingSvc = svc
 }
 
 // KeyService exposes the OAuth signing key service so
@@ -382,11 +396,18 @@ func (h *OAuthHandler) Token(c *gin.Context) {
 //   - `privy_did` is OMITTED, not stubbed. Inferno does not use Privy; there is
 //     no honest value, and inventing one would make the client believe it has a
 //     wallet identity it does not have.
-//   - `subscription` and `tool_access` are OMITTED. Mapping Inferno's
-//     subscription/quota model onto Nous's plan/tier/credits shape is a billing
-//     decision this sub-project explicitly defers (see the design doc's
-//     non-goals: "the /api/billing/* contract adapter — later"). The client
-//     treats a missing/non-object value as None, which is the honest answer.
+//   - `subscription` (Task 4) is REAL when h.billingSvc is wired and the caller
+//     has an active subscription: service.BillingContractService.AccountSubscription
+//     reuses Task 3's exact resolveCurrentSubscription/resolveTiers mappers.
+//     `monthly_charge` inside it is DELIBERATELY ALWAYS OMITTED -- see that
+//     type's doc comment in billing_contract.go -- because
+//     hermes_cli/models.py:685-707's is_nous_free_tier reads `monthly_charge
+//     == 0` as "free tier", and Inferno has no honest recurring-charge figure
+//     for it. The whole key is omitted (nil, not present) when there is no
+//     active subscription or h.billingSvc is nil -- the client's non-dict
+//     branch (nous_account.py:706-707) treats that identically either way.
+//   - `tool_access` is still OMITTED. There is no honest free-tool-pool model
+//     in Inferno to report yet.
 //   - `paid_service_access` is STUBBED to a deliberate, explicit "no paid
 //     tier": allowed=false, paid_access=false. That is a choice to under-grant.
 //     Inferno does have a real balance and subscriptions, but the mapping from
@@ -470,11 +491,12 @@ func (h *OAuthHandler) Account(c *gin.Context) {
 	// endpoint disagree about the same user -- the client is told it cannot pay
 	// while inference succeeds, or told it can while every request 403s.
 	//
-	// Still deliberately absent: `subscription` and `tool_access`. A subscribed
-	// user with a zero wallet reads as free here, which under-grants rather than
-	// over-grants and stays on the safe side of the same rule. Closing that gap
-	// is the /api/billing/* adapter's job, and it needs the plan/tier/credits
-	// shape this endpoint does not model yet.
+	// Still deliberately absent from paid_service_access: it does not read
+	// `subscription` at all (that gap was `subscription` itself, closed below
+	// by Task 4) -- `has_active_subscription` here stays hardcoded false, an
+	// unrelated stub within a different object that this task does not touch.
+	// `tool_access` also stays fully omitted: there is no honest free-tool-pool
+	// model in Inferno yet.
 	paidAccess := gin.H{
 		"allowed":                 canPay,
 		"paid_access":             canPay,
@@ -485,6 +507,16 @@ func (h *OAuthHandler) Account(c *gin.Context) {
 		"user":                user,
 		"orgs":                out,
 		"paid_service_access": paidAccess,
+	}
+
+	// subscription (Task 4). Nil (billingSvc unset, or the caller has no
+	// active subscription) means the key is omitted entirely -- see the
+	// Account doc comment and AccountSubscription's own doc comment in
+	// billing_contract.go for why that is the correct, and safe, wire shape.
+	if h.billingSvc != nil {
+		if sub := h.billingSvc.AccountSubscription(ctx, userID); sub != nil {
+			payload["subscription"] = sub
+		}
 	}
 
 	if len(orgs) > 0 {

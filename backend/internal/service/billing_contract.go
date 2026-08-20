@@ -768,3 +768,139 @@ func billingDollarsPerMonth(price float64, validityDays int, validityUnit string
 	}
 	return price * 30 / float64(totalDays)
 }
+
+// ---------------------------------------------------------------------------
+// The `subscription` object inside GET /api/oauth/account (Task 4).
+//
+// THIS IS A DIFFERENT WIRE CONTRACT FROM BillingSubscriptionView ABOVE, even
+// though it describes the same underlying data. The only consumer is
+// hermes_cli/nous_account.py's _subscription_from_payload (:705-716), reached
+// from _info_from_account_payload's payload.get("subscription") (:660) --
+// snake_case, a completely separate parser from Task 3's camelCase
+// agent/subscription_view.py. Every field below is the exact key that
+// function reads:
+//
+//	plan                _coerce_str    (:709)
+//	tier                _coerce_int    (:710)
+//	monthly_charge      _coerce_float  (:711) -- SEE THE WARNING ON THE FIELD
+//	monthly_credits     _coerce_float  (:712)
+//	current_period_end  _coerce_str    (:713)
+//	credits_remaining   _coerce_float  (:714)
+//	rollover_credits    _coerce_float  (:715) -- Inferno has no rollover
+//	                                    concept; no Go field exists for this
+//	                                    key at all, so there is nothing to
+//	                                    accidentally set.
+//
+// A non-dict `subscription` (missing key included) makes
+// _subscription_from_payload return None (:706-707) -- so, exactly like
+// Task 1's precedent, omitting the whole key is the safe and correct
+// representation of "no subscription", never an object of nulls.
+// ---------------------------------------------------------------------------
+
+// BillingAccountSubscriptionView is the snake_case `subscription` object
+// embedded in GET /api/oauth/account's payload.
+type BillingAccountSubscriptionView struct {
+	// Plan -- _subscription_from_payload:709. Reuses
+	// BillingCurrentSubscriptionView.TierName (the group's Name) verbatim.
+	// omitempty costs nothing: _coerce_str already turns "" into None the
+	// same as a missing key.
+	Plan string `json:"plan,omitempty"`
+
+	// Tier -- :710. The only int ordering this codebase has is the active
+	// group's representative plan's SortOrder -- Task 3's resolveTiers /
+	// billingRepresentativePlan (ruling R-3.1/R-3.2), found by locating the
+	// tiers[] entry with IsCurrent==true. Omitted, never a fabricated 0,
+	// when the active group is not present in the plan catalog (a
+	// data-integrity edge case: an active subscription pointing at a group
+	// that ListPlans no longer returns any plan for).
+	Tier *int `json:"tier,omitempty"`
+
+	// MonthlyCharge is DELIBERATELY NEVER SET -- this field exists, always
+	// nil, so that decision is visible instead of a key nobody thought
+	// about. hermes_cli/models.py:685-707's is_nous_free_tier reads
+	// monthly_charge == 0 as "free tier" (an old, currently-dead fallback
+	// path -- see task-4-report.md for the citation proving it has zero
+	// production call sites today, and why the ruling holds regardless).
+	// Inferno has no honest RECURRING charge figure to report here: a
+	// SubscriptionPlan's Price is a per-billing-period amount, and
+	// normalising it to a monthly figure the way Task 3's
+	// dollarsPerMonthDisplay does is a judgment call this task's brief
+	// explicitly declines to make for this field ("omit unless we have a
+	// real recurring charge figure" -- a normalised derivative is not
+	// that). Omitted reads as "not free" at models.py:704
+	// (`if charge is None: return False`), the safe direction. NEVER emit
+	// 0 as filler for "unknown" -- that silently downgrades a paying user.
+	MonthlyCharge *float64 `json:"monthly_charge,omitempty"`
+
+	// MonthlyCredits / CreditsRemaining -- :711 (sic, :712) / :714, both ->
+	// _coerce_float. Reuses Task 3's resolveCurrentSubscription figures
+	// exactly: this parses BillingCurrentSubscriptionView's own decimal
+	// STRING output (MonthlyCredits/CreditsRemaining) back to float64
+	// rather than recomputing limit-minus-usage a second time, so the two
+	// endpoints can never silently disagree about the same subscription.
+	// The round trip is lossless: billingMoney encodes with
+	// strconv.FormatFloat(v, 'f', -1, 64), the shortest representation
+	// that parses back to the identical float64.
+	MonthlyCredits   *float64 `json:"monthly_credits,omitempty"`
+	CreditsRemaining *float64 `json:"credits_remaining,omitempty"`
+
+	// CurrentPeriodEnd -- :713. Reuses
+	// BillingCurrentSubscriptionView.CycleEndsAt verbatim (RFC3339,
+	// sourced from sub.ExpiresAt).
+	CurrentPeriodEnd string `json:"current_period_end,omitempty"`
+}
+
+// AccountSubscription builds the `subscription` object for
+// GET /api/oauth/account (Task 4). Returns nil -- meaning "omit the key
+// entirely" -- when the caller has no active subscription or the lookup
+// degrades, exactly resolveCurrentSubscription's own "no plan" signal
+// (Task 3's same degrade-not-500 philosophy: this endpoint has no single
+// fatal dependency).
+//
+// Reuses Task 3's resolveCurrentSubscription and resolveTiers rather than
+// re-deriving the group/plan logic a second time -- a second mapper that
+// drifts from the first is exactly the defect class this task exists to
+// avoid (see task-4-brief.md).
+func (s *BillingContractService) AccountSubscription(ctx context.Context, userID int64) *BillingAccountSubscriptionView {
+	current, activeGroupID, hasActive := s.resolveCurrentSubscription(ctx, userID)
+	if !hasActive || current == nil {
+		return nil
+	}
+
+	view := &BillingAccountSubscriptionView{
+		Plan:             current.TierName,
+		CurrentPeriodEnd: current.CycleEndsAt,
+		MonthlyCredits:   billingMoneyStringToFloat(current.MonthlyCredits),
+		CreditsRemaining: billingMoneyStringToFloat(current.CreditsRemaining),
+	}
+
+	for _, t := range s.resolveTiers(ctx, activeGroupID, hasActive) {
+		if t.IsCurrent {
+			order := t.TierOrder
+			view.Tier = &order
+			break
+		}
+	}
+
+	return view
+}
+
+// billingMoneyStringToFloat parses one of billingMoney's own decimal-string
+// outputs back to float64. The round trip is lossless because billingMoney
+// uses strconv.FormatFloat(v, 'f', -1, 64) -- precision -1 is defined to
+// produce the minimum number of digits necessary such that ParseFloat
+// returns v exactly. A parse failure can only mean the string did not
+// actually come from billingMoney (defensive only, not a reachable path
+// through this codebase's own callers) -- omit rather than report a
+// fabricated number.
+func billingMoneyStringToFloat(s *string) *float64 {
+	if s == nil {
+		return nil
+	}
+	v, err := strconv.ParseFloat(*s, 64)
+	if err != nil {
+		slog.Error("billing contract: could not parse money string back to float64", "value", *s, "error", err)
+		return nil
+	}
+	return &v
+}

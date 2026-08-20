@@ -896,3 +896,149 @@ func TestBillingSubscriptionRepresentativeTierUsesNormalizedDollarsPerMonth(t *t
 	require.Equal(t, "100", got.Tiers[0].DollarsPerMonthDisplay,
 		"a $1200/year plan must display as $100/month, not the raw annual price")
 }
+
+// ---------------------------------------------------------------------------
+// AccountSubscription -- the snake_case `subscription` object embedded in
+// GET /api/oauth/account (Task 4). A DIFFERENT wire contract from
+// Subscription()/BillingSubscriptionView above (Task 3, camelCase) even
+// though both read the same UserSubscription row.
+// ---------------------------------------------------------------------------
+
+// TestAccountSubscriptionReportsPlanTierAndCredits pins the happy path
+// against hermes_cli/nous_account.py's _subscription_from_payload (:705-716):
+// plan, tier, monthly_credits, credits_remaining, current_period_end all
+// present with the right Go types, monthly_charge and rollover_credits never
+// present (the Go struct has no field at all for the latter).
+func TestAccountSubscriptionReportsPlanTierAndCredits(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	limit := 100.0
+	fx.sub.byUser[7] = []UserSubscription{{
+		ID:              42,
+		UserID:          7,
+		GroupID:         9,
+		ExpiresAt:       time.Date(2026, 9, 19, 0, 0, 0, 0, time.UTC),
+		MonthlyUsageUSD: 30,
+		Group:           &Group{ID: 9, Name: "Pro", MonthlyLimitUSD: &limit},
+	}}
+	fx.plan.plans = []*dbent.SubscriptionPlan{
+		{ID: 100, GroupID: 9, Name: "Pro", Price: 20, SortOrder: 2, ForSale: true},
+		{ID: 101, GroupID: 5, Name: "Starter", Price: 5, SortOrder: 1, ForSale: true},
+	}
+	fx.plan.groupInfo = map[int64]PlanGroupInfo{9: {MonthlyLimitUSD: &limit}}
+
+	got := svc.AccountSubscription(context.Background(), 7)
+
+	require.NotNil(t, got, "an active subscription must produce a non-nil subscription object")
+	require.Equal(t, "Pro", got.Plan)
+	require.NotNil(t, got.Tier)
+	require.Equal(t, 2, *got.Tier, "tier must be the plan's SortOrder, the same int Task 3's tiers[].tierOrder uses")
+	require.NotNil(t, got.MonthlyCredits)
+	require.Equal(t, 100.0, *got.MonthlyCredits)
+	require.NotNil(t, got.CreditsRemaining)
+	require.Equal(t, 70.0, *got.CreditsRemaining)
+	require.Equal(t, "2026-09-19T00:00:00Z", got.CurrentPeriodEnd)
+	require.Nil(t, got.MonthlyCharge, "monthly_charge must never be set -- 0 would misclassify a paying user as free tier")
+}
+
+// TestAccountSubscriptionReturnsNilWithNoActiveSubscription is Task 1's
+// precedent applied here: no active subscription means the caller omits the
+// WHOLE `subscription` key (nil, not a zero-valued object), which
+// _subscription_from_payload's non-dict branch (:706-707) reads identically
+// to any other absent/invalid value.
+func TestAccountSubscriptionReturnsNilWithNoActiveSubscription(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.sub.byUser[7] = nil
+
+	got := svc.AccountSubscription(context.Background(), 7)
+
+	require.Nil(t, got)
+}
+
+// TestAccountSubscriptionReturnsNilWhenTheSubscriptionLookupFails mirrors
+// Subscription()'s degrade-not-500 philosophy: a lookup error is not
+// distinguishable, from the client's point of view, from "no subscription".
+func TestAccountSubscriptionReturnsNilWhenTheSubscriptionLookupFails(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.sub.err = errors.New("db exploded")
+
+	got := svc.AccountSubscription(context.Background(), 7)
+
+	require.Nil(t, got)
+}
+
+// TestAccountSubscriptionOmitsCreditsWhenTheGroupHasNoCap: an uncapped group
+// has no credits figure to report, same as Task 3's Current.MonthlyCredits.
+func TestAccountSubscriptionOmitsCreditsWhenTheGroupHasNoCap(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.sub.byUser[7] = []UserSubscription{{
+		ID: 1, UserID: 7, GroupID: 9,
+		ExpiresAt: time.Now().Add(time.Hour),
+		Group:     &Group{ID: 9, Name: "Unlimited", MonthlyLimitUSD: nil},
+	}}
+
+	got := svc.AccountSubscription(context.Background(), 7)
+
+	require.NotNil(t, got)
+	require.Nil(t, got.MonthlyCredits)
+	require.Nil(t, got.CreditsRemaining)
+}
+
+// TestAccountSubscriptionOmitsTierWhenTheActiveGroupIsNotInTheCatalog: a
+// data-integrity edge case (an active subscription pointing at a group
+// ListPlans no longer returns any plan for) must omit `tier` rather than
+// fabricate an order.
+func TestAccountSubscriptionOmitsTierWhenTheActiveGroupIsNotInTheCatalog(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.sub.byUser[7] = []UserSubscription{{
+		ID: 1, UserID: 7, GroupID: 999,
+		ExpiresAt: time.Now().Add(time.Hour),
+		Group:     &Group{ID: 999, Name: "Orphaned"},
+	}}
+	fx.plan.plans = nil // catalog has nothing for group 999
+
+	got := svc.AccountSubscription(context.Background(), 7)
+
+	require.NotNil(t, got)
+	require.Nil(t, got.Tier)
+}
+
+// TestAccountSubscriptionCreditsRemainingCanBeZero: same non-negotiable as
+// Task 3 -- a real zero is a different fact from "unknown" and must round
+// trip as 0.0, not nil.
+func TestAccountSubscriptionCreditsRemainingCanBeZero(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	limit := 50.0
+	fx.sub.byUser[7] = []UserSubscription{{
+		ID: 1, UserID: 7, GroupID: 9,
+		ExpiresAt:       time.Now().Add(time.Hour),
+		MonthlyUsageUSD: 75, // over the cap
+		Group:           &Group{ID: 9, Name: "Pro", MonthlyLimitUSD: &limit},
+	}}
+
+	got := svc.AccountSubscription(context.Background(), 7)
+
+	require.NotNil(t, got)
+	require.NotNil(t, got.CreditsRemaining)
+	require.Equal(t, 0.0, *got.CreditsRemaining)
+}
+
+// TestAccountSubscriptionIsolatesBetweenTwoUsers: same isolation guarantee
+// Task 3 pins, on the new snake_case path.
+func TestAccountSubscriptionIsolatesBetweenTwoUsers(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.sub.byUser[7] = []UserSubscription{{
+		ID: 1, UserID: 7, GroupID: 9,
+		ExpiresAt: time.Now().Add(time.Hour),
+		Group:     &Group{ID: 9, Name: "User7Plan"},
+	}}
+	fx.sub.byUser[8] = []UserSubscription{{
+		ID: 2, UserID: 8, GroupID: 40,
+		ExpiresAt: time.Now().Add(time.Hour),
+		Group:     &Group{ID: 40, Name: "User8Plan"},
+	}}
+
+	got := svc.AccountSubscription(context.Background(), 7)
+
+	require.NotNil(t, got)
+	require.Equal(t, "User7Plan", got.Plan)
+}
