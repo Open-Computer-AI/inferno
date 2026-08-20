@@ -127,6 +127,13 @@ func newBillingRouteEnv(t *testing.T) *billingRouteEnv {
 // "current" subscription looks like -- in particular, an empty
 // stubBillingSubscription{} to exercise the no-plan / current:null path.
 func newBillingRouteEnvWithSubscription(t *testing.T, subSrc stubBillingSubscription) *billingRouteEnv {
+	return newBillingRouteEnvWithSources(t, stubBillingPlan{}, subSrc)
+}
+
+// newBillingRouteEnvWithSources is the fully-parameterised constructor;
+// newBillingRouteEnv and newBillingRouteEnvWithSubscription are its two
+// common shorthands.
+func newBillingRouteEnvWithSources(t *testing.T, planSrc service.BillingPlanSource, subSrc service.BillingSubscriptionSource) *billingRouteEnv {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
@@ -163,7 +170,7 @@ func newBillingRouteEnvWithSubscription(t *testing.T, subSrc stubBillingSubscrip
 		stubBillingOrg{},
 		stubBillingUsage{actualCost: 1.25},
 		stubBillingPayment{},
-		stubBillingPlan{},
+		planSrc,
 		subSrc,
 		billingRouteIssuer,
 	)
@@ -580,4 +587,47 @@ func TestPhantomGETSubscriptionPendingChangeDoesNotExist(t *testing.T) {
 
 	require.Equal(t, http.StatusNotFound, rec.Code,
 		"the client never sends GET here (it sends PUT/DELETE, nous_billing.py:594,:631) -- both states are read out of GET /api/billing/state instead")
+}
+
+// ===========================================================================
+// ruling R-3.1 / R-3.2 -- end-to-end over real HTTP JSON.
+// ===========================================================================
+
+// stubBillingPlanMultiPeriod is a group that sells at two billing periods
+// (monthly and annual) -- the exact shape ruling R-3.1 exists for.
+type stubBillingPlanMultiPeriod struct{}
+
+func (stubBillingPlanMultiPeriod) ListPlans(context.Context) ([]*dbent.SubscriptionPlan, error) {
+	return []*dbent.SubscriptionPlan{
+		{ID: 100, GroupID: 9, Name: "Pro Monthly", Price: 20, SortOrder: 1, ForSale: true, ValidityDays: 1, ValidityUnit: "months"},
+		{ID: 101, GroupID: 9, Name: "Pro Annual", Price: 180, SortOrder: 2, ForSale: true, ValidityDays: 12, ValidityUnit: "months"},
+	}, nil
+}
+
+func (stubBillingPlanMultiPeriod) GetGroupInfoMap(context.Context, []*dbent.SubscriptionPlan) map[int64]service.PlanGroupInfo {
+	return nil
+}
+
+// TestBillingSubscriptionRouteCollapsesMultiPeriodGroupOnTheWire is the
+// end-to-end proof, over real encoded JSON: a group selling two billing
+// periods must still produce exactly one tiers[] entry, priced by its
+// normalised (cheaper, per-month) option -- $180/year beats $20/month at
+// $15/mo vs $20/mo.
+func TestBillingSubscriptionRouteCollapsesMultiPeriodGroupOnTheWire(t *testing.T) {
+	env := newBillingRouteEnvWithSources(t, stubBillingPlanMultiPeriod{}, billingRouteActiveSubscription())
+	rec := env.getPath(t, "/api/billing/subscription", "Bearer "+env.mint(t, service.ScopeInferenceInvoke))
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+
+	tiers, ok := body["tiers"].([]any)
+	require.True(t, ok)
+	require.Len(t, tiers, 1, "one group selling two billing periods must still emit exactly one tiers[] row")
+
+	tier := tiers[0].(map[string]any)
+	require.Equal(t, "9", tier["tierId"], "tierId must be the GROUP id, not either plan's own id")
+	require.Equal(t, "Pro Annual", tier["name"], "the annual option's normalised $15/mo beats the monthly option's $20/mo")
+	require.Equal(t, "15", tier["dollarsPerMonthDisplay"], "$180/year normalised to $15/month, not the raw $180")
 }

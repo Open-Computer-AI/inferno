@@ -623,12 +623,33 @@ func (s *BillingContractService) resolveCurrentSubscription(ctx context.Context,
 }
 
 // resolveTiers builds the plan picker from EVERY plan (not just ForSale ones
-// -- see BillingPlanSource.ListPlans), marking the caller's own group current
-// and every non-ForSale plan disabled.
+// -- see BillingPlanSource.ListPlans), COLLAPSED TO ONE ENTRY PER GROUP
+// (ruling R-3.1).
 //
-// DollarsPerMonthDisplay is normalised via billingDollarsPerMonth (ruling
-// R-3.2): a field whose NAME asserts "per month" must not emit a plan's raw
-// total price when that plan bills annually or weekly.
+// subscription_plan.group_id is NOT unique (ent/schema/subscription_plan.go's
+// index.Fields("group_id") carries no .Unique()): one group can sell at
+// several billing periods (inferno-frontend/src/components/payment/validity.ts
+// exists precisely to render that). Emitting one tiers[] row per PLAN would
+// therefore emit duplicate tierIds the moment an admin adds a second billing
+// period to an existing group -- not hypothetical, the schema and the panel
+// both already support it.
+//
+// tierId MUST stay the group id in both `current` and `tiers[]` -- NOT the
+// plan's own id. user_subscription stores group_id and has no plan_id column
+// at all (ent/schema/user_subscription.go), so a plan id could never appear
+// in `current` and current.tierId would never match any tiers[] entry. That
+// match is load-bearing on the client: after an upgrade, the TUI polls
+// `fresh?.current?.tier_id === pendingTierId` for up to 30s
+// (ui-tui/src/components/subscriptionOverlay.tsx:786), where pendingTierId
+// came from a tiers[] entry the caller picked -- a mismatched id space hangs
+// that poll forever ("still applying").
+//
+// So each group is represented by ONE plan, chosen by billingRepresentativePlan:
+// prefer a for-sale plan (a plan nobody can buy must never set the displayed
+// price), then the lowest normalised dollars-per-month (the "from" price a
+// picker conventionally shows), then the lowest plan id as a deterministic
+// tie-break. isEnabled is independent of which plan was chosen: true if ANY
+// plan in the group is for sale.
 func (s *BillingContractService) resolveTiers(ctx context.Context, activeGroupID int64, hasActive bool) []BillingTierView {
 	plans, err := s.planSvc.ListPlans(ctx)
 	if err != nil {
@@ -638,23 +659,73 @@ func (s *BillingContractService) resolveTiers(ctx context.Context, activeGroupID
 
 	groupInfo := s.planSvc.GetGroupInfoMap(ctx, plans)
 
-	tiers := make([]BillingTierView, 0, len(plans))
+	// Group while preserving first-seen order (ListPlans is already
+	// BySortOrder-ordered, so this keeps the same display order the old
+	// one-row-per-plan version had).
+	byGroup := make(map[int64][]*dbent.SubscriptionPlan, len(plans))
+	groupOrder := make([]int64, 0, len(plans))
 	for _, p := range plans {
-		view := BillingTierView{
-			TierID:                 strconv.FormatInt(p.GroupID, 10),
-			Name:                   p.Name,
-			TierOrder:              p.SortOrder,
-			DollarsPerMonthDisplay: billingMoney(billingDollarsPerMonth(p.Price, p.ValidityDays, p.ValidityUnit)),
-			IsCurrent:              hasActive && p.GroupID == activeGroupID,
-			IsEnabled:              p.ForSale,
+		if _, seen := byGroup[p.GroupID]; !seen {
+			groupOrder = append(groupOrder, p.GroupID)
 		}
-		if gi, ok := groupInfo[p.GroupID]; ok && gi.MonthlyLimitUSD != nil {
+		byGroup[p.GroupID] = append(byGroup[p.GroupID], p)
+	}
+
+	tiers := make([]BillingTierView, 0, len(groupOrder))
+	for _, groupID := range groupOrder {
+		rep, anyForSale := billingRepresentativePlan(byGroup[groupID])
+		view := BillingTierView{
+			TierID:                 strconv.FormatInt(groupID, 10),
+			Name:                   rep.Name,
+			TierOrder:              rep.SortOrder,
+			DollarsPerMonthDisplay: billingMoney(billingDollarsPerMonth(rep.Price, rep.ValidityDays, rep.ValidityUnit)),
+			IsCurrent:              hasActive && groupID == activeGroupID,
+			IsEnabled:              anyForSale,
+		}
+		if gi, ok := groupInfo[groupID]; ok && gi.MonthlyLimitUSD != nil {
 			mc := billingMoney(*gi.MonthlyLimitUSD)
 			view.MonthlyCredits = &mc
 		}
 		tiers = append(tiers, view)
 	}
 	return tiers
+}
+
+// billingRepresentativePlan picks the one plan that stands in for its whole
+// group's tiers[] entry (ruling R-3.1; see resolveTiers's doc comment for
+// why one entry per group, and why the id space cannot be the plan's own
+// id). Returns the chosen plan and whether ANY plan in the group is for
+// sale (the group's own isEnabled, independent of which plan was picked).
+//
+// plans must be non-empty (byGroup is built from at least one plan per key).
+func billingRepresentativePlan(plans []*dbent.SubscriptionPlan) (*dbent.SubscriptionPlan, bool) {
+	anyForSale := false
+	for _, p := range plans {
+		if p.ForSale {
+			anyForSale = true
+			break
+		}
+	}
+
+	candidates := plans
+	if anyForSale {
+		candidates = make([]*dbent.SubscriptionPlan, 0, len(plans))
+		for _, p := range plans {
+			if p.ForSale {
+				candidates = append(candidates, p)
+			}
+		}
+	}
+
+	best := candidates[0]
+	bestPerMonth := billingDollarsPerMonth(best.Price, best.ValidityDays, best.ValidityUnit)
+	for _, p := range candidates[1:] {
+		perMonth := billingDollarsPerMonth(p.Price, p.ValidityDays, p.ValidityUnit)
+		if perMonth < bestPerMonth || (perMonth == bestPerMonth && p.ID < best.ID) {
+			best, bestPerMonth = p, perMonth
+		}
+	}
+	return best, anyForSale
 }
 
 // billingValidityTotalDays mirrors TWO things that must agree with each

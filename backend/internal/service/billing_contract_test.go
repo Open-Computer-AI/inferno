@@ -711,6 +711,135 @@ func TestBillingSubscriptionPortalURLMatchesState(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// ruling R-3.1 -- one tiers[] entry per GROUP, not per plan.
+//
+// subscription_plan.group_id is not unique (ent/schema/subscription_plan.go's
+// index.Fields("group_id") carries no .Unique()): a group can sell at several
+// billing periods. tierId must stay the group id in both `current` and
+// `tiers[]` because user_subscription has no plan_id column at all -- only
+// group_id -- and the TUI polls current.tier_id against a tiers[] id after an
+// upgrade (ui-tui/src/components/subscriptionOverlay.tsx:786).
+// ---------------------------------------------------------------------------
+
+// TestBillingSubscriptionCollapsesMultiplePlansPerGroupIntoOneTier is the
+// direct reproduction: a group selling both monthly and annual must still
+// produce exactly ONE tiers[] row, not two with the same tierId.
+func TestBillingSubscriptionCollapsesMultiplePlansPerGroupIntoOneTier(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.plan.plans = []*dbent.SubscriptionPlan{
+		{ID: 100, GroupID: 9, Name: "Pro Monthly", Price: 20, SortOrder: 1, ForSale: true, ValidityDays: 1, ValidityUnit: "months"},
+		{ID: 101, GroupID: 9, Name: "Pro Annual", Price: 180, SortOrder: 2, ForSale: true, ValidityDays: 12, ValidityUnit: "months"},
+	}
+
+	got, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+
+	require.Len(t, got.Tiers, 1, "two plans in one group must collapse to one tiers[] row")
+	require.Equal(t, "9", got.Tiers[0].TierID)
+}
+
+// TestBillingSubscriptionTierIDsAreUniqueAcrossTheWholeArray is the general
+// invariant, across several groups, some multi-plan and some single-plan.
+func TestBillingSubscriptionTierIDsAreUniqueAcrossTheWholeArray(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.plan.plans = []*dbent.SubscriptionPlan{
+		{ID: 100, GroupID: 9, Name: "Pro Monthly", Price: 20, ForSale: true, ValidityDays: 1, ValidityUnit: "months"},
+		{ID: 101, GroupID: 9, Name: "Pro Annual", Price: 180, ForSale: true, ValidityDays: 12, ValidityUnit: "months"},
+		{ID: 200, GroupID: 5, Name: "Starter", Price: 5, ForSale: true, ValidityDays: 1, ValidityUnit: "months"},
+		{ID: 300, GroupID: 40, Name: "Legacy", Price: 999, ForSale: false, ValidityDays: 1, ValidityUnit: "months"},
+	}
+
+	got, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+
+	seen := map[string]bool{}
+	for _, tier := range got.Tiers {
+		require.False(t, seen[tier.TierID], "duplicate tierId %q in tiers[]", tier.TierID)
+		seen[tier.TierID] = true
+	}
+	require.Len(t, got.Tiers, 3, "three distinct groups must produce three rows")
+}
+
+// TestBillingSubscriptionCurrentTierIDIsFindableInTiers pins the invariant
+// subscriptionOverlay.tsx:786's post-upgrade poll depends on:
+// current.tier_id === <some tiers[] entry's tier_id>. A future change that
+// breaks the shared id space must fail HERE, not silently in the TUI's
+// 30-second "still applying" hang.
+func TestBillingSubscriptionCurrentTierIDIsFindableInTiers(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.sub.byUser[7] = []UserSubscription{{
+		ID: 1, UserID: 7, GroupID: 9,
+		ExpiresAt: time.Now().Add(time.Hour),
+		Group:     &Group{ID: 9, Name: "Pro"},
+	}}
+	fx.plan.plans = []*dbent.SubscriptionPlan{
+		{ID: 100, GroupID: 9, Name: "Pro Monthly", Price: 20, ForSale: true, ValidityDays: 1, ValidityUnit: "months"},
+		{ID: 101, GroupID: 9, Name: "Pro Annual", Price: 180, ForSale: true, ValidityDays: 12, ValidityUnit: "months"},
+	}
+
+	got, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+	require.NotNil(t, got.Current)
+
+	found := false
+	for _, tier := range got.Tiers {
+		if tier.TierID == got.Current.TierID {
+			found = true
+		}
+	}
+	require.True(t, found, "current.tierId must be findable in tiers[] -- the TUI's post-upgrade poll depends on this exact match")
+}
+
+// TestBillingRepresentativePlanPrefersForSaleOverNonForSale: a plan nobody
+// can buy must never set the displayed price.
+func TestBillingRepresentativePlanPrefersForSaleOverNonForSale(t *testing.T) {
+	plans := []*dbent.SubscriptionPlan{
+		{ID: 1, Name: "Cheap But Discontinued", Price: 1, ForSale: false, ValidityDays: 1, ValidityUnit: "months"},
+		{ID: 2, Name: "Current Price", Price: 50, ForSale: true, ValidityDays: 1, ValidityUnit: "months"},
+	}
+	rep, anyForSale := billingRepresentativePlan(plans)
+	require.Equal(t, int64(2), rep.ID)
+	require.True(t, anyForSale)
+}
+
+// TestBillingRepresentativePlanPicksLowestNormalizedPrice: among for-sale
+// candidates, the lowest PER-MONTH price wins, not the lowest raw price --
+// an annual plan's raw price can be numerically larger while its per-month
+// rate is cheaper.
+func TestBillingRepresentativePlanPicksLowestNormalizedPrice(t *testing.T) {
+	plans := []*dbent.SubscriptionPlan{
+		{ID: 1, Name: "Monthly", Price: 20, ForSale: true, ValidityDays: 1, ValidityUnit: "months"}, // $20/mo
+		{ID: 2, Name: "Annual", Price: 180, ForSale: true, ValidityDays: 12, ValidityUnit: "months"}, // $15/mo
+	}
+	rep, _ := billingRepresentativePlan(plans)
+	require.Equal(t, int64(2), rep.ID, "the annual plan's normalised $15/mo beats the monthly plan's $20/mo")
+}
+
+// TestBillingRepresentativePlanTieBreaksOnLowestPlanID: equal normalised
+// price must still pick a stable, deterministic representative.
+func TestBillingRepresentativePlanTieBreaksOnLowestPlanID(t *testing.T) {
+	plans := []*dbent.SubscriptionPlan{
+		{ID: 200, Name: "B", Price: 20, ForSale: true, ValidityDays: 1, ValidityUnit: "months"},
+		{ID: 100, Name: "A", Price: 20, ForSale: true, ValidityDays: 1, ValidityUnit: "months"},
+	}
+	rep, _ := billingRepresentativePlan(plans)
+	require.Equal(t, int64(100), rep.ID)
+}
+
+// TestBillingRepresentativePlanReportsIsEnabledIndependentlyOfTheChosenRow:
+// isEnabled is "any plan for sale", even when the chosen representative
+// itself happens to be a non-for-sale row (an all-grandfathered group).
+func TestBillingRepresentativePlanReportsIsEnabledIndependentlyOfTheChosenRow(t *testing.T) {
+	plans := []*dbent.SubscriptionPlan{
+		{ID: 1, Name: "Legacy Cheap", Price: 5, ForSale: false, ValidityDays: 1, ValidityUnit: "months"},
+		{ID: 2, Name: "Legacy Pricier", Price: 10, ForSale: false, ValidityDays: 1, ValidityUnit: "months"},
+	}
+	rep, anyForSale := billingRepresentativePlan(plans)
+	require.Equal(t, int64(1), rep.ID, "with no for-sale candidates, falls back to the lowest normalised price among all plans")
+	require.False(t, anyForSale)
+}
+
+// ---------------------------------------------------------------------------
 // ruling R-3.2 -- dollarsPerMonthDisplay normalised by validity, matching
 // inferno-frontend/src/components/payment/validity.ts's unit semantics.
 // ---------------------------------------------------------------------------
