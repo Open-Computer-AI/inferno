@@ -2,6 +2,8 @@ package routes
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -213,31 +215,134 @@ func TestBillingStateRouteReturnsBareJSONNotThePanelEnvelope(t *testing.T) {
 	require.True(t, ok, "chargePresets must be a JSON array, never null")
 	require.Empty(t, presets)
 
+	// The live bug this whole plan exists to close: without a
+	// server-supplied portalUrl the client builds
+	// {portal_base}/billing?topup=open, whose default base is
+	// portal.nousresearch.com and whose /billing path does not exist on
+	// Inferno at all (the recharge route is /purchase).
 	require.Equal(t, "https://portal.example.com/purchase", body["portalUrl"])
+	portal, ok := body["portalUrl"].(string)
+	require.True(t, ok)
+	require.NotContains(t, portal, "nousresearch.com",
+		"the CLI must never be handed a link to the upstream portal's billing page")
 }
 
-// TestBillingStateRouteRejectsATokenWithoutBillingRead is the scope boundary.
-// The token below is exactly what a shipping hermes client holds after a
-// normal login (hermes_cli/auth.py's DEFAULT_NOUS_SCOPE) — see
-// task-1-report.md F2, which escalates that this makes the endpoint
-// unreachable by an unmodified client.
-func TestBillingStateRouteRejectsATokenWithoutBillingRead(t *testing.T) {
+// TestBillingStateRouteAdmitsAStockClientToken is the conformance case, and
+// the reason this endpoint no longer demands billing:read.
+//
+// The token below carries EXACTLY what a shipping hermes client holds after a
+// normal login: hermes_cli/auth.py's DEFAULT_NOUS_SCOPE, which is
+// "inference:invoke" and nothing else. billing:read appears nowhere in the
+// client, its only escalation asks for billing:manage, and our AS stores the
+// requested scope verbatim -- so under the original billing:read gate this
+// exact request 403'd, the client failed open to "not logged in", and the whole
+// adapter was unreachable. This test is what would catch that regression.
+//
+// MUTATION CHECK: putting service.ScopeBillingRead back as the required scope
+// fails this test at 403 vs 200.
+func TestBillingStateRouteAdmitsAStockClientToken(t *testing.T) {
 	env := newBillingRouteEnv(t)
 	rec := env.get(t, "Bearer "+env.mint(t, service.ScopeInferenceInvoke))
 
-	require.Equal(t, http.StatusForbidden, rec.Code)
-	require.JSONEq(t, `{"error":"insufficient_scope"}`, rec.Body.String())
+	require.Equal(t, http.StatusOK, rec.Code,
+		"a token carrying only the scope the real client requests must be admitted; body: %s", rec.Body.String())
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "42.5", body["balanceUsd"])
 }
 
-// TestBillingStateRouteRejectsAnUnauthenticatedCall proves the route is gated
-// by RequireOAuthScope at all: a 404 here would mean the group never mounted,
-// and a 200 would mean the money of an arbitrary user is public.
+// TestBillingStateRouteAdmitsATokenWithNoScopeAtAll: RFC 6749 §3.3 makes the
+// scope parameter optional, so a token minted from a scope-less request carries
+// an empty claim. It is still a verified statement about who the holder is,
+// which is all this endpoint needs.
+func TestBillingStateRouteAdmitsATokenWithNoScopeAtAll(t *testing.T) {
+	env := newBillingRouteEnv(t)
+	rec := env.get(t, "Bearer "+env.mint(t, ""))
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+}
+
+// TestBillingStateRouteRejectsAnUnauthenticatedCall is the line that did NOT
+// move when the scope requirement was dropped.
+//
+// Dropping the SCOPE must not drop AUTHENTICATION: this is the caller's own
+// balance, and a 200 here would make every user's money readable by anyone. A
+// 404 would mean the group never mounted at all.
+//
+// Note this endpoint fails closed TWICE, independently: RequireOAuthScope
+// aborts before the handler runs, and BillingContractHandler.State refuses to
+// compose anything without an identity on the context (covered in
+// handler/billing_contract_handler_test.go). That redundancy is why this test
+// alone cannot prove the middleware is mounted -- removing the middleware
+// leaves this green, because the handler's own 401 takes over. The positive
+// cases above are the discriminator: with no middleware they get 401 instead
+// of 200. Both directions are asserted on purpose.
 func TestBillingStateRouteRejectsAnUnauthenticatedCall(t *testing.T) {
 	env := newBillingRouteEnv(t)
 	rec := env.get(t, "")
 
 	require.Equal(t, http.StatusUnauthorized, rec.Code)
 	require.JSONEq(t, `{"error":"invalid_token"}`, rec.Body.String())
+}
+
+// TestBillingStateRouteRejectsAForgedToken proves the verifier still runs.
+// "No particular scope required" must not decay into "any bearer string".
+func TestBillingStateRouteRejectsAForgedToken(t *testing.T) {
+	env := newBillingRouteEnv(t)
+
+	// Correctly shaped, signed with a key this server never issued.
+	forged := mintForeignRS256Token(t)
+	rec := env.get(t, "Bearer "+forged)
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code, "body: %s", rec.Body.String())
+	require.JSONEq(t, `{"error":"invalid_token"}`, rec.Body.String())
+}
+
+// TestBillingStateRouteRejectsAnExpiredToken: same point, on the other axis.
+func TestBillingStateRouteRejectsAnExpiredToken(t *testing.T) {
+	env := newBillingRouteEnv(t)
+
+	key, err := env.keySvc.Active(context.Background())
+	require.NoError(t, err)
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"iss":   billingRouteIssuer,
+		"sub":   strconv.FormatInt(billingRouteUserID, 10),
+		"aud":   billingRouteClientID,
+		"scope": service.ScopeInferenceInvoke,
+		"iat":   time.Now().Add(-2 * time.Hour).Unix(),
+		"exp":   time.Now().Add(-time.Hour).Unix(),
+	})
+	tok.Header["kid"] = key.Kid
+	signed, err := tok.SignedString(key.Private)
+	require.NoError(t, err)
+
+	rec := env.get(t, "Bearer "+signed)
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.JSONEq(t, `{"error":"invalid_token"}`, rec.Body.String())
+}
+
+// mintForeignRS256Token signs a well-formed access token with an RSA key this
+// server has never seen, keeping the kid of a key it HAS seen so the failure is
+// the signature check and not a missing header.
+func mintForeignRS256Token(t *testing.T) string {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"iss":   billingRouteIssuer,
+		"sub":   strconv.FormatInt(billingRouteUserID, 10),
+		"aud":   billingRouteClientID,
+		"scope": service.ScopeInferenceInvoke,
+		"iat":   time.Now().Unix(),
+		"exp":   time.Now().Add(time.Hour).Unix(),
+	})
+	tok.Header["kid"] = "not-a-key-this-server-issued"
+	signed, err := tok.SignedString(key)
+	require.NoError(t, err)
+	return signed
 }
 
 // TestBillingStateRouteIsNotMountedUnderAPIV1 pins the mount point. The client

@@ -132,12 +132,17 @@ type BillingStateView struct {
 	// client's charge/auto-reload UI (BillingState.can_charge).
 	CLIBillingEnabled bool `json:"cliBillingEnabled"`
 
-	// ChargePresets is always empty. Inferno models no top-up preset ladder --
-	// the only one in the product is a hardcoded Vue default in
-	// frontend/src/components/payment/AmountInput.vue, not server data, and
-	// copying it here would create a second source of truth for a concept no
-	// service owns. The client degrades to "Custom amount…", still bounded by
-	// the real Bounds below.
+	// ChargePresets is always empty, and that is DELIBERATE, not a stub left
+	// behind. There is NO server-side source for a top-up preset ladder in
+	// Inferno: the only ladder in the whole product is a hardcoded Vue default
+	// (frontend/src/components/payment/AmountInput.vue's `amounts` prop
+	// default, [10, 20, 50, 100, 200, 500, 1000, 2000, 5000]), a frontend
+	// literal rather than data any service owns. Copying it here would create a
+	// second source of truth that drifts the first time either side is edited.
+	// The client degrades cleanly -- with no presets it offers "Custom
+	// amount…", still bounded by the real Bounds below. Giving this a real
+	// source means adding a settings key both the panel and this adapter read,
+	// which is a product decision, not a translation.
 	ChargePresets []string `json:"chargePresets"`
 
 	// Bounds is the top-up min/max. nil when the payment-config lookup failed.
@@ -152,12 +157,21 @@ type BillingStateView struct {
 	MonthlyCap *BillingMonthlyCapView `json:"monthlyCap,omitempty"`
 
 	// PortalURL is where the CLI sends a user who needs to top up or add a
-	// card. Supplied by the server on purpose: the client's own fallback is
-	// `{portal_base}/billing?topup=open` (agent/billing_view.py:333-335), a
-	// path Inferno's frontend does not have -- its top-up page is /purchase --
-	// and whose default base is portal.nousresearch.com. Omitted when this
-	// deployment has no frontend_url configured, which returns the client to
-	// that fallback rather than handing it a broken absolute URL.
+	// card, and it is THE FIELD THAT CLOSES THE LIVE BUG this whole adapter
+	// exists for -- which is why it is here despite not appearing in the task
+	// brief's field list.
+	//
+	// When the server omits it, agent/billing_view.py:333-335 builds
+	// `{portal_base}/billing?topup=open` instead. Both halves of that are wrong
+	// for us: the default portal_base is portal.nousresearch.com (so our users
+	// are sent to Nous's billing page to top up an Inferno wallet -- the
+	// observed 2026-08-19 defect), and even pointed at the right host, /billing
+	// is not a route in inferno-frontend/src/router/index.ts at all. Inferno's
+	// recharge page is /purchase, which is what billingPortalURL builds.
+	//
+	// Omitted when this deployment has no frontend_url configured: the client
+	// then falls back as before, which is better than being handed a relative
+	// or half-formed absolute URL it will resolve against the Nous default.
 	PortalURL string `json:"portalUrl,omitempty"`
 }
 

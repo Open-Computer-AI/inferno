@@ -3,7 +3,6 @@ package routes
 import (
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
-	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -24,15 +23,39 @@ import (
 // keeps the two from drifting on a second read of the same config value. See
 // OAuthHandler.TokenIssuer's doc comment.
 //
-// SCOPE: service.ScopeBillingRead, per the design. See task-1-report.md F2 --
-// no shipping hermes client requests this scope, so an unmodified client's
-// token is refused here today; that is a plan-level decision escalated rather
-// than silently changed.
+// SCOPE: required == "", i.e. any validly-signed, unexpired OAuth token whose
+// issuer and audience check out -- the same gate GET /api/oauth/account uses,
+// and NOT billing:read.
+//
+// This was billing:read in the design, and billing:read is a scope no token can
+// ever carry. The client requests inference:invoke at login
+// (hermes_cli/auth.py's DEFAULT_NOUS_SCOPE), its only escalation asks for
+// billing:manage, billing:read appears nowhere in it, and it documents this very
+// endpoint as "no scope required" (nous_billing.py:480). Our AS stores the
+// requested scope verbatim and adds no defaults, so nothing on either side can
+// produce a token that satisfies billing:read. Gating on it did not restrict
+// access, it removed the endpoint: every real call would 403, the client would
+// fail open to the same "not logged in" screen this adapter exists to remove,
+// and the 403 would trigger a billing:manage step-up that /oauth/authorize
+// refuses outright. Ruled and changed (task-1-report.md F2 and §10).
+//
+// Dropping the SCOPE does not drop AUTHENTICATION. RequireOAuthScope still runs
+// and still verifies signature, algorithm, kid, issuer, audience-against-the-
+// registry and expiry; only the scope predicate is satisfied by anything. The
+// data behind it is the caller's OWN balance and org, and a token minted for
+// that user is already a statement that its holder acts as that user.
+//
+// The boundary that matters is unchanged: WRITE endpoints (POST /charge,
+// /subscription/upgrade, PATCH /auto-top-up) keep billing:manage -- the scope
+// /oauth/authorize refuses outright -- and nothing here relaxes that.
+//
+// NOTE for whoever builds /auto-top-up: the design doc says PUT; the client
+// sends PATCH (nous_billing.py:497). The client wins.
 func RegisterBillingContractRoutes(r gin.IRouter, oauthH *handler.OAuthHandler, h *handler.BillingContractHandler) {
 	scoped := r.Group("/api/billing")
 	{
 		scoped.GET("/state", middleware.RequireOAuthScope(
-			oauthH.KeyService(), oauthH.ClientService(), oauthH.TokenIssuer(), service.ScopeBillingRead,
+			oauthH.KeyService(), oauthH.ClientService(), oauthH.TokenIssuer(), "",
 		), h.State)
 	}
 }
