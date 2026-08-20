@@ -576,35 +576,63 @@ func TestOAuthTokenWithoutInferenceInvokeScopeIsForbidden(t *testing.T) {
 	require.Zero(t, count, "scope is checked before any row is provisioned")
 }
 
-// TestBillingEndpointsRequireBillingReadNotInferenceInvoke: /v1/usage and
-// /v1/sub2api/billing ride the same group-level middleware as inference but are
-// not inference -- they return the backing key's usage history and the group's
-// billing multipliers. The scope vocabulary defines billing:read to gate
-// exactly that, and an inference-only token must not reach them by virtue of
-// sharing a mount.
-func TestBillingEndpointsRequireBillingReadNotInferenceInvoke(t *testing.T) {
+// TestOAuthUsageAndSub2APIBillingRequireOnlyAValidToken: /v1/usage and
+// /v1/sub2api/billing ride the same group-level middleware as inference but
+// are not inference -- they return the backing key's usage history and the
+// group's billing multipliers. Per Ruling R-2.2, both require "" -- no
+// particular scope, any validly-verified bearer -- the same rule
+// /api/billing/state uses, and NOT billing:read.
+//
+// This replaces the old (wrong) TestBillingEndpointsRequireBillingReadNotInferenceInvoke,
+// which asserted the dead behaviour this ruling fixes: it 403'd the exact
+// token every real hermes client carries (inference:invoke, no billing:read),
+// so every real call to these two endpoints was unreachable.
+//
+// Three token shapes are asserted, on purpose:
+//   - inference:invoke alone (what a real client actually holds) reaching
+//     these endpoints is the conformance case and the regression guard for
+//     billing:read being reinstated: putting service.ScopeBillingRead back
+//     as the required scope fails this at 403 vs 200.
+//   - billing:read alone (a token that, per the old rule, WAS admitted)
+//     still reaching these endpoints is the regression guard for the other
+//     direction R-2.2 rules out: silently changing the requirement to
+//     ScopeInferenceInvoke instead of "" would fail this at 403 vs 200,
+//     because a billing:read-only token carries no inference:invoke.
+//   - no scope at all (RFC 6749 section 3.3) reaching these endpoints proves
+//     the requirement really is "", not merely "either of these two names".
+func TestOAuthUsageAndSub2APIBillingRequireOnlyAValidToken(t *testing.T) {
 	for _, path := range []string{"/v1/usage", "/v1/sub2api/billing"} {
 		t.Run(path, func(t *testing.T) {
 			f := newOAuthInferenceFixture(t)
 
 			inferenceOnly := f.inferenceToken(t, service.ScopeInferenceInvoke)
 			w := f.request(t, http.MethodGet, path, "Bearer "+inferenceOnly, nil)
-			require.Equal(t, http.StatusForbidden, w.Code,
-				"inference:invoke alone must not reach a billing endpoint; body: %s", w.Body.String())
-			require.JSONEq(t, `{"error":"insufficient_scope"}`, w.Body.String())
-			require.False(t, f.captured.ran)
-
-			billingReader := f.inferenceToken(t, service.ScopeBillingRead)
-			w = f.request(t, http.MethodGet, path, "Bearer "+billingReader, nil)
 			require.Equal(t, http.StatusOK, w.Code,
-				"billing:read must reach the billing endpoints; body: %s", w.Body.String())
+				"a token carrying only the scope a real client requests must reach this endpoint; body: %s", w.Body.String())
+			require.True(t, f.captured.ran)
+
+			*f.captured = capturedAuthContext{}
+			billingReadOnly := f.inferenceToken(t, service.ScopeBillingRead)
+			w = f.request(t, http.MethodGet, path, "Bearer "+billingReadOnly, nil)
+			require.Equal(t, http.StatusOK, w.Code,
+				"billing:read alone must still reach this endpoint -- it must not have quietly become inference:invoke; body: %s", w.Body.String())
+			require.True(t, f.captured.ran)
+
+			*f.captured = capturedAuthContext{}
+			noScope := f.inferenceToken(t, "")
+			w = f.request(t, http.MethodGet, path, "Bearer "+noScope, nil)
+			require.Equal(t, http.StatusOK, w.Code,
+				"a token with no scope claim at all must reach this endpoint; body: %s", w.Body.String())
 			require.True(t, f.captured.ran)
 		})
 	}
 }
 
-// TestBillingReadAloneCannotInfer is the other direction of the same line: the
-// billing scope must not become an inference credential.
+// TestBillingReadAloneCannotInfer is the other direction of the same line
+// TestOAuthUsageAndSub2APIBillingRequireOnlyAValidToken draws: billing:read
+// reaching /v1/usage and /v1/sub2api/billing (no particular scope required)
+// must not make it an inference credential too -- /v1/responses still
+// requires inference:invoke specifically.
 func TestBillingReadAloneCannotInfer(t *testing.T) {
 	f := newOAuthInferenceFixture(t)
 	token := f.inferenceToken(t, service.ScopeBillingRead)

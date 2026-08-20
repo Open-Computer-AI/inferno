@@ -107,10 +107,28 @@ const statusClientClosedRequest = 499
 //
 // The /v1 mount is a group-level Use, so it also covers GET /v1/usage and
 // GET /v1/sub2api/billing -- which read the backing key's usage history and the
-// group's billing multipliers, not inference. The scope vocabulary defines
-// billing:read as a distinct scope precisely so that line can be drawn
-// (oauth_scope_vocabulary.go), and letting inference:invoke reach those two
-// endpoints would erase it. requiredOAuthInferenceScope draws it instead.
+// group's billing multipliers, not inference. requiredOAuthInferenceScope
+// draws the line per endpoint rather than per chain.
+//
+// It does NOT draw that line with billing:read. An earlier version of this
+// comment said it did; that was corrected under Ruling R-2.2 (billing
+// contract adapter, task-2-report.md) alongside /api/billing/state's own F2
+// finding, because billing:read is a scope no real token can ever carry:
+// hermes's DEFAULT_NOUS_SCOPE is inference:invoke, its only step-up asks for
+// billing:manage, and billing:read appears nowhere in the client. Gating
+// these two endpoints on it did not restrict access, it removed them for
+// every real caller -- the identical mistake /api/billing/state's F2 caught,
+// just on the /v1 chain instead of the new adapter. requiredOAuthInferenceScope
+// now requires "" for both: any validly-verified bearer, same as
+// GET /api/oauth/account and GET /api/billing/state. It does NOT fall through
+// to ScopeInferenceInvoke either -- that would be a DIFFERENT bug, the
+// opposite direction: a token holding only billing:read (a real, if rare,
+// possibility for a token minted before this fix, or for a future admin
+// tool) would lose access to endpoints it could reach before, while a
+// bare inference:invoke token would gain access to endpoints it was never
+// meant to reach by virtue of sharing a mount -- see "Scope is per endpoint,
+// not per chain" above, which is still the reason these two get their own
+// case in the switch rather than falling into the default.
 //
 // # Billing enforcement is downstream, not here
 //
@@ -132,10 +150,13 @@ const statusClientClosedRequest = 499
 //  1. expired / quota_exhausted are rejected at AUTH time. The API-key path
 //     lets those two statuses through auth on purpose, so an exhausted key can
 //     still read /v1/usage, /v1/sub2api/billing and async image-task results.
-//     An OAuth agent does not get that: those endpoints now require
-//     billing:read anyway (see above), so the carve-out would only apply to a
-//     token holding both scopes, and admitting a known-exhausted credential to
-//     the inference chain to preserve that narrow case is the worse trade.
+//     An OAuth agent does not get that carve-out on any of the three, /v1/usage
+//     and /v1/sub2api/billing included -- those two require no particular scope
+//     (see above, and R-2.2), so this now denies the carve-out to the common
+//     case (a bare inference:invoke token, which is what a real agent holds),
+//     not merely to a token that happens to carry both scopes. Admitting a
+//     known-exhausted credential to the inference chain to preserve that case
+//     is still the worse trade.
 //  2. Status codes differ. The API-key path answers quota exhaustion 429 and
 //     expiry 403 API_KEY_EXPIRED; this branch answers both 403. It also answers
 //     403 account_inactive where the API-key path answers 401 USER_INACTIVE /
@@ -445,10 +466,26 @@ func authenticateOAuthInference(c *gin.Context, deps oauthInferenceDeps, raw str
 //
 // GET /v1/usage and GET /v1/sub2api/billing are on the /v1 chain but are not
 // inference: the first returns the backing key's usage history, the second the
-// group's billing multipliers. billing:read exists in the scope vocabulary to
-// gate exactly that, and ScopeBillingManage is documented as requiring a second
-// device flow to elevate to -- a distinction that would be erased if
-// inference:invoke reached them by virtue of sharing a middleware.
+// group's billing multipliers. They require "" -- no particular scope, i.e.
+// any validly-verified bearer, same as GET /api/oauth/account and
+// GET /api/billing/state (see scopeSatisfies: required == "" is always
+// satisfied).
+//
+// This was billing:read until Ruling R-2.2 (billing contract adapter,
+// task-2-report.md), and billing:read is a scope no real token can ever
+// carry: hermes's DEFAULT_NOUS_SCOPE is inference:invoke, its only step-up
+// asks for billing:manage, and billing:read appears nowhere in the client.
+// Gating these two endpoints on it did not restrict access, it removed them
+// for every real caller -- the same mistake /api/billing/state's F2 caught.
+// TestOAuthUsageAndSub2APIBillingRequireOnlyAValidToken is the regression
+// guard: it fails if billing:read is reinstated here (an inference-only
+// token would go from 200 back to 403), and it fails independently if this
+// is ever changed to fall through to ScopeInferenceInvoke instead (a
+// billing:read-only token would go from 200 to 403) -- that second failure
+// mode is a DIFFERENT bug from the first: it would mean a token minted with
+// only billing:read loses access to endpoints it could reach before, while
+// nothing gains the erased billing:read/inference:invoke distinction back
+// (see "Scope is per endpoint, not per chain" above).
 //
 // The paths are matched exactly, mirroring api_key_auth.go's own literals for
 // the same two endpoints.
@@ -458,7 +495,7 @@ func requiredOAuthInferenceScope(c *gin.Context) string {
 	}
 	switch c.Request.URL.Path {
 	case "/v1/usage", "/v1/sub2api/billing":
-		return service.ScopeBillingRead
+		return ""
 	default:
 		return service.ScopeInferenceInvoke
 	}
