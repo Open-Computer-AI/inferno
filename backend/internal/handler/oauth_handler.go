@@ -439,6 +439,9 @@ func (h *OAuthHandler) Account(c *gin.Context) {
 	}
 
 	user := gin.H{"id": strconv.FormatInt(userID, 10)}
+	// canPay mirrors what THIS server actually enforces, and defaults to the
+	// under-granting answer if the lookup fails (see below).
+	canPay := false
 	if h.userSvc != nil {
 		if u, uerr := h.userSvc.GetByID(ctx, userID); uerr != nil {
 			// The bearer verified, so the user existed when the token was
@@ -448,15 +451,33 @@ func (h *OAuthHandler) Account(c *gin.Context) {
 			slog.Error("oauth: account user lookup failed", "user_id", userID, "error", uerr)
 		} else if u != nil {
 			user["email"] = u.Email
+			canPay = u.Balance > 0
 		}
 	}
 
-	// See the "no paid tier" note above: deliberately explicit rather than
-	// omitted, so the client reports a definite free tier instead of "could not
-	// verify your entitlement", which is what an absent key produces.
+	// paid_service_access answers one question the client actually asks:
+	// is_nous_free_tier() reads `allowed` and, when false, treats the account as
+	// FREE TIER -- which both restricts the model list it will offer
+	// (partition_nous_models_by_tier) and prints "Credit access paused · run
+	// /topup" over every reply.
+	//
+	// This used to be hardcoded false. That was the right call while the mapping
+	// from Inferno's billing model onto Nous's entitlement semantics was
+	// unverified -- under-granting is the safe direction. It is no longer a
+	// guess: `allowed` now reports exactly what this server already ENFORCES at
+	// auth time, `apiKeyBalanceBelowAuthThreshold` (api_key_auth.go), which is
+	// `balance <= 0`. Reporting anything else means the gateway and the account
+	// endpoint disagree about the same user -- the client is told it cannot pay
+	// while inference succeeds, or told it can while every request 403s.
+	//
+	// Still deliberately absent: `subscription` and `tool_access`. A subscribed
+	// user with a zero wallet reads as free here, which under-grants rather than
+	// over-grants and stays on the safe side of the same rule. Closing that gap
+	// is the /api/billing/* adapter's job, and it needs the plan/tier/credits
+	// shape this endpoint does not model yet.
 	paidAccess := gin.H{
-		"allowed":                 false,
-		"paid_access":             false,
+		"allowed":                 canPay,
+		"paid_access":             canPay,
 		"has_active_subscription": false,
 	}
 
