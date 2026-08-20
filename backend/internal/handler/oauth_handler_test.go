@@ -704,6 +704,140 @@ func TestAccountRejectsInsufficientScopeIsUnreachable(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 }
 
+// ---------------------------------------------------------------------------
+// `subscription` (Task 4) -- the snake_case object hermes_cli/nous_account.py's
+// _subscription_from_payload (:705-716) reads off payload.get("subscription")
+// (:660). A DIFFERENT wire contract from GET /api/billing/subscription's
+// camelCase BillingSubscriptionView (Task 3) even though both describe the
+// same UserSubscription row.
+// ---------------------------------------------------------------------------
+
+// newOAuthAccountTestRouterWithBilling is newOAuthAccountTestRouter plus a
+// real BillingContractService wired via SetBillingContractService, reusing
+// exactly the fake sources billing_contract_handler_test.go already defines
+// for Task 3's handler tests (same package) so there is no second, drifting
+// set of billing fakes.
+func newOAuthAccountTestRouterWithBilling(t *testing.T, sub *billingHandlerSubscription) (*gin.Engine, *OAuthHandler) {
+	t.Helper()
+	h := newOAuthAccountTestHandler(t)
+	h.SetBillingContractService(service.NewBillingContractService(
+		&billingHandlerBalance{}, billingHandlerOrg{}, billingHandlerUsage{}, billingHandlerPayment{}, billingHandlerPlan{}, sub, "https://portal.example.com",
+	))
+	router := gin.New()
+	router.GET("/api/oauth/account", oauthmiddleware.RequireOAuthScope(h.KeyService(), h.ClientService(), h.TokenIssuer(), ""), h.Account)
+	return router, h
+}
+
+// TestAccountReportsSubscriptionForActiveSubscriber pins every key
+// _subscription_from_payload reads. `tier`, `monthly_credits` and
+// `credits_remaining` are asserted against the ENCODED JSON BYTES, not just
+// the decoded Go map, because the real hazard is TYPE DRIFT: Task 3's
+// sibling endpoint emits these same underlying figures as decimal STRINGS
+// (BillingCurrentSubscriptionView.MonthlyCredits/CreditsRemaining are
+// *string), and copying that field type here by accident -- e.g. via a
+// future refactor that shares a struct between the two endpoints -- would
+// silently quote what must stay a bare JSON number.
+func TestAccountReportsSubscriptionForActiveSubscriber(t *testing.T) {
+	limit := 100.0
+	sub := &billingHandlerSubscription{subs: []service.UserSubscription{{
+		ID:              42,
+		UserID:          7,
+		GroupID:         9,
+		ExpiresAt:       time.Date(2026, 9, 19, 0, 0, 0, 0, time.UTC),
+		MonthlyUsageUSD: 30,
+		Group:           &service.Group{ID: 9, Name: "Pro", MonthlyLimitUSD: &limit},
+	}}}
+	router, h := newOAuthAccountTestRouterWithBilling(t, sub)
+	ctx := context.Background()
+	_, err := h.orgSvc.EnsurePersonalOrg(ctx, 7, "alice")
+	require.NoError(t, err)
+
+	tok := mintTestAccountToken(t, h, 7, "inference:invoke")
+	rec := getOAuthAccount(router, tok)
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	raw := rec.Body.String()
+
+	// billingHandlerPlan's fixed catalog is {ID:100, GroupID:9, Name:"Pro",
+	// Price:20, ForSale:true} -- one plan, in group 9, SortOrder defaults to
+	// Go's zero value (0), so tier must be 0 here. The wire-byte assertion is
+	// that it appears as a bare number, not a quoted string.
+	require.Contains(t, raw, `"tier":0`, "tier must be an unquoted JSON number; body: %s", raw)
+	require.NotContains(t, raw, `"tier":"0"`)
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+
+	subBody, ok := body["subscription"].(map[string]any)
+	require.True(t, ok, "subscription must be an object, got %T; body: %s", body["subscription"], raw)
+
+	require.Equal(t, "Pro", subBody["plan"])
+	require.IsType(t, float64(0), subBody["tier"], "tier must decode as a JSON number")
+	require.Equal(t, float64(0), subBody["tier"])
+	require.IsType(t, float64(0), subBody["monthly_credits"], "monthly_credits must be a JSON number, not a decimal string")
+	require.Equal(t, 100.0, subBody["monthly_credits"])
+	require.IsType(t, float64(0), subBody["credits_remaining"], "credits_remaining must be a JSON number, not a decimal string")
+	require.Equal(t, 70.0, subBody["credits_remaining"])
+	require.Equal(t, "2026-09-19T00:00:00Z", subBody["current_period_end"])
+
+	// The free-tier hazard: monthly_charge must never be present, let alone
+	// 0 -- models.py:701-710 reads monthly_charge==0 as free tier.
+	require.NotContains(t, subBody, "monthly_charge")
+	require.NotContains(t, raw, "monthly_charge", "monthly_charge must never appear on the wire; body: %s", raw)
+	// Inferno has no rollover concept at all.
+	require.NotContains(t, subBody, "rollover_credits")
+	require.NotContains(t, raw, "rollover_credits")
+
+	// tool_access stays omitted (Step 7): assert its absence so a future
+	// permissive default is a deliberate act, not drift.
+	require.NotContains(t, body, "tool_access")
+	require.NotContains(t, raw, "tool_access")
+}
+
+// TestAccountOmitsSubscriptionKeyWithNoActiveSubscription: Task 1's
+// precedent, applied to this endpoint too -- the WHOLE `subscription` key is
+// absent, not an object of nulls. _subscription_from_payload's non-dict
+// branch (nous_account.py:706-707) treats a missing key identically to any
+// other invalid value, so this is the safe and correct "no plan" shape.
+func TestAccountOmitsSubscriptionKeyWithNoActiveSubscription(t *testing.T) {
+	router, h := newOAuthAccountTestRouterWithBilling(t, &billingHandlerSubscription{}) // subs left nil
+	ctx := context.Background()
+	_, err := h.orgSvc.EnsurePersonalOrg(ctx, 7, "alice")
+	require.NoError(t, err)
+
+	tok := mintTestAccountToken(t, h, 7, "inference:invoke")
+	rec := getOAuthAccount(router, tok)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.NotContains(t, body, "subscription")
+	// Precise key-level byte check, not a bare substring: "subscription" is
+	// also a substring of the unrelated, pre-existing
+	// paid_service_access.has_active_subscription field.
+	require.NotContains(t, rec.Body.String(), `"subscription":`)
+}
+
+// TestAccountOmitsSubscriptionKeyWhenBillingServiceIsUnset covers the
+// pre-Task-4 wiring: h.billingSvc left nil (the newOAuthAccountTestHandler
+// default, used by every other test in this file) must still produce a valid
+// response with no `subscription` key -- confirms the setter's absence
+// degrades exactly like Task 1's other optional dependencies, never panics.
+func TestAccountOmitsSubscriptionKeyWhenBillingServiceIsUnset(t *testing.T) {
+	router, h := newOAuthAccountTestRouter(t)
+	ctx := context.Background()
+	_, err := h.orgSvc.EnsurePersonalOrg(ctx, 7, "alice")
+	require.NoError(t, err)
+
+	tok := mintTestAccountToken(t, h, 7, "inference:invoke")
+	rec := getOAuthAccount(router, tok)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.NotContains(t, body, "subscription")
+}
+
 // TestDeviceCodeRejectsUnknownScope pins the wire contract for the scope
 // allowlist: `invalid_scope` is RFC 8628 §3.2 / RFC 6749 §4.1.2.1's code, and
 // it must stay a BARE body like every other hermes-facing response here.

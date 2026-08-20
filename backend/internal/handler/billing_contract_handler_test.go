@@ -63,11 +63,16 @@ func (billingHandlerPlan) GetGroupInfoMap(context.Context, []*dbent.Subscription
 // billingHandlerBalance's gotUser for GET /api/billing/state.
 type billingHandlerSubscription struct {
 	gotUser int64
+	// subs is what ListActiveUserSubscriptions returns for any user. Zero
+	// value is nil -- "no active subscription" -- so every existing caller
+	// of &billingHandlerSubscription{} keeps its original behaviour; Task 4's
+	// oauth_handler_test.go sets it to exercise the has-a-subscription path.
+	subs []service.UserSubscription
 }
 
 func (s *billingHandlerSubscription) ListActiveUserSubscriptions(_ context.Context, userID int64) ([]service.UserSubscription, error) {
 	s.gotUser = userID
-	return nil, nil
+	return s.subs, nil
 }
 
 // newBillingContractHandlerUnderTest builds the handler over a real
