@@ -424,7 +424,7 @@ docs/superpowers/plans/2026-08-19-billing-contract-adapter.md
 # (Tasks 2/3/5 and org tenancy) -- not re-listed here, same files.
 # server/api_contract_test.go is already declared under D2; the one line
 # changed there is a stale "Sub2API" expectation 05289268 left behind, which
-# only `go test -tags unit ./...` compiles and which had been failing since
+# only the -tags unit run compiles, and which had been failing since
 # that commit.
 backend/internal/service/billing_contract.go
 backend/internal/service/billing_contract_test.go
