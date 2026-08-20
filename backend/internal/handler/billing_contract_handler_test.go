@@ -49,11 +49,36 @@ func (billingHandlerPayment) GetAvailableMethodLimits(context.Context) (*service
 }
 func (billingHandlerPayment) IsPaymentEnabled(context.Context) bool { return true }
 
+type billingHandlerPlan struct{}
+
+func (billingHandlerPlan) ListPlans(context.Context) ([]*dbent.SubscriptionPlan, error) {
+	return []*dbent.SubscriptionPlan{{ID: 100, GroupID: 9, Name: "Pro", Price: 20, ForSale: true}}, nil
+}
+func (billingHandlerPlan) GetGroupInfoMap(context.Context, []*dbent.SubscriptionPlan) map[int64]service.PlanGroupInfo {
+	return nil
+}
+
+// billingHandlerSubscription records the userID it was actually called with
+// -- the IDOR guard for GET /api/billing/subscription, same shape as
+// billingHandlerBalance's gotUser for GET /api/billing/state.
+type billingHandlerSubscription struct {
+	gotUser int64
+}
+
+func (s *billingHandlerSubscription) ListActiveUserSubscriptions(_ context.Context, userID int64) ([]service.UserSubscription, error) {
+	s.gotUser = userID
+	return nil, nil
+}
+
 // newBillingContractHandlerUnderTest builds the handler over a real
 // BillingContractService whose balance source the caller controls.
 func newBillingContractHandlerUnderTest(bal *billingHandlerBalance) *BillingContractHandler {
+	return newBillingContractHandlerUnderTestWithSub(bal, &billingHandlerSubscription{})
+}
+
+func newBillingContractHandlerUnderTestWithSub(bal *billingHandlerBalance, sub *billingHandlerSubscription) *BillingContractHandler {
 	return NewBillingContractHandler(service.NewBillingContractService(
-		bal, billingHandlerOrg{}, billingHandlerUsage{}, billingHandlerPayment{}, "https://portal.example.com",
+		bal, billingHandlerOrg{}, billingHandlerUsage{}, billingHandlerPayment{}, billingHandlerPlan{}, sub, "https://portal.example.com",
 	))
 }
 
@@ -147,6 +172,73 @@ func TestBillingStateHandlerReports500WhenUnwired(t *testing.T) {
 	h := NewBillingContractHandler(nil)
 
 	rec := serveBillingState(h, func(c *gin.Context) {
+		c.Set(middleware2.OAuthContextKeyUserID, int64(7))
+	})
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.JSONEq(t, `{"error":"server_error"}`, rec.Body.String())
+}
+
+// serveBillingSubscription mirrors serveBillingState for GET
+// /api/billing/subscription.
+func serveBillingSubscription(h *BillingContractHandler, setContext func(*gin.Context)) *httptest.ResponseRecorder {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/billing/subscription?user_id=999", nil)
+	if setContext != nil {
+		setContext(c)
+	}
+	h.Subscription(c)
+	return rec
+}
+
+// TestBillingSubscriptionHandlerReadsTheUserFromTheVerifiedBearerOnly is the
+// IDOR guard for GET /api/billing/subscription, same shape as State's.
+func TestBillingSubscriptionHandlerReadsTheUserFromTheVerifiedBearerOnly(t *testing.T) {
+	bal := &billingHandlerBalance{balance: 42.50}
+	sub := &billingHandlerSubscription{}
+	h := newBillingContractHandlerUnderTestWithSub(bal, sub)
+
+	rec := serveBillingSubscription(h, func(c *gin.Context) {
+		c.Set(middleware2.OAuthContextKeyUserID, int64(7))
+	})
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	require.Equal(t, int64(7), sub.gotUser,
+		"the composed subscription must be about the bearer's user, never a request-supplied id")
+	require.NotEqual(t, int64(999), sub.gotUser)
+}
+
+// TestBillingSubscriptionHandlerRejectsAMissingOAuthIdentity mirrors State's.
+func TestBillingSubscriptionHandlerRejectsAMissingOAuthIdentity(t *testing.T) {
+	bal := &billingHandlerBalance{balance: 42.50}
+	h := newBillingContractHandlerUnderTest(bal)
+
+	rec := serveBillingSubscription(h, nil)
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.JSONEq(t, `{"error":"invalid_token"}`, rec.Body.String())
+}
+
+// TestBillingSubscriptionHandlerRejectsAWrongTypedOAuthIdentity mirrors State's.
+func TestBillingSubscriptionHandlerRejectsAWrongTypedOAuthIdentity(t *testing.T) {
+	bal := &billingHandlerBalance{balance: 42.50}
+	h := newBillingContractHandlerUnderTest(bal)
+
+	rec := serveBillingSubscription(h, func(c *gin.Context) {
+		c.Set(middleware2.OAuthContextKeyUserID, "7")
+	})
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.JSONEq(t, `{"error":"invalid_token"}`, rec.Body.String())
+}
+
+// TestBillingSubscriptionHandlerReports500WhenUnwired mirrors State's.
+func TestBillingSubscriptionHandlerReports500WhenUnwired(t *testing.T) {
+	h := NewBillingContractHandler(nil)
+
+	rec := serveBillingSubscription(h, func(c *gin.Context) {
 		c.Set(middleware2.OAuthContextKeyUserID, int64(7))
 	})
 

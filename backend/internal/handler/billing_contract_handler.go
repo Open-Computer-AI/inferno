@@ -68,3 +68,36 @@ func (h *BillingContractHandler) State(c *gin.Context) {
 
 	c.JSON(http.StatusOK, state)
 }
+
+// Subscription handles GET /api/billing/subscription -- the CLI's plan
+// picker. Same identity and error-shape rules as State; see its doc comment.
+func (h *BillingContractHandler) Subscription(c *gin.Context) {
+	uidVal, ok := c.Get(middleware2.OAuthContextKeyUserID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+		return
+	}
+	userID, ok := uidVal.(int64)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+		return
+	}
+
+	if h.svc == nil {
+		slog.Error("billing: contract service is not wired")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+
+	sub, err := h.svc.Subscription(c.Request.Context(), userID)
+	if err != nil {
+		// Nothing in BillingContractService.Subscription is fatal today (see
+		// its doc comment); this branch exists for signature symmetry with
+		// State and as a seam for a future genuinely-fatal source.
+		slog.Error("billing: subscription composition failed", "user_id", userID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, sub)
+}
