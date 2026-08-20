@@ -14,7 +14,7 @@
 
 - **Bare JSON, never the panel envelope.** These are Nous-shaped endpoints like `/api/oauth/*`, not `/api/v1/*`. The client parses the raw object; `{code,message,data}` breaks it silently.
 - **User-facing services only.** The caller holds a *user's* OAuth token. Nothing here may reach an admin route or an admin service method.
-- **Reads on `billing:read`, writes on `billing:manage`.** `billing:manage` is never granted at login and `/oauth/authorize` refuses it — so writes ship built and unreachable. That is deliberate; do not relax it.
+- **Reads take a valid token and no scope; writes take `billing:manage`** (ruling R-1.2; `billing:read` is requested by no client, so gating a read on it ships a dead endpoint). `billing:manage` is never granted at login and `/oauth/authorize` refuses it — so writes ship built and unreachable. That is deliberate; do not relax it.
 - **Fail loud on our side, quiet on theirs.** The client fails open (`build_billing_state` → `logged_in=false`). Never 500 the whole response because one optional aggregate failed — return the fields that resolved and log the rest.
 - **Infrastructure faults → 500, never an auth error.**
 - **No new tables, no migrations.** If a field needs one, it is out of scope; report it.
@@ -108,46 +108,36 @@ With the usage source erroring, `State` still returns a balance and org, `Bounds
 
 - [ ] **Step 6: Test the wire contract**
 
-Response is bare JSON with no `code`/`message`/`data` keys — assert their **absence**, since a wrong envelope is silently mis-parsed rather than erroring. A token without `billing:read` gets `403 insufficient_scope`.
+Response is bare JSON with no `code`/`message`/`data` keys — assert their **absence**, since a wrong envelope is silently mis-parsed rather than erroring. A request with no valid token gets `401`; no scope is required (R-1.2).
 
 - [ ] **Step 7: Gates and commit**
 
 ---
 
-### Task 2: `GET /api/analytics/usage`
+### Task 2: VOID — `GET /api/analytics/usage` does not exist
 
-**Files:** modify the Task 1 service/handler/routes files; tests beside them.
+**Do not implement. Do not re-plan. This task was built and reverted.**
 
-**Interfaces:**
-- Consumes: `UsageService.ListByUser(ctx, userID, params)`, `GetStatsByUser`
-- Produces: `func (s *BillingContractService) Usage(ctx context.Context, userID int64, p pagination.PaginationParams) (*UsageView, error)`
+`/api/analytics/usage` is the AGENT'S OWN local dashboard route
+(`hermes_cli/web_server.py:15361`), served by the hermes web server, called by
+`web/src/lib/api.ts:512` and `apps/desktop/src/hermes.ts:1841` against localhost,
+backed by local sqlite. No portal client calls it: `nous_billing.py` and `auth.py`
+contain the string "analytics" zero times.
 
-- [ ] **Step 1: Write the isolation test first — it is the important one**
+Built as `b7670aa9`, reverted as `3cae8f63`. Root cause is F-10 in the ledger — the
+spec's table was built from a path-grep instead of from the client's call sites, and
+a path string carries no direction.
 
-```go
-func TestUsageReturnsOnlyTheCallersRows(t *testing.T) {
-	svc, fx := newBillingContractFixture(t)
-	fx.recordUsage(7, 1.00)   // ours
-	fx.recordUsage(8, 99.00)  // a second real user, in the same database
+**Usage history is NOT part of this adapter.** The client reads spend from
+`spentThisMonthUsd` inside `/api/billing/state`, which Task 1 already delivers.
 
-	got, err := svc.Usage(context.Background(), 7, firstPage)
-	require.NoError(t, err)
-	require.Len(t, got.Items, 1)
-	require.Equal(t, int64(7), got.Items[0].UserID)
-}
-```
-
-A second user's data must be **present in the database**, or this test passes against an implementation with no filter at all.
-
-- [ ] **Step 2: Run it, watch it fail.**
-- [ ] **Step 3: Implement `Usage`.**
-- [ ] **Step 4: Run it, watch it pass.**
-- [ ] **Step 5: Mutation-prove the filter** — drop the `userID` predicate (compiling), show the test failing with user 8's row present.
-- [ ] **Step 6: Mount `GET /api/analytics/usage` on `billing:read`; gates and commit.**
+The R-2.2 work that shipped alongside it (`569c7e3e`) is unrelated and stands: it
+moves `/v1/usage` and `/v1/sub2api/billing` off the unsatisfiable `billing:read`
+gate, closing R-1.6.
 
 ---
 
-### Task 3: `GET /api/billing/subscription` and `/pending-change`, `GET /api/billing/auto-top-up`
+### Task 3: `GET /api/billing/subscription`
 
 **Files:** as Task 2.
 
@@ -159,12 +149,16 @@ A second user's data must be **present in the database**, or this test passes ag
 
 - [ ] **Step 2: Run, fail. Step 3: Implement. Step 4: Run, pass.**
 
-- [ ] **Step 5: The two honest-gap endpoints**
+- [ ] **Step 5: Assert the two phantom GETs are NOT added**
 
-`GET /api/billing/auto-top-up` → `{"enabled": false}`.
-`GET /api/billing/subscription/pending-change` → `{"pending": null}`.
+An earlier version of this task planned `GET /api/billing/auto-top-up` and
+`GET /api/billing/subscription/pending-change`. **Neither exists in the client.**
+It sends `PATCH` to auto-top-up and `PUT`/`DELETE` to pending-change (Task 5), and
+reads both *states* out of `/api/billing/state`. Verified in `nous_billing.py`:492,
+:623, :641 — there is no GET call site for either path.
 
-Both are truthful: Inferno models neither. Test that they answer 200 with those shapes rather than 404 — a 404 reads to the client as "portal unreachable", which is a worse lie than "not enabled".
+Add a route test asserting both GETs answer **404**, so a future well-meaning
+addition is a deliberate act rather than drift back into F-10.
 
 - [ ] **Step 6: Gates and commit.**
 
@@ -187,15 +181,23 @@ The client reads `payload["subscription"]`. #4 omitted it deliberately — "unve
 
 **Files:** as Task 2.
 
+**Methods are copied from the client's call sites. Do not infer them — a wrong
+method answers 405, and the fail-open client renders that as a degraded screen with
+no error anywhere.**
+
 ```
-POST /api/billing/charge            create a top-up order
-GET  /api/billing/charge/{id}       its status
-POST /api/billing/subscription/upgrade
-POST /api/billing/subscription/preview
-PUT  /api/billing/auto-top-up       → 501, with a reason
+POST   /api/billing/charge                        nous_billing.py:522  create a top-up order
+GET    /api/billing/charge/{id}                   nous_billing.py:545  its status
+POST   /api/billing/subscription/preview          nous_billing.py:586  chargeless quote
+POST   /api/billing/subscription/upgrade          nous_billing.py:669  immediate upgrade
+PUT    /api/billing/subscription/pending-change   nous_billing.py:623  set end-of-period intent
+DELETE /api/billing/subscription/pending-change   nous_billing.py:641  clear it (resume/undo)
+PATCH  /api/billing/auto-top-up                   nous_billing.py:492  → 501, with a reason
 ```
 
-All on `billing:manage` — the scope nothing can currently grant.
+Corrected from an earlier version that said `PUT /auto-top-up` and omitted both
+pending-change writes (F-10). All on `billing:manage` — the scope nothing can
+currently grant.
 
 - [ ] **Step 1: Write the gate test FIRST**
 
@@ -203,7 +205,7 @@ Every write endpoint, with a token carrying `billing:read` but not `billing:mana
 
 - [ ] **Step 2: Run, fail. Step 3: Implement `charge` over `PaymentService` order creation; `upgrade`/`preview` over the plans surface. Step 4: Run, pass.**
 
-- [ ] **Step 5:** `PUT /api/billing/auto-top-up` → `501` with a body naming the reason (no stored payment method). Test that it is 501 and not 404 or 200.
+- [ ] **Step 5:** `PATCH /api/billing/auto-top-up` → `501` with a body naming the reason (no stored payment method). Test that it is 501 and not 404, not 405, and not 200 — and assert `PUT` to that path is 405, pinning the method the client actually sends.
 
 - [ ] **Step 6: Mutation-prove the gate** — drop `billing:manage` to `billing:read` on one write route (compiling), show the gate test failing.
 
@@ -243,7 +245,7 @@ The figure the CLI prints equals `users.balance` in Postgres. Not "looks right" 
 
 ## Self-review notes
 
-- **Spec coverage:** `billing/state` → T1. `analytics/usage` → T2. `subscription`/`pending-change`/`auto-top-up` read → T3. Account `subscription` field → T4. Writes + scope boundary → T5. All seven "done means" criteria → T6.
+- **Spec coverage:** `billing/state` → T1. T2 is VOID (`analytics/usage` is not a portal endpoint; F-10). `GET subscription` → T3. Account `subscription` field → T4. All seven writes, at the client's exact methods → T5. Every "done means" criterion → T6.
 - **Task 1 is first** because every later task reuses its service, fixture and route group. Its partial-degradation test is the one that encodes the client's fail-open contract.
 - **The two riskiest tests are written before their implementations**: T2's isolation test (needs a second user's data actually present) and T5's scope gate (protects a scope nothing can grant, so nothing else would catch a regression).
 - **Deliberately deferred:** stored cards, auto top-up, the `billing:manage` step-up device flow, per-org monthly ceilings, and retiring `/api/v1/payment/*`. All are named non-goals in the spec.

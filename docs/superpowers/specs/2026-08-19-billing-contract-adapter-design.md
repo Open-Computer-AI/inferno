@@ -16,15 +16,39 @@ Inferno is OC Portal. It replaces Nous Portal for a client that is upstream
 not currently answer:
 
 ```
-GET  /api/billing/state                     the overview screen's data
-GET  /api/analytics/usage                   usage history
-GET  /api/billing/subscription              plan state
-POST /api/billing/subscription/preview      plan-change quote
-POST /api/billing/subscription/upgrade      plan change
-GET  /api/billing/subscription/pending-change
-POST /api/billing/charge  ·  /charge/{id}   top-up
-GET/PUT /api/billing/auto-top-up            auto-reload
+GET    /api/billing/state                        nous_billing.py:477   overview data
+GET    /api/billing/subscription                 nous_billing.py:555   plan state
+POST   /api/billing/subscription/preview         nous_billing.py:586   chargeless quote
+POST   /api/billing/subscription/upgrade         nous_billing.py:669   immediate upgrade
+PUT    /api/billing/subscription/pending-change  nous_billing.py:623   set end-of-period intent
+DELETE /api/billing/subscription/pending-change  nous_billing.py:641   clear it (resume/undo)
+POST   /api/billing/charge                       nous_billing.py:522   buy credits
+GET    /api/billing/charge/{id}                  nous_billing.py:545   poll a charge
+PATCH  /api/billing/auto-top-up                  nous_billing.py:492   configure auto-reload
 ```
+
+**Every row above is a real call site in the client, cited by file and line.**
+Nothing goes in this table that is not one. An earlier version of this table was
+built by grepping the hermes repo for path strings, and shipped three errors that
+survived into the plan (F-10):
+
+- `GET /api/analytics/usage` was listed as usage history. It is **not a portal
+  endpoint at all** — `hermes_cli/web_server.py:15361` is the AGENT'S OWN
+  dashboard route, served by the local hermes web server, called by
+  `web/src/lib/api.ts:512` and `apps/desktop/src/hermes.ts:1841` against
+  localhost, backed by local sqlite. `nous_billing.py` and `auth.py` contain the
+  string "analytics" zero times. It was built (b7670aa9) and reverted (3cae8f63).
+- auto-top-up was listed `GET/PUT`. The client sends **PATCH**, and never GETs it
+  — the current auto-reload state arrives inside `/api/billing/state`.
+- pending-change was listed `GET`. The client sends **PUT** and **DELETE**; there
+  is no GET, because the pending change is also read from `/api/billing/state`.
+
+The last two would each have answered 405 to the real client, silently: the
+client fails open, so a 405 shows as a degraded screen, not an error.
+
+**A path string carries no direction.** Finding `"/api/x"` in a client repo does
+not mean the client CALLS it — it may be a route the client SERVES. Read the call
+site, not the string.
 
 All of them 404 today. Two consequences observed live on 2026-08-19:
 
@@ -123,7 +147,7 @@ request would double the latency and hide errors behind a second status code.
 
 ```
 GET /api/billing/state
-   └─ middleware.RequireOAuthScope(billing:read)
+   └─ middleware.RequireOAuthBearer()        // valid token, no scope -- see R-1.2
         └─ BillingContractService.State(ctx, userID)
              ├─ userSvc.GetByID           balance
              ├─ orgSvc.OrgsForUser        org + role
@@ -135,7 +159,7 @@ GET /api/billing/state
 ### Where it mounts, and under which scope
 
 These are **bare, Nous-shaped** endpoints at `/api/billing/*` and
-`/api/analytics/*` — not under `/api/v1/`, and **not** on the panel's
+not under `/api/v1/`, and **not** on the panel's
 `{code,message,data}` envelope. The client parses the raw object. This mirrors
 the decision already made for `/api/oauth/*`.
 
@@ -143,9 +167,20 @@ Scope enforcement, using the vocabulary #4 already defines:
 
 | Endpoint | Scope |
 |---|---|
-| `GET /api/billing/state`, `/subscription`, `/pending-change`, `/auto-top-up` | `billing:read` |
-| `GET /api/analytics/usage` | `billing:read` |
-| `POST /charge`, `/subscription/upgrade`, `PUT /auto-top-up` | `billing:manage` |
+| `GET /api/billing/state`, `GET /subscription` | valid token, no scope |
+| `POST /charge`, `GET /charge/{id}` | `billing:manage` |
+| `POST /subscription/preview`, `POST /subscription/upgrade` | `billing:manage` |
+| `PUT` and `DELETE /subscription/pending-change` | `billing:manage` |
+| `PATCH /auto-top-up` | `billing:manage` |
+
+**Reads take a valid token and no particular scope** (ruling R-1.2). `billing:read`
+is in the vocabulary but no client ever requests it — hermes's default scope is
+`inference:invoke` and its only step-up asks `billing:manage` — so gating a read on
+it ships a dead endpoint. The data is the caller's OWN balance, plan and spend, and
+a token minted for that user already means the holder acts as that user. The same
+ruling was applied to `/v1/usage` and `/v1/sub2api/billing` in 569c7e3e, so one rule
+now covers every "read your own billing data" surface. Residual exposure is parked
+as F-9: revisit if third-party clients ever get real users.
 
 `billing:manage` is the scope `oauth_scope_vocabulary.go` documents as *"never
 granted at initial login; must be elevated to via a second device flow"* — and
@@ -192,10 +227,13 @@ Two fields the client reads that #4 deliberately omitted. Now resolvable:
    `portal.nousresearch.com` and show Inferno's numbers.
 2. `GET /api/billing/state` returns a `BillingState` the unmodified client parses
    with `logged_in=true`, a correct `balance_usd`, and the right org and role.
-3. `GET /api/analytics/usage` returns this user's usage — and **only** this
-   user's, asserted with a second user's data present in the same database.
-4. A token without `billing:read` gets `403 insufficient_scope`, not data.
-5. A token with `billing:read` but not `billing:manage` gets `403` from every
+3. Every response is asserted to contain **only the calling user's** data, with a
+   second user's rows present in the same database — the assertion is worthless
+   without them.
+4. Every path in the table above is served at the **exact method the client sends**.
+   A wrong method answers 405, which the fail-open client shows as a degraded
+   screen rather than an error, so this is asserted per row, not assumed.
+5. A token without `billing:manage` gets `403` from every
    write endpoint — asserted, because that is the boundary protecting a scope
    nothing can currently grant.
 6. Every endpoint is bare-JSON, never the panel envelope — asserted, since
