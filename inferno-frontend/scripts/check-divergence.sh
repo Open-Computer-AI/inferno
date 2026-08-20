@@ -412,6 +412,26 @@ backend/internal/repository/fixtures_integration_test.go
 backend/internal/repository/api_key_repo_oauth_backing_listing_test.go
 backend/internal/server/middleware/oauth_billing_divergence_test.go
 backend/internal/server/routes/gateway_billing_divergence_test.go
+# D4 -- the billing-contract-adapter PLAN doc (the sibling spec is already
+# declared under D4 above). Added by ec729664 on this branch and never
+# declared, so it has been the 20th undeclared file since that commit.
+docs/superpowers/plans/2026-08-19-billing-contract-adapter.md
+# D5 -- the /api/billing/* contract adapter (billing-contract-adapter plan,
+# Task 1: BillingContractService + GET /api/billing/state). A translation
+# layer over services that already exist -- no new table, no migration, no new
+# billing concept. handler/handler.go, handler/wire.go, service/wire.go,
+# server/router.go and cmd/server/wire_gen.go are already declared above
+# (Tasks 2/3/5 and org tenancy) -- not re-listed here, same files.
+# server/api_contract_test.go is already declared under D2; the one line
+# changed there is a stale "Sub2API" expectation 05289268 left behind, which
+# only `go test -tags unit ./...` compiles and which had been failing since
+# that commit.
+backend/internal/service/billing_contract.go
+backend/internal/service/billing_contract_test.go
+backend/internal/handler/billing_contract_handler.go
+backend/internal/handler/billing_contract_handler_test.go
+backend/internal/server/routes/billing_contract.go
+backend/internal/server/routes/billing_contract_route_test.go
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }

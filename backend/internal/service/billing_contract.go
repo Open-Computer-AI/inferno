@@ -1,0 +1,366 @@
+package service
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"strconv"
+	"strings"
+	"time"
+
+	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
+)
+
+// BillingContractService answers the Nous-shaped billing questions the hermes
+// client asks its portal. It is a CONTRACT ADAPTER, not billing functionality:
+// every field below is a translation of something Inferno already stores, and
+// the three fields Inferno has no model for are reported as absent rather than
+// invented (see BillingCardView, BillingAutoReloadView and ChargePresets).
+//
+// It composes CACHED services, not repositories. The balance in particular
+// comes from BillingCacheService.GetUserBalance (Redis, async write workers,
+// singleflight on the miss path) and never from a UserRepository read: this
+// endpoint is POLLED by every running agent, and reaching past the cache turns
+// one cached read into a query storm.
+//
+// Dependencies are narrow interfaces rather than the concrete services so that
+// (a) this adapter cannot grow into mutating anything, and (b) a test can fail
+// exactly one source and observe the degradation. The real services satisfy
+// them structurally; there is no adapter type and no second code path.
+type BillingContractService struct {
+	balanceSvc BillingBalanceSource
+	orgSvc     BillingOrgSource
+	usageSvc   BillingUsageSource
+	paymentSvc BillingPaymentSource
+
+	// portalBaseURL is cfg.Server.FrontendURL -- the browser-facing base URL
+	// this deployment is reachable at. See BillingStateView.PortalURL.
+	portalBaseURL string
+
+	// now is timezone.Now in production. Injected so the month-to-date window
+	// is assertable; unexported, so the seam exists only inside this package.
+	now func() time.Time
+}
+
+// BillingBalanceSource is the wallet balance, read through the cache.
+// Satisfied by *BillingCacheService.
+type BillingBalanceSource interface {
+	GetUserBalance(ctx context.Context, userID int64) (float64, error)
+}
+
+// BillingOrgSource is org membership and role. Satisfied by *OrgService --
+// the same two calls OAuthHandler.Account already makes.
+type BillingOrgSource interface {
+	OrgsForUser(ctx context.Context, userID int64) ([]*dbent.Org, error)
+	RoleIn(ctx context.Context, orgID, userID int64) (string, error)
+}
+
+// BillingUsageSource is the month-to-date usage rollup. Satisfied by
+// *UsageService.
+type BillingUsageSource interface {
+	GetStatsByUser(ctx context.Context, userID int64, startTime, endTime time.Time) (*UsageStats, error)
+}
+
+// BillingPaymentSource is the top-up bounds and the payment kill switch.
+// Satisfied by *PaymentConfigService.
+type BillingPaymentSource interface {
+	GetAvailableMethodLimits(ctx context.Context) (*MethodLimitsResponse, error)
+	IsPaymentEnabled(ctx context.Context) bool
+}
+
+func NewBillingContractService(
+	balanceSvc BillingBalanceSource,
+	orgSvc BillingOrgSource,
+	usageSvc BillingUsageSource,
+	paymentSvc BillingPaymentSource,
+	portalBaseURL string,
+) *BillingContractService {
+	return &BillingContractService{
+		balanceSvc:    balanceSvc,
+		orgSvc:        orgSvc,
+		usageSvc:      usageSvc,
+		paymentSvc:    paymentSvc,
+		portalBaseURL: portalBaseURL,
+		now:           timezone.Now,
+	}
+}
+
+// ---------------------------------------------------------------------------
+// The wire shape.
+//
+// THESE JSON KEYS ARE NOT OURS TO CHOOSE. The only consumer is
+// agent/billing_view.py's billing_state_from_payload, which reads the raw
+// object with no key transformation on the way in
+// (hermes_cli/nous_billing.py:479-481). Every tag below is the exact key that
+// parser reads, verified against that function -- including the two groupings
+// that are easy to get backwards:
+//
+//   - `bounds` carries minUsd/maxUsd, the TOP-UP bounds.
+//   - `monthlyCap` carries limitUsd/spentThisMonthUsd/isDefaultCeiling, the
+//     monthly SPEND ceiling. It is NOT `bounds`.
+//
+// A wrong key here does not error. Every .get() misses, the client parses a
+// well-formed BillingState full of None, and the CLI shows the same degraded
+// screen it shows with no endpoint at all -- the failure OAuthHandler.Account's
+// doc comment records as worse than a loud one.
+// ---------------------------------------------------------------------------
+
+// BillingStateView is GET /api/billing/state's body.
+type BillingStateView struct {
+	// LoggedIn is always true here: the bearer verified or this method was
+	// never reached. Emitted for symmetry with the client's own field name;
+	// note the client does not actually read it (billing_state_from_payload
+	// hardcodes logged_in=True on any parsed payload).
+	LoggedIn bool `json:"loggedIn"`
+
+	// Org is nil when the org lookup failed. nil means "could not resolve",
+	// never "zero" -- the client reads a missing org as unknown.
+	Org *BillingOrgView `json:"org,omitempty"`
+
+	// CanChangePlan is the server-granted capability the client prefers over
+	// its own deprecated OWNER/ADMIN role check. Omitted (not false) when the
+	// role could not be resolved, so the client falls back to that check
+	// rather than being told "no" by a lookup failure.
+	CanChangePlan *bool `json:"canChangePlan,omitempty"`
+
+	// BalanceUSD is a decimal STRING, as the whole money contract is: the
+	// client parses with Decimal(str(value)) and keeps it exact end-to-end.
+	BalanceUSD string `json:"balanceUsd"`
+
+	// CLIBillingEnabled is this deployment's payment kill switch. It gates the
+	// client's charge/auto-reload UI (BillingState.can_charge).
+	CLIBillingEnabled bool `json:"cliBillingEnabled"`
+
+	// ChargePresets is always empty. Inferno models no top-up preset ladder --
+	// the only one in the product is a hardcoded Vue default in
+	// frontend/src/components/payment/AmountInput.vue, not server data, and
+	// copying it here would create a second source of truth for a concept no
+	// service owns. The client degrades to "Custom amount…", still bounded by
+	// the real Bounds below.
+	ChargePresets []string `json:"chargePresets"`
+
+	// Bounds is the top-up min/max. nil when the payment-config lookup failed.
+	Bounds *BillingBoundsView `json:"bounds,omitempty"`
+
+	Card       BillingCardView       `json:"card"`
+	AutoReload BillingAutoReloadView `json:"autoReload"`
+
+	// MonthlyCap is nil when the usage rollup failed -- deliberately nil and
+	// not a zero, because "we could not add it up" and "you have spent nothing"
+	// are different answers and only one of them is safe to show.
+	MonthlyCap *BillingMonthlyCapView `json:"monthlyCap,omitempty"`
+
+	// PortalURL is where the CLI sends a user who needs to top up or add a
+	// card. Supplied by the server on purpose: the client's own fallback is
+	// `{portal_base}/billing?topup=open` (agent/billing_view.py:333-335), a
+	// path Inferno's frontend does not have -- its top-up page is /purchase --
+	// and whose default base is portal.nousresearch.com. Omitted when this
+	// deployment has no frontend_url configured, which returns the client to
+	// that fallback rather than handing it a broken absolute URL.
+	PortalURL string `json:"portalUrl,omitempty"`
+}
+
+// BillingOrgView is the client's org block: id, slug, name, role.
+type BillingOrgView struct {
+	ID   string `json:"id"`
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+	// Role is "" when the per-org role lookup failed. Never defaulted to a
+	// role -- OAuthHandler.Account defaults to MEMBER for the same situation
+	// because its payload has no way to say "unknown"; this one does.
+	Role string `json:"role,omitempty"`
+}
+
+// BillingBoundsView is the top-up amount range. Both fields are pointers so a
+// missing bound is null rather than "0": MethodLimitsResponse uses 0 to mean
+// "no minimum"/"no maximum", and "0" would read to the client as a real
+// zero-dollar bound.
+type BillingBoundsView struct {
+	MinUSD *string `json:"minUsd"`
+	MaxUSD *string `json:"maxUsd"`
+}
+
+// BillingCardView is always {"kind":"none"}.
+//
+// Inferno's payment model is order-based -- create an order, pay it through a
+// provider, the order settles. There is no stored-card vault and no
+// payment_method_id anywhere in this codebase. "none" is the honest answer and
+// the client already handles it: with no card, cli_billing_mixin.py routes the
+// user to the portal/order flow instead of offering a one-click charge that
+// would have nothing to charge.
+type BillingCardView struct {
+	Kind string `json:"kind"`
+}
+
+// BillingAutoReloadView is always {"enabled":false}. Auto top-up does not exist
+// in Inferno, and it would need a stored payment method to mean anything, so it
+// inherits BillingCardView's gap.
+type BillingAutoReloadView struct {
+	Enabled bool `json:"enabled"`
+}
+
+// BillingMonthlyCapView is the monthly spend picture.
+//
+// LimitUSD is always null: a per-org monthly ceiling is not modelled in
+// Inferno. Null reads to the client as "no limit configured", which is true;
+// IsDefaultCeiling is false for the same reason -- there is no default ceiling
+// to have fallen back to.
+//
+// SpentThisMonthUSD IS real, aggregated from usage_logs.
+type BillingMonthlyCapView struct {
+	LimitUSD          *string `json:"limitUsd"`
+	SpentThisMonthUSD string  `json:"spentThisMonthUsd"`
+	IsDefaultCeiling  bool    `json:"isDefaultCeiling"`
+}
+
+// State composes the client's overview screen.
+//
+// PARTIAL RESULTS ARE THE NORMAL CASE. Each optional section resolves
+// independently: a failure logs the real error and leaves that section nil, and
+// nil means "could not resolve", never "zero". Only the balance is fatal --
+// without it there is nothing useful to say, and every other field is decoration
+// around a number the user cannot see.
+//
+// That asymmetry is deliberate and it is the inverse of the client's. The client
+// FAILS OPEN: agent/billing_view.py::build_billing_state turns any error into
+// BillingState(logged_in=False) plus a clean message rather than a crash. Because
+// it will swallow whatever we send, we must be the loud half -- log the real
+// error server-side, return every field that did resolve. A balance is useful
+// even when the usage rollup is down; 500ing the whole response because one
+// aggregate failed converts a degraded screen into a blank one.
+func (s *BillingContractService) State(ctx context.Context, userID int64) (*BillingStateView, error) {
+	// FATAL. Not "log and continue": see the doc comment above.
+	balance, err := s.balanceSvc.GetUserBalance(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("billing contract: resolve balance for user %d: %w", userID, err)
+	}
+
+	out := &BillingStateView{
+		LoggedIn:      true,
+		BalanceUSD:    billingMoney(balance),
+		ChargePresets: []string{}, // never nil -- JSON null is not an empty list
+		Card:          BillingCardView{Kind: "none"},
+		AutoReload:    BillingAutoReloadView{Enabled: false},
+		PortalURL:     billingPortalURL(s.portalBaseURL),
+	}
+
+	out.Org, out.CanChangePlan = s.resolveOrg(ctx, userID)
+	out.MonthlyCap = s.resolveMonthlyCap(ctx, userID)
+	out.Bounds, out.CLIBillingEnabled = s.resolvePayment(ctx)
+
+	return out, nil
+}
+
+// resolveOrg returns the primary org and the plan-change capability, or
+// (nil, nil) when the org could not be resolved.
+func (s *BillingContractService) resolveOrg(ctx context.Context, userID int64) (*BillingOrgView, *bool) {
+	orgs, err := s.orgSvc.OrgsForUser(ctx, userID)
+	if err != nil {
+		slog.Error("billing contract: org lookup failed", "user_id", userID, "error", err)
+		return nil, nil
+	}
+	if len(orgs) == 0 {
+		// Post-C1 every session provisions a personal org, so this is not
+		// expected; a missing org is still "unknown", not an empty one.
+		slog.Error("billing contract: user has no org", "user_id", userID)
+		return nil, nil
+	}
+
+	primary := orgs[0]
+	view := &BillingOrgView{
+		ID:   strconv.FormatInt(primary.ID, 10),
+		Slug: primary.Slug,
+		Name: primary.Name,
+	}
+
+	role, err := s.orgSvc.RoleIn(ctx, primary.ID, userID)
+	if err != nil {
+		// The org half is still correct and useful. Leave Role empty and omit
+		// canChangePlan entirely, so the client falls back to its own role
+		// check instead of being told "no" by a lookup failure.
+		slog.Error("billing contract: org role lookup failed", "user_id", userID, "org_id", primary.ID, "error", err)
+		return view, nil
+	}
+	view.Role = role
+
+	canChangePlan := role == OrgRoleOwner || role == OrgRoleAdmin
+	return view, &canChangePlan
+}
+
+// resolveMonthlyCap aggregates month-to-date spend, or returns nil when the
+// rollup failed.
+func (s *BillingContractService) resolveMonthlyCap(ctx context.Context, userID int64) *BillingMonthlyCapView {
+	now := s.now()
+	start := timezone.StartOfMonth(now)
+
+	stats, err := s.usageSvc.GetStatsByUser(ctx, userID, start, now)
+	if err != nil {
+		slog.Error("billing contract: month-to-date usage rollup failed", "user_id", userID, "error", err)
+		return nil
+	}
+	if stats == nil {
+		slog.Error("billing contract: month-to-date usage rollup returned no stats", "user_id", userID)
+		return nil
+	}
+
+	return &BillingMonthlyCapView{
+		LimitUSD: nil,
+		// TotalActualCost, not TotalCost: actual_cost is the column
+		// UsageService.Create deducts from the wallet, so it is the only one
+		// that means the same thing as the balance shown beside it.
+		SpentThisMonthUSD: billingMoney(stats.TotalActualCost),
+		IsDefaultCeiling:  false,
+	}
+}
+
+// resolvePayment returns the top-up bounds and the payment kill switch. On a
+// limits failure the bounds are nil, but cliBillingEnabled is still answered --
+// it is a separate settings read.
+func (s *BillingContractService) resolvePayment(ctx context.Context) (*BillingBoundsView, bool) {
+	enabled := s.paymentSvc.IsPaymentEnabled(ctx)
+
+	limits, err := s.paymentSvc.GetAvailableMethodLimits(ctx)
+	if err != nil {
+		slog.Error("billing contract: payment limits lookup failed", "error", err)
+		return nil, enabled
+	}
+	if limits == nil {
+		return nil, enabled
+	}
+
+	return &BillingBoundsView{
+		MinUSD: billingOptionalMoney(limits.GlobalMin),
+		MaxUSD: billingOptionalMoney(limits.GlobalMax),
+	}, enabled
+}
+
+// billingMoney renders a money value as the decimal STRING the contract calls
+// for. 'f' with precision -1 is the shortest representation that round-trips,
+// so 42.50 renders "42.5" and 1.25 renders "1.25" -- never scientific notation,
+// and never a fixed 2dp that would silently drop the sub-cent per-request costs
+// this system actually meters. The client quantises for display.
+func billingMoney(v float64) string {
+	return strconv.FormatFloat(v, 'f', -1, 64)
+}
+
+// billingOptionalMoney maps MethodLimitsResponse's "0 means unset" convention
+// onto a JSON null, which is what the client reads as "no bound".
+func billingOptionalMoney(v float64) *string {
+	if v <= 0 {
+		return nil
+	}
+	s := billingMoney(v)
+	return &s
+}
+
+// billingPortalURL builds the top-up deep link from this deployment's
+// browser-facing base URL. /purchase is Inferno's recharge route
+// (inferno-frontend/src/router/index.ts) -- deliberately not the client's
+// /billing fallback, which does not exist here.
+func billingPortalURL(base string) string {
+	if base == "" {
+		return ""
+	}
+	return strings.TrimRight(base, "/") + "/purchase"
+}

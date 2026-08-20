@@ -117,6 +117,36 @@ func ProvideOAuthTokenService(entClient *dbent.Client, keySvc *OAuthKeyService, 
 	return NewOAuthTokenService(entClient, keySvc, deviceSvc, refreshTokenCache, userRepo, cfg.Server.FrontendURL)
 }
 
+// ProvideBillingContractService wires the /api/billing/* contract adapter over
+// the services that already hold the data.
+//
+// The BALANCE comes from BillingCacheService, not UserRepository: this
+// endpoint is polled by every running agent, the balance is its hottest field,
+// and BillingCacheService is where the Redis layer, the async write workers
+// and the singleflight on the miss path live. Every deploy is DB+Redis, so
+// that cache is never absent -- and when Redis is down it falls back to the
+// database itself, which is why reaching past it buys nothing and costs a
+// query storm.
+//
+// portalBaseURL is cfg.Server.FrontendURL, the same browser-facing base URL
+// ProvideOAuthDeviceService and ProvideOAuthTokenService already use. "" is a
+// supported value: BillingStateView.PortalURL is then omitted rather than
+// emitted as a relative path.
+//
+// SubscriptionService is deliberately NOT a dependency -- see
+// task-1-report.md F4: nothing in the client's BillingState is
+// subscription-derived, so wiring it here would be an unused dependency
+// belonging to the later GET /api/billing/subscription task.
+func ProvideBillingContractService(
+	billingCache *BillingCacheService,
+	orgSvc *OrgService,
+	usageSvc *UsageService,
+	paymentCfgSvc *PaymentConfigService,
+	cfg *config.Config,
+) *BillingContractService {
+	return NewBillingContractService(billingCache, orgSvc, usageSvc, paymentCfgSvc, cfg.Server.FrontendURL)
+}
+
 // ProvideOAuthRefreshAPI creates OAuthRefreshAPI with the default lock TTL.
 func ProvideOAuthRefreshAPI(accountRepo AccountRepository, tokenCache GeminiTokenCache) *OAuthRefreshAPI {
 	return NewOAuthRefreshAPI(accountRepo, tokenCache)
@@ -787,6 +817,10 @@ var ProviderSet = wire.NewSet(
 	NewOAuthBackingKeyService,
 	ProvideOAuthDeviceService,
 	ProvideOAuthTokenService,
+	// The /api/billing/* contract adapter. All five inputs already exist in
+	// the graph; see ProvideBillingContractService for why the balance comes
+	// from BillingCacheService and not from a repository.
+	ProvideBillingContractService,
 	NewPasskeyService,
 	NewUserService,
 	ProvideAPIKeyService,

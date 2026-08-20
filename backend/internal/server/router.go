@@ -142,6 +142,17 @@ func registerRoutes(
 	// RegisterOAuthAccountRoutes.
 	routes.RegisterOAuthAccountRoutes(r, h.OAuth)
 
+	// The Nous-shaped billing contract adapter: GET /api/billing/state.
+	// Mounted at /api/billing on the server ROOT -- deliberately NOT under
+	// /api/v1 and NOT on the panel's {code,message,data} envelope, for the
+	// same reason RegisterOAuthAccountRoutes is: the consumer is the hermes
+	// CLI, which hardcodes these paths and parses the raw object. Inferno's
+	// own /api/v1/payment/* surface (registered below) is untouched.
+	// h.OAuth is threaded in only so the route can build the RS256 bearer
+	// middleware from the same key service, client registry and issuer string
+	// the token mint used.
+	routes.RegisterBillingContractRoutes(r, h.OAuth, h.BillingContract)
+
 	// GET/POST /oauth/authorize (Task 4): the browser-facing authorization
 	// endpoint, mounted at the server root -- not under /api -- and NOT
 	// bypassed to the embedded frontend by web.FrontendServer (see
