@@ -29,9 +29,10 @@ import (
 
 // These tests run the REAL chain: the real RS256 key service, the real
 // oauth_client registry, the real RequireOAuthScope middleware, the real
-// handler and the real BillingContractService. Only the four data sources the
-// service composes are faked, because the point here is the WIRE — status
-// codes, scope enforcement and the exact JSON keys — not the numbers.
+// handler and the real BillingContractService. Only the six data sources the
+// service composes are faked (balance, org, usage, payment, plan catalog,
+// subscription), because the point here is the WIRE — status codes, scope
+// enforcement and the exact JSON keys — not the numbers.
 //
 // The ent client is sqlite purely to hold the signing key and one client row;
 // nothing under test is a SQL behaviour.
@@ -42,7 +43,7 @@ const (
 	billingRouteUserID   = int64(7)
 )
 
-// --- fakes for the four sources ------------------------------------------
+// --- fakes for the six sources --------------------------------------------
 
 type stubBillingBalance struct{ balance float64 }
 
@@ -72,6 +73,45 @@ func (stubBillingPayment) GetAvailableMethodLimits(context.Context) (*service.Me
 }
 func (stubBillingPayment) IsPaymentEnabled(context.Context) bool { return true }
 
+// stubBillingPlan is the plan catalog GET /api/billing/subscription's
+// `tiers` picker is built from -- one for-sale plan, group 9, matching
+// stubBillingSubscription's active row below so isCurrent is exercised.
+type stubBillingPlan struct{}
+
+func (stubBillingPlan) ListPlans(context.Context) ([]*dbent.SubscriptionPlan, error) {
+	return []*dbent.SubscriptionPlan{
+		{ID: 100, GroupID: 9, Name: "Pro", Price: 20, SortOrder: 1, ForSale: true},
+	}, nil
+}
+
+func (stubBillingPlan) GetGroupInfoMap(context.Context, []*dbent.SubscriptionPlan) map[int64]service.PlanGroupInfo {
+	limit := 100.0
+	return map[int64]service.PlanGroupInfo{9: {MonthlyLimitUSD: &limit}}
+}
+
+// stubBillingSubscription is the caller's own active subscription(s). The
+// zero value (nil Subs) is "no active subscription" -- current:null.
+type stubBillingSubscription struct {
+	subs []service.UserSubscription
+}
+
+func (s stubBillingSubscription) ListActiveUserSubscriptions(context.Context, int64) ([]service.UserSubscription, error) {
+	return s.subs, nil
+}
+
+// billingRouteActiveSubscription is the default active row used by
+// newBillingRouteEnv: group 9, matching stubBillingPlan's plan, so isCurrent
+// is exercised on the wire.
+func billingRouteActiveSubscription() stubBillingSubscription {
+	limit := 100.0
+	return stubBillingSubscription{subs: []service.UserSubscription{{
+		ID: 1, UserID: billingRouteUserID, GroupID: 9,
+		ExpiresAt:       time.Date(2026, 9, 19, 0, 0, 0, 0, time.UTC),
+		MonthlyUsageUSD: 30,
+		Group:           &service.Group{ID: 9, Name: "Pro", MonthlyLimitUSD: &limit},
+	}}}
+}
+
 // --- harness --------------------------------------------------------------
 
 type billingRouteEnv struct {
@@ -80,6 +120,13 @@ type billingRouteEnv struct {
 }
 
 func newBillingRouteEnv(t *testing.T) *billingRouteEnv {
+	return newBillingRouteEnvWithSubscription(t, billingRouteActiveSubscription())
+}
+
+// newBillingRouteEnvWithSubscription lets a test override what the caller's
+// "current" subscription looks like -- in particular, an empty
+// stubBillingSubscription{} to exercise the no-plan / current:null path.
+func newBillingRouteEnvWithSubscription(t *testing.T, subSrc stubBillingSubscription) *billingRouteEnv {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
@@ -116,6 +163,8 @@ func newBillingRouteEnv(t *testing.T) *billingRouteEnv {
 		stubBillingOrg{},
 		stubBillingUsage{actualCost: 1.25},
 		stubBillingPayment{},
+		stubBillingPlan{},
+		subSrc,
 		billingRouteIssuer,
 	)
 
@@ -145,7 +194,12 @@ func (e *billingRouteEnv) mint(t *testing.T, scope string) string {
 
 func (e *billingRouteEnv) get(t *testing.T, authorization string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/api/billing/state", nil)
+	return e.getPath(t, "/api/billing/state", authorization)
+}
+
+func (e *billingRouteEnv) getPath(t *testing.T, path, authorization string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
 	if authorization != "" {
 		req.Header.Set("Authorization", authorization)
 	}
@@ -357,4 +411,173 @@ func TestBillingStateRouteIsNotMountedUnderAPIV1(t *testing.T) {
 	env.router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// ===========================================================================
+// GET /api/billing/subscription
+// ===========================================================================
+
+// TestBillingSubscriptionRouteReturnsBareJSONNotThePanelEnvelope is the
+// type-fidelity test the task-3 brief calls for: these three checks fail
+// SILENTLY on the client (subscription_state_from_payload's fail-open
+// parsing), so each is asserted against the ENCODED JSON BYTES, not the Go
+// struct --
+//
+//   - canChangePlan must decode as a JSON bool, not the string "true"
+//     (a string parses to None per subscription_view.py:236-240).
+//   - tiers must decode as a JSON array, even non-empty here, never null
+//     (a non-list silently becomes () per :224-229).
+//   - context must be exactly "personal" or "team" (any other string
+//     silently becomes "personal" per :221-222).
+//
+// It also asserts the absence of the panel's {code,message,data} envelope,
+// same reasoning as TestBillingStateRouteReturnsBareJSONNotThePanelEnvelope.
+func TestBillingSubscriptionRouteReturnsBareJSONNotThePanelEnvelope(t *testing.T) {
+	env := newBillingRouteEnv(t)
+	rec := env.getPath(t, "/api/billing/subscription", "Bearer "+env.mint(t, service.ScopeInferenceInvoke))
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	raw := rec.Body.Bytes()
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(raw, &body))
+
+	for _, k := range []string{"code", "message", "data"} {
+		require.NotContains(t, body, k,
+			"the panel's {code,message,data} envelope must never appear here")
+	}
+
+	// canChangePlan: a real JSON bool, not the string "true".
+	require.Contains(t, string(raw), `"canChangePlan":true`,
+		"canChangePlan must serialise as a bare JSON bool -- a quoted \"true\" parses to None on the client, not true")
+	canChangePlan, ok := body["canChangePlan"].(bool)
+	require.True(t, ok, "canChangePlan must decode as a Go bool, not a string")
+	require.True(t, canChangePlan)
+
+	// context: exactly "personal" or "team".
+	context, ok := body["context"].(string)
+	require.True(t, ok)
+	require.Contains(t, []string{"personal", "team"}, context)
+
+	// tiers: a JSON array (non-empty here), never null.
+	require.Contains(t, string(raw), `"tiers":[`, "tiers must serialise as a JSON array literal")
+	tiers, ok := body["tiers"].([]any)
+	require.True(t, ok, "tiers must decode as a Go slice, never null")
+	require.Len(t, tiers, 1)
+	tier, ok := tiers[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "9", tier["tierId"])
+	require.Equal(t, "Pro", tier["name"])
+	require.Equal(t, "20", tier["dollarsPerMonthDisplay"])
+	require.Equal(t, "100", tier["monthlyCredits"])
+	require.Equal(t, true, tier["isCurrent"])
+	require.Equal(t, true, tier["isEnabled"])
+
+	// current: a real object here (the active-subscription case).
+	current, ok := body["current"].(map[string]any)
+	require.True(t, ok, "current must be an object when the caller has an active subscription")
+	require.Equal(t, "9", current["tierId"])
+	require.Equal(t, "Pro", current["tierName"])
+	require.Equal(t, "100", current["monthlyCredits"])
+	require.Equal(t, "70", current["creditsRemaining"])
+	require.Equal(t, false, current["cancelAtPeriodEnd"])
+
+	org, ok := body["org"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "1", org["id"])
+	require.Equal(t, "OWNER", org["role"])
+
+	require.Equal(t, "https://portal.example.com/purchase", body["portalUrl"])
+	portal, ok := body["portalUrl"].(string)
+	require.True(t, ok)
+	require.NotContains(t, portal, "nousresearch.com")
+}
+
+// TestBillingSubscriptionRouteReportsNoPlanAsNullCurrent pins the exact wire
+// shape agent/subscription_view.py:142-144 documents: "no plan" is
+// current:null -- a PRESENT key with a JSON null value, not an omitted key
+// and not an object of nulls (the old all-null-object shape is gone).
+func TestBillingSubscriptionRouteReportsNoPlanAsNullCurrent(t *testing.T) {
+	env := newBillingRouteEnvWithSubscription(t, stubBillingSubscription{})
+	rec := env.getPath(t, "/api/billing/subscription", "Bearer "+env.mint(t, service.ScopeInferenceInvoke))
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	require.Contains(t, rec.Body.String(), `"current":null`,
+		"a caller with no active subscription must get a PRESENT current key with a null value")
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	current, present := body["current"]
+	require.True(t, present, "current must be a present key, not an omitted one")
+	require.Nil(t, current)
+
+	// tiers must still be a real array: the plan catalog is independent of
+	// whether the caller has an active subscription.
+	tiers, ok := body["tiers"].([]any)
+	require.True(t, ok)
+	require.Len(t, tiers, 1)
+	tier := tiers[0].(map[string]any)
+	require.Equal(t, false, tier["isCurrent"], "with no active subscription, no tier can be current")
+}
+
+// TestBillingSubscriptionRouteAdmitsAStockClientToken mirrors State's
+// conformance case: a token carrying only inference:invoke (what a real
+// hermes login actually holds) must be admitted, not the unsatisfiable
+// billing:read.
+func TestBillingSubscriptionRouteAdmitsAStockClientToken(t *testing.T) {
+	env := newBillingRouteEnv(t)
+	rec := env.getPath(t, "/api/billing/subscription", "Bearer "+env.mint(t, service.ScopeInferenceInvoke))
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+}
+
+// TestBillingSubscriptionRouteRejectsAnUnauthenticatedCall mirrors State's:
+// dropping the SCOPE requirement must not drop AUTHENTICATION.
+func TestBillingSubscriptionRouteRejectsAnUnauthenticatedCall(t *testing.T) {
+	env := newBillingRouteEnv(t)
+	rec := env.getPath(t, "/api/billing/subscription", "")
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.JSONEq(t, `{"error":"invalid_token"}`, rec.Body.String())
+}
+
+// TestBillingSubscriptionRouteIsNotMountedUnderAPIV1 mirrors State's mount-
+// point pin.
+func TestBillingSubscriptionRouteIsNotMountedUnderAPIV1(t *testing.T) {
+	env := newBillingRouteEnv(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/billing/subscription", nil)
+	req.Header.Set("Authorization", "Bearer "+env.mint(t, service.ScopeInferenceInvoke))
+	rec := httptest.NewRecorder()
+	env.router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// ===========================================================================
+// The two phantom GETs (task-3 brief, Step 7).
+//
+// GET /api/billing/auto-top-up and GET /api/billing/subscription/pending-change
+// must NOT exist. The client sends PATCH to the first (nous_billing.py:480)
+// and PUT/DELETE to the second (:594, :631); it reads both states out of
+// GET /api/billing/state instead, and there is no GET call site for either
+// path anywhere in nous_billing.py. This pins both at 404 so a future
+// well-meaning addition (F-10's exact failure mode) is a deliberate act, not
+// drift back into "a route answering a question nobody asks".
+// ===========================================================================
+
+func TestPhantomGETAutoTopUpDoesNotExist(t *testing.T) {
+	env := newBillingRouteEnv(t)
+	rec := env.getPath(t, "/api/billing/auto-top-up", "Bearer "+env.mint(t, service.ScopeInferenceInvoke))
+
+	require.Equal(t, http.StatusNotFound, rec.Code,
+		"the client never sends GET here (it sends PATCH, nous_billing.py:480) -- a GET route would be an endpoint answering a question nobody asks")
+}
+
+func TestPhantomGETSubscriptionPendingChangeDoesNotExist(t *testing.T) {
+	env := newBillingRouteEnv(t)
+	rec := env.getPath(t, "/api/billing/subscription/pending-change", "Bearer "+env.mint(t, service.ScopeInferenceInvoke))
+
+	require.Equal(t, http.StatusNotFound, rec.Code,
+		"the client never sends GET here (it sends PUT/DELETE, nous_billing.py:594,:631) -- both states are read out of GET /api/billing/state instead")
 }

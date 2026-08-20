@@ -51,11 +51,26 @@ import (
 //
 // NOTE for whoever builds /auto-top-up: the design doc says PUT; the client
 // sends PATCH (nous_billing.py:497). The client wins.
+// GET /subscription -- the CLI's plan picker (nous_billing.py:548-555,
+// "no scope required"). Same gate as /state, same reasoning: any
+// validly-signed, unexpired token, not billing:read.
+//
+// Deliberately NOT registered here: GET /auto-top-up and
+// GET /subscription/pending-change. The client never sends either --
+// PATCH /auto-top-up (nous_billing.py:480) and PUT/DELETE
+// /subscription/pending-change (:594, :631) are the only requests it makes
+// against those two paths, and it reads both states out of /api/billing/state
+// instead. Adding a GET here would be exactly F-10 again: a route answering a
+// question nobody asks. server/routes/billing_contract_route_test.go pins
+// both at 404 so a future addition is a deliberate act, not drift.
 func RegisterBillingContractRoutes(r gin.IRouter, oauthH *handler.OAuthHandler, h *handler.BillingContractHandler) {
 	scoped := r.Group("/api/billing")
 	{
 		scoped.GET("/state", middleware.RequireOAuthScope(
 			oauthH.KeyService(), oauthH.ClientService(), oauthH.TokenIssuer(), "",
 		), h.State)
+		scoped.GET("/subscription", middleware.RequireOAuthScope(
+			oauthH.KeyService(), oauthH.ClientService(), oauthH.TokenIssuer(), "",
+		), h.Subscription)
 	}
 }
