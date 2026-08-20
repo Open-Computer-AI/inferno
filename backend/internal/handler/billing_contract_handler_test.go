@@ -9,6 +9,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -40,6 +41,11 @@ type billingHandlerUsage struct{}
 
 func (billingHandlerUsage) GetStatsByUser(context.Context, int64, time.Time, time.Time) (*service.UsageStats, error) {
 	return &service.UsageStats{TotalActualCost: 1.25}, nil
+}
+
+func (billingHandlerUsage) ListByUser(_ context.Context, userID int64, params pagination.PaginationParams) ([]service.UsageLog, *pagination.PaginationResult, error) {
+	return []service.UsageLog{{UserID: userID, ActualCost: 1.25, TotalCost: 1.25}},
+		&pagination.PaginationResult{Total: 1, Page: params.Page, PageSize: params.Limit()}, nil
 }
 
 type billingHandlerPayment struct{}
@@ -147,6 +153,105 @@ func TestBillingStateHandlerReports500WhenUnwired(t *testing.T) {
 	h := NewBillingContractHandler(nil)
 
 	rec := serveBillingState(h, func(c *gin.Context) {
+		c.Set(middleware2.OAuthContextKeyUserID, int64(7))
+	})
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.JSONEq(t, `{"error":"server_error"}`, rec.Body.String())
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/analytics/usage
+// ---------------------------------------------------------------------------
+
+// billingHandlerUsageTracking records the userID ListByUser was actually
+// called with, for the IDOR guard below. A pointer type (unlike the
+// stateless billingHandlerUsage above) because the test needs to read that
+// value back out after the request.
+type billingHandlerUsageTracking struct {
+	gotUser int64
+}
+
+func (u *billingHandlerUsageTracking) GetStatsByUser(context.Context, int64, time.Time, time.Time) (*service.UsageStats, error) {
+	return &service.UsageStats{TotalActualCost: 1.25}, nil
+}
+
+func (u *billingHandlerUsageTracking) ListByUser(_ context.Context, userID int64, params pagination.PaginationParams) ([]service.UsageLog, *pagination.PaginationResult, error) {
+	u.gotUser = userID
+	return []service.UsageLog{{UserID: userID, ActualCost: 1.25, TotalCost: 1.25}},
+		&pagination.PaginationResult{Total: 1, Page: params.Page, PageSize: params.Limit()}, nil
+}
+
+func newBillingContractHandlerUnderTestWithUsage(usage *billingHandlerUsageTracking) *BillingContractHandler {
+	return NewBillingContractHandler(service.NewBillingContractService(
+		&billingHandlerBalance{balance: 42.50}, billingHandlerOrg{}, usage, billingHandlerPayment{}, "https://portal.example.com",
+	))
+}
+
+// serveBillingUsage mirrors serveBillingState: no middleware runs here on
+// purpose, the request carries ?user_id=999, and the tests below are about
+// what the handler does with whatever identity (or lack of one) is on the
+// context.
+func serveBillingUsage(h *BillingContractHandler, setContext func(*gin.Context)) *httptest.ResponseRecorder {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/analytics/usage?user_id=999", nil)
+	if setContext != nil {
+		setContext(c)
+	}
+	h.Usage(c)
+	return rec
+}
+
+// TestUsageHandlerReadsTheUserFromTheVerifiedBearerOnly is the IDOR guard for
+// GET /api/analytics/usage, mirroring TestBillingStateHandlerReadsTheUserFromTheVerifiedBearerOnly.
+func TestUsageHandlerReadsTheUserFromTheVerifiedBearerOnly(t *testing.T) {
+	usage := &billingHandlerUsageTracking{}
+	h := newBillingContractHandlerUnderTestWithUsage(usage)
+
+	rec := serveBillingUsage(h, func(c *gin.Context) {
+		c.Set(middleware2.OAuthContextKeyUserID, int64(7))
+	})
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	require.Equal(t, int64(7), usage.gotUser,
+		"the usage list must be about the bearer's user, never a request-supplied id")
+	require.NotEqual(t, int64(999), usage.gotUser)
+}
+
+// TestUsageHandlerRejectsAMissingOAuthIdentity mirrors the billing/state case.
+func TestUsageHandlerRejectsAMissingOAuthIdentity(t *testing.T) {
+	usage := &billingHandlerUsageTracking{}
+	h := newBillingContractHandlerUnderTestWithUsage(usage)
+
+	rec := serveBillingUsage(h, nil)
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.JSONEq(t, `{"error":"invalid_token"}`, rec.Body.String())
+	require.Zero(t, usage.gotUser, "no source may be consulted without a verified identity")
+}
+
+// TestUsageHandlerRejectsAWrongTypedOAuthIdentity mirrors the billing/state
+// case: a string "7" on the context must fail closed, not resolve to user 0.
+func TestUsageHandlerRejectsAWrongTypedOAuthIdentity(t *testing.T) {
+	usage := &billingHandlerUsageTracking{}
+	h := newBillingContractHandlerUnderTestWithUsage(usage)
+
+	rec := serveBillingUsage(h, func(c *gin.Context) {
+		c.Set(middleware2.OAuthContextKeyUserID, "7")
+	})
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.JSONEq(t, `{"error":"invalid_token"}`, rec.Body.String())
+	require.Zero(t, usage.gotUser)
+}
+
+// TestUsageHandlerReports500WhenUnwired mirrors the billing/state case.
+func TestUsageHandlerReports500WhenUnwired(t *testing.T) {
+	h := NewBillingContractHandler(nil)
+
+	rec := serveBillingUsage(h, func(c *gin.Context) {
 		c.Set(middleware2.OAuthContextKeyUserID, int64(7))
 	})
 
