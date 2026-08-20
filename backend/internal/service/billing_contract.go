@@ -625,6 +625,10 @@ func (s *BillingContractService) resolveCurrentSubscription(ctx context.Context,
 // resolveTiers builds the plan picker from EVERY plan (not just ForSale ones
 // -- see BillingPlanSource.ListPlans), marking the caller's own group current
 // and every non-ForSale plan disabled.
+//
+// DollarsPerMonthDisplay is normalised via billingDollarsPerMonth (ruling
+// R-3.2): a field whose NAME asserts "per month" must not emit a plan's raw
+// total price when that plan bills annually or weekly.
 func (s *BillingContractService) resolveTiers(ctx context.Context, activeGroupID int64, hasActive bool) []BillingTierView {
 	plans, err := s.planSvc.ListPlans(ctx)
 	if err != nil {
@@ -640,7 +644,7 @@ func (s *BillingContractService) resolveTiers(ctx context.Context, activeGroupID
 			TierID:                 strconv.FormatInt(p.GroupID, 10),
 			Name:                   p.Name,
 			TierOrder:              p.SortOrder,
-			DollarsPerMonthDisplay: billingMoney(p.Price),
+			DollarsPerMonthDisplay: billingMoney(billingDollarsPerMonth(p.Price, p.ValidityDays, p.ValidityUnit)),
 			IsCurrent:              hasActive && p.GroupID == activeGroupID,
 			IsEnabled:              p.ForSale,
 		}
@@ -651,4 +655,45 @@ func (s *BillingContractService) resolveTiers(ctx context.Context, activeGroupID
 		tiers = append(tiers, view)
 	}
 	return tiers
+}
+
+// billingValidityTotalDays mirrors TWO things that must agree with each
+// other: inferno-frontend/src/components/payment/validity.ts's unit
+// normalization (trim, lowercase, strip a trailing "s" -- the admin form
+// saves plural units while some historical rows are singular) and Inferno's
+// own billing conversion, service/payment_service.go's psComputeValidityDays
+// (unexported, so not directly reusable here): a month/months unit means
+// ValidityDays actually COUNTS MONTHS (x30 real days), a week/weeks unit
+// means it counts WEEKS (x7), and everything else -- including the DB
+// default "day" and any unrecognized unit -- is billed literally in days.
+func billingValidityTotalDays(days int, unit string) int {
+	base := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(unit)), "s")
+	switch base {
+	case "month":
+		return days * 30
+	case "week":
+		return days * 7
+	default:
+		return days
+	}
+}
+
+// billingDollarsPerMonth normalises a plan's total Price over its full
+// validity period into a "$ per 30 days" figure (ruling R-3.2), so
+// dollarsPerMonthDisplay -- a field whose NAME asserts a unit -- actually
+// means what it says: an annual plan priced 1200 reports "100", not "1200".
+//
+// A plan with a non-positive total validity (<=0 days after
+// billingValidityTotalDays) cannot be normalised at all -- CreatePlan/
+// UpdatePlan validate ValidityDays > 0, so this is only reachable via
+// malformed or historical data outside that validation, never a plan created
+// through this codebase's own API. Rather than divide by zero or fabricate a
+// number, this returns the plan's raw Price unmodified for that one
+// pathological case: a known mislabel, not an invented figure.
+func billingDollarsPerMonth(price float64, validityDays int, validityUnit string) float64 {
+	totalDays := billingValidityTotalDays(validityDays, validityUnit)
+	if totalDays <= 0 {
+		return price
+	}
+	return price * 30 / float64(totalDays)
 }

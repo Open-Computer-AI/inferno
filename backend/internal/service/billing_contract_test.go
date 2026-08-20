@@ -709,3 +709,61 @@ func TestBillingSubscriptionPortalURLMatchesState(t *testing.T) {
 	require.Equal(t, "https://portal.example.com/purchase", got.PortalURL)
 	require.NotContains(t, got.PortalURL, "nousresearch.com")
 }
+
+// ---------------------------------------------------------------------------
+// ruling R-3.2 -- dollarsPerMonthDisplay normalised by validity, matching
+// inferno-frontend/src/components/payment/validity.ts's unit semantics.
+// ---------------------------------------------------------------------------
+
+func TestBillingDollarsPerMonthNormalizesByValidityUnit(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		price        float64
+		validityDays int
+		validityUnit string
+		want         float64
+	}{
+		{"monthly plan, unit=months, days=1 month -> unchanged", 20, 1, "months", 20},
+		{"annual plan, unit=months, days=12 months -> divided by 12", 1200, 12, "months", 100},
+		{"annual plan, unit=month singular -> same as plural", 1200, 12, "month", 100},
+		{"weekly-billed plan, unit=weeks, days=4 weeks (28 real days)", 70, 4, "weeks", 75},
+		{"unit=week singular -> same as plural", 70, 4, "week", 75},
+		{"day-unit plan, days=30 -> already ~monthly", 300, 30, "day", 300},
+		{"unrecognized unit falls back to literal days, same as 'day'", 300, 30, "fortnight", 300},
+		{"mixed case and whitespace normalise the same as lowercase trimmed", 1200, 12, "  Months  ", 100},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := billingDollarsPerMonth(tc.price, tc.validityDays, tc.validityUnit)
+			require.InDelta(t, tc.want, got, 0.0001)
+		})
+	}
+}
+
+// TestBillingDollarsPerMonthHandlesZeroValidityWithoutDividingByZero: a
+// plan with no usable validity period (only reachable via malformed/legacy
+// data -- CreatePlan/UpdatePlan validate ValidityDays > 0) must not panic or
+// produce Inf/NaN; it falls back to the raw, unnormalised price.
+func TestBillingDollarsPerMonthHandlesZeroValidityWithoutDividingByZero(t *testing.T) {
+	got := billingDollarsPerMonth(1200, 0, "months")
+	require.Equal(t, 1200.0, got)
+
+	got = billingDollarsPerMonth(1200, -5, "months")
+	require.Equal(t, 1200.0, got, "a negative validity is equally malformed and must not divide by (or produce) a negative number")
+}
+
+// TestBillingSubscriptionRepresentativeTierUsesNormalizedDollarsPerMonth is
+// the end-to-end wiring check: Subscription() actually calls the normaliser,
+// not the raw Price, for the group it picks.
+func TestBillingSubscriptionRepresentativeTierUsesNormalizedDollarsPerMonth(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.plan.plans = []*dbent.SubscriptionPlan{
+		{ID: 100, GroupID: 9, Name: "Pro Annual", Price: 1200, ForSale: true, ValidityDays: 12, ValidityUnit: "months"},
+	}
+
+	got, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+
+	require.Len(t, got.Tiers, 1)
+	require.Equal(t, "100", got.Tiers[0].DollarsPerMonthDisplay,
+		"a $1200/year plan must display as $100/month, not the raw annual price")
+}
