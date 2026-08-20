@@ -7,15 +7,10 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 
 	"github.com/stretchr/testify/require"
 )
-
-// firstPage is the pagination request TestUsageReturnsOnlyTheCallersRows and
-// its siblings use -- page 1, the service's own default page size.
-var firstPage = pagination.PaginationParams{Page: 1, PageSize: 20}
 
 // ---------------------------------------------------------------------------
 // Fakes. Every source BillingContractService consumes is a narrow interface
@@ -56,25 +51,6 @@ type fakeBillingUsageSource struct {
 	gotStart   time.Time
 	gotEnd     time.Time
 	calls      int
-
-	// records is the fake's "database" for ListByUser -- every recorded row,
-	// across every user, exactly as a real usage_logs table would hold them.
-	// A second user's rows belong HERE, genuinely present, not asserted away
-	// by construction; ListByUser's own WHERE-equivalent filter is what
-	// TestUsageReturnsOnlyTheCallersRows is actually pinning (see the
-	// mutation note on that test).
-	records []usageRecord
-	listErr error
-
-	gotListUserID int64
-	gotListParams pagination.PaginationParams
-	listCalls     int
-}
-
-// usageRecord is one row in the fake's in-memory table.
-type usageRecord struct {
-	userID     int64
-	actualCost float64
 }
 
 func (f *fakeBillingUsageSource) GetStatsByUser(_ context.Context, _ int64, start, end time.Time) (*UsageStats, error) {
@@ -84,32 +60,6 @@ func (f *fakeBillingUsageSource) GetStatsByUser(_ context.Context, _ int64, star
 		return nil, f.err
 	}
 	return &UsageStats{TotalActualCost: f.actualCost}, nil
-}
-
-// ListByUser is the isolation boundary: it must return only rows whose
-// userID matches the requested one. See TestUsageReturnsOnlyTheCallersRows'
-// mutation note for why this predicate, specifically, is the one that has to
-// be provably load-bearing.
-func (f *fakeBillingUsageSource) ListByUser(_ context.Context, userID int64, params pagination.PaginationParams) ([]UsageLog, *pagination.PaginationResult, error) {
-	f.listCalls++
-	f.gotListUserID = userID
-	f.gotListParams = params
-	if f.listErr != nil {
-		return nil, nil, f.listErr
-	}
-
-	var out []UsageLog
-	for _, r := range f.records {
-		if r.userID != userID {
-			continue
-		}
-		out = append(out, UsageLog{UserID: r.userID, ActualCost: r.actualCost, TotalCost: r.actualCost})
-	}
-	return out, &pagination.PaginationResult{
-		Total:    int64(len(out)),
-		Page:     params.Page,
-		PageSize: params.Limit(),
-	}, nil
 }
 
 type fakeBillingPaymentSource struct {
@@ -137,17 +87,11 @@ type billingContractFixture struct {
 	now     time.Time
 }
 
-// recordUsage records one usage row for userID, and (for backward
-// compatibility with the State/MonthlyCap tests, which only ever exercise
-// one user) also sets the month-to-date ACTUAL cost GetStatsByUser reports --
-// actual_cost, not total_cost, because actual_cost is the column
-// UsageService.Create deducts from the wallet (usage_service.go:124-130).
-// "Spent" must mean the same thing the balance means or the two numbers on
-// one screen contradict each other.
-func (f *billingContractFixture) recordUsage(userID int64, amount float64) {
-	f.usage.actualCost = amount
-	f.usage.records = append(f.usage.records, usageRecord{userID: userID, actualCost: amount})
-}
+// recordUsage sets the month-to-date ACTUAL cost -- actual_cost, not
+// total_cost, because actual_cost is the column UsageService.Create deducts
+// from the wallet (usage_service.go:124-130). "Spent" must mean the same thing
+// the balance means or the two numbers on one screen contradict each other.
+func (f *billingContractFixture) recordUsage(amount float64) { f.usage.actualCost = amount }
 
 func newBillingContractFixture(t *testing.T) (*BillingContractService, *billingContractFixture) {
 	t.Helper()
@@ -175,7 +119,7 @@ func newBillingContractFixture(t *testing.T) (*BillingContractService, *billingC
 
 func TestBillingStateReportsBalanceOrgAndSpend(t *testing.T) {
 	svc, fx := newBillingContractFixture(t)
-	fx.recordUsage(7, 1.25)
+	fx.recordUsage(1.25)
 
 	got, err := svc.State(context.Background(), 7)
 	require.NoError(t, err)
@@ -239,7 +183,7 @@ func TestBillingStateFailsWhenTheBalanceCannotBeResolved(t *testing.T) {
 func TestBillingStateDegradesWhenTheOrgLookupFails(t *testing.T) {
 	svc, fx := newBillingContractFixture(t)
 	fx.org.orgsErr = errors.New("org query failed")
-	fx.recordUsage(7, 1.25)
+	fx.recordUsage(1.25)
 
 	got, err := svc.State(context.Background(), 7)
 
@@ -407,110 +351,4 @@ func TestBillingStateOmitsPortalURLWhenUnconfigured(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, got.PortalURL)
 	_ = fx
-}
-
-// ---------------------------------------------------------------------------
-// GET /api/analytics/usage
-// ---------------------------------------------------------------------------
-
-// TestUsageReturnsOnlyTheCallersRows is the important test in this file. A
-// second real user's usage row is recorded in the fake's "database" alongside
-// the caller's own -- without it, this test would pass against an
-// implementation with no filter at all, because there would be nothing else
-// in the store for a leak to surface.
-//
-// MUTATION CHECK (task-2-report.md has the exact diff and failing output):
-// deleting the `if r.userID != userID { continue }` line from
-// fakeBillingUsageSource.ListByUser -- so the fake returns every recorded row
-// regardless of who asked -- still compiles, and fails this test's
-// require.Len(t, got.Items, 1) with len(got.Items) == 2, one of them user 8's
-// $99 row. That is what proves the isolation this test asserts is real and
-// not a tautology of the fixture only ever holding one user's data.
-func TestUsageReturnsOnlyTheCallersRows(t *testing.T) {
-	svc, fx := newBillingContractFixture(t)
-	fx.recordUsage(7, 1.00)  // ours
-	fx.recordUsage(8, 99.00) // a second real user, in the same database
-
-	got, err := svc.Usage(context.Background(), 7, firstPage)
-	require.NoError(t, err)
-	require.Len(t, got.Items, 1)
-	require.Equal(t, int64(7), got.Items[0].UserID)
-}
-
-// TestUsageThreadsTheCallersUserIDToListByUser is the direct version of the
-// same guarantee: the userID BillingContractService.Usage was called with is
-// exactly the userID that reaches the source, never a request-supplied or
-// otherwise substituted one.
-func TestUsageThreadsTheCallersUserIDToListByUser(t *testing.T) {
-	svc, fx := newBillingContractFixture(t)
-	fx.recordUsage(7, 1.00)
-
-	_, err := svc.Usage(context.Background(), 7, firstPage)
-	require.NoError(t, err)
-
-	require.Equal(t, 1, fx.usage.listCalls)
-	require.Equal(t, int64(7), fx.usage.gotListUserID)
-}
-
-// TestUsageMapsRowFieldsToTheContractShape pins the per-item translation:
-// tokens copied straight across, both cost fields rendered as the decimal
-// STRING convention this whole adapter uses (see BillingStateView.BalanceUSD),
-// and TotalCostUSD/ActualCostUSD kept distinct rather than collapsed into one
-// field, because they answer different questions (list price vs. what was
-// actually debited -- see resolveMonthlyCap's doc comment).
-func TestUsageMapsRowFieldsToTheContractShape(t *testing.T) {
-	svc, fx := newBillingContractFixture(t)
-	fx.recordUsage(7, 3.5)
-
-	got, err := svc.Usage(context.Background(), 7, firstPage)
-	require.NoError(t, err)
-	require.Len(t, got.Items, 1)
-
-	item := got.Items[0]
-	require.Equal(t, int64(7), item.UserID)
-	require.Equal(t, "3.5", item.TotalCostUSD)
-	require.Equal(t, "3.5", item.ActualCostUSD)
-}
-
-// TestUsageReportsPaginationMetadata: total/page/pageSize must reflect what
-// the source actually returned, not just echo the request -- a client using
-// total to decide whether to fetch another page needs the real count.
-func TestUsageReportsPaginationMetadata(t *testing.T) {
-	svc, fx := newBillingContractFixture(t)
-	fx.recordUsage(7, 1.00)
-	fx.recordUsage(7, 2.00)
-
-	got, err := svc.Usage(context.Background(), 7, firstPage)
-	require.NoError(t, err)
-
-	require.Equal(t, int64(2), got.Total)
-	require.Equal(t, 1, got.Page)
-	require.Equal(t, 20, got.PageSize)
-}
-
-// TestUsageReturnsAnEmptyNotNilListWhenThereIsNoUsage: JSON null and JSON []
-// are different wire values, and a client that does `for item in items`
-// crashes on null. Mirrors BillingStateView.ChargePresets' same rule.
-func TestUsageReturnsAnEmptyNotNilListWhenThereIsNoUsage(t *testing.T) {
-	svc, _ := newBillingContractFixture(t)
-
-	got, err := svc.Usage(context.Background(), 7, firstPage)
-	require.NoError(t, err)
-	require.NotNil(t, got.Items)
-	require.Empty(t, got.Items)
-}
-
-// TestUsageFailsWhenTheListLookupFails: unlike State, there is no partial
-// result to fall back to here -- the usage list IS the response, so a failed
-// lookup is fatal and must be reported as an error the handler turns into
-// 500, not swallowed into an empty-looking 200.
-func TestUsageFailsWhenTheListLookupFails(t *testing.T) {
-	svc, fx := newBillingContractFixture(t)
-	fx.usage.listErr = errors.New("usage_logs query timed out")
-
-	got, err := svc.Usage(context.Background(), 7, firstPage)
-
-	require.Error(t, err)
-	require.Nil(t, got)
-	require.ErrorContains(t, err, "list usage")
 }

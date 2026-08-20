@@ -9,7 +9,6 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 )
 
@@ -57,19 +56,10 @@ type BillingOrgSource interface {
 	RoleIn(ctx context.Context, orgID, userID int64) (string, error)
 }
 
-// BillingUsageSource is the month-to-date usage rollup and the per-row usage
-// history. Satisfied by *UsageService.
-//
-// ListByUser's isolation is NOT re-implemented here: the WHERE user_id = $1
-// predicate lives in usageLogRepository.ListByUser
-// (usage_log_repo_query.go), already covered by its own repository
-// integration tests. What THIS package is responsible for is narrower and
-// easy to get wrong in a different way -- passing the CALLER's verified
-// userID through untouched, rather than some other value -- which is exactly
-// what TestUsageReturnsOnlyTheCallersRows below pins.
+// BillingUsageSource is the month-to-date usage rollup. Satisfied by
+// *UsageService.
 type BillingUsageSource interface {
 	GetStatsByUser(ctx context.Context, userID int64, startTime, endTime time.Time) (*UsageStats, error)
-	ListByUser(ctx context.Context, userID int64, params pagination.PaginationParams) ([]UsageLog, *pagination.PaginationResult, error)
 }
 
 // BillingPaymentSource is the top-up bounds and the payment kill switch.
@@ -236,108 +226,6 @@ type BillingMonthlyCapView struct {
 	LimitUSD          *string `json:"limitUsd"`
 	SpentThisMonthUSD string  `json:"spentThisMonthUsd"`
 	IsDefaultCeiling  bool    `json:"isDefaultCeiling"`
-}
-
-// ---------------------------------------------------------------------------
-// GET /api/analytics/usage's body.
-//
-// UNLIKE BillingStateView's keys, these are NOT pinned against a live client
-// parser. hermes_cli/nous_billing.py -- the module that owns every real
-// /api/billing/* call the client makes -- has no function that requests
-// /api/analytics/usage, and the only occurrence of that literal path
-// anywhere in the checked-out hermes-agent client
-// (hermes_cli/web_server.py's own local FastAPI app) is the CLI's OWN
-// desktop-dashboard route, served from its local sqlite session database --
-// an entirely different, non-networked surface, not a call to this server.
-// Searched: hermes_cli/{nous_billing,nous_account,nous_subscription,
-// cli_billing_mixin}.py and agent/{billing_view,billing_usage,
-// account_usage}.py. See task-2-report.md for the full trace.
-//
-// So these camelCase keys follow this package's own established convention
-// (BillingStateView) rather than a verified consumer, on the working theory
-// that the design doc's contract table anticipates a client revision that
-// hasn't shipped in this checkout. If a real parser surfaces later, treat
-// this shape as provisional and reconcile it the same way F1 caught
-// BillingStateView's wrong snake_case keys.
-// ---------------------------------------------------------------------------
-
-// UsageView is GET /api/analytics/usage's body: one page of the caller's own
-// usage history, newest first (UsageService.ListByUser's default order).
-type UsageView struct {
-	// Items is never nil -- JSON null is not an empty list. Each item is
-	// this caller's own row; see TestUsageReturnsOnlyTheCallersRows.
-	Items []UsageItemView `json:"items"`
-	Total int64           `json:"total"`
-	Page  int             `json:"page"`
-	// PageSize echoes pagination.PaginationParams.Limit()'s normalized
-	// value, not whatever the caller asked for -- so a client that requested
-	// page_size=0 or 100000 sees what it actually got.
-	PageSize int `json:"pageSize"`
-}
-
-// UsageItemView is one usage_logs row, translated to the money-as-string
-// convention the rest of this adapter uses (see BillingStateView.BalanceUSD).
-type UsageItemView struct {
-	ID     int64  `json:"id"`
-	UserID int64  `json:"userId"`
-	Model  string `json:"model"`
-
-	InputTokens         int `json:"inputTokens"`
-	OutputTokens        int `json:"outputTokens"`
-	CacheCreationTokens int `json:"cacheCreationTokens"`
-	CacheReadTokens     int `json:"cacheReadTokens"`
-
-	// TotalCostUSD is the pre-multiplier list price; ActualCostUSD is what
-	// was actually debited from the wallet (actual_cost -- see
-	// billing_contract.go's resolveMonthlyCap doc comment for why the two
-	// are not interchangeable).
-	TotalCostUSD  string `json:"totalCostUsd"`
-	ActualCostUSD string `json:"actualCostUsd"`
-
-	CreatedAt time.Time `json:"createdAt"`
-}
-
-// Usage composes GET /api/analytics/usage. Unlike State, there is no partial
-// result to degrade to: the entire response IS the usage list, so a failure
-// here is fatal and answers 500, logged loud -- same rule as State's balance
-// section, for the same reason (see State's doc comment).
-func (s *BillingContractService) Usage(ctx context.Context, userID int64, p pagination.PaginationParams) (*UsageView, error) {
-	logs, page, err := s.usageSvc.ListByUser(ctx, userID, p)
-	if err != nil {
-		return nil, fmt.Errorf("billing contract: list usage for user %d: %w", userID, err)
-	}
-
-	items := make([]UsageItemView, 0, len(logs))
-	for _, l := range logs {
-		items = append(items, UsageItemView{
-			ID:                  l.ID,
-			UserID:              l.UserID,
-			Model:               l.Model,
-			InputTokens:         l.InputTokens,
-			OutputTokens:        l.OutputTokens,
-			CacheCreationTokens: l.CacheCreationTokens,
-			CacheReadTokens:     l.CacheReadTokens,
-			TotalCostUSD:        billingMoney(l.TotalCost),
-			ActualCostUSD:       billingMoney(l.ActualCost),
-			CreatedAt:           l.CreatedAt,
-		})
-	}
-
-	out := &UsageView{
-		Items:    items,
-		Page:     p.Page,
-		PageSize: p.Limit(),
-	}
-	if page != nil {
-		out.Total = page.Total
-		if page.Page > 0 {
-			out.Page = page.Page
-		}
-		if page.PageSize > 0 {
-			out.PageSize = page.PageSize
-		}
-	}
-	return out, nil
 }
 
 // State composes the client's overview screen.

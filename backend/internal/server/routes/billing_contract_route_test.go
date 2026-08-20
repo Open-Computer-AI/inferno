@@ -17,7 +17,6 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"entgo.io/ent/dialect"
@@ -64,11 +63,6 @@ type stubBillingUsage struct{ actualCost float64 }
 
 func (s stubBillingUsage) GetStatsByUser(context.Context, int64, time.Time, time.Time) (*service.UsageStats, error) {
 	return &service.UsageStats{TotalActualCost: s.actualCost}, nil
-}
-
-func (s stubBillingUsage) ListByUser(_ context.Context, userID int64, params pagination.PaginationParams) ([]service.UsageLog, *pagination.PaginationResult, error) {
-	return []service.UsageLog{{UserID: userID, ActualCost: s.actualCost, TotalCost: s.actualCost}},
-		&pagination.PaginationResult{Total: 1, Page: params.Page, PageSize: params.Limit()}, nil
 }
 
 type stubBillingPayment struct{}
@@ -151,12 +145,7 @@ func (e *billingRouteEnv) mint(t *testing.T, scope string) string {
 
 func (e *billingRouteEnv) get(t *testing.T, authorization string) *httptest.ResponseRecorder {
 	t.Helper()
-	return e.getPath(t, "/api/billing/state", authorization)
-}
-
-func (e *billingRouteEnv) getPath(t *testing.T, path, authorization string) *httptest.ResponseRecorder {
-	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/billing/state", nil)
 	if authorization != "" {
 		req.Header.Set("Authorization", authorization)
 	}
@@ -366,82 +355,6 @@ func TestBillingStateRouteIsNotMountedUnderAPIV1(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+env.mint(t, service.ScopeBillingRead))
 	rec := httptest.NewRecorder()
 	env.router.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusNotFound, rec.Code)
-}
-
-// ---------------------------------------------------------------------------
-// GET /api/analytics/usage -- R-2.1: mounted on the SAME "" gate as
-// /api/billing/state, NOT billing:read. The design doc's Step 6 said
-// billing:read; that is superseded (see RegisterBillingContractRoutes' doc
-// comment).
-// ---------------------------------------------------------------------------
-
-// TestUsageRouteReturnsBareJSONNotThePanelEnvelope mirrors the billing/state
-// assertion: json.loads on an enveloped body still succeeds, so the only way
-// to catch a wrongly-wrapped response is to assert the envelope keys are
-// ABSENT, not merely that the wanted fields are present somewhere.
-func TestUsageRouteReturnsBareJSONNotThePanelEnvelope(t *testing.T) {
-	env := newBillingRouteEnv(t)
-	rec := env.getPath(t, "/api/analytics/usage", "Bearer "+env.mint(t, service.ScopeInferenceInvoke))
-
-	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
-
-	var body map[string]any
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-
-	for _, k := range []string{"code", "message", "data"} {
-		require.NotContains(t, body, k,
-			"the panel's {code,message,data} envelope must never appear here")
-	}
-
-	items, ok := body["items"].([]any)
-	require.True(t, ok, "items must be an array at the top level")
-	require.Len(t, items, 1)
-
-	item, ok := items[0].(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, "1.25", item["actualCostUsd"])
-}
-
-// TestUsageRouteAdmitsAStockClientToken is the conformance case for R-2.1: a
-// token carrying exactly hermes_cli/auth.py's DEFAULT_NOUS_SCOPE
-// (inference:invoke, no billing:read) must reach this endpoint.
-//
-// MUTATION CHECK: gating this route on service.ScopeBillingRead again fails
-// this test at 403 vs 200.
-func TestUsageRouteAdmitsAStockClientToken(t *testing.T) {
-	env := newBillingRouteEnv(t)
-	rec := env.getPath(t, "/api/analytics/usage", "Bearer "+env.mint(t, service.ScopeInferenceInvoke))
-
-	require.Equal(t, http.StatusOK, rec.Code,
-		"a token carrying only the scope the real client requests must be admitted; body: %s", rec.Body.String())
-}
-
-// TestUsageRouteAdmitsATokenWithNoScopeAtAll: same RFC 6749 section 3.3 point
-// as /api/billing/state.
-func TestUsageRouteAdmitsATokenWithNoScopeAtAll(t *testing.T) {
-	env := newBillingRouteEnv(t)
-	rec := env.getPath(t, "/api/analytics/usage", "Bearer "+env.mint(t, ""))
-
-	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
-}
-
-// TestUsageRouteRejectsAnUnauthenticatedCall: dropping the SCOPE requirement
-// must not drop AUTHENTICATION -- this is the caller's own usage history.
-func TestUsageRouteRejectsAnUnauthenticatedCall(t *testing.T) {
-	env := newBillingRouteEnv(t)
-	rec := env.getPath(t, "/api/analytics/usage", "")
-
-	require.Equal(t, http.StatusUnauthorized, rec.Code)
-	require.JSONEq(t, `{"error":"invalid_token"}`, rec.Body.String())
-}
-
-// TestUsageRouteIsNotMountedUnderAPIV1 pins the mount point at the server
-// root's /api prefix, mirroring /api/billing/state.
-func TestUsageRouteIsNotMountedUnderAPIV1(t *testing.T) {
-	env := newBillingRouteEnv(t)
-	rec := env.getPath(t, "/api/v1/analytics/usage", "Bearer "+env.mint(t, service.ScopeInferenceInvoke))
 
 	require.Equal(t, http.StatusNotFound, rec.Code)
 }

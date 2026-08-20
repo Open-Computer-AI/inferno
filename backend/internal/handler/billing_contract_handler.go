@@ -4,8 +4,6 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -69,49 +67,4 @@ func (h *BillingContractHandler) State(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, state)
-}
-
-// Usage handles GET /api/analytics/usage -- the caller's own usage history.
-//
-// Same identity rule as State: the userID comes only from the verified
-// bearer the middleware put on the context, never from a query parameter, and
-// the same unwired/unauthenticated failure handling applies. See State's doc
-// comment for why.
-//
-// response.ParsePagination is used for INPUT parsing only -- it reads
-// page/page_size (and limit) off the query string and returns plain ints. It
-// does not touch the response body, so reusing it here does not pull in the
-// panel's {code,message,data} envelope; c.JSON below still writes the bare
-// object this package's doc comment requires.
-func (h *BillingContractHandler) Usage(c *gin.Context) {
-	uidVal, ok := c.Get(middleware2.OAuthContextKeyUserID)
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
-		return
-	}
-	userID, ok := uidVal.(int64)
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
-		return
-	}
-
-	if h.svc == nil {
-		slog.Error("billing: contract service is not wired")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
-		return
-	}
-
-	page, pageSize := response.ParsePagination(c)
-	params := pagination.PaginationParams{Page: page, PageSize: pageSize}
-
-	usage, err := h.svc.Usage(c.Request.Context(), userID, params)
-	if err != nil {
-		// Unlike State, there is no partial result to fall back to: the
-		// usage list IS the response. Loud on our side, quiet on theirs.
-		slog.Error("billing: usage composition failed", "user_id", userID, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
-		return
-	}
-
-	c.JSON(http.StatusOK, usage)
 }
