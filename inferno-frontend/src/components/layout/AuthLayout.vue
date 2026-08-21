@@ -112,7 +112,6 @@ onMounted(() => {
   min-width: 0;
   padding: 40px 30px;
   background: var(--auth-paper);
-  view-transition-name: auth-right-surface;
 }
 
 /* Fixed measure, centred. The column does not stretch with the viewport -- the
@@ -161,39 +160,6 @@ onMounted(() => {
 .auth__foot:not(:empty) {
   margin-top: 34px;
   text-align: center;
-}
-
-/* Login and registration share one physical surface. Supporting browsers
-   morph it in place; older browsers use the router's normal navigation. */
-:global(::view-transition-group(auth-right-surface)) {
-  animation-duration: 420ms;
-  animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-:global(::view-transition-old(auth-right-surface)) {
-  animation: auth-mode-old 170ms ease both;
-}
-
-:global(::view-transition-new(auth-right-surface)) {
-  animation: auth-mode-new 360ms cubic-bezier(0.23, 1, 0.32, 1) both;
-}
-
-@keyframes auth-mode-old {
-  to {
-    opacity: 0;
-    filter: blur(3px);
-  }
-}
-
-@keyframes auth-mode-new {
-  from {
-    opacity: 0;
-    filter: blur(3px);
-  }
-  to {
-    opacity: 1;
-    filter: blur(0);
-  }
 }
 
 /* Below this the panel is dropped rather than stacked. A decorative panel above
