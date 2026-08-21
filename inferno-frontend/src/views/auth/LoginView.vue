@@ -163,10 +163,7 @@
 
       <p v-if="!backendModeEnabled" class="lg__signup">
         {{ t('auth.dontHaveAccount') }}
-        <button type="button" class="lg__signup-pill" @click="navigateAuthMode(router, '/register')">
-          {{ t('auth.signUp') }}
-          <span aria-hidden="true">→</span>
-        </button>
+        <router-link to="/register" class="lg__signup-link">{{ t('auth.signUp') }}</router-link>
       </p>
     </template>
   </AuthLayout>
@@ -212,7 +209,6 @@ import type {
 } from '@/types'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { clearAllAffiliateReferralCodes } from '@/utils/oauthAffiliate'
-import { navigateAuthMode } from '@/utils/authModeTransition'
 
 const { t } = useI18n()
 const LOGIN_AGREEMENT_STORAGE_KEY = 'sub2api_login_agreement_consent'
@@ -942,10 +938,6 @@ function handle2FACancel(): void {
   line-height: 1.5;
 }
 .lg__signup {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
   margin-top: 10px;
   font-size: var(--fs-md);
 }
@@ -959,31 +951,14 @@ function handle2FACancel(): void {
   text-decoration: underline;
 }
 
-.lg__signup-pill {
-  display: inline-flex;
-  min-height: 34px;
-  align-items: center;
-  gap: 7px;
-  padding: 0 13px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface-subtle);
+.lg__signup-link {
   color: var(--foreground);
-  font: inherit;
-  font-size: var(--fs-sm);
-  cursor: pointer;
-  transition:
-    background var(--motion-hover),
-    border-color var(--motion-hover),
-    transform var(--motion-hover);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--border);
+  transition: text-decoration-color var(--motion-hover);
 }
-.lg__signup-pill:hover {
-  border-color: var(--ring-focus);
-  background: var(--card);
-  transform: translateY(-1px);
-}
-.lg__signup-pill:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--focus-ring);
+.lg__signup-link:hover {
+  text-decoration-color: var(--foreground);
 }
 </style>

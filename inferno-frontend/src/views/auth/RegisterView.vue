@@ -273,10 +273,12 @@
     <template #footer>
       <p class="auth-note">
         {{ t('auth.alreadyHaveAccount') }}
-        <button type="button" class="rg__login-pill" @click="navigateAuthMode(router, '/login')">
+        <router-link
+          to="/login"
+          class="auth-link"
+        >
           {{ t('auth.signIn') }}
-          <span aria-hidden="true">→</span>
-        </button>
+        </router-link>
       </p>
     </template>
   </AuthLayout>
@@ -306,7 +308,6 @@ import {
 } from '@/api/auth'
 import { buildAuthErrorMessage } from '@/utils/authError'
 import { extractApiErrorCode, extractI18nErrorMessage } from '@/utils/apiError'
-import { navigateAuthMode } from '@/utils/authModeTransition'
 import {
   formatRegistrationEmailSuffixWhitelistForMessage,
   isRegistrationEmailSuffixAllowed,
@@ -1080,35 +1081,5 @@ function buildRegistrationErrorMessage(error: unknown, fallback: string): string
 /* Read-only status, not a control. */
 .rg__adorn {
   pointer-events: none;
-}
-
-.rg__login-pill {
-  display: inline-flex;
-  min-height: 34px;
-  align-items: center;
-  gap: 7px;
-  margin-left: 7px;
-  padding: 0 13px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface-subtle);
-  color: var(--foreground);
-  font: inherit;
-  cursor: pointer;
-  transition:
-    background var(--motion-hover),
-    border-color var(--motion-hover),
-    transform var(--motion-hover);
-}
-
-.rg__login-pill:hover {
-  border-color: var(--ring-focus);
-  background: var(--card);
-  transform: translateY(-1px);
-}
-
-.rg__login-pill:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 </style>
