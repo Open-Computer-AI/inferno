@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -100,4 +101,202 @@ func (h *BillingContractHandler) Subscription(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, sub)
+}
+
+// ---------------------------------------------------------------------------
+// Task 5 -- the 7 write endpoints, all gated on billing:manage
+// (server/routes/billing_contract.go). Same bare-JSON, same identity-from-
+// context rule as State/Subscription above; see that doc comment.
+// ---------------------------------------------------------------------------
+
+// billingContractUserID re-does State/Subscription's own identity extraction
+// for the 7 write handlers below, factored out here (not backported onto
+// State/Subscription) to keep this task's diff to its own methods.
+func billingContractUserID(c *gin.Context) (int64, bool) {
+	uidVal, ok := c.Get(middleware2.OAuthContextKeyUserID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+		return 0, false
+	}
+	userID, ok := uidVal.(int64)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+		return 0, false
+	}
+	return userID, true
+}
+
+// billingContractWriteError maps a service error to a bare-JSON body via the
+// SAME infraerrors.Code/Reason/Message this codebase already uses to drive
+// its HTTP status codes elsewhere (internal/pkg/errors/http.go's ToHTTP) --
+// just without ToHTTP's enveloped Status shape, since this surface's
+// contract is bare JSON (see this file's top doc comment).
+func billingContractWriteError(c *gin.Context, err error) {
+	status := infraerrors.Code(err)
+	if status == 0 {
+		status = http.StatusInternalServerError
+	}
+	c.JSON(status, gin.H{
+		"error":   infraerrors.Reason(err),
+		"message": infraerrors.Message(err),
+	})
+}
+
+// billingChargeRequest is POST /api/billing/charge's body
+// (hermes_cli/nous_billing.py:525): amountUsd is a JSON NUMBER (the client's
+// own encoding for what it sends), unlike this adapter's own money OUTPUT
+// fields, which are decimal strings (see BillingChargeStatusView.AmountUSD's
+// doc comment).
+type billingChargeRequest struct {
+	AmountUSD float64 `json:"amountUsd"`
+}
+
+// Charge handles POST /api/billing/charge (nous_billing.py:504-528).
+func (h *BillingContractHandler) Charge(c *gin.Context) {
+	userID, ok := billingContractUserID(c)
+	if !ok {
+		return
+	}
+	if h.svc == nil {
+		slog.Error("billing: contract service is not wired")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+
+	var req billingChargeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": "amountUsd is required"})
+		return
+	}
+
+	idempotencyKey := c.GetHeader("Idempotency-Key")
+	accepted, err := h.svc.Charge(c.Request.Context(), userID, req.AmountUSD, idempotencyKey)
+	if err != nil {
+		billingContractWriteError(c, err)
+		return
+	}
+	c.JSON(http.StatusAccepted, accepted)
+}
+
+// ChargeStatus handles GET /api/billing/charge/{id} (nous_billing.py:530-545).
+//
+// No error branch reaches this handler: BillingContractService.ChargeStatus
+// never returns an error (unknown/foreign/malformed ids all resolve to
+// {status:"pending"} inside the service -- see its doc comment for why that
+// collapse happens THERE, not here).
+func (h *BillingContractHandler) ChargeStatus(c *gin.Context) {
+	userID, ok := billingContractUserID(c)
+	if !ok {
+		return
+	}
+	if h.svc == nil {
+		slog.Error("billing: contract service is not wired")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+
+	chargeID := c.Param("id")
+	status := h.svc.ChargeStatus(c.Request.Context(), userID, chargeID)
+	c.JSON(http.StatusOK, status)
+}
+
+// SubscriptionPreview handles POST /api/billing/subscription/preview
+// (nous_billing.py:573-591). The body is accepted but not required to be
+// well-formed: the answer is the same "blocked" regardless (see the service
+// method's doc comment).
+func (h *BillingContractHandler) SubscriptionPreview(c *gin.Context) {
+	userID, ok := billingContractUserID(c)
+	if !ok {
+		return
+	}
+	if h.svc == nil {
+		slog.Error("billing: contract service is not wired")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+
+	var req struct {
+		SubscriptionTypeID string `json:"subscriptionTypeId"`
+	}
+	_ = c.ShouldBindJSON(&req) // best-effort; the response does not depend on it
+
+	preview := h.svc.SubscriptionPreview(c.Request.Context(), userID, req.SubscriptionTypeID)
+	c.JSON(http.StatusOK, preview)
+}
+
+// SubscriptionUpgrade handles POST /api/billing/subscription/upgrade
+// (nous_billing.py:648-675). 501, never a fake success -- see the service
+// method's doc comment for why.
+func (h *BillingContractHandler) SubscriptionUpgrade(c *gin.Context) {
+	userID, ok := billingContractUserID(c)
+	if !ok {
+		return
+	}
+	if h.svc == nil {
+		slog.Error("billing: contract service is not wired")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+
+	var req struct {
+		SubscriptionTypeID string `json:"subscriptionTypeId"`
+	}
+	_ = c.ShouldBindJSON(&req)
+
+	refusal := h.svc.SubscriptionUpgrade(c.Request.Context(), userID, req.SubscriptionTypeID, c.GetHeader("Idempotency-Key"))
+	c.JSON(http.StatusNotImplemented, refusal)
+}
+
+// PendingChangeSet handles PUT /api/billing/subscription/pending-change
+// (nous_billing.py:594-627). 501 -- Inferno has no end-of-period-intent
+// model (ruling R-5.1); the body is accepted but unused, same reasoning as
+// SubscriptionPreview.
+func (h *BillingContractHandler) PendingChangeSet(c *gin.Context) {
+	userID, ok := billingContractUserID(c)
+	if !ok {
+		return
+	}
+	if h.svc == nil {
+		slog.Error("billing: contract service is not wired")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+
+	refusal := h.svc.PendingChangeSet(c.Request.Context(), userID)
+	c.JSON(http.StatusNotImplemented, refusal)
+}
+
+// PendingChangeClear handles DELETE /api/billing/subscription/pending-change
+// (nous_billing.py:631-644). 501, same reasoning as PendingChangeSet.
+func (h *BillingContractHandler) PendingChangeClear(c *gin.Context) {
+	userID, ok := billingContractUserID(c)
+	if !ok {
+		return
+	}
+	if h.svc == nil {
+		slog.Error("billing: contract service is not wired")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+
+	refusal := h.svc.PendingChangeClear(c.Request.Context(), userID)
+	c.JSON(http.StatusNotImplemented, refusal)
+}
+
+// AutoTopUp handles PATCH /api/billing/auto-top-up (nous_billing.py:480-499).
+// 501 -- already ruled in the spec (ruling R-5.1); the body is accepted but
+// unused, same reasoning as SubscriptionPreview.
+func (h *BillingContractHandler) AutoTopUp(c *gin.Context) {
+	userID, ok := billingContractUserID(c)
+	if !ok {
+		return
+	}
+	if h.svc == nil {
+		slog.Error("billing: contract service is not wired")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+
+	refusal := h.svc.AutoTopUp(c.Request.Context(), userID)
+	c.JSON(http.StatusNotImplemented, refusal)
 }

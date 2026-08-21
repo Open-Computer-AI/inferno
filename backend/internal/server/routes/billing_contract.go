@@ -3,6 +3,7 @@ package routes
 import (
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -63,6 +64,14 @@ import (
 // instead. Adding a GET here would be exactly F-10 again: a route answering a
 // question nobody asks. server/routes/billing_contract_route_test.go pins
 // both at 404 so a future addition is a deliberate act, not drift.
+// Task 5's 7 writes are mounted here too, every one on
+// service.ScopeBillingManage -- the scope /oauth/authorize refuses outright
+// (oauth_authorize_service.go:200) with no other issuance path today (the
+// device-flow step-up that WOULD grant it is a separate, not-yet-built
+// change). So every one of these 403s in production right now, and that is
+// deliberate (task-5-brief.md, ruling R-5.1): the scope gate is the valuable
+// artifact here, not the handler behind it. Methods are exactly the
+// client's own (hermes_cli/nous_billing.py), each cited on its handler.
 func RegisterBillingContractRoutes(r gin.IRouter, oauthH *handler.OAuthHandler, h *handler.BillingContractHandler) {
 	scoped := r.Group("/api/billing")
 	{
@@ -72,5 +81,16 @@ func RegisterBillingContractRoutes(r gin.IRouter, oauthH *handler.OAuthHandler, 
 		scoped.GET("/subscription", middleware.RequireOAuthScope(
 			oauthH.KeyService(), oauthH.ClientService(), oauthH.TokenIssuer(), "",
 		), h.Subscription)
+
+		manage := middleware.RequireOAuthScope(
+			oauthH.KeyService(), oauthH.ClientService(), oauthH.TokenIssuer(), service.ScopeBillingManage,
+		)
+		scoped.POST("/charge", manage, h.Charge)
+		scoped.GET("/charge/:id", manage, h.ChargeStatus)
+		scoped.POST("/subscription/preview", manage, h.SubscriptionPreview)
+		scoped.POST("/subscription/upgrade", manage, h.SubscriptionUpgrade)
+		scoped.PUT("/subscription/pending-change", manage, h.PendingChangeSet)
+		scoped.DELETE("/subscription/pending-change", manage, h.PendingChangeClear)
+		scoped.PATCH("/auto-top-up", manage, h.AutoTopUp)
 	}
 }
