@@ -57,7 +57,7 @@
                       v-model="form.payment_product_name_prefix"
                       type="text"
                       class="field-control"
-                      placeholder="Sub2API"
+                      placeholder="Inferno"
                     />
                   </div>
                   <div>
@@ -79,7 +79,7 @@
                       class="rounded-[var(--r-md)] border border-[var(--border-subtle)] bg-[var(--surface-subtle)] px-3 py-2 text-sm text-[var(--body-copy)]   text-[var(--body-copy)]"
                     >
                       {{
-                        (form.payment_product_name_prefix || "Sub2API") +
+                        (form.payment_product_name_prefix || "Inferno") +
                         " 100 " +
                         (form.payment_product_name_suffix || "CNY")
                       }}
