@@ -195,6 +195,7 @@ import { extractApiErrorMessage, extractI18nErrorMessage } from "@/utils/apiErro
 import { useAppStore } from "@/stores";
 import { useAdminSettingsStore } from "@/stores/adminSettings";
 import { normalizeVisibleMethod } from "@/components/payment/paymentFlow";
+import { PRODUCT_NAME, PRODUCT_TAGLINE } from "@/config/brand";
 import {
   isRegistrationEmailSuffixDomainValid,
   normalizeRegistrationEmailSuffixDomain,
@@ -897,9 +898,9 @@ const form = reactive<SettingsForm>({
   default_subscriptions: [],
   force_email_on_third_party_signup: false,
   default_user_rpm_limit: 0,
-  site_name: "Sub2API",
+  site_name: PRODUCT_NAME,
   site_logo: "",
-  site_subtitle: "Subscription to API Conversion Platform",
+  site_subtitle: PRODUCT_TAGLINE,
   api_base_url: "",
   contact_info: "",
   doc_url: "",

@@ -22,6 +22,14 @@ const (
 	RoleUser  = domain.RoleUser
 )
 
+// Product defaults are used whenever an operator has not configured a custom
+// site name or subtitle. Keep these in one place so customer-facing fallbacks
+// cannot drift back to the upstream product name.
+const (
+	DefaultSiteName     = "Inferno"
+	DefaultSiteSubtitle = "AI API Gateway"
+)
+
 // Affiliate rebate settings
 const (
 	AffiliateRebateRateDefault          = 20.0
