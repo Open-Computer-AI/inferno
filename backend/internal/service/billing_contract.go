@@ -444,6 +444,24 @@ func billingMoney(v float64) string {
 	return strconv.FormatFloat(v, 'f', -1, 64)
 }
 
+// billingDisplayMoney formats a value the client renders VERBATIM into a label,
+// as opposed to one it parses for arithmetic. Two decimal places, always.
+//
+// billingMoney uses shortest-round-trip precision, which is right for a stored
+// balance (the client parses it with Decimal and wants it exact) and WRONG for
+// dollarsPerMonthDisplay, which is the result of a DIVISION: a $200/12-month
+// plan normalises to 16.666666666666668, and ui-tui's subscriptionOverlay.tsx:437
+// interpolates that string straight into
+//
+//	`${tier.name} · ${tier.dollars_per_month_display}/mo`
+//
+// so the user would read "Pro Annual · 16.666666666666668/mo". Caught by the
+// Task 6 conformance run against real seeded plans; every unit test passed with
+// the raw value because the SHAPE was correct and only the rendering was wrong.
+func billingDisplayMoney(v float64) string {
+	return strconv.FormatFloat(v, 'f', 2, 64)
+}
+
 // billingOptionalMoney maps MethodLimitsResponse's "0 means unset" convention
 // onto a JSON null, which is what the client reads as "no bound".
 func billingOptionalMoney(v float64) *string {
@@ -655,9 +673,19 @@ func (s *BillingContractService) resolveCurrentSubscription(ctx context.Context,
 		return nil, 0, false
 	}
 
+	// TierName comes from the same representative plan resolveTiers picks for
+	// this group, NOT from Group.Name. They share a tierId, so a user whose
+	// tiers[] entry reads "Pro Annual" must not see their CURRENT plan named
+	// "Test " (the group's internal admin label). Falls back to the group name
+	// only when the group sells no plans. Caught by Task 6 conformance.
+	tierName := sub.Group.Name
+	if rep, ok := s.representativePlanName(ctx, sub.GroupID); ok {
+		tierName = rep
+	}
+
 	view := &BillingCurrentSubscriptionView{
 		TierID:            strconv.FormatInt(sub.GroupID, 10),
-		TierName:          sub.Group.Name,
+		TierName:          tierName,
 		CycleEndsAt:       sub.ExpiresAt.UTC().Format(time.RFC3339),
 		CancelAtPeriodEnd: false,
 	}
@@ -706,6 +734,32 @@ func (s *BillingContractService) resolveCurrentSubscription(ctx context.Context,
 // picker conventionally shows), then the lowest plan id as a deterministic
 // tie-break. isEnabled is independent of which plan was chosen: true if ANY
 // plan in the group is for sale.
+// representativePlanName returns the name of the SAME plan resolveTiers would
+// choose to represent this group, so current.tierName and the matching tiers[]
+// entry's name agree. Both carry the same tierId (the group id), so disagreeing
+// names describe one tier under two labels.
+func (s *BillingContractService) representativePlanName(ctx context.Context, groupID int64) (string, bool) {
+	plans, err := s.planSvc.ListPlans(ctx)
+	if err != nil {
+		slog.Error("billing contract: plan catalog lookup failed resolving current tier name", "error", err)
+		return "", false
+	}
+	inGroup := make([]*dbent.SubscriptionPlan, 0, 2)
+	for _, pl := range plans {
+		if pl.GroupID == groupID {
+			inGroup = append(inGroup, pl)
+		}
+	}
+	if len(inGroup) == 0 {
+		return "", false
+	}
+	rep, _ := billingRepresentativePlan(inGroup)
+	if rep == nil {
+		return "", false
+	}
+	return rep.Name, true
+}
+
 func (s *BillingContractService) resolveTiers(ctx context.Context, activeGroupID int64, hasActive bool) []BillingTierView {
 	plans, err := s.planSvc.ListPlans(ctx)
 	if err != nil {
@@ -734,7 +788,7 @@ func (s *BillingContractService) resolveTiers(ctx context.Context, activeGroupID
 			TierID:                 strconv.FormatInt(groupID, 10),
 			Name:                   rep.Name,
 			TierOrder:              rep.SortOrder,
-			DollarsPerMonthDisplay: billingMoney(billingDollarsPerMonth(rep.Price, rep.ValidityDays, rep.ValidityUnit)),
+			DollarsPerMonthDisplay: billingDisplayMoney(billingDollarsPerMonth(rep.Price, rep.ValidityDays, rep.ValidityUnit)),
 			IsCurrent:              hasActive && groupID == activeGroupID,
 			IsEnabled:              anyForSale,
 		}

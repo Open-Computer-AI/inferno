@@ -497,7 +497,7 @@ func TestBillingSubscriptionReportsCurrentPlanTiersAndContext(t *testing.T) {
 	}
 	require.True(t, byID["9"].IsCurrent)
 	require.False(t, byID["5"].IsCurrent)
-	require.Equal(t, "20", byID["9"].DollarsPerMonthDisplay)
+	require.Equal(t, "20.00", byID["9"].DollarsPerMonthDisplay)
 	require.Equal(t, 2, byID["9"].TierOrder)
 	require.True(t, byID["9"].IsEnabled)
 }
@@ -940,7 +940,7 @@ func TestBillingSubscriptionRepresentativeTierUsesNormalizedDollarsPerMonth(t *t
 	require.NoError(t, err)
 
 	require.Len(t, got.Tiers, 1)
-	require.Equal(t, "100", got.Tiers[0].DollarsPerMonthDisplay,
+	require.Equal(t, "100.00", got.Tiers[0].DollarsPerMonthDisplay,
 		"a $1200/year plan must display as $100/month, not the raw annual price")
 }
 
@@ -1334,4 +1334,76 @@ func TestAutoTopUpIsAnHonestRefusal(t *testing.T) {
 	got := svc.AutoTopUp(context.Background(), 7)
 	require.Equal(t, "unsupported_operation", got.Error)
 	require.NotEmpty(t, got.Message)
+}
+
+// ---------------------------------------------------------------------------
+// Task 6 conformance findings. Both of these shipped GREEN through every unit
+// test in Tasks 3 and 4 and were caught only by running the real client's
+// parsers against a live server with real seeded plans. The shape was valid in
+// both cases; only the RENDERED VALUE was wrong, which no shape assertion sees.
+// ---------------------------------------------------------------------------
+
+// TestDollarsPerMonthDisplayIsATwoDecimalDisplayString pins the first.
+// ui-tui/src/components/subscriptionOverlay.tsx:437 interpolates this field
+// VERBATIM into a user-visible label:
+//
+//	`${tier.name} · ${tier.dollars_per_month_display}/mo`
+//
+// dollarsPerMonthDisplay is the result of a DIVISION (price normalised by the
+// billing period), so shortest-round-trip float formatting emits
+// 16.666666666666668 for a $200/12-month plan and the user reads
+// "Pro Annual · 16.666666666666668/mo".
+func TestDollarsPerMonthDisplayIsATwoDecimalDisplayString(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	limit := 1000.0
+	fx.sub.byUser[7] = []UserSubscription{{
+		ID:        42,
+		UserID:    7,
+		GroupID:   9,
+		ExpiresAt: time.Date(2026, 9, 19, 0, 0, 0, 0, time.UTC),
+		Group:     &Group{ID: 9, Name: "Test ", MonthlyLimitUSD: &limit},
+	}}
+	// $200 over 12 months -> 200*30/360 -> 16.666666666666668 raw.
+	fx.plan.plans = []*dbent.SubscriptionPlan{
+		{ID: 100, GroupID: 9, Name: "Pro Annual", Price: 200, ValidityDays: 12, ValidityUnit: "month", ForSale: true},
+	}
+	fx.plan.groupInfo = map[int64]PlanGroupInfo{9: {MonthlyLimitUSD: &limit}}
+
+	got, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+	require.Len(t, got.Tiers, 1)
+	require.Equal(t, "16.67", got.Tiers[0].DollarsPerMonthDisplay,
+		"this string is rendered verbatim into a TUI label -- it must never carry float noise")
+}
+
+// TestCurrentTierNameAgreesWithItsTiersEntry pins the second. current and its
+// tiers[] entry share a tierId (the group id), so they describe ONE tier. When
+// current.tierName came from Group.Name it read "Test " -- the group's internal
+// admin label, trailing space included -- while the picker offered the same
+// tier as "Pro Annual". One tier under two names.
+func TestCurrentTierNameAgreesWithItsTiersEntry(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	limit := 1000.0
+	fx.sub.byUser[7] = []UserSubscription{{
+		ID:        42,
+		UserID:    7,
+		GroupID:   9,
+		ExpiresAt: time.Date(2026, 9, 19, 0, 0, 0, 0, time.UTC),
+		Group:     &Group{ID: 9, Name: "Test ", MonthlyLimitUSD: &limit},
+	}}
+	fx.plan.plans = []*dbent.SubscriptionPlan{
+		{ID: 100, GroupID: 9, Name: "Pro Monthly", Price: 20, ValidityDays: 1, ValidityUnit: "month", ForSale: true},
+		{ID: 101, GroupID: 9, Name: "Pro Annual", Price: 200, ValidityDays: 12, ValidityUnit: "month", ForSale: true},
+	}
+	fx.plan.groupInfo = map[int64]PlanGroupInfo{9: {MonthlyLimitUSD: &limit}}
+
+	got, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+	require.NotNil(t, got.Current)
+	require.Len(t, got.Tiers, 1, "two plans on one group collapse to one tier (R-3.1)")
+
+	require.Equal(t, got.Tiers[0].TierID, got.Current.TierID, "same tier, same id")
+	require.Equal(t, got.Tiers[0].Name, got.Current.TierName,
+		"one tierId must not carry two different names")
+	require.NotEqual(t, "Test ", got.Current.TierName, "must not leak the group's admin label")
 }

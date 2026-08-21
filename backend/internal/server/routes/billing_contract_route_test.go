@@ -713,7 +713,7 @@ func TestBillingSubscriptionRouteReturnsBareJSONNotThePanelEnvelope(t *testing.T
 	require.True(t, ok)
 	require.Equal(t, "9", tier["tierId"])
 	require.Equal(t, "Pro", tier["name"])
-	require.Equal(t, "20", tier["dollarsPerMonthDisplay"])
+	require.Equal(t, "20.00", tier["dollarsPerMonthDisplay"], "always 2dp -- this string is rendered verbatim into a TUI label")
 	require.Equal(t, "100", tier["monthlyCredits"])
 	require.Equal(t, true, tier["isCurrent"])
 	require.Equal(t, true, tier["isEnabled"])
@@ -867,7 +867,7 @@ func TestBillingSubscriptionRouteCollapsesMultiPeriodGroupOnTheWire(t *testing.T
 	tier := tiers[0].(map[string]any)
 	require.Equal(t, "9", tier["tierId"], "tierId must be the GROUP id, not either plan's own id")
 	require.Equal(t, "Pro Annual", tier["name"], "the annual option's normalised $15/mo beats the monthly option's $20/mo")
-	require.Equal(t, "15", tier["dollarsPerMonthDisplay"], "$180/year normalised to $15/month, not the raw $180")
+	require.Equal(t, "15.00", tier["dollarsPerMonthDisplay"], "$180/year normalised to $15.00/month, not the raw $180")
 }
 
 // ===========================================================================
