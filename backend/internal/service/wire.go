@@ -143,15 +143,24 @@ func ProvideOAuthTokenService(entClient *dbent.Client, keySvc *OAuthKeyService, 
 // catalog). Same concrete service, two call sites in Go's eyes -- kept
 // separate so a test can break one without the other, per this file's
 // one-interface-per-concern convention.
+//
+// paymentSvc and idempotency are Task 5's additions, backing the two
+// IMPLEMENTED writes (POST /charge, GET /charge/{id}): paymentSvc satisfies
+// BillingChargeOrderSource (it already has CreateOrder/GetOrder with the
+// exact signature, payment_order.go:25,918); idempotency is the SAME
+// *IdempotencyCoordinator every other idempotent write in this app already
+// shares (ProvideIdempotencyCoordinator), not a second store.
 func ProvideBillingContractService(
 	billingCache *BillingCacheService,
 	orgSvc *OrgService,
 	usageSvc *UsageService,
 	paymentCfgSvc *PaymentConfigService,
 	subSvc *SubscriptionService,
+	paymentSvc *PaymentService,
+	idempotency *IdempotencyCoordinator,
 	cfg *config.Config,
 ) *BillingContractService {
-	return NewBillingContractService(billingCache, orgSvc, usageSvc, paymentCfgSvc, paymentCfgSvc, subSvc, cfg.Server.FrontendURL)
+	return NewBillingContractService(billingCache, orgSvc, usageSvc, paymentCfgSvc, paymentCfgSvc, subSvc, paymentSvc, idempotency, cfg.Server.FrontendURL)
 }
 
 // ProvideOAuthRefreshAPI creates OAuthRefreshAPI with the default lock TTL.

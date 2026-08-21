@@ -2,13 +2,17 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/payment"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 )
 
@@ -35,6 +39,12 @@ type BillingContractService struct {
 	paymentSvc BillingPaymentSource
 	planSvc    BillingPlanSource
 	subSvc     BillingSubscriptionSource
+
+	// chargeSvc and idempotency back the two IMPLEMENTED writes (Task 5,
+	// ruling R-5.1): POST /api/billing/charge and GET /api/billing/charge/{id}.
+	// See the "The 2 implementable writes" section below.
+	chargeSvc   BillingChargeOrderSource
+	idempotency BillingIdempotencyExecutor
 
 	// portalBaseURL is cfg.Server.FrontendURL -- the browser-facing base URL
 	// this deployment is reachable at. See BillingStateView.PortalURL.
@@ -92,6 +102,48 @@ type BillingSubscriptionSource interface {
 	ListActiveUserSubscriptions(ctx context.Context, userID int64) ([]UserSubscription, error)
 }
 
+// BillingChargeOrderSource creates and reads the order-based charges that
+// stand in for Nous's Stripe "charge" concept (ruling R-5.1: Inferno is
+// order-based, not card-based, across ALL SIX of its payment providers --
+// EasyPay, Alipay, Wxpay, Stripe, Airwallex, Razorpay
+// (payment_config_providers.go:182-183). Stripe IS integrated here, but as a
+// CHECKOUT integration, not a stored-card one: payment_order.go's provider
+// snapshot (buildPaymentOrderProviderSnapshot) only records currency for it,
+// same as the others, and customer_id/payment_method_id/setup_intent/
+// off_session appear NOWHERE in ent/schema or the payment services --
+// confirmed by grep, not assumed. That absence, on every provider including
+// Stripe, is what makes R-5.1's refusal correct: SubscriptionUpgrade needs an
+// off-session charge against a card already on file, and no provider here
+// has one). Satisfied structurally by *PaymentService --
+// both methods already exist there with this exact signature
+// (payment_order.go's CreateOrder, :25, and GetOrder, :918).
+//
+// GetOrder's own contract is why GET /api/billing/charge/{id} can answer the
+// "never 404, never another org's data" rule with no extra work here: it
+// already returns infraerrors.NotFound for an unknown id and
+// infraerrors.Forbidden for one owned by a different user (:918-927) --
+// ChargeStatus below collapses BOTH into the client's "pending", never
+// distinguishing them on the wire.
+type BillingChargeOrderSource interface {
+	CreateOrder(ctx context.Context, req CreateOrderRequest) (*CreateOrderResponse, error)
+	GetOrder(ctx context.Context, orderID, userID int64) (*dbent.PaymentOrder, error)
+}
+
+// BillingIdempotencyExecutor is the "reuse the same key on retry -> the same
+// chargeId, never a second order" guarantee
+// (hermes_cli/nous_billing.py:511-521,529). Satisfied by
+// *IdempotencyCoordinator, this codebase's OWN generic idempotency mechanism
+// (internal/service/idempotency.go) -- already migrated, already used
+// elsewhere for exactly this "don't double-execute a POST" problem, so this
+// is reuse, not a bespoke second implementation.
+//
+// A narrow interface (not the concrete *IdempotencyCoordinator) for the same
+// reason every other dependency on this struct is one: a test can fail the
+// idempotency store in isolation without touching the other five sources.
+type BillingIdempotencyExecutor interface {
+	Execute(ctx context.Context, opts IdempotencyExecuteOptions, execute func(context.Context) (any, error)) (*IdempotencyExecuteResult, error)
+}
+
 func NewBillingContractService(
 	balanceSvc BillingBalanceSource,
 	orgSvc BillingOrgSource,
@@ -99,6 +151,8 @@ func NewBillingContractService(
 	paymentSvc BillingPaymentSource,
 	planSvc BillingPlanSource,
 	subSvc BillingSubscriptionSource,
+	chargeSvc BillingChargeOrderSource,
+	idempotency BillingIdempotencyExecutor,
 	portalBaseURL string,
 ) *BillingContractService {
 	return &BillingContractService{
@@ -108,6 +162,8 @@ func NewBillingContractService(
 		paymentSvc:    paymentSvc,
 		planSvc:       planSvc,
 		subSvc:        subSvc,
+		chargeSvc:     chargeSvc,
+		idempotency:   idempotency,
 		portalBaseURL: portalBaseURL,
 		now:           timezone.Now,
 	}
@@ -903,4 +959,326 @@ func billingMoneyStringToFloat(s *string) *float64 {
 		return nil
 	}
 	return &v
+}
+
+// ---------------------------------------------------------------------------
+// Task 5 -- the 7 write endpoints, all gated on billing:manage.
+//
+// Ruling R-5.1: 2 are IMPLEMENTED over Inferno's existing order flow, 5 are
+// HONESTLY REFUSED. Every method/key/status below is cited to
+// hermes_cli/nous_billing.py (task-5-brief.md, task-5-report.md).
+//
+// billing:manage is refused outright by /oauth/authorize
+// (oauth_authorize_service.go:200) and no other flow can grant it, so all 7
+// of these are unreachable in production today -- see
+// server/routes/billing_contract.go's mount comment. The scope gate in front
+// of them is the valuable artifact; the handlers behind it matter less.
+// ---------------------------------------------------------------------------
+
+const (
+	// billingChargeIdempotencyScope namespaces this endpoint's idempotency
+	// keys from every OTHER idempotent write in the app (redeem, batch image,
+	// admin ops, ...) that already shares the same IdempotencyRepository
+	// table. Two different users' -- or two different ENDPOINTS' -- literal
+	// key strings must never collide.
+	billingChargeIdempotencyScope = "billing_contract_charge"
+)
+
+// BillingChargeAcceptedView is POST /api/billing/charge's 202 body
+// (hermes_cli/nous_billing.py:513-514 docstring, key read by
+// cli_billing_mixin.py:1155 -- `result.get("chargeId")`).
+//
+// Money is NOT confirmed here: chargeId is Inferno's PaymentOrder id, and the
+// caller polls GET /api/billing/charge/{id} (ChargeStatus below) until it
+// resolves. Deliberately no amountUsd/status here -- the client's own code
+// never reads either field off THIS response, only off the poll response.
+type BillingChargeAcceptedView struct {
+	ChargeID string `json:"chargeId"`
+}
+
+// billingChargeMissingIdempotencyKey is exactly the 400 the brief mandates:
+// "a missing header is a 400, not a default" (nous_billing.py:511-521).
+//
+// This check happens BEFORE the idempotency coordinator is ever touched,
+// deliberately: IdempotencyCoordinator.Execute's own RequireKey flag is
+// suppressed by IdempotencyConfig.ObserveOnly (idempotency.go:213-221,
+// defaulting ObserveOnly=true -- "observe first, enforce later" for the
+// OTHER callers of that shared coordinator). Relying on that flag here would
+// make this endpoint's 400 contingent on a config value owned by an
+// unrelated feature; checking the header ourselves makes the 400
+// unconditional, matching the brief's "not a default".
+var ErrBillingChargeIdempotencyKeyRequired = infraerrors.BadRequest(
+	"IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key header is required")
+
+// Charge handles POST /api/billing/charge -- ruling R-5.1's first
+// IMPLEMENTED write. It creates a "balance" PaymentOrder through the SAME
+// CreateOrder path the panel's own recharge flow uses
+// (service/payment_order.go:25), over whichever of this deployment's six
+// enabled payment providers (EasyPay/Alipay/Wxpay/Stripe/Airwallex/Razorpay,
+// per BillingChargeOrderSource's doc comment) actually has an instance
+// configured -- PaymentType is left empty so the load balancer auto-selects
+// across all enabled instances
+// (load_balancer.go:114-117 documents this as supported cross-provider
+// selection), because the client sends no payment-method choice of its own
+// (its only field is amountUsd, :525) and there is no UI here to ask with.
+//
+// idempotencyKey MUST be non-empty (checked above); ctx-cancellation and
+// provider failures propagate as-is -- CreateOrder's own errors (INVALID_AMOUNT,
+// PAYMENT_DISABLED, ...) already carry the right HTTP status via infraerrors,
+// so this method does not re-wrap them.
+func (s *BillingContractService) Charge(ctx context.Context, userID int64, amountUSD float64, idempotencyKey string) (*BillingChargeAcceptedView, error) {
+	if strings.TrimSpace(idempotencyKey) == "" {
+		return nil, ErrBillingChargeIdempotencyKeyRequired
+	}
+	if s.idempotency == nil {
+		return nil, infraerrors.ServiceUnavailable("SERVER_ERROR", "idempotency coordinator is not wired")
+	}
+	if s.chargeSvc == nil {
+		return nil, infraerrors.ServiceUnavailable("SERVER_ERROR", "charge order source is not wired")
+	}
+
+	result, err := s.idempotency.Execute(ctx, IdempotencyExecuteOptions{
+		Scope:          billingChargeIdempotencyScope,
+		ActorScope:     "user:" + strconv.FormatInt(userID, 10),
+		Method:         http.MethodPost,
+		Route:          "/api/billing/charge",
+		IdempotencyKey: idempotencyKey,
+		Payload:        map[string]any{"amountUsd": amountUSD},
+		TTL:            DefaultWriteIdempotencyTTL(),
+		RequireKey:     true,
+	}, func(execCtx context.Context) (any, error) {
+		resp, createErr := s.chargeSvc.CreateOrder(execCtx, CreateOrderRequest{
+			UserID:        userID,
+			Amount:        amountUSD,
+			OrderType:     payment.OrderTypeBalance,
+			PaymentSource: "hermes_cli",
+		})
+		if createErr != nil {
+			return nil, createErr
+		}
+		if resp == nil {
+			// Defensive: BillingChargeOrderSource is an interface, and a
+			// misbehaving implementation returning (nil, nil) must not crash
+			// this request -- it is a server fault, not a client error.
+			return nil, infraerrors.InternalServer("SERVER_ERROR", "order creation returned no response")
+		}
+		return &BillingChargeAcceptedView{ChargeID: strconv.FormatInt(resp.OrderID, 10)}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return billingDecodeChargeAccepted(result.Data)
+}
+
+// billingDecodeChargeAccepted normalises IdempotencyExecuteResult.Data into
+// *BillingChargeAcceptedView. On a FRESH execution the value is the typed
+// struct the closure above returned; on a REPLAY it is whatever
+// decodeStoredResponse produced from the persisted JSON
+// (idempotency.go:473-482 -- a generic map[string]any), because the
+// coordinator stores every response as JSON text and does not know this
+// caller's Go type. Both are normalised through one JSON round trip so the
+// two paths can never drift into different wire shapes.
+func billingDecodeChargeAccepted(data any) (*BillingChargeAcceptedView, error) {
+	if view, ok := data.(*BillingChargeAcceptedView); ok {
+		return view, nil
+	}
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return nil, fmt.Errorf("billing contract: encode charge-accepted for decode: %w", err)
+	}
+	var view BillingChargeAcceptedView
+	if err := json.Unmarshal(raw, &view); err != nil {
+		return nil, fmt.Errorf("billing contract: decode charge-accepted: %w", err)
+	}
+	return &view, nil
+}
+
+// BillingChargeStatusView is GET /api/billing/charge/{id}'s body
+// (nous_billing.py:532-538). AmountUSD/Reason are optional: read by
+// cli_billing_mixin.py:1189-1190 (settled) and :1200-1210 (failed) but not
+// required by the parser (both `.get()` calls tolerate a missing key).
+type BillingChargeStatusView struct {
+	Status string `json:"status"`
+	// AmountUSD is the decimal-STRING money encoding (billingMoney), matching
+	// every other money field this adapter emits (Tasks 1/3) -- unlike the
+	// REQUEST body's amountUsd, which is a raw JSON number because that is
+	// the client's OWN encoding for what IT sends (nous_billing.py:525), not
+	// something this codebase chose.
+	AmountUSD *string `json:"amountUsd,omitempty"`
+	// Reason is free text on a "failed" status. Deliberately never one of
+	// the client's three RESERVED upgrade-endpoint values
+	// ("authentication_required"/"payment_method_expired"/"card_declined",
+	// cli_billing_mixin.py:1203-1208) -- those name Stripe 3DS/card outcomes
+	// Inferno cannot produce (no card on file, R-5.1). Any other string
+	// (including these below) falls through to the client's own generic
+	// fallback copy ("didn't go through ({reason})"), which is honest.
+	Reason *string `json:"reason,omitempty"`
+}
+
+// ChargeStatus handles GET /api/billing/charge/{id}.
+//
+// SECURITY-CRITICAL (brief, citing nous_billing.py:536-538): an unknown OR
+// FOREIGN charge id returns {status:"pending"}, NEVER 404, NEVER another
+// user's data. A 404 here would be a cross-tenant existence oracle -- a
+// caller could probe sequential ids and learn which ones exist for OTHER
+// users. So every error GetOrder can return (NotFound for an unknown id,
+// Forbidden for one owned by someone else, and any other -- transient --
+// failure) collapses to the SAME "pending" response, indistinguishable on
+// the wire. This is deliberately not "loud" the way State() is: unlike an
+// unresolvable balance, there is no safe way to surface more detail here
+// without either leaking existence or downgrading a real error into a false
+// "failed" the client would render as a lie.
+//
+// A malformed id (not a PaymentOrder integer id) is treated the same way --
+// also pending, also never a distinguishable error -- for the identical
+// oracle reason: responding differently to "malformed" vs "well-formed but
+// unknown" would let a prober learn the id SHAPE even without learning
+// existence.
+func (s *BillingContractService) ChargeStatus(ctx context.Context, userID int64, chargeID string) *BillingChargeStatusView {
+	pending := &BillingChargeStatusView{Status: "pending"}
+	if s.chargeSvc == nil {
+		return pending
+	}
+
+	orderID, err := strconv.ParseInt(strings.TrimSpace(chargeID), 10, 64)
+	if err != nil {
+		return pending
+	}
+
+	order, err := s.chargeSvc.GetOrder(ctx, orderID, userID)
+	if err != nil {
+		return pending
+	}
+
+	switch order.Status {
+	case OrderStatusCompleted:
+		// The only status the money has actually LANDED in the caller's
+		// balance (payment_fulfillment.go:371-373's terminal happy path).
+		amt := billingMoney(order.Amount)
+		return &BillingChargeStatusView{Status: "settled", AmountUSD: &amt}
+	case OrderStatusExpired:
+		reason := "charge_expired"
+		return &BillingChargeStatusView{Status: "failed", Reason: &reason}
+	case OrderStatusCancelled:
+		reason := "charge_cancelled"
+		return &BillingChargeStatusView{Status: "failed", Reason: &reason}
+	case OrderStatusFailed:
+		// Crediting failed AFTER payment was received
+		// (payment_fulfillment.go:819-822) -- a real terminal failure, not a
+		// declined card (Inferno has none to decline).
+		reason := "provider_declined"
+		return &BillingChargeStatusView{Status: "failed", Reason: &reason}
+	case OrderStatusPending, OrderStatusPaid, OrderStatusRecharging:
+		// Pending: awaiting payment. Paid: payment received, not yet
+		// credited. Recharging: crediting in progress. None of the three is
+		// "done" -- money is not confirmed at THIS status the same way it is
+		// at Completed, so all three stay "pending" and the client keeps
+		// polling (nous_billing.py's 5-minute poll cap treats a stuck
+		// "pending" as a timeout, never an error -- cli_billing_mixin.py's
+		// final else-branch, "not a failure").
+		return pending
+	default:
+		// Any refund-lane status (RefundRequested/Refunding/.../RefundFailed)
+		// or a future status this contract has not been taught about.
+		// "pending" is the SAFE default here: reporting "failed" for money
+		// that actually settled (then got refunded) would be a worse lie
+		// than an eventually-timing-out "pending", which the client already
+		// treats as harmless.
+		return pending
+	}
+}
+
+// ---------------------------------------------------------------------------
+// The 5 honest refusals (ruling R-5.1). Inferno has no card vault, no
+// proration engine, and no end-of-period-intent model
+// (grep -rniE 'cancel_at_period|pending_change|auto_renew' over ent/schema +
+// subscription_service.go returns nothing) -- these bodies say so instead of
+// inventing a Stripe-shaped success or a 404 that would read as "portal
+// unreachable" (a worse lie).
+// ---------------------------------------------------------------------------
+
+// BillingSubscriptionPreviewView is POST /api/billing/subscription/preview's
+// 200 body. "blocked" is the CLIENT's own vocabulary for "the commit would be
+// refused" (nous_billing.py's post_subscription_preview docstring, the
+// `effect` field), so this renders a clean message on the client rather than
+// an error path.
+type BillingSubscriptionPreviewView struct {
+	Effect string `json:"effect"`
+	Reason string `json:"reason"`
+}
+
+// SubscriptionPreview handles POST /api/billing/subscription/preview
+// (nous_billing.py:573-591; body {"subscriptionTypeId": <str>} at :589,
+// accepted but not required to be valid -- the answer is the same "blocked"
+// regardless, since Inferno cannot preview ANY plan change honestly).
+func (s *BillingContractService) SubscriptionPreview(context.Context, int64, string) *BillingSubscriptionPreviewView {
+	return &BillingSubscriptionPreviewView{
+		Effect: "blocked",
+		Reason: "Inferno has no proration engine and no stored payment method to quote a change against -- manage your subscription on the billing portal.",
+	}
+}
+
+// BillingRefusalView is the shared 501 body for the four writes this
+// deployment cannot honestly perform: POST /subscription/upgrade, PUT and
+// DELETE /subscription/pending-change, PATCH /auto-top-up.
+//
+// error/message are read generically by the client's own error mapper
+// (nous_billing.py's _raise_for_error, :310-380): 501 matches none of that
+// function's dedicated branches (400/401/403/429/503 only), so every one of
+// these falls through to its final generic
+// `raise BillingError(message or error or ...)` -- there is no reserved key
+// vocabulary to avoid here, unlike the upgrade endpoint's own `status` field
+// (see SubscriptionUpgrade's doc comment for the vocabulary that DOES matter).
+type BillingRefusalView struct {
+	Error     string `json:"error"`
+	Message   string `json:"message"`
+	PortalURL string `json:"portalUrl,omitempty"`
+}
+
+func (s *BillingContractService) billingRefusal(errCode, message string) *BillingRefusalView {
+	return &BillingRefusalView{
+		Error:     errCode,
+		Message:   message,
+		PortalURL: billingPortalURL(s.portalBaseURL),
+	}
+}
+
+// SubscriptionUpgrade handles POST /api/billing/subscription/upgrade
+// (nous_billing.py:648-675; body {"subscriptionTypeId"} at :672,
+// Idempotency-Key mandatory per the client's own docstring, :657-670).
+//
+// 501, never a fake success and never the client's own
+// "requires_action"/"payment_failed" statuses (:659-661): those name a 3DS
+// pending state and a declined card. Inferno has no card on file at all --
+// claiming one was declined would be a lie the user cannot act on (there is
+// nothing to update). "no_payment_method" says the true thing instead.
+//
+// idempotencyKey is accepted but not enforced here: unlike Charge, a
+// refused request performs no side effect to deduplicate, so there is
+// nothing an idempotency key could protect against double-executing.
+func (s *BillingContractService) SubscriptionUpgrade(context.Context, int64, string, string) *BillingRefusalView {
+	return s.billingRefusal("no_payment_method",
+		"Inferno has no stored payment method and no proration engine -- upgrade your plan on the billing portal.")
+}
+
+// PendingChangeSet handles PUT /api/billing/subscription/pending-change
+// (nous_billing.py:594-627; body {"type":"cancellation"} or
+// {"type":"tier_change","subscriptionTypeId":<str>}, :609-621).
+func (s *BillingContractService) PendingChangeSet(context.Context, int64) *BillingRefusalView {
+	return s.billingRefusal("unsupported_operation",
+		"Inferno does not model an end-of-period pending change -- manage your subscription on the billing portal.")
+}
+
+// PendingChangeClear handles DELETE /api/billing/subscription/pending-change
+// (nous_billing.py:631-644; no body).
+func (s *BillingContractService) PendingChangeClear(context.Context, int64) *BillingRefusalView {
+	return s.billingRefusal("unsupported_operation",
+		"Inferno does not model an end-of-period pending change -- manage your subscription on the billing portal.")
+}
+
+// AutoTopUp handles PATCH /api/billing/auto-top-up (nous_billing.py:480-499;
+// body {"enabled":bool,"threshold":num,"topUpAmount":num}, :495-499).
+func (s *BillingContractService) AutoTopUp(context.Context, int64) *BillingRefusalView {
+	return s.billingRefusal("unsupported_operation",
+		"Auto top-up requires a stored payment method, which Inferno does not support -- recharge manually on the billing portal.")
 }
