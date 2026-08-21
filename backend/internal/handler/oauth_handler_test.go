@@ -721,7 +721,7 @@ func newOAuthAccountTestRouterWithBilling(t *testing.T, sub *billingHandlerSubsc
 	t.Helper()
 	h := newOAuthAccountTestHandler(t)
 	h.SetBillingContractService(service.NewBillingContractService(
-		&billingHandlerBalance{}, billingHandlerOrg{}, billingHandlerUsage{}, billingHandlerPayment{}, billingHandlerPlan{}, sub, "https://portal.example.com",
+		&billingHandlerBalance{}, billingHandlerOrg{}, billingHandlerUsage{}, billingHandlerPayment{}, billingHandlerPlan{}, sub, nil, nil, "https://portal.example.com",
 	))
 	router := gin.New()
 	router.GET("/api/oauth/account", oauthmiddleware.RequireOAuthScope(h.KeyService(), h.ClientService(), h.TokenIssuer(), ""), h.Account)

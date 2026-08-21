@@ -7,6 +7,8 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/payment"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 
 	"github.com/stretchr/testify/require"
@@ -113,16 +115,58 @@ func (f *fakeBillingSubscriptionSource) ListActiveUserSubscriptions(_ context.Co
 	return f.byUser[userID], nil
 }
 
+// fakeBillingChargeOrderSource stands in for *PaymentService's
+// BillingChargeOrderSource half (CreateOrder + GetOrder). GetOrder
+// faithfully reproduces the REAL PaymentService.GetOrder's own error
+// contract (payment_order.go:918-927: infraerrors.NotFound for an unknown
+// id, infraerrors.Forbidden for one owned by someone else) so
+// ChargeStatus's "always pending, never distinguishable" behaviour is
+// exercised against the actual error shapes production returns, not an
+// invented pair of sentinels.
+type fakeBillingChargeOrderSource struct {
+	createResp   *CreateOrderResponse
+	createErr    error
+	gotCreateReq CreateOrderRequest
+	createCalls  int
+
+	// orders is keyed by order id; UserID on the stored order drives the
+	// ownership check, exactly like the real GetOrder.
+	orders map[int64]*dbent.PaymentOrder
+}
+
+func (f *fakeBillingChargeOrderSource) CreateOrder(_ context.Context, req CreateOrderRequest) (*CreateOrderResponse, error) {
+	f.createCalls++
+	f.gotCreateReq = req
+	if f.createErr != nil {
+		return nil, f.createErr
+	}
+	return f.createResp, nil
+}
+
+func (f *fakeBillingChargeOrderSource) GetOrder(_ context.Context, orderID, userID int64) (*dbent.PaymentOrder, error) {
+	o, ok := f.orders[orderID]
+	if !ok {
+		return nil, infraerrors.NotFound("NOT_FOUND", "order not found")
+	}
+	if o.UserID != userID {
+		return nil, infraerrors.Forbidden("FORBIDDEN", "no permission for this order")
+	}
+	return o, nil
+}
+
 // billingContractFixture holds the fakes so a test can reach in and break one
 // source at a time -- that is what the partial-degradation test needs.
 type billingContractFixture struct {
-	balance *fakeBillingBalanceSource
-	org     *fakeBillingOrgSource
-	usage   *fakeBillingUsageSource
-	payment *fakeBillingPaymentSource
-	plan    *fakeBillingPlanSource
-	sub     *fakeBillingSubscriptionSource
-	now     time.Time
+	balance     *fakeBillingBalanceSource
+	org         *fakeBillingOrgSource
+	usage       *fakeBillingUsageSource
+	payment     *fakeBillingPaymentSource
+	plan        *fakeBillingPlanSource
+	sub         *fakeBillingSubscriptionSource
+	charge      *fakeBillingChargeOrderSource
+	idempotency *IdempotencyCoordinator
+	idemRepo    *inMemoryIdempotencyRepo
+	now         time.Time
 }
 
 // recordUsage sets the month-to-date ACTUAL cost -- actual_cost, not
@@ -145,12 +189,15 @@ func newBillingContractFixture(t *testing.T) (*BillingContractService, *billingC
 			limits:  &MethodLimitsResponse{GlobalMin: 5, GlobalMax: 500},
 			enabled: true,
 		},
-		plan: &fakeBillingPlanSource{groupInfo: map[int64]PlanGroupInfo{}},
-		sub:  &fakeBillingSubscriptionSource{byUser: map[int64][]UserSubscription{}},
-		now:  time.Date(2026, 8, 19, 13, 45, 0, 0, time.UTC),
+		plan:   &fakeBillingPlanSource{groupInfo: map[int64]PlanGroupInfo{}},
+		sub:    &fakeBillingSubscriptionSource{byUser: map[int64][]UserSubscription{}},
+		charge: &fakeBillingChargeOrderSource{orders: map[int64]*dbent.PaymentOrder{}},
+		now:    time.Date(2026, 8, 19, 13, 45, 0, 0, time.UTC),
 	}
+	fx.idemRepo = newInMemoryIdempotencyRepo()
+	fx.idempotency = NewIdempotencyCoordinator(fx.idemRepo, DefaultIdempotencyConfig())
 
-	svc := NewBillingContractService(fx.balance, fx.org, fx.usage, fx.payment, fx.plan, fx.sub, "https://portal.example.com")
+	svc := NewBillingContractService(fx.balance, fx.org, fx.usage, fx.payment, fx.plan, fx.sub, fx.charge, fx.idempotency, "https://portal.example.com")
 	svc.now = func() time.Time { return fx.now }
 	return svc, fx
 }
@@ -808,7 +855,7 @@ func TestBillingRepresentativePlanPrefersForSaleOverNonForSale(t *testing.T) {
 // rate is cheaper.
 func TestBillingRepresentativePlanPicksLowestNormalizedPrice(t *testing.T) {
 	plans := []*dbent.SubscriptionPlan{
-		{ID: 1, Name: "Monthly", Price: 20, ForSale: true, ValidityDays: 1, ValidityUnit: "months"}, // $20/mo
+		{ID: 1, Name: "Monthly", Price: 20, ForSale: true, ValidityDays: 1, ValidityUnit: "months"},  // $20/mo
 		{ID: 2, Name: "Annual", Price: 180, ForSale: true, ValidityDays: 12, ValidityUnit: "months"}, // $15/mo
 	}
 	rep, _ := billingRepresentativePlan(plans)
@@ -1041,4 +1088,250 @@ func TestAccountSubscriptionIsolatesBetweenTwoUsers(t *testing.T) {
 
 	require.NotNil(t, got)
 	require.Equal(t, "User7Plan", got.Plan)
+}
+
+// ===========================================================================
+// Task 5 -- the 7 write endpoints. Ruling R-5.1: POST /charge and
+// GET /charge/{id} are IMPLEMENTED over PaymentService's real CreateOrder /
+// GetOrder contract; the other 5 are honest refusals with no data
+// dependency. Scope-gate and wire-byte assertions live in
+// server/routes/billing_contract_route_test.go; these are the
+// service-level behaviour + mapping-table tests.
+// ===========================================================================
+
+// TestChargeCreatesABalanceOrderAndReturnsItsIDAsChargeID pins the request
+// CreateOrder actually receives (nous_billing.py:525's amountUsd, a JSON
+// number, becomes the order Amount 1:1) and the 202 body's shape
+// (nous_billing.py:513-514, cli_billing_mixin.py:1155's `chargeId`).
+func TestChargeCreatesABalanceOrderAndReturnsItsIDAsChargeID(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.charge.createResp = &CreateOrderResponse{OrderID: 501}
+
+	got, err := svc.Charge(context.Background(), 7, 25.5, "idem-key-1")
+
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, "501", got.ChargeID)
+	require.Equal(t, 1, fx.charge.createCalls)
+	require.Equal(t, int64(7), fx.charge.gotCreateReq.UserID)
+	require.Equal(t, 25.5, fx.charge.gotCreateReq.Amount)
+	require.Equal(t, payment.OrderTypeBalance, fx.charge.gotCreateReq.OrderType)
+}
+
+// TestChargeMissingIdempotencyKeyIs400 pins the brief's exact requirement:
+// "a missing header is a 400, not a default" (nous_billing.py:511-521). The
+// order source must never be touched -- a missing key is refused before any
+// side effect, not defaulted into one.
+func TestChargeMissingIdempotencyKeyIs400(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.charge.createResp = &CreateOrderResponse{OrderID: 501}
+
+	_, err := svc.Charge(context.Background(), 7, 25, "")
+
+	require.Error(t, err)
+	require.Equal(t, 400, infraerrors.Code(err))
+	require.Equal(t, 0, fx.charge.createCalls, "a missing Idempotency-Key must never reach CreateOrder")
+}
+
+// TestChargeMissingIdempotencyKeyIs400EvenWhitespaceOnly: the client's own
+// pre-flight check trims before checking truthiness (nous_billing.py:518-521:
+// `idempotency_key.strip()` in the truthiness test) -- a whitespace-only
+// header must be treated the same as an absent one, not accepted as "present".
+func TestChargeMissingIdempotencyKeyIs400EvenWhitespaceOnly(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	_, err := svc.Charge(context.Background(), 7, 25, "   ")
+	require.Error(t, err)
+	require.Equal(t, 400, infraerrors.Code(err))
+	require.Equal(t, 0, fx.charge.createCalls)
+}
+
+// TestChargeReusesTheSameKeyOnRetryWithoutCreatingASecondOrder is the brief's
+// other Step-6 requirement, proved against the REAL *IdempotencyCoordinator
+// (backed by the in-memory repo idempotency_test.go already defines in this
+// package) -- not a re-implementation of dedup logic in a fake, so this
+// actually exercises the production code path.
+func TestChargeReusesTheSameKeyOnRetryWithoutCreatingASecondOrder(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.charge.createResp = &CreateOrderResponse{OrderID: 777}
+
+	first, err := svc.Charge(context.Background(), 7, 25, "same-key")
+	require.NoError(t, err)
+	require.Equal(t, "777", first.ChargeID)
+
+	second, err := svc.Charge(context.Background(), 7, 25, "same-key")
+	require.NoError(t, err)
+	require.Equal(t, "777", second.ChargeID, "a retried charge must resolve to the SAME chargeId")
+	require.Equal(t, 1, fx.charge.createCalls, "the retry must never create a second order")
+}
+
+// TestChargeDifferentUsersSameLiteralKeyConflictsRatherThanCrossReplays
+// documents a real property of the SHARED IdempotencyCoordinator (not
+// something Task 5 introduces: internal/handler/idempotency_helper.go's
+// executeUserIdempotentJSON has the identical shape for every other
+// idempotent write in this app). The storage key is (scope, sha256(literal
+// key)) -- NOT actor-scoped -- so two different users choosing the exact
+// same literal key string under this scope hit the SAME stored record.
+// ActorScope only enters the FINGERPRINT, so the collision is caught as a
+// fingerprint mismatch -> 409 IDEMPOTENCY_KEY_CONFLICT, never a silent
+// cross-user replay of user 7's chargeId to user 8. That 409 is the safe
+// outcome: no data crosses the tenant boundary, and in production this is
+// academic anyway (the client's new_idempotency_key() mints a UUID per
+// purchase, so a real cross-user literal collision is not a live risk).
+func TestChargeDifferentUsersSameLiteralKeyConflictsRatherThanCrossReplays(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.charge.createResp = &CreateOrderResponse{OrderID: 1}
+
+	gotUser7, err := svc.Charge(context.Background(), 7, 25, "shared-key")
+	require.NoError(t, err)
+	require.Equal(t, "1", gotUser7.ChargeID)
+
+	_, err = svc.Charge(context.Background(), 8, 25, "shared-key")
+	require.Error(t, err, "a different user's identical literal key must never replay user 7's chargeId")
+	require.Equal(t, 409, infraerrors.Code(err))
+	require.Equal(t, 1, fx.charge.createCalls, "the conflicting request must never create a second order either")
+}
+
+// TestChargeStatusMapsEveryInfernoOrderStatusToTheClientsThreeStates is the
+// mapping table the report documents: Pending/Paid/Recharging -> "pending"
+// (money not yet landed in the balance); Completed -> "settled" (the only
+// status the money has actually landed, payment_fulfillment.go:371-373);
+// Expired/Cancelled/Failed -> "failed" (terminal negatives).
+func TestChargeStatusMapsEveryInfernoOrderStatusToTheClientsThreeStates(t *testing.T) {
+	cases := []struct {
+		name       string
+		orderStat  string
+		wantStatus string
+		wantAmount bool
+		wantReason bool
+	}{
+		{"pending", OrderStatusPending, "pending", false, false},
+		{"paid_but_not_yet_credited", OrderStatusPaid, "pending", false, false},
+		{"recharging", OrderStatusRecharging, "pending", false, false},
+		{"completed", OrderStatusCompleted, "settled", true, false},
+		{"expired", OrderStatusExpired, "failed", false, true},
+		{"cancelled", OrderStatusCancelled, "failed", false, true},
+		{"failed", OrderStatusFailed, "failed", false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, fx := newBillingContractFixture(t)
+			fx.charge.orders[42] = &dbent.PaymentOrder{ID: 42, UserID: 7, Status: tc.orderStat, Amount: 19.99}
+
+			got := svc.ChargeStatus(context.Background(), 7, "42")
+
+			require.Equal(t, tc.wantStatus, got.Status)
+			if tc.wantAmount {
+				require.NotNil(t, got.AmountUSD)
+				require.Equal(t, "19.99", *got.AmountUSD)
+			} else {
+				require.Nil(t, got.AmountUSD)
+			}
+			if tc.wantReason {
+				require.NotNil(t, got.Reason)
+				require.NotEmpty(t, *got.Reason)
+				// The three RESERVED values name Stripe 3DS/card outcomes
+				// Inferno cannot produce (no card on file) -- must never be
+				// faked here (brief, cli_billing_mixin.py:1203-1208).
+				require.NotContains(t, []string{"authentication_required", "payment_method_expired", "card_declined"}, *got.Reason)
+			} else {
+				require.Nil(t, got.Reason)
+			}
+		})
+	}
+}
+
+// TestChargeStatusUnknownIDIsPendingNeverAnError is the SECURITY-CRITICAL
+// case (brief, citing nous_billing.py:536-538): an id with no matching order
+// must answer exactly like a real pending charge, never a 404-shaped signal.
+func TestChargeStatusUnknownIDIsPendingNeverAnError(t *testing.T) {
+	svc, _ := newBillingContractFixture(t)
+	got := svc.ChargeStatus(context.Background(), 7, "999999")
+	require.Equal(t, "pending", got.Status)
+	require.Nil(t, got.AmountUSD)
+	require.Nil(t, got.Reason)
+}
+
+// TestChargeStatusForeignOrderIsPendingNeverLeaksTheOwnersData is the OTHER
+// half of the security-critical rule: an id that exists but belongs to a
+// DIFFERENT real user (seeded in the same fixture, same as if they shared a
+// database) must answer "pending" -- never the real status, never the real
+// amount, never a 403/404 that would confirm the id exists at all.
+func TestChargeStatusForeignOrderIsPendingNeverLeaksTheOwnersData(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	// User 8's REAL, completed, $500 order.
+	fx.charge.orders[55] = &dbent.PaymentOrder{ID: 55, UserID: 8, Status: OrderStatusCompleted, Amount: 500}
+
+	got := svc.ChargeStatus(context.Background(), 7, "55") // user 7 probing user 8's id
+
+	require.Equal(t, "pending", got.Status, "a foreign order must never reveal it settled")
+	require.Nil(t, got.AmountUSD, "must never leak the other user's $500 amount")
+	require.Nil(t, got.Reason)
+}
+
+// TestChargeStatusMalformedIDIsPending: a non-numeric id (never a real
+// PaymentOrder id) gets the identical treatment, for the identical
+// existence-oracle reason -- responding differently to "malformed" vs
+// "well-formed but unknown" would let a prober learn the id SHAPE.
+func TestChargeStatusMalformedIDIsPending(t *testing.T) {
+	svc, _ := newBillingContractFixture(t)
+	got := svc.ChargeStatus(context.Background(), 7, "not-a-real-id")
+	require.Equal(t, "pending", got.Status)
+}
+
+// ---------------------------------------------------------------------------
+// MUTATION PROOF (brief, Step 5): "return 404 for unknown ids" must fail
+// this test. TestChargeStatusMutationProofUnknownIDMustNotBe404 does not
+// itself mutate the source -- it documents, and would catch, exactly the
+// regression a future edit could introduce: this test fails if ChargeStatus
+// is ever changed to special-case a NotFound/Forbidden error into a
+// different (or absent) status. See task-5-report.md for the actual
+// compiling mutation + its failing `go test` output.
+// ---------------------------------------------------------------------------
+
+// TestSubscriptionPreviewIsAlwaysBlocked: "blocked" is the client's OWN
+// vocabulary for "the commit would be refused" (nous_billing.py's
+// post_subscription_preview docstring), so this renders cleanly on the
+// client rather than as an error.
+func TestSubscriptionPreviewIsAlwaysBlocked(t *testing.T) {
+	svc, _ := newBillingContractFixture(t)
+	got := svc.SubscriptionPreview(context.Background(), 7, "pro-monthly")
+	require.Equal(t, "blocked", got.Effect)
+	require.NotEmpty(t, got.Reason)
+}
+
+// TestSubscriptionUpgradeNeverFakesA3DSOrDeclinedCardStatus is the brief's
+// own named hazard: "DO NOT fake requires_action or payment_failed" --
+// those mean 3DS-pending and card-declined, and Inferno has no card at all,
+// so claiming either would be a lie the user cannot act on.
+func TestSubscriptionUpgradeNeverFakesA3DSOrDeclinedCardStatus(t *testing.T) {
+	svc, _ := newBillingContractFixture(t)
+	got := svc.SubscriptionUpgrade(context.Background(), 7, "pro-monthly", "idem-key")
+	require.NotEqual(t, "requires_action", got.Error)
+	require.NotEqual(t, "payment_failed", got.Error)
+	require.Equal(t, "no_payment_method", got.Error)
+	require.NotEmpty(t, got.Message)
+	require.Equal(t, "https://portal.example.com/purchase", got.PortalURL)
+}
+
+// TestPendingChangeSetIsAnHonestRefusal / Clear / AutoTopUp: no data
+// dependency, no invented success -- ruling R-5.1.
+func TestPendingChangeSetIsAnHonestRefusal(t *testing.T) {
+	svc, _ := newBillingContractFixture(t)
+	got := svc.PendingChangeSet(context.Background(), 7)
+	require.Equal(t, "unsupported_operation", got.Error)
+	require.NotEmpty(t, got.Message)
+}
+
+func TestPendingChangeClearIsAnHonestRefusal(t *testing.T) {
+	svc, _ := newBillingContractFixture(t)
+	got := svc.PendingChangeClear(context.Background(), 7)
+	require.Equal(t, "unsupported_operation", got.Error)
+	require.NotEmpty(t, got.Message)
+}
+
+func TestAutoTopUpIsAnHonestRefusal(t *testing.T) {
+	svc, _ := newBillingContractFixture(t)
+	got := svc.AutoTopUp(context.Background(), 7)
+	require.Equal(t, "unsupported_operation", got.Error)
+	require.NotEmpty(t, got.Message)
 }
