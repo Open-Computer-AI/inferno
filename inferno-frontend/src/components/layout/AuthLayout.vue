@@ -1,29 +1,30 @@
 <template>
-  <div class="auth">
-    <!-- Panel LEFT, column right. Part 17: "A split screen. The panel on the
-         left ... The column on the right is deliberately plainer than anything
-         else in the library, because a front door has exactly one job." -->
-    <div class="auth__panel">
-      <AuthFieldPanel />
-    </div>
+  <div class="auth-shell">
+    <div class="auth">
+      <!-- The watercolor is the left panel only. The right column uses the same
+           paper tone as the canvas so the split stays quiet and intentional. -->
+      <div class="auth__panel">
+        <WatercolorMosaic />
+      </div>
 
-    <div class="auth__col">
-      <div class="auth__inner">
-        <header class="auth__head">
-          <!-- The wordmark IS the logo: the site name set in the serif, no tile
-               and no monogram. An operator-uploaded logo still wins, because
-               that is their brand and not ours to override. -->
-          <img v-if="settingsLoaded && siteLogo" :src="siteLogo" alt="" class="auth__logo" />
-          <h1 v-else class="auth__wordmark">{{ siteName }}</h1>
-          <p v-if="$slots.subtitle" class="auth__subtitle"><slot name="subtitle" /></p>
-        </header>
+      <div class="auth__col">
+        <div class="auth__inner">
+          <header class="auth__head">
+            <!-- The wordmark IS the logo: the site name set in the serif, no tile
+                 and no monogram. An operator-uploaded logo still wins, because
+                 that is their brand and not ours to override. -->
+            <img v-if="settingsLoaded && siteLogo" :src="siteLogo" alt="" class="auth__logo" />
+            <h1 v-else class="auth__wordmark">{{ siteName }}</h1>
+            <p v-if="$slots.subtitle" class="auth__subtitle"><slot name="subtitle" /></p>
+          </header>
 
-        <div class="auth__body">
-          <slot />
-        </div>
+          <div class="auth__body">
+            <slot />
+          </div>
 
-        <div v-if="$slots.footer" class="auth__foot">
-          <slot name="footer" />
+          <div v-if="$slots.footer" class="auth__foot">
+            <slot name="footer" />
+          </div>
         </div>
       </div>
     </div>
@@ -44,7 +45,7 @@
 import { computed, onMounted } from 'vue'
 import { useAppStore } from '@/stores'
 import { sanitizeUrl } from '@/utils/url'
-import AuthFieldPanel from '@/components/auth/AuthFieldPanel.vue'
+import WatercolorMosaic from '@/components/auth/WatercolorMosaic.vue'
 import { PRODUCT_NAME } from '@/config/brand'
 
 const appStore = useAppStore()
@@ -61,13 +62,41 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* The browser is the quiet outer canvas; the auth surface is an inset card. */
+.auth-shell {
+  box-sizing: border-box;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 10px;
+  background: rgb(237 235 231);
+}
+
 /* Two equal halves, as the mock renders them (575 | 575). */
 .auth {
+  --auth-paper: rgb(247 244 237);
+  --background: var(--auth-paper);
+  --foreground: rgb(45 42 38);
+  --body-copy: rgb(84 78 70);
+  --muted-foreground: rgb(116 108 98);
+  --card: rgb(255 253 248 / 0.78);
+  --surface-subtle: rgb(255 253 248 / 0.62);
+  --input: rgb(118 108 96 / 0.38);
+  --border: rgb(118 108 96 / 0.32);
+  --border-subtle: rgb(118 108 96 / 0.2);
+  --sidebar-accent: rgb(118 108 96 / 0.1);
+  --primary: rgb(45 42 38);
+  --primary-foreground: rgb(255 253 248);
+  --ring-focus: rgb(169 83 61);
+  --focus-ring: rgb(169 83 61 / 0.18);
   display: grid;
   grid-template-columns: 1fr 1fr;
   min-height: 100vh;
-  min-height: 100dvh;
-  background: var(--background);
+  min-height: calc(100dvh - 20px);
+  overflow: hidden;
+  border: 1px solid rgb(48 44 38 / 0.08);
+  border-radius: 14px;
+  box-shadow: 0 1px 4px rgb(48 44 38 / 0.06);
+  background: var(--auth-paper);
 }
 
 .auth__panel {
@@ -78,9 +107,11 @@ onMounted(() => {
 
 .auth__col {
   display: grid;
+  grid-column: 2;
   align-items: center;
   min-width: 0;
   padding: 40px 30px;
+  background: var(--auth-paper);
 }
 
 /* Fixed measure, centred. The column does not stretch with the viewport -- the
@@ -134,12 +165,21 @@ onMounted(() => {
 /* Below this the panel is dropped rather than stacked. A decorative panel above
    a sign-in form on a phone is just something to scroll past. */
 @media (max-width: 900px) {
+  .auth-shell {
+    padding: 6px;
+  }
+
   .auth {
     grid-template-columns: minmax(0, 1fr);
+    min-height: calc(100dvh - 12px);
   }
 
   .auth__panel {
     display: none;
+  }
+
+  .auth__col {
+    grid-column: 1;
   }
 }
 </style>
