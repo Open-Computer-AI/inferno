@@ -573,6 +573,15 @@ func TestSettingService_InitializeDefaultSettingsPersistsConfiguredForwardedClie
 	require.JSONEq(t, `["X-Cdn-Ip","True-Client-Ip"]`, repo.values[SettingKeyForwardedClientIPHeaders])
 }
 
+func TestSettingService_InitializeDefaultSettingsUsesInfernoBrandDefaults(t *testing.T) {
+	repo := &forwardedIPMigrationRepoStub{values: map[string]string{}}
+	svc := NewSettingService(repo, &config.Config{})
+
+	require.NoError(t, svc.InitializeDefaultSettings(context.Background()))
+	require.Equal(t, DefaultSiteName, repo.values[SettingKeySiteName])
+	require.Equal(t, DefaultSiteSubtitle, repo.values[SettingKeySiteSubtitle])
+}
+
 func TestSettingService_UpdateSettings_APIKeyACLTrustForwardedIPRefreshesConfig(t *testing.T) {
 	repo := &settingUpdateRepoStub{}
 	cfg := &config.Config{}

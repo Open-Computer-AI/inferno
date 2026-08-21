@@ -131,7 +131,7 @@
                 v-model="formData.database.dbname"
                 type="text"
                 class="input"
-                placeholder="sub2api"
+                :placeholder="PRODUCT_NAME.toLowerCase()"
               />
             </div>
             <div>
@@ -506,6 +506,7 @@ import { buildGatewayUrl } from '@/api/client'
 import Select from '@/components/common/Select.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { PRODUCT_NAME } from '@/config/brand'
 
 const { t } = useI18n()
 
