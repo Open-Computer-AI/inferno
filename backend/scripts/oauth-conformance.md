@@ -909,3 +909,78 @@ when it is unset, rather than letting the fallback happen.
 docker rm -f t8-pg t8-redis && docker network rm t8net
 rm -rf /tmp/t8-data /tmp/t8-hermes-home /tmp/t8-hermes-home2 /tmp/sub2api-t8
 ```
+
+---
+
+# Task 6 — billing contract adapter conformance (2026-08-22)
+
+Run against a live Inferno (branch `feat/billing-contract-adapter`, built
+`-tags embed`) on `127.0.0.1:18480`, with a REAL device-flow token for
+`hermes-cli` carrying `scope=inference:invoke` — exactly what a stock hermes
+login holds. Every assertion below was made by the UNMODIFIED client's own
+parsers, imported from the fork, not by reading the JSON and judging it.
+
+## Seed data — chosen to exercise the fixes, not the empty case
+
+    groups:              id=2, monthly_limit_usd = 1000
+    subscription_plans:  id=1 group=2 "Pro Monthly" $20  / 1 month
+                         id=2 group=2 "Pro Annual"  $200 / 12 months
+    user_subscriptions:  user=1 group=2 active, monthly_usage_usd = 300
+
+Two plans on ONE group is the R-3.1 duplicate-tierId case, and $200/12mo is the
+R-3.2 normalisation case. A first pass with an EMPTY plan table passed every
+check while exercising neither — recorded because "the conformance run passed"
+is worthless without saying what data it ran against.
+
+## Parsers exercised (all from the read-only fork)
+
+    agent/billing_view.billing_state_from_payload
+    agent/subscription_view.subscription_state_from_payload
+    hermes_cli/nous_account._subscription_from_payload
+
+## Result — 21 positive + 11 negative, 0 failures
+
+    /api/billing/state          logged_in=True, org+role, balance 999.73253335,
+                                spent 0.26746665, card=None, auto_reload=False
+    /api/billing/subscription   logged_in=True, context='personal',
+                                canChangePlan a real JSON bool, tiers a JSON list,
+                                2 plans -> 1 tier, tierId unique,
+                                current.tier_id IS in tiers[] (the TUI ===-poll
+                                invariant, subscriptionOverlay.tsx:786),
+                                current.tierName == tiers[].name,
+                                dollarsPerMonthDisplay = "16.67",
+                                credits 1000 / remaining 700
+    /api/oauth/account          subscription parses, snake_case correct,
+                                monthly_charge ABSENT, rollover omitted,
+                                tool_access omitted
+
+    TUI would render:  Pro Annual · 16.67/mo · $1,000 credits/mo
+
+    All 7 writes with a stock token   -> 403 {"error":"insufficient_scope"}
+    GET /api/billing/auto-top-up      -> 404 (phantom, must not exist)
+    GET /.../pending-change           -> 404 (phantom)
+    GET /api/analytics/usage          -> 404 (phantom, Task 2 VOID)
+    GET /api/billing/state, no token  -> 401
+
+## TWO DEFECTS THIS RUN CAUGHT — both green through every unit test
+
+Fixed in `6299007e`. Both had a VALID SHAPE and a wrong rendered VALUE, which is
+precisely what a shape assertion cannot see:
+
+1. `dollarsPerMonthDisplay` was `16.666666666666668`. ui-tui
+   subscriptionOverlay.tsx:437 interpolates that string VERBATIM into
+   `${tier.name} · ${...}/mo`, so the user would have read
+   "Pro Annual · 16.666666666666668/mo". It is the output of a DIVISION, unlike
+   every other money field, which is a stored value. New `billingDisplayMoney`
+   (2dp) is used for it; `billingMoney` (exact) still serves balances.
+2. `current.tierName` was `Group.Name` = "Test " — the group's internal admin
+   label, trailing space included — while the picker offered the SAME tierId as
+   "Pro Annual". One tier under two names.
+
+## A hollow check I wrote and caught
+
+My first envelope check asserted no `code`/`message`/`data` keys and PASSED —
+against three `{"error":"invalid_token"}` bodies, because the token had expired.
+An assertion over an error body proves nothing. The run now asserts the status
+code first and hard-fails on any `error` key before parsing. Recorded because it
+is the same defect class this document has been tracking all project.
