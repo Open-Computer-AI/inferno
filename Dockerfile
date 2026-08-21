@@ -23,23 +23,24 @@ ARG NPM_CONFIG_REGISTRY=
 FROM --platform=${BUILDPLATFORM} ${NODE_IMAGE} AS frontend-builder
 ARG NPM_CONFIG_REGISTRY
 
-WORKDIR /app/frontend
+WORKDIR /app/inferno-frontend
 
 # Install pnpm (pinned to v9 to match CI and keep builds reproducible)
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
 # Install dependencies first (better caching)
-COPY frontend/package.json frontend/pnpm-lock.yaml ./
+COPY inferno-frontend/package.json inferno-frontend/pnpm-lock.yaml ./
 RUN --mount=type=cache,id=sub2api-pnpm-store,target=/root/.local/share/pnpm/store \
     if [ -n "${NPM_CONFIG_REGISTRY}" ]; then pnpm config set registry "${NPM_CONFIG_REGISTRY}"; fi && \
     pnpm install --frozen-lockfile --prefer-offline
 
 # Copy frontend source and build.
 # LegalDocumentView.vue (admin-compliance gate) build-time imports
-# ../../../../docs/legal/*.md?raw, so docs/legal/ must sit beside frontend/
-# in the image (WORKDIR /app/frontend -> resolves to /app/docs/legal/*.md).
+# ../../../../docs/legal/*.md?raw, so docs/legal/ must sit beside
+# inferno-frontend/ in the image (WORKDIR /app/inferno-frontend resolves to
+# /app/docs/legal/*.md).
 # Copy only that subtree to keep the build dependency minimal.
-COPY frontend/ ./
+COPY inferno-frontend/ ./
 COPY docs/legal/ /app/docs/legal/
 RUN pnpm run build
 
