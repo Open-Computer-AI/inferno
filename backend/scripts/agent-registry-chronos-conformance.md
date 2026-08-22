@@ -113,8 +113,42 @@ The requirement most likely to ship broken, because nothing errors when it is:
     ... FIRE ARRIVED, purpose=cron_fire, job_id=restart-job
     row: restart-job | fired
 
-## Result
+## Result — CORRECTED after the whole-branch review
 
-8 of 8 done-criteria met. Two findings, neither blocking: C-1 (blank gateway-state
-label, one-line fix) and C-2 (no activation path for a self-hosted client, out of
-scope).
+**7 of 8 done-criteria met, not 8.** The original wording of this section claimed
+8/8 and it was wrong.
+
+**Done-criterion #1 ("Hermes Desktop's Cloud tab lists the signed-in user's
+agents") is NOT demonstrated.** What is demonstrated is that the response SHAPE
+survives `trimCloudAgents` — proven by porting that projection verbatim over a
+response fetched with a hand-minted bearer token. That says nothing about the
+AUTHENTICATION SCHEME, and the scheme is the part that fails:
+
+  - `GET /api/agents` is bearer-only (`routes/agents.go` -> `RequireOAuthScope`,
+    which reads `Authorization: Bearer` and has no cookie path).
+  - The desktop's `discoverCloudAgents` gates on `hasLivePortalSession()`, which
+    checks for a **`privy-token` cookie on the portal host**
+    (`apps/desktop/electron/main.ts:7459-7460`). Inferno never sets Privy
+    cookies, so the desktop throws `needsCloudLogin` BEFORE issuing any request.
+  - Its fetch path uses `useSessionCookies: true` and attaches no bearer —
+    `main.ts:7781` says so outright: "no bearer needed — NAS accepts the cookie".
+
+This is plausibly a program-level premise of "Inferno replaces Nous Portal" (the
+desktop needs an Inferno-shaped login either way, and that is not this branch's
+job). The defect that IS this branch's is that nothing recorded it, and this
+document asserted a criterion it had not tested. Corrected here rather than left
+standing; the ruling on what to do about it is in the ledger.
+
+This is the same error the billing branch made and recorded as I-1: asserting
+through the client's PARSERS and calling it conformance with the client. Parser-
+level evidence proves shape. It cannot prove auth, transport, or anything the
+consumer does before it parses.
+
+The other seven criteria stand as recorded above, including the two that matter
+most — a real fire verified by the agent's own `verify.py`, and survival of a
+server restart.
+
+Findings: C-1 (blank gateway-state label — PROMOTED to blocking by the review as
+IM-1, since `dashboardGatewayState` turns out to be the only status text the
+desktop renders) and C-2 (no activation path for a pending self-hosted client —
+triaged as genuinely out of scope, sub-project #1's).
