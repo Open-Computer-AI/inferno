@@ -114,6 +114,25 @@ type AgentCronFirer struct {
 	// once broke the whole device grant.
 	issuer string
 
+	// httpClient is SSRF-safe by construction (CR-2): newSSRFSafeHTTPClient's
+	// safeDialContext re-validates the RESOLVED IP at dial time and refuses
+	// loopback/private/link-local/CGNAT/ULA/metadata destinations
+	// (channel_monitor_ssrf.go). callback_url is caller-supplied and this
+	// POST carries a JWT THIS SERVER SIGNED, so a bare &http.Client here --
+	// what this field held before -- let any customer who owns an agent
+	// schedule an authenticated request from inside our network to any
+	// address they liked, at a time of their choosing.
+	//
+	// This is the half that survives DNS rebinding, which is why it is not
+	// redundant with validateAgentCallbackURL's provision-time checks: a name
+	// that resolves publicly when the fire is armed can resolve to
+	// 169.254.169.254 minutes later when it is dialled. See
+	// validateAgentCallbackURL for the other half and why both are required.
+	//
+	// Tests that point a callback at an httptest.Server on 127.0.0.1
+	// substitute a plain client on this field -- that loopback address is
+	// precisely what production must refuse, and
+	// TestFireNowRefusesALoopbackCallbackURL pins that it does.
 	httpClient *http.Client
 
 	// now is this service's only clock, matching every other service in this
@@ -130,7 +149,7 @@ func NewAgentCronFirer(client *dbent.Client, keySvc *OAuthKeyService, wheel cron
 		keySvc:     keySvc,
 		wheel:      wheel,
 		issuer:     strings.TrimRight(strings.TrimSpace(issuer), "/"),
-		httpClient: &http.Client{Timeout: fireHTTPTimeout},
+		httpClient: newSSRFSafeHTTPClient(fireHTTPTimeout),
 		now:        time.Now,
 	}
 }

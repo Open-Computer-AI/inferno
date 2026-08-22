@@ -148,6 +148,13 @@ func newFirerFixture(t *testing.T) (*AgentCronFirer, *firerFixture) {
 
 	f := NewAgentCronFirer(client, keySvc, wheel, fx.issuer)
 	f.now = func() time.Time { return fx.now }
+	// Production's client is SSRF-safe (CR-2) and REFUSES to dial 127.0.0.1,
+	// which is exactly where an httptest.Server lives -- so every test that
+	// needs a real callback round-trip swaps in a plain client. That is not a
+	// hole in the coverage: TestFireNowRefusesALoopbackCallbackURL exercises
+	// the client NewAgentCronFirer actually builds, against this same
+	// loopback server, and proves it refuses.
+	f.httpClient = fx.server.Client()
 
 	armed := fx.seedFire("armed", fx.now.Add(time.Hour))
 	fx.armedFireID = armed.ID
@@ -368,6 +375,41 @@ func TestRehydrateOnBootRearmsPendingFiresAndSkipsTerminalOnes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, n, "only armed rows; a fired row must never re-fire on rehydrate")
 	require.Equal(t, 2, fx.wheel.scheduled)
+}
+
+// TestFireNowRefusesALoopbackCallbackURL is CR-2's dial-time half, and the
+// one test in this file that uses the http.Client NewAgentCronFirer actually
+// builds rather than the fixture's plain substitute.
+//
+// validateAgentCallbackURL rejects a loopback callback at provision time, but
+// that check cannot survive DNS rebinding (a name that resolves publicly when
+// the fire is armed can resolve to 127.0.0.1 or 169.254.169.254 by the time it
+// is dialled), and rows predating the validation exist. So the fire itself
+// must refuse too: newSSRFSafeHTTPClient's safeDialContext re-checks the
+// RESOLVED IP at dial time. The refusal is a transport error, which is the
+// retryable case -- the row stays armed with the reason recorded, exactly as
+// an unreachable agent would be.
+//
+// MUTATION that kills this test: put `&http.Client{Timeout: fireHTTPTimeout}`
+// back in NewAgentCronFirer.
+func TestFireNowRefusesALoopbackCallbackURL(t *testing.T) {
+	_, fx := newFirerFixture(t)
+
+	// Built exactly as production builds it -- no httpClient substitution.
+	f := NewAgentCronFirer(fx.client, fx.keySvc, fx.wheel, fx.issuer)
+	f.now = func() time.Time { return fx.now }
+
+	require.True(t, strings.HasPrefix(fx.server.URL, "http://127.0.0.1:"),
+		"fixture server must be on loopback for this test to mean anything, got %q", fx.server.URL)
+
+	require.NoError(t, f.FireNow(context.Background(), fx.armedFireID),
+		"a blocked callback is a retryable transport failure, not a returned error")
+
+	row := fx.reload(fx.armedFireID)
+	require.Equal(t, agentcronfire.StateArmed, row.State, "a refused callback stays armed and retries")
+	require.Equal(t, 1, row.Attempts)
+	require.Contains(t, row.LastError, "blocked by SSRF policy",
+		"the recorded reason must be the SSRF refusal, not a timeout")
 }
 
 // TestFireNowPostsAuthorizationBearer is a smoke test that FireNow actually

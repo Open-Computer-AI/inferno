@@ -3,6 +3,9 @@ package service
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/url"
+	"strings"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -188,6 +191,9 @@ func (s *AgentCronService) Provision(ctx context.Context, agentRowID int64, in P
 	if in.AgentCallbackURL == "" {
 		return nil, infraerrors.BadRequest("AGENT_CRON_CALLBACK_URL_REQUIRED", "agent_callback_url is required")
 	}
+	if err := validateAgentCallbackURL(in.AgentCallbackURL); err != nil {
+		return nil, err
+	}
 	fireAt, err := time.Parse(time.RFC3339, in.FireAt)
 	if err != nil {
 		return nil, infraerrors.BadRequest("AGENT_CRON_FIRE_AT_INVALID", "fire_at must be RFC3339/ISO 8601")
@@ -235,6 +241,87 @@ func (s *AgentCronService) Provision(ctx context.Context, agentRowID int64, in P
 
 	view := agentCronFireView(row)
 	return &view, nil
+}
+
+// validateAgentCallbackURL is the CR-2 guard on the one caller-supplied URL
+// this server ever POSTs to. AgentCronFirer.FireNow sends that POST carrying
+// an RS256 JWT MINTED BY THIS SERVER (aud = the agent's client_id,
+// purpose = cron_fire), so an unvalidated callback is not merely SSRF: it
+// hands a signed credential to whatever host the caller names. The caller
+// also controls the timing (fire_at) and the retry count (fail the first
+// attempt to get another), so a callback URL is an attacker-schedulable
+// outbound request from inside the network.
+//
+// This is HALF the fix, deliberately. Validation here cannot survive DNS
+// rebinding -- a name that resolves publicly now can resolve to 169.254.169.254
+// at fire time, minutes later. The other half is AgentCronFirer's
+// newSSRFSafeHTTPClient (channel_monitor_checker.go), whose safeDialContext
+// re-checks the RESOLVED IP at dial time and is therefore the guard that
+// actually holds. Neither alone is sufficient: the safe dialer alone would
+// accept an http:// URL (a portal-signed token in cleartext) and would report
+// a bad callback only as a retry loop at fire time rather than as a 400 the
+// agent sees at provision time.
+//
+// The rules, and where each already exists in this repo:
+//   - https only, absolute, real host, no userinfo -- the same RFC 8252 rule
+//     oauth_redirect_uri.go enforces on the SAME agent's redirect_origin. It
+//     was indefensible that one agent identity was held to "https,
+//     non-loopback" for its OAuth redirect and to nothing at all here.
+//   - not loopback/unspecified/localhost -- isLoopbackHost, reused verbatim
+//     from oauth_redirect_uri.go.
+//   - not a private/link-local/CGNAT/ULA IP literal, and not a known cloud
+//     metadata hostname -- isPrivateIP / isBlockedHostname, reused verbatim
+//     from channel_monitor_ssrf.go (the same lists safeDialContext dials
+//     against, so the two halves cannot drift apart).
+//   - a DNS name must have a dot. A single-label name (https://vault/,
+//     https://metadata/) is only resolvable inside a private search domain,
+//     which is exactly the class of target this guard exists to keep a
+//     portal-signed token away from, and no legitimate agent callback on the
+//     public internet is single-label.
+//
+// Deliberately does NOT resolve the hostname here. validateEndpoint
+// (channel_monitor_validate.go) does, but it runs on an admin-submitted
+// endpoint, not on a per-request agent path: a resolver call inside Provision
+// would put every arm at the mercy of DNS latency and would still be a TOCTOU
+// no-op against rebinding, which safeDialContext already closes properly.
+//
+// A path and query string ARE allowed (unlike NormalizeRedirectOrigin, which
+// stores an ORIGIN) -- the agent's callback is a real endpoint, e.g.
+// https://gw.example.com/v1/cron/fire.
+func validateAgentCallbackURL(raw string) error {
+	const code = "AGENT_CRON_CALLBACK_URL_INVALID"
+
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return infraerrors.BadRequest(code, "agent_callback_url must be a valid absolute https URL")
+	}
+	if u.Scheme != "https" {
+		return infraerrors.BadRequest(code, "agent_callback_url must use https")
+	}
+	if u.Host == "" {
+		return infraerrors.BadRequest(code, "agent_callback_url must be an absolute URL with a host")
+	}
+	if u.User != nil {
+		return infraerrors.BadRequest(code, "agent_callback_url must not carry userinfo")
+	}
+
+	host := strings.TrimSuffix(u.Hostname(), ".")
+	if host == "" {
+		return infraerrors.BadRequest(code, "agent_callback_url must be an absolute URL with a host")
+	}
+	if isLoopbackHost(host) || isBlockedHostname(host) {
+		return infraerrors.BadRequest(code, "agent_callback_url must not point at a loopback or internal host")
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if isPrivateIP(ip) {
+			return infraerrors.BadRequest(code, "agent_callback_url must not point at a private, link-local or unspecified address")
+		}
+		return nil
+	}
+	if !strings.Contains(host, ".") {
+		return infraerrors.BadRequest(code, "agent_callback_url must name a fully qualified host")
+	}
+	return nil
 }
 
 // Cancel marks job_id's armed fire for this agent as cancelled. Cancelling

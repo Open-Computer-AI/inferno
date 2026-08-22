@@ -12,6 +12,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/agentcronfire"
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
@@ -352,6 +353,78 @@ func TestProvisionRejectsMissingRequiredFields(t *testing.T) {
 	missingDedup.DedupKey = ""
 	_, err = svc.Provision(context.Background(), 1, missingDedup)
 	require.Error(t, err)
+}
+
+// TestProvisionRejectsAnSSRFCallbackURL is CR-2's provision-time half:
+// agent_callback_url is caller-supplied and AgentCronFirer POSTs to it
+// carrying a JWT THIS SERVER SIGNED, so a callback naming an internal
+// address is an attacker-schedulable authenticated request from inside our
+// network -- plus a handover of a portal-minted token. Every case here is
+// rejected BEFORE a row exists, so nothing is ever armed against it.
+//
+// MUTATION that kills this test: delete the validateAgentCallbackURL call
+// from Provision (the `!= ""` check alone, which is what shipped).
+func TestProvisionRejectsAnSSRFCallbackURL(t *testing.T) {
+	rejected := []struct {
+		name string
+		url  string
+	}{
+		{"loopback literal", "https://127.0.0.1:19099/cron"},
+		{"loopback in the rest of 127/8", "https://127.9.9.9/cron"},
+		{"localhost by name", "https://localhost:19099/cron"},
+		{"ipv6 loopback", "https://[::1]:19099/cron"},
+		{"unspecified", "https://0.0.0.0/cron"},
+		{"rfc1918 private range", "https://10.1.2.3/cron"},
+		{"rfc1918 192.168", "https://192.168.1.10/cron"},
+		{"link-local cloud metadata", "https://169.254.169.254/latest/meta-data/"},
+		{"cloud metadata by name", "https://metadata.google.internal/computeMetadata/v1/"},
+		{"single-label internal host", "https://vault/cron"},
+		{"plain http", "http://agent.example/cron"},
+		{"no scheme at all", "agent.example/cron"},
+		{"userinfo smuggling", "https://user:pass@agent.example/cron"},
+	}
+
+	for _, tc := range rejected {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, fx := newAgentCronFixture(t)
+			_, err := svc.Provision(context.Background(), 1, ProvisionInput{
+				JobID:            "job-1",
+				FireAt:           "2026-09-01T10:00:00Z",
+				AgentCallbackURL: tc.url,
+				DedupKey:         "job-1:2026-09-01T10:00:00Z",
+			})
+			require.Error(t, err, "callback %q must be rejected", tc.url)
+			require.Equal(t, 400, infraerrors.Code(err),
+				"an unusable callback is the caller's fault (400), not a server fault (500)")
+			require.Equal(t, 0, fx.countFires(), "a rejected callback must never leave a row behind")
+			require.Equal(t, 0, fx.armer.count(), "and must never arm a timer")
+		})
+	}
+}
+
+// TestProvisionAcceptsAPublicHTTPSCallbackURL is the other side of CR-2's
+// validation: the guard must not reject the callbacks real agents use.
+func TestProvisionAcceptsAPublicHTTPSCallbackURL(t *testing.T) {
+	accepted := []string{
+		"https://agent.example/",
+		"https://gw.example.com/v1/cron/fire",
+		"https://gw.example.com:8443/v1/cron/fire?token=abc",
+		"https://8.8.8.8/cron", // a public IP literal is fine
+	}
+
+	for _, u := range accepted {
+		t.Run(u, func(t *testing.T) {
+			svc, fx := newAgentCronFixture(t)
+			_, err := svc.Provision(context.Background(), 1, ProvisionInput{
+				JobID:            "job-1",
+				FireAt:           "2026-09-01T10:00:00Z",
+				AgentCallbackURL: u,
+				DedupKey:         "job-1:2026-09-01T10:00:00Z",
+			})
+			require.NoError(t, err, "callback %q is a legitimate agent endpoint", u)
+			require.Equal(t, 1, fx.countFires())
+		})
+	}
 }
 
 // TestProvisionRejectsAnUnparseableFireAt: fire_at is a single ISO 8601
