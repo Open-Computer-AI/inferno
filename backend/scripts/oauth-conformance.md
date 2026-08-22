@@ -1022,11 +1022,20 @@ Then through `hermes_cli.nous_billing.post_charge` and the CLI's own
     💳 No card on file — top up and manage billing on the portal.
     Portal: http://127.0.0.1:18480/purchase
 
-403 is the correct status and this was checked, not assumed: `nous_billing.py:361-374`
-raises `BillingScopeRequired` ONLY when `error == "insufficient_scope"`, and its own
-comment lists `no_payment_method` among the "business 403s" that fall through to a
-generic `BillingError` carrying the code. A 402 or 501 would have missed the
-`elif code == "no_payment_method"` branch that produces the message above.
+403 is the correct status, and the reason matters. `nous_billing.py:361-374` raises
+`BillingScopeRequired` ONLY when `error == "insufficient_scope"`, so ours falls to the
+generic `BillingError` carrying the code -- which is what `_billing_render_charge_error`
+keys on.
+
+CORRECTION (found by the fix re-review, disproved by execution): an earlier version of
+this note claimed "a 402 or 501 would have missed the `no_payment_method` branch".
+That is FALSE. `_billing_render_charge_error` branches on `exc.error`, NOT on the HTTP
+status, so 400 / 402 / 501 all print the identical line. What the status DOES change is
+the exception class: 401 re-authenticates, and 429/503 raise `BillingRateLimited`, which
+would silently turn a permanent refusal into a retry. 403 is right because it is a
+business refusal of an authenticated, authorised request -- and because the client's own
+comment lists `no_payment_method` among its "business 403s" -- not because the other
+codes would fail to render.
 
 ### Harness note — the earlier /subscription transcript in the ledger was WRONG
 
