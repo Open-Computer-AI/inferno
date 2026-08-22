@@ -76,9 +76,39 @@ type AgentView struct {
 // "keyed on (user_id, public_id)" per the brief collapses to public_id alone)
 // so a rebooting agent heartbeats instead of duplicating itself. It sets
 // last_seen_at = now() on every call, including when the row already existed.
+//
+// OWNERSHIP CHECK (ruling T2-2). public_id IS the agent's OAuth client_id
+// (ent/schema/agent.go:32-34), and this credential model treats client_ids as
+// PUBLIC by design -- the agent holds a public client_id, never a secret. So
+// OnConflictColumns(agent.FieldPublicID) alone is not safe: it targets
+// public_id ALONE and, with UpdateNewValues(), would overwrite EVERY column
+// on conflict -- including user_id and org_id -- with no check that the
+// existing row belongs to the caller. Any authenticated user who learned
+// another agent's public_id could silently steal it.
+//
+// A composite conflict target (user_id, public_id) does NOT fix this:
+// public_id is globally .Unique() in the schema (correct -- a client_id must
+// be globally unique), so there is no composite unique index for a
+// (user_id, public_id) ON CONFLICT clause to reference; a second user
+// registering the same public_id would hit the plain unique constraint
+// instead of reaching that ON CONFLICT path at all.
+//
+// So this looks the row up by public_id FIRST. If it exists and belongs to a
+// different user, this returns a typed error before ever reaching the
+// upsert -- closing the hijack while keeping public_id globally unique. One
+// extra SELECT on a boot-time path is an acceptable cost.
 func (s *AgentRegistryService) Register(ctx context.Context, userID, orgID int64, in RegisterAgentInput) (*AgentView, error) {
 	if in.PublicID == "" {
 		return nil, infraerrors.BadRequest("AGENT_PUBLIC_ID_REQUIRED", "public_id is required")
+	}
+
+	existing, err := s.client.Agent.Query().Where(agent.PublicIDEQ(in.PublicID)).Only(ctx)
+	if err != nil && !dbent.IsNotFound(err) {
+		return nil, fmt.Errorf("agent registry: look up existing owner of public_id %q: %w", in.PublicID, err)
+	}
+	if err == nil && existing.UserID != userID {
+		return nil, infraerrors.Forbidden("AGENT_PUBLIC_ID_OWNED_BY_ANOTHER_USER",
+			"this agent's public_id is already registered to a different user")
 	}
 
 	name := in.Name

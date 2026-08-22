@@ -9,6 +9,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/agent"
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
 
 	"entgo.io/ent/dialect"
@@ -180,6 +181,43 @@ func TestRegisterCreatesANewAgent(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, row.LastSeenAt)
 	require.True(t, row.LastSeenAt.Equal(fx.now))
+}
+
+// TestRegisterRejectsHijackingAnotherUsersPublicID is ruling T2-2's proof.
+// public_id IS the agent's OAuth client_id and this credential model treats
+// client_ids as PUBLIC by design, so ANY authenticated user could learn
+// another agent's public_id. Without an ownership check, Register's
+// OnConflictColumns(public_id)+UpdateNewValues() would silently overwrite
+// user_id/org_id on conflict -- user 9 "registering" user 7's public_id
+// would flip the row to user 9 and the agent would vanish from user 7's
+// ListForUser.
+func TestRegisterRejectsHijackingAnotherUsersPublicID(t *testing.T) {
+	svc, fx := newAgentRegistryFixture(t)
+
+	_, err := svc.Register(context.Background(), 7, 1, RegisterAgentInput{
+		PublicID: "agent:shared", Name: "User 7's Agent",
+	})
+	require.NoError(t, err)
+
+	got, err := svc.Register(context.Background(), 9, 2, RegisterAgentInput{
+		PublicID: "agent:shared", Name: "User 9's Takeover Attempt",
+	})
+	require.Error(t, err, "registering a public_id already owned by a different user must fail")
+	require.Nil(t, got)
+
+	row, err := fx.client.Agent.Query().Where(agent.PublicIDEQ("agent:shared")).Only(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, int64(7), row.UserID, "the row must still belong to its original owner")
+	require.Equal(t, "User 7's Agent", row.Name, "the failed hijack attempt must not have mutated the row at all")
+
+	stillOurs, err := svc.ListForUser(context.Background(), 7, 1)
+	require.NoError(t, err)
+	require.Len(t, stillOurs, 1)
+	require.Equal(t, "User 7's Agent", stillOurs[0].Name, "user 7 must still see their own agent")
+
+	hijackerView, err := svc.ListForUser(context.Background(), 9, 2)
+	require.NoError(t, err)
+	require.Empty(t, hijackerView, "user 9 must not see an agent they failed to register")
 }
 
 // TestRegisterIsAnUpsertKeyedOnPublicID: a rebooting agent heartbeats
