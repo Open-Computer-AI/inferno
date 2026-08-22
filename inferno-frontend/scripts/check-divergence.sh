@@ -494,6 +494,12 @@ backend/migrations/912_agent_cron_fires.sql
 # D9 -- agent registry service layer (Task 2: AgentRegistryService
 # register + list, additive to D8's schemas).
 backend/internal/service/agent_registry.go
+# D10 -- agent registry HTTP surface (task 3): the desktop's cloud discovery
+# call and an agent's own boot-time register/heartbeat. Additive; upstream has
+# no /api/agents.
+backend/internal/handler/agent_handler.go
+backend/internal/server/routes/agents.go
+backend/internal/server/routes/agents_route_test.go
 backend/internal/service/agent_registry_test.go
 "
 
