@@ -177,7 +177,7 @@ The client reads `payload["subscription"]`. #4 omitted it deliberately — "unve
 
 ---
 
-### Task 5: The write endpoints — built, gated, unreachable
+### Task 5: The write endpoints — built, gated, reachable only after a step-up
 
 **Files:** as Task 2.
 
@@ -201,9 +201,9 @@ currently grant.
 
 - [ ] **Step 1: Write the gate test FIRST**
 
-Every write endpoint, with a token carrying `billing:read` but not `billing:manage`, returns `403 insufficient_scope`. This is the boundary protecting a scope no flow issues; it is worth more than the handlers.
+Every write endpoint, with a token carrying `billing:read` but not `billing:manage`, returns `403 insufficient_scope`. This is the boundary protecting a scope only a DEVICE STEP-UP issues — `/oauth/authorize` refuses it, the device grant does not (verified live). It is worth more than the handlers precisely because the scope IS obtainable.
 
-- [ ] **Step 2: Run, fail. Step 3: Implement `charge` over `PaymentService` order creation; `upgrade`/`preview` over the plans surface. Step 4: Run, pass.**
+- [ ] **Step 2: Run, fail. Step 3: `charge` REFUSES — ruling D-2 — with `403 {"error":"no_payment_method","portalUrl":...}` and creates NO order; `upgrade`/`preview` likewise refuse (501 / `blocked`). Do NOT create a PaymentOrder: its pay URL is unreachable through this contract and the orphaned order locks the user out via `MaxPendingOrders`. Step 4: Run, pass.**
 
 - [ ] **Step 5:** `PATCH /api/billing/auto-top-up` → `501` with a body naming the reason (no stored payment method). Test that it is 501 and not 404, not 405, and not 200 — and assert `PUT` to that path is 405, pinning the method the client actually sends.
 
@@ -235,7 +235,7 @@ The figure the CLI prints equals `users.balance` in Postgres. Not "looks right" 
 
 - [ ] **Step 4: Prove isolation end to end** — a second funded user in the same database; the first user's `/usage` never shows the second's rows.
 
-- [ ] **Step 5: Prove the write gate on the wire** — `POST /api/billing/charge` with the real token → `403 insufficient_scope`, because the device grant never issues `billing:manage`.
+- [ ] **Step 5: Prove the write gate on the wire** — `POST /api/billing/charge` with a STOCK login token (`scope=inference:invoke`) → `403 insufficient_scope`. NOTE, and do not invert this: the device grant DOES issue `billing:manage` (proved live, pinned by a test). With a stepped-up token the same call returns `403 no_payment_method` from the handler instead — a different body behind the same status. Assert the `error` code, not just the status.
 
 - [ ] **Step 6: Prove fail-open** — stop Redis (or force the usage source to error), re-run `/usage`: the CLI degrades cleanly and `/api/billing/state` still returns a balance.
 
@@ -247,6 +247,6 @@ The figure the CLI prints equals `users.balance` in Postgres. Not "looks right" 
 
 - **Spec coverage:** `billing/state` → T1. T2 is VOID (`analytics/usage` is not a portal endpoint; F-10). `GET subscription` → T3. Account `subscription` field → T4. All seven writes, at the client's exact methods → T5. Every "done means" criterion → T6.
 - **Task 1 is first** because every later task reuses its service, fixture and route group. Its partial-degradation test is the one that encodes the client's fail-open contract.
-- **The two riskiest tests are written before their implementations**: T2's isolation test (needs a second user's data actually present) and T5's scope gate (protects a scope nothing can grant, so nothing else would catch a regression).
+- **The two riskiest tests are written before their implementations**: T2's isolation test (needs a second user's data actually present) and T5's scope gate (protects a scope only a device step-up can grant, so nothing else would catch a regression).
 - **Deliberately deferred:** stored cards, auto top-up, the `billing:manage` step-up device flow, per-org monthly ceilings, and retiring `/api/v1/payment/*`. All are named non-goals in the spec.
 - **No migrations.** If any task finds it needs one, that is a signal the field belongs to a later change — report rather than add.

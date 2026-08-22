@@ -173,6 +173,16 @@ Scope enforcement, using the vocabulary #4 already defines:
 | `PUT` and `DELETE /subscription/pending-change` | `billing:manage` |
 | `PATCH /auto-top-up` | `billing:manage` |
 
+**`POST /charge` is a REFUSAL, not an implementation** (ruling D-2, from the
+whole-branch review's C-3). It creates no order and answers
+`403 {"error":"no_payment_method","portalUrl":...}`. The pay-URL alternative was
+evaluated and rejected by reading the consumer: `cli_billing_mixin.py:1145-1160`
+reads only `chargeId` and then polls `get_charge_status` for five minutes, so a
+URL in that body is never read. The previous behaviour created a real
+`PaymentOrder` whose pay URL was discarded — unpayable, and after
+`MaxPendingOrders` it locked the user out of top-up including from the panel.
+`GET /charge/{id}` is unchanged and still honours its cross-tenant contract.
+
 **Reads take a valid token and no particular scope** (ruling R-1.2). `billing:read`
 is in the vocabulary but no client ever requests it — hermes's default scope is
 `inference:invoke` and its only step-up asks `billing:manage` — so gating a read on
@@ -251,7 +261,10 @@ Two fields the client reads that #4 deliberately omitted. Now resolvable:
    screen rather than an error, so this is asserted per row, not assumed.
 5. A token without `billing:manage` gets `403` from every
    write endpoint — asserted, because that is the boundary protecting a scope
-   nothing can currently grant.
+   only a device-flow step-up can grant (NOT "nothing can grant" — see the
+   CORRECTED block above; `/oauth/authorize` refuses `billing:manage`, the device
+   grant issues it, and `hermes_cli/auth.py`'s `step_up_nous_billing_scope` asks
+   for it). The gate is what keeps a STOCK login token out.
 6. Every endpoint is bare-JSON, never the panel envelope — asserted, since
    getting this backwards is a defect the client silently mis-parses.
 7. With the usage rollup deliberately failing, `/api/billing/state` still returns

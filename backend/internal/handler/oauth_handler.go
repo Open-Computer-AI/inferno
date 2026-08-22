@@ -508,7 +508,7 @@ func (h *OAuthHandler) Account(c *gin.Context) {
 	// with has_active_subscription false it prints "no active subscription or
 	// usable credits ... Subscribe or add credits" (:305-310); with it true and
 	// active_subscription_is_paid ABSENT -- which it is, Inferno has no such
-	// concept, and _coerce_bool(None) is None, not False (:722) -- the two
+	// concept, and _coerce_bool(None) is None, not False (nous_account.py:791) -- the two
 	// intermediate branches (:292, :299) are both skipped and it falls through
 	// to "no usable paid credits ... Add credits or update billing", which is
 	// the true statement for a subscribed user whose balance ran out.
