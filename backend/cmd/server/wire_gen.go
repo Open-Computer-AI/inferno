@@ -315,21 +315,14 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	oAuthDeviceService := service.ProvideOAuthDeviceService(client, configConfig)
 	oAuthTokenService := service.ProvideOAuthTokenService(client, oAuthKeyService, oAuthDeviceService, refreshTokenCache, userRepository, configConfig)
 	oAuthAuthorizeService := service.NewOAuthAuthorizeService(client)
-	idempotencyCoordinator := service.ProvideIdempotencyCoordinator(idempotencyRepository, configConfig)
 	billingContractService := service.ProvideBillingContractService(billingCacheService, orgService, usageService, paymentConfigService, subscriptionService, paymentService, configConfig)
 	handlerOAuthHandler := handler.ProvideOAuthHandler(oAuthKeyService, oAuthClientService, orgService, oAuthDeviceService, oAuthTokenService, userRepository, oAuthAuthorizeService, billingContractService)
 	billingContractHandler := handler.NewBillingContractHandler(billingContractService)
 	agentRegistryService := service.NewAgentRegistryService(client)
-	// service.ProvideAgentCronFirer must be constructed BEFORE agentCronService
-	// below (ruling T5-1): AgentCronService.Provision now arms freshly
-	// provisioned rows into the SAME timing wheel RehydrateOnBoot rehydrates
-	// into, via the firer. ProvideAgentCronFirer also rehydrates every
-	// currently-armed row into timingWheelService (constructed above, line
-	// ~125 -- already started) as its own side effect, at boot, before
-	// ListenAndServe.
 	agentCronFirer := service.ProvideAgentCronFirer(client, oAuthKeyService, timingWheelService, configConfig)
 	agentCronService := service.NewAgentCronService(client, agentCronFirer)
 	agentHandler := handler.NewAgentHandler(agentRegistryService, orgService, agentCronService)
+	idempotencyCoordinator := service.ProvideIdempotencyCoordinator(idempotencyRepository, configConfig)
 	idempotencyCleanupService := service.ProvideIdempotencyCleanupService(idempotencyRepository, configConfig)
 	handlers := handler.ProvideHandlers(authHandler, userHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, announcementHandler, channelMonitorUserHandler, channelMonitorV2Handler, adminHandlers, gatewayHandler, openAIGatewayHandler, handlerSettingHandler, totpHandler, passkeyHandler, handlerPaymentHandler, paymentWebhookHandler, availableChannelHandler, modelPlazaHandler, asyncImageHandler, batchImageHandler, handlerOAuthHandler, billingContractHandler, agentHandler, idempotencyCoordinator, idempotencyCleanupService)
 	jwtAuthMiddleware := middleware.NewJWTAuthMiddleware(authService, userService, settingService, auditLogService)

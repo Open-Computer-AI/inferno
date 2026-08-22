@@ -860,15 +860,21 @@ var ProviderSet = wire.NewSet(
 	NewOrgService,
 	NewAgentRegistryService,
 	NewAgentCronService,
-	// ProvideAgentCronFirer is not wired into cmd/server/wire.go's injector
-	// graph (Task 5's declared file list is internal/service/wire.go +
-	// cmd/server/wire_gen.go, not the wireinject source) -- it is called
-	// directly from wire_gen.go's initializeApplication instead, at the same
-	// point Wire would otherwise have placed it. Registered here anyway so
-	// this ProviderSet documents the graph completely; a future
-	// `go generate ./...` regen must also update cmd/server/wire.go to
-	// request it, or this entry is inert.
 	ProvideAgentCronFirer,
+	// AgentCronService.Provision depends on cronArmer (ArmNow only, ruling
+	// T5-1) rather than a concrete *AgentCronFirer field, so Wire needs an
+	// explicit bind to satisfy it -- cronArmer is unexported, so this bind
+	// can only live HERE, in the same package that declares it (a
+	// cmd/server/wire.go bind could not even spell the type name). This is
+	// also what makes ProvideAgentCronFirer a REAL, load-bearing member of
+	// the injector graph rather than an orphaned side effect: it is now
+	// transitively required to build AgentCronService -> AgentHandler ->
+	// the handler set -> the router -> Application.Server, so a real
+	// `go generate ./...` regen resolves it automatically through
+	// cmd/server/wire.go's existing `service.ProviderSet` inclusion, with no
+	// further change needed there (verified with
+	// `go run github.com/google/wire/cmd/wire check ./cmd/server`).
+	wire.Bind(new(cronArmer), new(*AgentCronFirer)),
 	NewOAuthKeyService,
 	NewOAuthClientService,
 	NewOAuthAuthorizeService,
