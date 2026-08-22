@@ -491,6 +491,10 @@ backend/ent/agentcronfire_query.go
 backend/ent/agentcronfire_update.go
 backend/migrations/911_agents.sql
 backend/migrations/912_agent_cron_fires.sql
+# D9 -- agent registry service layer (Task 2: AgentRegistryService
+# register + list, additive to D8's schemas).
+backend/internal/service/agent_registry.go
+backend/internal/service/agent_registry_test.go
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }
