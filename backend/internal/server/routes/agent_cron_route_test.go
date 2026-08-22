@@ -124,6 +124,56 @@ func TestAgentCronListRouteReturnsOnlyThisAgentsArmedFires(t *testing.T) {
 	require.Equal(t, "mine-job", body.Armed[0]["job_id"])
 }
 
+// TestAgentCronListRouteIsolatesTwoGenuinelyDifferentUsers is the minor
+// finding's fix: TestAgentCronListRouteReturnsOnlyThisAgentsArmedFires above
+// only ever uses agentRouteUserID for both agents, so it cannot tell
+// user_id isolation apart from agent_row_id isolation. This seeds a SECOND
+// real user (9) with their own registered agent and confirms each user's
+// list call sees only their own agent's fire.
+func TestAgentCronListRouteIsolatesTwoGenuinelyDifferentUsers(t *testing.T) {
+	env := newAgentRouteEnv(t)
+	env.registerAgentClient(t, agentRouteUserID, 1, "agent:user7")
+	env.registerAgentClient(t, 9, 1, "agent:user9") // a SECOND, genuinely different user
+	user7Token := env.mintForClient(t, agentRouteUserID, "agent:user7", service.ScopeInferenceInvoke)
+	user9Token := env.mintForClient(t, 9, "agent:user9", service.ScopeInferenceInvoke)
+
+	rec := env.do(t, http.MethodPost, "/api/agent-cron/provision", "Bearer "+user7Token,
+		`{"job_id":"user7-job","fire_at":"2026-09-01T10:00:00Z","agent_callback_url":"https://agent.example/","dedup_key":"user7-job:2026-09-01T10:00:00Z"}`)
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	rec = env.do(t, http.MethodPost, "/api/agent-cron/provision", "Bearer "+user9Token,
+		`{"job_id":"user9-job","fire_at":"2026-09-01T10:00:00Z","agent_callback_url":"https://agent.example/","dedup_key":"user9-job:2026-09-01T10:00:00Z"}`)
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	rec = env.get(t, "/api/agent-cron/list", "Bearer "+user7Token)
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	var body struct {
+		Armed []map[string]any `json:"armed"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body.Armed, 1, "user 7 must see only their own fire, never user 9's")
+	require.Equal(t, "user7-job", body.Armed[0]["job_id"])
+}
+
+// TestAgentCronProvisionRouteRejectsATokenWhoseSubDoesNotOwnTheAgentNamedByAud
+// forges the other half of the ownership check: a validly-signed token
+// whose `aud` names an agent registered to a DIFFERENT user_id than the
+// token's own `sub`. agentCronHandlerAgentRowID must refuse this via
+// ResolveOwnedAgentRowID's ownership check (ruling T2-2-shaped), not
+// silently resolve to the agent the aud names.
+func TestAgentCronProvisionRouteRejectsATokenWhoseSubDoesNotOwnTheAgentNamedByAud(t *testing.T) {
+	env := newAgentRouteEnv(t)
+	env.registerAgentClient(t, agentRouteUserID, 1, "agent:owned-by-user7")
+	// A token whose sub is a DIFFERENT, genuine user (9) but whose aud names
+	// user 7's agent.
+	forged := env.mintForClient(t, 9, "agent:owned-by-user7", service.ScopeInferenceInvoke)
+
+	rec := env.do(t, http.MethodPost, "/api/agent-cron/provision", "Bearer "+forged,
+		`{"job_id":"job-1","fire_at":"2026-09-01T10:00:00Z","agent_callback_url":"https://agent.example/","dedup_key":"job-1:2026-09-01T10:00:00Z"}`)
+
+	require.Equal(t, http.StatusForbidden, rec.Code, "body: %s", rec.Body.String())
+}
+
 // ===========================================================================
 // POST /api/agent-cron/cancel
 // ===========================================================================
