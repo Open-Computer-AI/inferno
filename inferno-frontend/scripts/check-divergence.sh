@@ -491,6 +491,11 @@ backend/ent/agentcronfire_query.go
 backend/ent/agentcronfire_update.go
 backend/migrations/911_agents.sql
 backend/migrations/912_agent_cron_fires.sql
+# D8 continued -- ruling T4-1 (task 4 fix round 1) corrected 912's
+# field-level UNIQUE on dedup_key (globally unique) to a composite UNIQUE
+# index on (agent_row_id, dedup_key) -- dedup_key lives in the calling
+# agent's own namespace, not a global one; see 913's own comment.
+backend/migrations/913_agent_cron_fires_dedup_key_per_agent.sql
 # D9 -- agent registry service layer (Task 2: AgentRegistryService
 # register + list, additive to D8's schemas).
 backend/internal/service/agent_registry.go
