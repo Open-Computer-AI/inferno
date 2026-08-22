@@ -49,6 +49,24 @@ func (a *fakeCronArmer) count() int {
 	return len(a.calls)
 }
 
+// armed reports whether fireID was armed, and at what fire_at. Distinct from
+// count: ruling W-5's re-arm test must prove a timer was set for THAT row
+// after the row went terminal, which a total is structurally unable to say.
+func (a *fakeCronArmer) armed(fireID int64) (time.Time, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	at, ok := a.calls[fireID]
+	return at, ok
+}
+
+// forget drops every recorded arm, so a test can prove the NEXT Provision
+// armed something rather than reading an arm the setup already made.
+func (a *fakeCronArmer) forget() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.calls = make(map[int64]time.Time)
+}
+
 // agentCronSeq gives every seeded fire a distinct dedup_key across a test's
 // seed calls -- dedup_key is UNIQUE (ent/schema/agent_cron_fire.go), so two
 // fires sharing a job_id across two different agents still need distinct
@@ -107,6 +125,37 @@ func (fx *agentCronFixture) countFires() int {
 		panic(err) // fixture helper, not the test body
 	}
 	return n
+}
+
+// onlyFire returns the fixture's single fire row, failing the test if there
+// is not exactly one -- the ruling W-5 tests provision one row and then need
+// its id to drive it terminal.
+func (fx *agentCronFixture) onlyFire(t *testing.T) *dbent.AgentCronFire {
+	t.Helper()
+	rows, err := fx.client.AgentCronFire.Query().All(context.Background())
+	require.NoError(t, err)
+	require.Len(t, rows, 1, "expected exactly one fire row")
+	return rows[0]
+}
+
+func (fx *agentCronFixture) reload(t *testing.T, id int64) *dbent.AgentCronFire {
+	t.Helper()
+	row, err := fx.client.AgentCronFire.Get(context.Background(), id)
+	require.NoError(t, err, "reload fire %d", id)
+	return row
+}
+
+// driveTerminal puts a row into a terminal state with the failure bookkeeping
+// a real fire cycle would have left behind, so a re-arm has something
+// observable to reset.
+func (fx *agentCronFixture) driveTerminal(t *testing.T, id int64, state agentcronfire.State) {
+	t.Helper()
+	_, err := fx.client.AgentCronFire.UpdateOneID(id).
+		SetState(state).
+		SetAttempts(3).
+		SetLastError("callback answered 503: not ready").
+		Save(context.Background())
+	require.NoError(t, err, "drive fire %d to %s", id, state)
 }
 
 // seedFire creates one ARMED fire directly for agentRowID/jobID, with a
@@ -193,6 +242,87 @@ func TestProvisionReArmDoesNotLeaveTwoTimersForOneRow(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, 1, fx.armer.count(), "a re-arm of the same row must not leave two timers for it")
+}
+
+// TestProvisionOnAFiredRowReArmsIt is ruling W-5, the direction that was
+// broken: an explicit Provision naming a dedup_key whose row already FIRED
+// must re-arm that row -- state back to armed, attempts and last_error
+// cleared, a timer actually set -- while still answering with the SAME
+// schedule_id (ruling T4-1).
+//
+// Before this, the conflict clause touched updated_at only: the row stayed
+// `fired`, FireNow returns silently for any non-armed row, ListArmed hides
+// it, and the call answered 200 having armed nothing, forever. The agent's
+// reconcile replays the identical dedup_key in two real windows (it crashes
+// after a fire but before persisting next_run_at; or its own _list_armed
+// errors and it re-arms everything), so this is a recovery path, not a
+// theoretical edge -- see Provision's doc comment.
+//
+// MUTATION that kills this test: drop the SetState/SetAttempts/SetLastError
+// from Provision's conflict clause, leaving UpdateUpdatedAt() alone.
+func TestProvisionOnAFiredRowReArmsIt(t *testing.T) {
+	svc, fx := newAgentCronFixture(t)
+	in := ProvisionInput{
+		JobID:            "job-1",
+		FireAt:           "2026-09-01T10:00:00Z",
+		AgentCallbackURL: "https://agent.example/",
+		DedupKey:         "job-1:2026-09-01T10:00:00Z",
+	}
+
+	first, err := svc.Provision(context.Background(), 1, in)
+	require.NoError(t, err)
+	row := fx.onlyFire(t)
+	fx.driveTerminal(t, row.ID, agentcronfire.StateFired)
+	// Forget the arm the first Provision made, so what follows can only be
+	// satisfied by a NEW arm.
+	fx.armer.forget()
+
+	second, err := svc.Provision(context.Background(), 1, in)
+	require.NoError(t, err, "re-provisioning a fired row is a recovery request, never an error")
+
+	require.Equal(t, first.ScheduleID, second.ScheduleID, "same fire, same schedule_id (ruling T4-1)")
+	require.Equal(t, 1, fx.countFires(), "a re-arm must never create a second row")
+
+	reloaded := fx.reload(t, row.ID)
+	require.Equal(t, agentcronfire.StateArmed, reloaded.State, "a re-provisioned fired row must be ARMED again")
+	require.Equal(t, 0, reloaded.Attempts, "a re-arm starts a fresh retry budget")
+	require.Equal(t, "", reloaded.LastError, "a re-arm must not inherit the previous cycle's failure")
+
+	armedAt, ok := fx.armer.armed(row.ID)
+	require.True(t, ok, "a re-armed row must get a timer in THIS process, not wait for the next boot")
+	require.Equal(t, reloaded.FireAt.UTC(), armedAt.UTC())
+
+	listed, err := svc.ListArmed(context.Background(), 1)
+	require.NoError(t, err)
+	require.Len(t, listed, 1, "the agent's reconcile must be able to see the fire again")
+}
+
+// TestProvisionOnACancelledRowReArmsIt is the same ruling W-5 direction for
+// the other terminal state: the agent cancels optimistically (Cancel is a
+// no-op on an unknown job), so re-arming a job it cancelled and then wanted
+// back must work identically to re-arming a fired one.
+func TestProvisionOnACancelledRowReArmsIt(t *testing.T) {
+	svc, fx := newAgentCronFixture(t)
+	in := ProvisionInput{
+		JobID:            "job-1",
+		FireAt:           "2026-09-01T10:00:00Z",
+		AgentCallbackURL: "https://agent.example/",
+		DedupKey:         "job-1:2026-09-01T10:00:00Z",
+	}
+
+	_, err := svc.Provision(context.Background(), 1, in)
+	require.NoError(t, err)
+	row := fx.onlyFire(t)
+	require.NoError(t, svc.Cancel(context.Background(), 1, "job-1"))
+	require.Equal(t, agentcronfire.StateCancelled, fx.reload(t, row.ID).State)
+	fx.armer.forget()
+
+	_, err = svc.Provision(context.Background(), 1, in)
+	require.NoError(t, err)
+
+	require.Equal(t, agentcronfire.StateArmed, fx.reload(t, row.ID).State)
+	_, ok := fx.armer.armed(row.ID)
+	require.True(t, ok, "a re-armed cancelled row must get a timer in THIS process")
 }
 
 // TestProvisionRejectsMissingRequiredFields pins the 400s: job_id,

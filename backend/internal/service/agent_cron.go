@@ -132,14 +132,46 @@ type ArmedFireView struct {
 //
 // This is deliberately NOT a read-then-write existence check -- that races
 // with itself under two concurrent re-arms. It is a single
-// INSERT ... ON CONFLICT (agent_row_id, dedup_key) DO UPDATE SET
-// updated_at = now(): OnConflictColumns(agentRowID, dedupKey) + a conflict
-// clause that touches ONLY updated_at (never UpdateNewValues, which would
-// also overwrite schedule_id on every re-arm). Touching updated_at is what
+// INSERT ... ON CONFLICT (agent_row_id, dedup_key) DO UPDATE:
+// OnConflictColumns(agentRowID, dedupKey) + a conflict clause naming its
+// columns one by one (never UpdateNewValues, which would also overwrite
+// schedule_id on every re-arm). Touching updated_at is what
 // makes the upsert a real UPDATE, so RETURNING id still resolves to the
 // EXISTING row's id on conflict -- "same fire, same schedule_id" -- while a
 // fresh dedup_key (or a fresh agent) still inserts a brand new row with the
 // schedule_id minted for this call.
+//
+// RULING W-5: AN EXPLICIT PROVISION ON A TERMINAL ROW RE-ARMS IT. The
+// conflict clause therefore resets state -> armed, attempts -> 0 and
+// last_error -> "" alongside updated_at, but still never touches
+// schedule_id (which is why this is a field-by-field conflict clause and
+// not UpdateNewValues). Before this, a conflict onto a row already `fired`
+// or `cancelled` touched updated_at ONLY: the row stayed terminal,
+// AgentCronFirer.FireNow returns silently for any row whose state is not
+// `armed`, and the call answered 200 with the original schedule_id having
+// armed NOTHING -- forever, because ListArmed also hides a terminal row, so
+// the agent's reconcile never learns the job is dead and keeps re-arming
+// into the same no-op.
+//
+// That is reachable on the agent's own documented recovery path. Its
+// reconcile (plugins/cron_providers/chronos/__init__.py:194-215) compares
+// what it wants against _list_armed(), which returns ARMED fires only, and
+// re-arms anything missing. Normally the re-arm carries the NEXT
+// occurrence -- new fire_at, new dedup_key, a fresh row -- but it replays
+// the IDENTICAL key in two real windows: (a) the fire lands and the agent
+// crashes before persisting next_run_at, so on restart it still wants the
+// old instant; (b) _list_armed itself errors, whose own log line at :189
+// reads "will re-arm idempotently", so `observed` is empty and it re-arms
+// everything it has. Rejecting a terminal row instead would convert both of
+// those recoverable crash windows into a permanent hard failure.
+//
+// This does NOT weaken the schema's "a `fired` row must never re-fire".
+// That invariant governs REHYDRATION (AgentCronFirer.RehydrateOnBoot, whose
+// query filters to state=armed, and FireNow's own state guard) -- a boot
+// nobody asked for, replaying rows nobody re-requested. Provision is
+// someone asking. The two paths stay distinct and are pinned in both
+// directions by TestProvisionOnAFiredRowReArmsIt and
+// TestRehydrateOnBootRearmsPendingFiresAndSkipsTerminalOnes.
 //
 // The post-upsert agentRowID equality check below is DEFENSE IN DEPTH, not
 // the primary guard -- the composite index already makes a foreign row
@@ -170,6 +202,9 @@ func (s *AgentCronService) Provision(ctx context.Context, agentRowID int64, in P
 		SetScheduleID(s.newScheduleID()).
 		OnConflictColumns(agentcronfire.FieldAgentRowID, agentcronfire.FieldDedupKey).
 		UpdateUpdatedAt().
+		SetState(agentcronfire.StateArmed).
+		SetAttempts(0).
+		SetLastError("").
 		ID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("agent cron: provision job %q: %w", in.JobID, err)
