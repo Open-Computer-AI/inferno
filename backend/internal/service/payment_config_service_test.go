@@ -387,7 +387,7 @@ func newPaymentConfigServiceTestClient(t *testing.T) *dbent.Client {
 
 	dbName := fmt.Sprintf(
 		"file:%s?mode=memory&cache=shared",
-		strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()),
+		strings.NewReplacer("/", "_", " ", "_", "?", "_", "#", "_", "&", "_", ":", "_").Replace(t.Name()),
 	)
 	db, err := sql.Open("sqlite", dbName)
 	if err != nil {

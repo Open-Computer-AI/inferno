@@ -40,7 +40,7 @@ import (
 func newOAuthHandlerTestEntClient(t *testing.T) *dbent.Client {
 	t.Helper()
 	dbName := fmt.Sprintf("file:%s?mode=memory&cache=shared",
-		strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()))
+		strings.NewReplacer("/", "_", " ", "_", "?", "_", "#", "_", "&", "_", ":", "_").Replace(t.Name()))
 	db, err := sql.Open("sqlite", dbName)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })

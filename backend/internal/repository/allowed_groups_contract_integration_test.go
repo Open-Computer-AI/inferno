@@ -14,7 +14,7 @@ import (
 
 func uniqueTestValue(t *testing.T, prefix string) string {
 	t.Helper()
-	safeName := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
+	safeName := strings.NewReplacer("/", "_", " ", "_", "?", "_", "#", "_", "&", "_", ":", "_").Replace(t.Name())
 	return fmt.Sprintf("%s-%s", prefix, safeName)
 }
 
