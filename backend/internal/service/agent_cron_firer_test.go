@@ -211,7 +211,18 @@ func (fx *firerFixture) parseWithJWKS(t *testing.T, tok string) jwt.MapClaims {
 	require.True(t, ok, "JWKS keys shape")
 	require.NotEmpty(t, keys, "JWKS keys non-empty")
 
-	parser := jwt.NewParser(jwt.WithValidMethods([]string{"RS256"}))
+	// Validate exp/iat against the FIXTURE's clock, not the wall clock. The
+	// firer under test mints with fx.now (a fixed 2026-08-22T12:00:00Z) and
+	// fireTokenTTL is 5 minutes, so a wall-clock parser rejects every token
+	// this fixture ever mints as "expired" from 12:05Z on that date onward --
+	// a test that passes only until a date arrives is not a test. The agent's
+	// own verifier (plugins/cron_providers/chronos/verify.py) checks exp
+	// against ITS clock; pinning both sides to one clock here is what makes
+	// the claim assertions below about the claims rather than about today.
+	parser := jwt.NewParser(
+		jwt.WithValidMethods([]string{"RS256"}),
+		jwt.WithTimeFunc(func() time.Time { return fx.now }),
+	)
 	var claims jwt.MapClaims
 	parsed, err := parser.ParseWithClaims(tok, jwt.MapClaims{}, func(token *jwt.Token) (any, error) {
 		kid, _ := token.Header["kid"].(string)
