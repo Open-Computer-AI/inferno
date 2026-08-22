@@ -289,9 +289,26 @@ func TestAgentsRouteEmitsTheDesktopsExactShape(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal([]byte(raw), &body))
 	require.Len(t, body.Agents, 1)
+	got := body.Agents[0]
 	for _, k := range []string{"id", "name", "status", "dashboardUrl", "dashboardGatewayState"} {
-		require.Contains(t, body.Agents[0], k, "key read by main.ts:7923-7927")
+		v, ok := got[k]
+		require.True(t, ok, "key read by main.ts:7923-7927 is missing: %s", k)
+		require.IsType(t, "", v, "%s must be a JSON string -- trimCloudAgents type-checks every field", k)
 	}
+
+	// VALUES, not merely presence (IM-1). Asserting Contains alone is how
+	// dashboardGatewayState shipped as "": the key was there, so the test
+	// passed, while every agent row in the desktop's Cloud tab read literally
+	// "Status: " with nothing after it.
+	require.Equal(t, "box-1", got["name"])
+	require.Equal(t, "online", got["status"],
+		"seedAgent sets last_seen_at to now, so the derived prose is 'online'")
+	require.NotEmpty(t, got["dashboardGatewayState"],
+		"gateway-settings.tsx:1217 passes THIS field to cloudStatusLabel, and "+
+			"i18n/en.ts:812 renders it verbatim as `Status: ${state}` -- an empty "+
+			"string is a string, so trimCloudAgents' 'unknown' fallback never fires")
+	require.Equal(t, got["status"], got["dashboardGatewayState"],
+		"one derived status, shown wherever the desktop chooses to read it")
 	require.Contains(t, body.Org, "slug")
 }
 

@@ -62,12 +62,27 @@ type AgentView struct {
 	Status       string
 	DashboardURL string
 
-	// DashboardGatewayState has no backing column on the agents schema
-	// (Task 1) and no data source anywhere in this task's brief -- it is
-	// always "" rather than an invented value, the same "not invented"
-	// discipline billing_contract.go documents for its own absent fields
-	// (e.g. BillingStateView.MonthlyCap.LimitUSD). A later task can wire a
-	// real source in without touching this type's shape.
+	// DashboardGatewayState is THE ONLY STATUS TEXT THE DESKTOP RENDERS
+	// (IM-1). apps/desktop/src/app/settings/gateway-settings.tsx:1217 passes
+	// this field -- not Status -- to g.cloudStatusLabel, and
+	// apps/desktop/src/i18n/en.ts:812 renders that verbatim as
+	// `Status: ${state}`. Status is read by trimCloudAgents
+	// (main.ts:7918-7929) and then never displayed anywhere.
+	//
+	// It shipped as always "" on the reasoning that the agents schema has no
+	// backing column for it and inventing a value would be worse. That was
+	// the wrong call for a field whose consumer interpolates it into prose:
+	// trimCloudAgents only substitutes 'unknown' when the value is not a
+	// string, and "" IS a string, so it passed straight through and every
+	// agent row in the Cloud tab read literally "Status: " with nothing after
+	// it -- while the carefully-derived Status prose, agentStatusFromLastSeen,
+	// agentHumanElapsed and agentOnlineThreshold were all dead weight.
+	//
+	// It now carries the SAME derived prose as Status, which is the value the
+	// UI was always meant to show. It is deliberately not a second, different
+	// string: two status texts that can disagree is a worse defect than one
+	// that is merely duplicated, and if a real per-agent gateway state ever
+	// gets a backing column this is the field to point at it.
 	DashboardGatewayState string
 }
 
@@ -220,16 +235,23 @@ func (s *AgentRegistryService) ResolveOwnedAgentRowID(ctx context.Context, userI
 	return row.ID, nil
 }
 
-// toView maps a dbent.Agent row to the service's read model, deriving Status
-// as human-readable prose from last_seen_at -- apps/desktop/src/i18n/en.ts:812
-// renders it VERBATIM (`cloudStatusLabel: status => "Status: ${status}"`), so
-// it must read as prose, never an enum token.
+// toView maps a dbent.Agent row to the service's read model, deriving the
+// display status as human-readable prose from last_seen_at --
+// apps/desktop/src/i18n/en.ts:812 renders it VERBATIM
+// (`cloudStatusLabel: status => "Status: ${status}"`), so it must read as
+// prose, never an enum token. The prose fills BOTH Status and
+// DashboardGatewayState: gateway-settings.tsx:1217 passes the latter to
+// cloudStatusLabel, so that is the one actually displayed (IM-1).
 func (s *AgentRegistryService) toView(row *dbent.Agent) AgentView {
+	status := agentStatusFromLastSeen(row.LastSeenAt, s.now())
 	return AgentView{
-		ID:           row.PublicID,
-		Name:         row.Name,
-		Status:       agentStatusFromLastSeen(row.LastSeenAt, s.now()),
-		DashboardURL: row.DashboardURL,
+		ID:     row.PublicID,
+		Name:   row.Name,
+		Status: status,
+		// IM-1: the desktop renders THIS field, not Status -- see
+		// AgentView.DashboardGatewayState. It must never be "".
+		DashboardGatewayState: status,
+		DashboardURL:          row.DashboardURL,
 	}
 }
 
