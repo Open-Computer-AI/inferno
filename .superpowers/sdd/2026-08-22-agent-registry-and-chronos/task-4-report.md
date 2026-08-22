@@ -1,4 +1,4 @@
-STATUS: in progress
+STATUS: complete
 
 # Task 4: /api/agent-cron/{provision,cancel,list}
 
@@ -125,4 +125,127 @@ Reverted, rebuilt clean.
 
 All green on first implementation (`internal/service` full run, see below).
 
-(report continues as HTTP layer lands)
+## HTTP layer
+
+`AgentHandler` gains three methods (`ProvisionCron`, `CancelCron`,
+`ListCron`), same file as `List`/`Register`; `AgentHandler` now also holds
+`cronSvc *service.AgentCronService` (constructor signature changed to a
+3rd param -- every caller updated: `wire_gen.go`, `agents_route_test.go`).
+`routes/agents.go` mounts `/api/agent-cron/{provision,cancel,list}` on the
+identical `RequireOAuthScope("")` gate as `/api/agents` -- no
+`agents:read`/`agents:manage`.
+
+**Calling-agent resolution** (`agentCronHandlerAgentRowID`): the wire
+contract's request bodies carry no agent-id field at all
+(`_nas_client.py`'s `provision`/`cancel`/`list_armed` bodies are exactly
+`{job_id, fire_at, agent_callback_url, dedup_key}` / `{job_id}` / none).
+The agent authenticates with its own access token, whose `aud` IS its
+`public_id` (`RegisterAgentInput.PublicID`'s doc comment) --
+`RequireOAuthScope` already publishes that as `OAuthContextKeyClientID`,
+documented in `middleware/oauth_scope.go` as "the CALLER'S IDENTITY, which
+handlers act on". So the handler reads `aud` from context and calls the
+new `AgentRegistryService.ResolveOwnedAgentRowID(ctx, userID, publicID)`
+rather than trusting a body field a real client never sends.
+
+**Response shapes** (bare JSON, snake_case throughout -- this endpoint set
+IS the real client's hardcoded contract, unlike `/api/agents/register`'s
+"ours alone" snake_case-request/camelCase-response split):
+- `POST /api/agent-cron/provision` -> `{job_id, fire_at, schedule_id}`.
+- `POST /api/agent-cron/cancel` -> `{}` on success (the real client only
+  checks HTTP status).
+- `GET /api/agent-cron/list` -> `{"armed": [{job_id, fire_at, schedule_id}, ...]}`,
+  matching `list_armed()`'s `data.get("armed")` read exactly.
+
+## Route tests (`internal/server/routes/agent_cron_route_test.go`)
+
+Extended the existing `agentRouteEnv` harness (`agents_route_test.go`) with
+`mintForClient` (token whose `aud` is an arbitrary client_id, not the
+shared "hermes-cli" desktop client every other test in that file uses) and
+`registerAgentClient` (creates BOTH the `OAuthClient` row -- so the token
+verifies -- and the matching `Agent` row -- so `ResolveOwnedAgentRowID`
+finds it -- for one `public_id`).
+
+9 new tests, all real-chain (real RS256 keys, real middleware, real
+services, sqlite ent): wire-shape happy path, idempotent re-arm returns the
+same `schedule_id` at the HTTP layer too, a token for an unregistered
+`public_id` is refused, cross-tenant list isolation with TWO real
+registered agent clients under the SAME user (not vacuous -- each
+provisions its own fire, the caller only ever sees its own), cancel's
+round trip (provision -> cancel -> absent from list), cancel-on-unknown-job
+is a 200 no-op, unauthenticated -> 401 on all three routes, any valid scope
+admitted (no agents:read/manage), and the `/api/v1` mount-point pin.
+
+## Gates
+
+**Divergence** (`./inferno-frontend/scripts/check-divergence.sh` from repo
+root): confirmed baseline BEFORE touching anything -- 9 undeclared files,
+exit 1 (`auth_email_binding.go`, `auth_oauth_email_flow.go`,
+`balance_notify_service.go`, `content_moderation.go`, `domain_constants.go`,
+`payment_order_result_test.go`, `setting_features.go`,
+`setting_service_update_test.go`, `totp_service.go` -- all pre-existing,
+none of them mine). After every change and after the final commit:
+
+```
+divergence: base baeac1f3de · 242 file(s) differ · 253 declared
+
+  UNDECLARED DIVERGENCE:
+    backend/internal/service/auth_email_binding.go
+    backend/internal/service/auth_oauth_email_flow.go
+    backend/internal/service/balance_notify_service.go
+    backend/internal/service/content_moderation.go
+    backend/internal/service/domain_constants.go
+    backend/internal/service/payment_order_result_test.go
+    backend/internal/service/setting_features.go
+    backend/internal/service/setting_service_update_test.go
+    backend/internal/service/totp_service.go
+EXIT=1
+```
+
+Same 9 files, same exit code, as the pre-task baseline -- ends at exactly 9
+as required. Declared: `backend/internal/service/agent_cron.go`,
+`agent_cron_test.go`, `backend/internal/server/routes/agent_cron_route_test.go`
+as new D11 entries in both `check-divergence.sh`'s `DECLARED` and
+`GOAL.md`'s ledger; the touched-but-already-declared files
+(`agent_handler.go`, `routes/agents.go`, `agents_route_test.go`,
+`agent_registry.go`, `agent_registry_test.go`, `service/wire.go`,
+`cmd/server/wire_gen.go`) needed no new declaration, D9/D10's rows already
+cover them (noted explicitly in D11's row).
+
+**Full gate**: `cd backend && go test -tags unit ./...` (timeout 600000).
+
+```
+ok  	github.com/Wei-Shaw/sub2api/internal/handler	(cached)
+ok  	github.com/Wei-Shaw/sub2api/internal/handler/admin	(cached)
+ok  	github.com/Wei-Shaw/sub2api/internal/repository	4.145s
+ok  	github.com/Wei-Shaw/sub2api/internal/server	2.702s
+ok  	github.com/Wei-Shaw/sub2api/internal/server/middleware	14.432s
+ok  	github.com/Wei-Shaw/sub2api/internal/server/routes	12.871s
+ok  	github.com/Wei-Shaw/sub2api/internal/service	161.977s
+...
+```
+
+52 packages `ok`, 0 `FAIL` lines, 61 packages with no test files (`grep -c
+"^ok"` / `grep -i FAIL` / `grep -c "no test files"` against the full log).
+Neither known flake (`TestFilterGrokFreeQuotaAccounts*`,
+`TestApplyCodexFingerprintClientMetadataRaw*`) fired this run.
+
+## Divergence from the brief
+
+- The brief's Files block doesn't mention `agent_registry.go`/
+  `agent_registry_test.go` as files this task touches, but resolving
+  `public_id -> agent_row_id` scoped to the caller (explicitly called out
+  in the brief's Interfaces section) has nowhere else to live that doesn't
+  duplicate `AgentRegistryService`'s existing ownership-check pattern
+  (ruling T2-2). Added `ResolveOwnedAgentRowID` there instead of
+  re-implementing agent lookup inside `AgentCronService`, and declared it
+  under D9 in the divergence ledger (D9 already covers that file).
+- The brief's `ArmedFireView{JobID, FireAt, ScheduleID string}` doesn't
+  specify `FireAt`'s format on the way out. Used RFC3339 (matching the
+  request's own format) rather than passing through the driver's raw
+  `time.Time` formatting, so a value written by `Provision` and read back
+  by `ListArmed` is byte-identical regardless of which one produced it.
+- Nothing else in the brief was found to be wrong; the exact wire contract
+  keys and the "cancel is a no-op, not an error" behaviour matched
+  `_nas_client.py` precisely once located (it is not in this repo -- found
+  under `~/.cache/uv/archive-v0/.../plugins/cron_providers/chronos/_nas_client.py`,
+  matching the brief's citation path 1:1).
