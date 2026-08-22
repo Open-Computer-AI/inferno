@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/agent"
@@ -365,18 +366,31 @@ func (f *AgentCronFirer) markFired(ctx context.Context, fireID int64) error {
 // failures would see only the FIRST failure's cause, not the most recent.
 func (f *AgentCronFirer) markRetry(ctx context.Context, row *dbent.AgentCronFire, lastErr string) error {
 	attempts := row.Attempts + 1
+
+	// IM-2: RE-ARM FIRST, PERSIST SECOND. The re-arm is the contract; the
+	// attempts/last_error write is bookkeeping. This used to run only if the
+	// persist succeeded, so any write failure -- a transient Postgres blip, or
+	// an oversized/invalid last_error the driver rejects -- left the row
+	// `armed` with NO TIMER ANYWHERE: go-zero deletes a timer's key once its
+	// task has run (collection/timingwheel.go, tw.timers.Del), so by the time
+	// we are here this row has no live timer to fall back on. Nothing errors
+	// to any caller (the returned error lands in a wheel callback's log line),
+	// and only the next process restart's RehydrateOnBoot would notice. The
+	// worst case with this ordering is a retry that re-reads a stale
+	// attempts value and so repeats one backoff step -- strictly better than
+	// a fire that never happens again.
+	f.wheel.Schedule(fireWheelKey(row.ID), fireRetryBackoff(attempts), func() {
+		if err := f.FireNow(context.Background(), row.ID); err != nil {
+			logger.LegacyPrintf("service.agent_cron_firer", "[AgentCronFirer] retry fire %d failed: %v", row.ID, err)
+		}
+	})
+
 	if _, err := f.client.AgentCronFire.UpdateOneID(row.ID).
 		SetAttempts(attempts).
 		SetLastError(truncateFireError(lastErr)).
 		Save(ctx); err != nil {
 		return fmt.Errorf("agent cron firer: record retry for fire %d: %w", row.ID, err)
 	}
-
-	f.wheel.Schedule(fireWheelKey(row.ID), fireRetryBackoff(attempts), func() {
-		if err := f.FireNow(context.Background(), row.ID); err != nil {
-			logger.LegacyPrintf("service.agent_cron_firer", "[AgentCronFirer] retry fire %d failed: %v", row.ID, err)
-		}
-	})
 	return nil
 }
 
@@ -396,10 +410,27 @@ func fireRetryBackoff(attempts int) time.Duration {
 // see that constant's doc comment for why this must clip rather than let the
 // UPDATE itself fail.
 func truncateFireError(s string) string {
+	// Drop any invalid UTF-8 the callback's body contributed before measuring:
+	// the string this truncates is "callback answered %d: %s" where %s is up
+	// to 500 bytes read straight off the agent's socket, i.e. arbitrary bytes.
+	// Postgres rejects invalid UTF-8 outright ("invalid byte sequence for
+	// encoding UTF8"), which would fail the very UPDATE this function exists
+	// to keep alive.
+	s = strings.ToValidUTF8(s, "")
 	if len(s) <= fireLastErrorMaxLen {
 		return s
 	}
-	return s[:fireLastErrorMaxLen]
+	// Cut on a RUNE boundary. A byte slice at exactly fireLastErrorMaxLen can
+	// land mid-sequence in a multi-byte rune and produce invalid UTF-8 all by
+	// itself -- turning "record why the callback failed" into "lose the retry"
+	// (IM-2). The column's MaxLen is measured in BYTES
+	// (ent/schema/agent_cron_fire.go), so backing off at most three bytes to
+	// the boundary is correct, never a rune-count budget.
+	cut := s[:fireLastErrorMaxLen]
+	for len(cut) > 0 && !utf8.ValidString(cut) {
+		cut = cut[:len(cut)-1]
+	}
+	return cut
 }
 
 // RehydrateOnBoot re-arms every currently ARMED fire into the timing wheel.

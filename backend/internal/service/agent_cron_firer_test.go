@@ -14,6 +14,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/agentcronfire"
@@ -56,6 +57,22 @@ func (w *fakeCronWheel) Cancel(name string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	delete(w.fns, name)
+}
+
+// count and has read the wheel's state under its own mutex -- the IM-2 test
+// asserts on a schedule made from the code path under test, so it must not
+// race the fake's own writes.
+func (w *fakeCronWheel) count() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.scheduled
+}
+
+func (w *fakeCronWheel) has(name string) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	_, ok := w.fns[name]
+	return ok
 }
 
 // firerFixture is the real ent client (AgentCronFire + Agent + SecuritySecret
@@ -375,6 +392,59 @@ func TestRehydrateOnBootRearmsPendingFiresAndSkipsTerminalOnes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, n, "only armed rows; a fired row must never re-fire on rehydrate")
 	require.Equal(t, 2, fx.wheel.scheduled)
+}
+
+// TestMarkRetryReArmsEvenWhenThePersistFails is IM-2. The re-arm used to run
+// only if the attempts/last_error write succeeded, so a write failure left the
+// row `armed` with no timer anywhere -- go-zero has already deleted this row's
+// timer key by the time a task is running -- and nothing errored to any caller.
+// Invisible until the next boot.
+//
+// The persist is failed here by closing the client out from under it, which is
+// the same shape a transient database outage has from this function's point of
+// view: Save returns an error, everything else is unchanged.
+//
+// MUTATION that kills this test: move f.wheel.Schedule back below the Save,
+// so it is skipped on a persist error.
+func TestMarkRetryReArmsEvenWhenThePersistFails(t *testing.T) {
+	f, fx := newFirerFixture(t)
+	row := fx.reload(fx.armedFireID)
+
+	before := fx.wheel.count()
+	require.NoError(t, fx.client.Close(), "close the client so the persist below fails")
+
+	err := f.markRetry(context.Background(), row, "callback answered 503: not ready")
+	require.Error(t, err, "the failed write must still be reported")
+
+	require.Equal(t, before+1, fx.wheel.count(),
+		"the retry timer is the CONTRACT -- it must be armed even when the bookkeeping write fails")
+	require.True(t, fx.wheel.has(fireWheelKey(row.ID)),
+		"and it must be armed under THIS row's wheel key")
+}
+
+// TestTruncateFireErrorIsRuneSafe is IM-2's concrete trigger: last_error is
+// built from up to 500 bytes read straight off the agent's socket, so a
+// multi-byte rune can straddle the truncation point. A byte slice there yields
+// invalid UTF-8, which Postgres rejects outright -- failing the very UPDATE
+// this function exists to keep alive, and (before the fix above) taking the
+// retry timer down with it.
+//
+// MUTATION that kills this test: restore `return s[:fireLastErrorMaxLen]`.
+func TestTruncateFireErrorIsRuneSafe(t *testing.T) {
+	// One 3-byte rune straddling byte 500: 498 ASCII bytes, then repeated
+	// 3-byte runes, so bytes 498-500 are the first two thirds of one rune.
+	straddling := strings.Repeat("a", 498) + strings.Repeat("\u4e2d", 20)
+	got := truncateFireError(straddling)
+	require.LessOrEqual(t, len(got), fireLastErrorMaxLen, "must still fit the column's byte budget")
+	require.True(t, utf8.ValidString(got), "a mid-rune cut is what Postgres rejects")
+	require.Equal(t, strings.Repeat("a", 498), got, "back off to the rune boundary, never past it")
+
+	// Invalid UTF-8 already present in the input (arbitrary response bytes)
+	// is dropped rather than passed through to the driver.
+	require.True(t, utf8.ValidString(truncateFireError("ok \xff\xfe bytes")))
+
+	// Short, valid strings are untouched.
+	require.Equal(t, "callback answered 503", truncateFireError("callback answered 503"))
 }
 
 // TestFireNowRefusesALoopbackCallbackURL is CR-2's dial-time half, and the
