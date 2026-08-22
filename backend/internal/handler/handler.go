@@ -72,6 +72,9 @@ type Handlers struct {
 	// enveloped /api/v1/payment/* panel API -- this one translates for one
 	// client and does not replace it.
 	BillingContract *BillingContractHandler
+	// Agent serves the desktop's agent discovery/registration surface at
+	// /api/agents -- see AgentHandler's doc comment.
+	Agent *AgentHandler
 }
 
 // BuildInfo contains build-time information

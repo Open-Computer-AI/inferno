@@ -212,6 +212,7 @@ func ProvideHandlers(
 	batchImageHandler *BatchImageHandler,
 	oauthHandler *OAuthHandler,
 	billingContractHandler *BillingContractHandler,
+	agentHandler *AgentHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 ) *Handlers {
@@ -239,6 +240,7 @@ func ProvideHandlers(
 		BatchImage:       batchImageHandler,
 		OAuth:            oauthHandler,
 		BillingContract:  billingContractHandler,
+		Agent:            agentHandler,
 	}
 }
 
@@ -267,6 +269,7 @@ var ProviderSet = wire.NewSet(
 	ProvideBatchImageHandler,
 	ProvideOAuthHandler,
 	NewBillingContractHandler,
+	NewAgentHandler,
 
 	// Admin handlers
 	admin.NewDashboardHandler,

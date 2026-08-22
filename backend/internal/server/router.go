@@ -153,6 +153,12 @@ func registerRoutes(
 	// the token mint used.
 	routes.RegisterBillingContractRoutes(r, h.OAuth, h.BillingContract)
 
+	// The desktop's agent discovery/registration surface: GET /api/agents,
+	// POST /api/agents/register. Mounted at the server ROOT, deliberately
+	// NOT under /api/v1 and NOT on the panel envelope, for the same reason
+	// RegisterBillingContractRoutes is. See RegisterAgentRoutes.
+	routes.RegisterAgentRoutes(r, h.OAuth, h.Agent)
+
 	// GET/POST /oauth/authorize (Task 4): the browser-facing authorization
 	// endpoint, mounted at the server root -- not under /api -- and NOT
 	// bypassed to the embedded frontend by web.FrontendServer (see
