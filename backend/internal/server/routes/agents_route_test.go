@@ -96,9 +96,10 @@ func newAgentRouteEnv(t *testing.T) *agentRouteEnv {
 	tokenSvc := service.NewOAuthTokenService(entClient, keySvc, nil, nil, nil, agentRouteIssuer)
 	orgSvc := service.NewOrgService(entClient)
 	agentSvc := service.NewAgentRegistryService(entClient)
+	agentCronSvc := service.NewAgentCronService(entClient)
 
 	oauthH := handler.NewOAuthHandler(keySvc, clientSvc, orgSvc, nil, tokenSvc, nil)
-	agentH := handler.NewAgentHandler(agentSvc, orgSvc)
+	agentH := handler.NewAgentHandler(agentSvc, orgSvc, agentCronSvc)
 
 	r := gin.New()
 	RegisterAgentRoutes(r, oauthH, agentH)
@@ -164,13 +165,24 @@ func (e *agentRouteEnv) mint(t *testing.T, scope string) string {
 
 func (e *agentRouteEnv) mintForUser(t *testing.T, userID int64, scope string) string {
 	t.Helper()
+	return e.mintForClient(t, userID, agentRouteClientID, scope)
+}
+
+// mintForClient mints a token whose `aud` names clientID -- the
+// /api/agent-cron/* routes resolve the CALLING agent from this claim
+// (agent_handler.go's agentCronHandlerAgentRowID), not from a request-body
+// field, so a agent-cron test needs a token whose aud is the agent's own
+// public_id, not the shared "hermes-cli" desktop client agentRouteClientID
+// every other route test in this file uses.
+func (e *agentRouteEnv) mintForClient(t *testing.T, userID int64, clientID, scope string) string {
+	t.Helper()
 	key, err := e.keySvc.Active(context.Background())
 	require.NoError(t, err)
 
 	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iss":   agentRouteIssuer,
 		"sub":   strconv.FormatInt(userID, 10),
-		"aud":   agentRouteClientID,
+		"aud":   clientID,
 		"scope": scope,
 		"iat":   time.Now().Unix(),
 		"exp":   time.Now().Add(time.Hour).Unix(),
@@ -179,6 +191,38 @@ func (e *agentRouteEnv) mintForUser(t *testing.T, userID int64, scope string) st
 	signed, err := tok.SignedString(key.Private)
 	require.NoError(t, err)
 	return signed
+}
+
+// registerAgentClient creates BOTH the pieces /api/agent-cron/* needs to
+// identify a calling agent: an OAuthClient whose client_id is the agent's
+// own public_id (so a token minted with mintForClient(t, userID, publicID,
+// ...) verifies), and the matching Agent row (so
+// AgentRegistryService.ResolveOwnedAgentRowID finds it) -- owned by the
+// same userID and orgID so the ownership check in agent_registry.go passes.
+func (e *agentRouteEnv) registerAgentClient(t *testing.T, userID, orgID int64, publicID string) *dbent.Agent {
+	t.Helper()
+	ctx := context.Background()
+
+	_, err := e.db.OAuthClient.Create().
+		SetClientID(publicID).
+		SetKind("FIRST_PARTY").
+		SetName(publicID).
+		SetOwnerUserID(userID).
+		SetOrgID(orgID).
+		SetRedirectURIOrigin("https://agent.example.com").
+		SetStatus(service.ClientActive).
+		Save(ctx)
+	require.NoError(t, err)
+
+	row, err := e.db.Agent.Create().
+		SetPublicID(publicID).
+		SetUserID(userID).
+		SetOrgID(orgID).
+		SetName(publicID).
+		SetLastSeenAt(time.Now()).
+		Save(ctx)
+	require.NoError(t, err)
+	return row
 }
 
 func (e *agentRouteEnv) get(t *testing.T, path, authorization string) *httptest.ResponseRecorder {

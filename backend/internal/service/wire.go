@@ -828,6 +828,7 @@ var ProviderSet = wire.NewSet(
 	ProvideAuthService,
 	NewOrgService,
 	NewAgentRegistryService,
+	NewAgentCronService,
 	NewOAuthKeyService,
 	NewOAuthClientService,
 	NewOAuthAuthorizeService,

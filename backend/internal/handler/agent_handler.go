@@ -30,13 +30,23 @@ import (
 //     snake_case convention -- see agentRegisterRequest's field tags --
 //     while its response still matches GET's camelCase agent shape, for
 //     consistency between the two.
+//   - POST /api/agent-cron/provision, POST /api/agent-cron/cancel,
+//     GET /api/agent-cron/list -- Task 4's Chronos scheduler surface, built
+//     on AgentCronService. These ARE a shipping client's hardcoded wire
+//     contract (plugins/cron_providers/chronos/_nas_client.py's
+//     NasCronClient), so both request and response bodies use exactly that
+//     client's snake_case keys, never this codebase's own camelCase
+//     convention. See agentCronHandlerAgentRowID's doc comment for how the
+//     calling agent is identified -- the wire contract carries no
+//     agent-id field.
 type AgentHandler struct {
-	svc    *service.AgentRegistryService
-	orgSvc *service.OrgService
+	svc     *service.AgentRegistryService
+	orgSvc  *service.OrgService
+	cronSvc *service.AgentCronService
 }
 
-func NewAgentHandler(svc *service.AgentRegistryService, orgSvc *service.OrgService) *AgentHandler {
-	return &AgentHandler{svc: svc, orgSvc: orgSvc}
+func NewAgentHandler(svc *service.AgentRegistryService, orgSvc *service.OrgService, cronSvc *service.AgentCronService) *AgentHandler {
+	return &AgentHandler{svc: svc, orgSvc: orgSvc, cronSvc: cronSvc}
 }
 
 // agentHandlerUserID mirrors billingContractUserID: the caller's identity
@@ -248,4 +258,191 @@ func (h *AgentHandler) Register(c *gin.Context) {
 		"agent": agentJSON(*view),
 		"org":   orgJSON(org),
 	})
+}
+
+// ===========================================================================
+// /api/agent-cron/* -- Task 4's Chronos scheduler surface
+// ===========================================================================
+
+// agentCronHandlerAgentRowID resolves the CALLING agent's row id for the
+// /api/agent-cron/* surface. NasCronClient's wire contract
+// (plugins/cron_providers/chronos/_nas_client.py:96-123) carries no
+// agent-id field anywhere in its request bodies -- the agent authenticates
+// with its OWN existing access token, and that token's verified `aud`
+// claim IS its public_id (RegisterAgentInput.PublicID's doc comment: the
+// agent's OAuth client_id). RequireOAuthScope already publishes that
+// verified claim as OAuthContextKeyClientID -- "the CALLER'S IDENTITY,
+// which handlers act on" (middleware/oauth_scope.go's doc comment) -- so
+// this is the one place that identity gets turned into a row id, via
+// AgentRegistryService.ResolveOwnedAgentRowID (ruling-T2-2-shaped ownership
+// check: an agent id the caller does not own must not be addressable).
+//
+// Writes the HTTP response itself and returns ok=false on every
+// non-success path, mirroring agentHandlerUserID's pattern -- callers just
+// `return` on !ok.
+func (h *AgentHandler) agentCronHandlerAgentRowID(c *gin.Context) (int64, bool) {
+	userID, ok := agentHandlerUserID(c)
+	if !ok {
+		return 0, false
+	}
+
+	clientIDVal, ok := c.Get(middleware2.OAuthContextKeyClientID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+		return 0, false
+	}
+	clientID, ok := clientIDVal.(string)
+	if !ok || clientID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+		return 0, false
+	}
+
+	agentRowID, err := h.svc.ResolveOwnedAgentRowID(c.Request.Context(), userID, clientID)
+	if err != nil {
+		status := infraerrors.Code(err)
+		if status == 0 {
+			status = http.StatusInternalServerError
+		}
+		if status == http.StatusInternalServerError {
+			slog.Error("agent-cron: resolve caller's agent failed", "user_id", userID, "client_id", clientID, "error", err)
+		}
+		c.JSON(status, gin.H{"error": infraerrors.Reason(err), "message": infraerrors.Message(err)})
+		return 0, false
+	}
+
+	return agentRowID, true
+}
+
+// agentCronFireJSON renders one service.ArmedFireView into the exact shape
+// NasCronClient.list_armed documents each item as carrying:
+// {job_id, fire_at, schedule_id} (_nas_client.py:116-119) -- the same shape
+// this file's doc comment says Provision's response also uses ("e.g.
+// {schedule_id}").
+func agentCronFireJSON(v service.ArmedFireView) gin.H {
+	return gin.H{
+		"job_id":      v.JobID,
+		"fire_at":     v.FireAt,
+		"schedule_id": v.ScheduleID,
+	}
+}
+
+// agentCronProvisionRequest is POST /api/agent-cron/provision's body,
+// cited verbatim to NasCronClient.provision (_nas_client.py:96-108).
+type agentCronProvisionRequest struct {
+	JobID            string `json:"job_id"`
+	FireAt           string `json:"fire_at"`
+	AgentCallbackURL string `json:"agent_callback_url"`
+	DedupKey         string `json:"dedup_key"`
+}
+
+// ProvisionCron handles POST /api/agent-cron/provision. A duplicate arm
+// (the same dedup_key twice) is normal cold-start reconcile traffic, never
+// an error -- see AgentCronService.Provision's doc comment.
+func (h *AgentHandler) ProvisionCron(c *gin.Context) {
+	agentRowID, ok := h.agentCronHandlerAgentRowID(c)
+	if !ok {
+		return
+	}
+	if h.cronSvc == nil {
+		slog.Error("agent-cron: cron service is not wired")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+
+	var req agentCronProvisionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": "job_id, fire_at, agent_callback_url and dedup_key are required"})
+		return
+	}
+
+	view, err := h.cronSvc.Provision(c.Request.Context(), agentRowID, service.ProvisionInput{
+		JobID:            req.JobID,
+		FireAt:           req.FireAt,
+		AgentCallbackURL: req.AgentCallbackURL,
+		DedupKey:         req.DedupKey,
+	})
+	if err != nil {
+		status := infraerrors.Code(err)
+		if status == 0 {
+			status = http.StatusInternalServerError
+		}
+		if status == http.StatusInternalServerError {
+			slog.Error("agent-cron: provision failed", "agent_row_id", agentRowID, "error", err)
+		}
+		c.JSON(status, gin.H{"error": infraerrors.Reason(err), "message": infraerrors.Message(err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, agentCronFireJSON(*view))
+}
+
+// agentCronCancelRequest is POST /api/agent-cron/cancel's body, cited
+// verbatim to NasCronClient.cancel (_nas_client.py:110-112): {job_id}.
+type agentCronCancelRequest struct {
+	JobID string `json:"job_id"`
+}
+
+// CancelCron handles POST /api/agent-cron/cancel. Cancelling an unknown
+// job_id is a NO-OP returning 200, never an error -- the agent cancels
+// optimistically (AgentCronService.Cancel's doc comment).
+func (h *AgentHandler) CancelCron(c *gin.Context) {
+	agentRowID, ok := h.agentCronHandlerAgentRowID(c)
+	if !ok {
+		return
+	}
+	if h.cronSvc == nil {
+		slog.Error("agent-cron: cron service is not wired")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+
+	var req agentCronCancelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": "job_id is required"})
+		return
+	}
+
+	if err := h.cronSvc.Cancel(c.Request.Context(), agentRowID, req.JobID); err != nil {
+		status := infraerrors.Code(err)
+		if status == 0 {
+			status = http.StatusInternalServerError
+		}
+		if status == http.StatusInternalServerError {
+			slog.Error("agent-cron: cancel failed", "agent_row_id", agentRowID, "error", err)
+		}
+		c.JSON(status, gin.H{"error": infraerrors.Reason(err), "message": infraerrors.Message(err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{})
+}
+
+// ListCron handles GET /api/agent-cron/list -- best-effort, used by the
+// agent's cold-start reconcile (NasCronClient.list_armed,
+// _nas_client.py:114-123). Response shape: {"armed": [{job_id, fire_at,
+// schedule_id}, ...]} -- list_armed() reads data.get("armed") and
+// type-checks it is a list.
+func (h *AgentHandler) ListCron(c *gin.Context) {
+	agentRowID, ok := h.agentCronHandlerAgentRowID(c)
+	if !ok {
+		return
+	}
+	if h.cronSvc == nil {
+		slog.Error("agent-cron: cron service is not wired")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+
+	views, err := h.cronSvc.ListArmed(c.Request.Context(), agentRowID)
+	if err != nil {
+		slog.Error("agent-cron: list failed", "agent_row_id", agentRowID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+
+	armed := make([]gin.H, 0, len(views))
+	for _, v := range views {
+		armed = append(armed, agentCronFireJSON(v))
+	}
+	c.JSON(http.StatusOK, gin.H{"armed": armed})
 }

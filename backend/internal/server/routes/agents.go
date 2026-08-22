@@ -36,4 +36,19 @@ func RegisterAgentRoutes(r gin.IRouter, oauthH *handler.OAuthHandler, h *handler
 		agents.GET("", scoped, h.List)
 		agents.POST("/register", scoped, h.Register)
 	}
+
+	// Task 4's Chronos scheduler surface: an agent arms, cancels and
+	// cold-start-reconciles its own one-shot fires. Same gate as
+	// /api/agents -- any validly-signed, unexpired token, no
+	// agents:read/agents:manage requirement -- because this IS the wire
+	// contract plugins/cron_providers/chronos/_nas_client.py's
+	// NasCronClient hardcodes (paths, body keys, GET with no params for
+	// list), and that client carries the same bearer token it already uses
+	// for the rest of the portal API, nothing scope-specific.
+	agentCron := r.Group("/api/agent-cron")
+	{
+		agentCron.POST("/provision", scoped, h.ProvisionCron)
+		agentCron.POST("/cancel", scoped, h.CancelCron)
+		agentCron.GET("/list", scoped, h.ListCron)
+	}
 }

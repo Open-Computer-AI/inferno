@@ -501,6 +501,15 @@ backend/internal/handler/agent_handler.go
 backend/internal/server/routes/agents.go
 backend/internal/server/routes/agents_route_test.go
 backend/internal/service/agent_registry_test.go
+# D11 -- Chronos scheduler surface (task 4): an agent arms/cancels/lists its
+# own one-shot fires at /api/agent-cron/{provision,cancel,list}. Additive;
+# upstream has no such surface. agent_handler.go and routes/agents.go are
+# already declared under D10 (this task adds three methods/routes to those
+# same files); agent_registry.go/agent_registry_test.go are already declared
+# under D9 (this task adds ResolveOwnedAgentRowID to that same file).
+backend/internal/service/agent_cron.go
+backend/internal/service/agent_cron_test.go
+backend/internal/server/routes/agent_cron_route_test.go
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }
