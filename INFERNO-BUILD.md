@@ -1737,3 +1737,36 @@ re-litigated.
 
 **Last reviewed upstream SHA: `baeac1f3de21d37b129405f092ef86c24b3f203d`**
 (2026-08-15 13:40:21 UTC, "chore: sync VERSION to 0.1.177 [skip ci]").
+
+### 2026-08-22 — BLOCKED at Gate 5, no port attempted
+
+**4,777 commits behind.** Range `baeac1f3d` (previous last-reviewed SHA) ..
+`67380eafd` (2026-08-21 21:53 +0800, current `upstream/main` tip). Recovery
+tag `pre-sync-backup` set at the pre-rebase tip `4817289c4`.
+
+**Rebase: clean.** All 141 commits on `inferno-redesign` replayed onto
+`upstream/main`; one (`chore: align Docker Go toolchain`) dropped as an empty
+patch — its content already matched upstream's own Go-toolchain bump.
+
+**Gate 5 failed: 12 undeclared files under `backend/`**, all traced to
+`fix: make Inferno the default product branding` (already on
+`inferno-redesign`'s tip before this run started, not introduced by it). It
+adds `DefaultSiteName = "Inferno"` in `domain_constants.go` and replaces
+hardcoded `"Sub2API"` fallback strings across auth email flows, TOTP, balance
+notifications, content moderation, and the WebAuthn `rp_display_name` default
+— real, deliberate product work, same shape as the Razorpay case that later
+became D5/D6, just not yet declared. Per the hard rule, did not revert the
+commit and did not add it to `DECLARED` to force the gate green; reported
+instead in PR #9 for an owner decision (declare as D7, or revert).
+
+Steps 5-8 (frontend/backend gate, stale-file port, re-gate) not run — Gate 4
+blocks before them. **Last reviewed upstream SHA not advanced**, stays
+`baeac1f3d`.
+
+Also flagged in PR #9: four prior sync PRs (#5-#8, 2026-08-17 through
+2026-08-20) never merged despite #8 being green two days ago, so
+`inferno-redesign`'s reviewed SHA has been stuck at `baeac1f3d` for a week
+while local product work (this branding commit, the OAuth authorization
+server spec, D4/D5/D6 declarations, login/signup UI changes) kept advancing
+independently on top of it. The review bottleneck, not the reconcile
+mechanics, is the actual blocker at this point.
