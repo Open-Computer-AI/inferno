@@ -1660,3 +1660,55 @@ func TestSubscriptionDegradesToAnEmptyCatalogueWhenListPlansFails(t *testing.T) 
 	require.Equal(t, 1, fx.plan.listCalls, "one attempt, not one per consumer")
 	require.Equal(t, 0, fx.plan.groupInfoCalls, "no catalogue means no group query either")
 }
+
+// TestAccountSubscriptionReadsNoCatalogueWithoutASubscription is finding N-2 from
+// the fix re-review, and it exists because the FIRST I-3 fix regressed the case it
+// did not measure.
+//
+// I-3 collapsed three uncached reads on the polled GET /api/oauth/account down to
+// one -- but hoisted that one ABOVE the early return, so a caller with NO
+// subscription went from 0 catalogue reads to 1. That is the common case for a
+// fresh agent, and it is the case both I-3 tests missed because both seed a
+// subscribed user.
+//
+// The catalogue is consulted only to NAME the tier, which is unreachable without a
+// subscription. So: zero reads on this path, and the count is the assertion.
+func TestAccountSubscriptionReadsNoCatalogueWithoutASubscription(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.plan.plans = []*dbent.SubscriptionPlan{
+		{ID: 100, GroupID: 9, Name: "Pro", Price: 20, ValidityDays: 1, ValidityUnit: "month", ForSale: true},
+	}
+	// user 7 has NO active subscription.
+
+	got := svc.AccountSubscription(context.Background(), 7)
+
+	require.Nil(t, got, "no subscription -> the key is omitted entirely")
+	require.Zero(t, fx.plan.listCalls,
+		"the catalogue is only needed to NAME a tier; with no subscription there is "+
+			"nothing to name, so a polled endpoint must not pay for the query")
+	require.Zero(t, fx.plan.groupInfoCalls)
+}
+
+// TestAccountSubscriptionReadsTheCatalogueAtMostOnceWithASubscription pins the
+// other half: when the catalogue IS needed, resolveCurrentSubscription and
+// resolveTiers must share ONE read, not take one each.
+func TestAccountSubscriptionReadsTheCatalogueAtMostOnceWithASubscription(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	limit := 1000.0
+	fx.sub.byUser[7] = []UserSubscription{{
+		ID: 42, UserID: 7, GroupID: 9,
+		ExpiresAt: time.Date(2026, 9, 19, 0, 0, 0, 0, time.UTC),
+		Group:     &Group{ID: 9, Name: "Test ", MonthlyLimitUSD: &limit},
+	}}
+	fx.plan.plans = []*dbent.SubscriptionPlan{
+		{ID: 100, GroupID: 9, Name: "Pro Annual", Price: 200, ValidityDays: 12, ValidityUnit: "month", ForSale: true},
+	}
+	fx.plan.groupInfo = map[int64]PlanGroupInfo{9: {MonthlyLimitUSD: &limit}}
+
+	got := svc.AccountSubscription(context.Background(), 7)
+
+	require.NotNil(t, got)
+	require.Equal(t, "Pro Annual", got.Plan)
+	require.Equal(t, 1, fx.plan.listCalls,
+		"one memoised read shared by resolveCurrentSubscription and resolveTiers")
+}

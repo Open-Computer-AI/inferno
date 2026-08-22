@@ -14,7 +14,7 @@
 
 - **Bare JSON, never the panel envelope.** These are Nous-shaped endpoints like `/api/oauth/*`, not `/api/v1/*`. The client parses the raw object; `{code,message,data}` breaks it silently.
 - **User-facing services only.** The caller holds a *user's* OAuth token. Nothing here may reach an admin route or an admin service method.
-- **Reads take a valid token and no scope; writes take `billing:manage`** (ruling R-1.2; `billing:read` is requested by no client, so gating a read on it ships a dead endpoint). `billing:manage` is never granted at login and `/oauth/authorize` refuses it — so writes ship built and unreachable. That is deliberate; do not relax it.
+- **Reads take a valid token and no scope; writes take `billing:manage`** (ruling R-1.2; `billing:read` is requested by no client, so gating a read on it ships a dead endpoint). `billing:manage` is never granted at *login* and `/oauth/authorize` refuses it — but the **device grant DOES issue it** (verified live; `hermes_cli/auth.py`'s `step_up_nous_billing_scope` runs that flow). So the writes are reachable after a step-up, and their refusal is the response BODY, not the gate. Do not relax the gate.
 - **Fail loud on our side, quiet on theirs.** The client fails open (`build_billing_state` → `logged_in=false`). Never 500 the whole response because one optional aggregate failed — return the fields that resolved and log the rest.
 - **Infrastructure faults → 500, never an auth error.**
 - **No new tables, no migrations.** If a field needs one, it is out of scope; report it.
@@ -196,7 +196,7 @@ PATCH  /api/billing/auto-top-up                   nous_billing.py:492  → 501, 
 ```
 
 Corrected from an earlier version that said `PUT /auto-top-up` and omitted both
-pending-change writes (F-10). All on `billing:manage` — the scope nothing can
+pending-change writes (F-10). All on `billing:manage` — the scope only a device step-up can
 currently grant.
 
 - [ ] **Step 1: Write the gate test FIRST**

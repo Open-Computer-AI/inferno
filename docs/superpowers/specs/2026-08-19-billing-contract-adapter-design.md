@@ -184,10 +184,24 @@ as F-9: revisit if third-party clients ever get real users.
 
 `billing:manage` is the scope `oauth_scope_vocabulary.go` documents as *"never
 granted at initial login; must be elevated to via a second device flow"* — and
-which `/oauth/authorize` now refuses outright. **That rule stays.** The write
-endpoints exist and are correctly gated; nothing can reach them until the
-step-up flow is built, which is deliberate. A client asking for them today gets
-`403 insufficient_scope`, which is the honest answer.
+which `/oauth/authorize` refuses outright. **That rule stays.**
+
+**CORRECTED (whole-branch review, finding C-1).** An earlier version of this
+section said "nothing can reach them until the step-up flow is built". That was
+false and was never tested. The step-up flow **already exists on both sides**:
+`OAuthDeviceService.RequestCode` validates only against `knownScopes`, which
+contains `billing:manage`, and `hermes_cli/auth.py`'s `step_up_nous_billing_scope`
+runs exactly that device flow. Verified live — the device grant mints a token
+whose `scope` claim carries it, and the write endpoints accept it.
+
+The asymmetry between the two grants is deliberate, not an oversight: RFC 8628's
+device flow puts a human approval step in front of the elevation, which the
+redirect flow's silent re-consent does not.
+
+So a **stock** login token (`DEFAULT_NOUS_SCOPE = "inference:invoke"`) gets
+`403 insufficient_scope`, which is the honest answer for that token. A token that
+has been through the step-up reaches the handlers — and there the refusal is the
+response **body**, not the gate.
 
 ### Fail-open is the client's, not ours
 
@@ -213,8 +227,10 @@ Two fields the client reads that #4 deliberately omitted. Now resolvable:
 
 - **Stored payment methods / card vault.** Order-based checkout stays.
 - **Auto top-up.** Depends on the above.
-- **The `billing:manage` step-up device flow.** The write endpoints are built and
-  gated; the elevation flow that lets anyone reach them is its own change.
+- ~~**The `billing:manage` step-up device flow.**~~ **NOT a non-goal — it already
+  works.** Listed here originally on the false premise that it was unbuilt (C-1).
+  Both halves ship today: the device grant issues the scope and the client asks
+  for it. Nothing in this branch needs to build it.
 - **Retiring `/api/v1/payment/*`.** The panel uses it. This adapter sits beside
   it, translating for one client; it does not replace Inferno's own surface.
 - **Per-org monthly ceilings.** `limit_usd` stays null until the model exists.

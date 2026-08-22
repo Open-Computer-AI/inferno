@@ -669,9 +669,14 @@ func (s *BillingContractService) Subscription(ctx context.Context, userID int64)
 	// current.tierName and resolveTiers needs it for the picker; they used to
 	// call ListPlans separately, issuing two identical uncached full-table
 	// reads per request against an endpoint agents POLL.
+	// Subscription ALWAYS renders the tier list, so an eager read is right here
+	// -- unlike AccountSubscription, where the catalogue is only needed if the
+	// caller actually has a plan (finding N-2). Wrapped in a closure to match
+	// resolveCurrentSubscription's lazy signature; it is already resolved.
 	plans := s.listPlans(ctx)
+	plansFn := func() []*dbent.SubscriptionPlan { return plans }
 
-	current, activeGroupID, hasActive := s.resolveCurrentSubscription(ctx, userID, plans)
+	current, activeGroupID, hasActive := s.resolveCurrentSubscription(ctx, userID, plansFn)
 	out.Current = current
 	out.Tiers = s.resolveTiers(ctx, plans, activeGroupID, hasActive)
 
@@ -704,7 +709,12 @@ func (s *BillingContractService) listPlans(ctx context.Context) []*dbent.Subscri
 // whether one was actually found -- the group id alone cannot distinguish
 // "no subscription" from "subscription in group 0", though group ids in
 // practice start above 0.
-func (s *BillingContractService) resolveCurrentSubscription(ctx context.Context, userID int64, plans []*dbent.SubscriptionPlan) (*BillingCurrentSubscriptionView, int64, bool) {
+// plansFn is LAZY on purpose (finding N-2). The catalogue is consulted only to
+// NAME the tier, which is unreachable unless the caller actually has a
+// subscription -- so an eager read charges every no-subscription caller for a
+// query it never uses. AccountSubscription is polled by every running agent and
+// is exactly that caller.
+func (s *BillingContractService) resolveCurrentSubscription(ctx context.Context, userID int64, plansFn func() []*dbent.SubscriptionPlan) (*BillingCurrentSubscriptionView, int64, bool) {
 	subs, err := s.subSvc.ListActiveUserSubscriptions(ctx, userID)
 	if err != nil {
 		slog.Error("billing contract: active subscription lookup failed", "user_id", userID, "error", err)
@@ -729,7 +739,7 @@ func (s *BillingContractService) resolveCurrentSubscription(ctx context.Context,
 	// "Test " (the group's internal admin label). Falls back to the group name
 	// only when the group sells no plans. Caught by Task 6 conformance.
 	tierName := sub.Group.Name
-	if rep, ok := billingRepresentativePlanName(plans, sub.GroupID); ok {
+	if rep, ok := billingRepresentativePlanName(plansFn(), sub.GroupID); ok {
 		tierName = rep
 	}
 
@@ -1072,13 +1082,26 @@ type BillingAccountSubscriptionView struct {
 // drifts from the first is exactly the defect class this task exists to
 // avoid (see task-4-brief.md).
 func (s *BillingContractService) AccountSubscription(ctx context.Context, userID int64) *BillingAccountSubscriptionView {
-	// One catalogue read for the whole request (ruling I-3) -- see
-	// Subscription and listPlans. This endpoint is polled by every running
-	// agent, and Task 4 originally put THREE uncached reads on it, two of them
-	// the identical ListPlans query.
-	plans := s.listPlans(ctx)
+	// At most ONE catalogue read per request, and ZERO when the caller has no
+	// subscription (rulings I-3 and finding N-2). This endpoint is polled by
+	// every running agent. Task 4 put THREE uncached reads on it, two of them
+	// the identical ListPlans; the first I-3 fix collapsed those to one but
+	// hoisted it above the early return, so a caller with NO subscription --
+	// the common case for a fresh agent -- went from 0 reads to 1. The
+	// provider below is lazy AND memoised, so both resolveCurrentSubscription
+	// and resolveTiers share a single read when one is needed at all.
+	var (
+		cachedPlans []*dbent.SubscriptionPlan
+		plansRead   bool
+	)
+	plansFn := func() []*dbent.SubscriptionPlan {
+		if !plansRead {
+			cachedPlans, plansRead = s.listPlans(ctx), true
+		}
+		return cachedPlans
+	}
 
-	current, activeGroupID, hasActive := s.resolveCurrentSubscription(ctx, userID, plans)
+	current, activeGroupID, hasActive := s.resolveCurrentSubscription(ctx, userID, plansFn)
 	if !hasActive || current == nil {
 		return nil
 	}
@@ -1090,7 +1113,7 @@ func (s *BillingContractService) AccountSubscription(ctx context.Context, userID
 		CreditsRemaining: billingMoneyStringToFloat(current.CreditsRemaining),
 	}
 
-	for _, t := range s.resolveTiers(ctx, plans, activeGroupID, hasActive) {
+	for _, t := range s.resolveTiers(ctx, plansFn(), activeGroupID, hasActive) {
 		if t.IsCurrent {
 			order := t.TierOrder
 			view.Tier = &order

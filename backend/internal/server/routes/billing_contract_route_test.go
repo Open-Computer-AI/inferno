@@ -889,9 +889,14 @@ func TestBillingSubscriptionRouteCollapsesMultiPeriodGroupOnTheWire(t *testing.T
 // ===========================================================================
 // Task 5 -- the 7 write endpoints, all gated on billing:manage.
 //
-// billing:manage is refused outright by /oauth/authorize
-// (oauth_authorize_service.go:200) and no other flow can grant it, so every
-// one of these 403s in production today (ruling R-5.1). Step 1 of the brief:
+// billing:manage IS grantable: /oauth/authorize refuses it
+// (oauth_authorize_service.go), but the DEVICE grant does not -- it validates
+// only against knownScopes, which contains it, and hermes_cli/auth.py's
+// step_up_nous_billing_scope runs exactly that flow. Verified live: the device
+// flow mints a token whose scope claim carries it and the writes accept it.
+// The asymmetry is deliberate -- RFC 8628 has a human approval step the
+// redirect flow's silent re-consent does not. So these 403 for a STOCK login
+// token, not for every token that can exist (ruling R-5.1, corrected). Step 1 of the brief:
 // "the scope gate test is the most valuable thing you will write here" --
 // this section leads with it.
 // ===========================================================================
@@ -926,9 +931,10 @@ func billingWrites() []billingWrite {
 // exactly what every real hermes login holds before a step-up
 // (hermes_cli/auth.py's DEFAULT_NOUS_SCOPE == "inference:invoke") -- gets
 // 403 insufficient_scope from every one of the 7, at its exact method. This
-// protects a scope no flow can currently issue (ruling R-5.1): it is the
-// boundary that makes all 7 unreachable in production today, and the most
-// valuable test in this task.
+// protects the boundary that keeps all 7 out of reach of a STOCK login token.
+// It is NOT true that no flow can issue billing:manage -- the device grant
+// does (see the header note above) -- which is exactly why this gate is
+// load-bearing rather than belt-and-braces, and the most valuable test here.
 func TestBillingWriteRoutesRejectAStockClientTokenWithoutBillingManage(t *testing.T) {
 	env := newBillingRouteEnv(t)
 	tok := "Bearer " + env.mint(t, service.ScopeInferenceInvoke)
