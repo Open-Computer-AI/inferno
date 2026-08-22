@@ -70,6 +70,7 @@ func ProvideAuthService(
 	defaultSubAssigner DefaultSubscriptionAssigner,
 	affiliateService *AffiliateService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	orgService *OrgService,
 ) *AuthService {
 	svc := NewAuthService(
 		entClient,
@@ -85,10 +86,84 @@ func ProvideAuthService(
 		defaultSubAssigner,
 		affiliateService,
 		userPlatformQuotaRepo,
+		orgService,
 	)
 	svc.SetTencentCaptchaService(tencentCaptchaService)
 	svc.SetAliyunCaptchaService(aliyunCaptchaService)
 	return svc
+}
+
+// ProvideOAuthDeviceService wires OAuthDeviceService's portalBaseURL from
+// cfg.Server.FrontendURL — the browser-facing base URL already validated at
+// config load (rejects query strings and userinfo, warns on insecure
+// schemes), which is exactly the "human opens this in a browser" semantics
+// verification_uri needs. It defaults to "" for deployments that never set
+// it; RequestCode refuses to run in that case (service.ErrPortalNotConfigured)
+// rather than silently emitting a relative, unusable verification_uri.
+func ProvideOAuthDeviceService(entClient *dbent.Client, cfg *config.Config) *OAuthDeviceService {
+	return NewOAuthDeviceService(entClient, cfg.Server.FrontendURL)
+}
+
+// ProvideOAuthTokenService wires OAuthTokenService's issuer from
+// cfg.Server.FrontendURL — the same publicly reachable base URL used for
+// the device flow's verification_uri, and the origin JWKS is served from
+// ({issuer}/.well-known/jwks.json), so agent-side ES256 verification can
+// resolve the signing key from the "iss" claim alone. refreshTokenCache is
+// the SAME Redis-backed store panel sessions use (repository.NewRefreshTokenCache)
+// — OAuth refresh tokens are extra rows in that store, not a parallel one.
+// userRepo is the same UserRepository AuthService uses; it satisfies
+// OAuthUserLookup structurally, no adapter needed.
+func ProvideOAuthTokenService(entClient *dbent.Client, keySvc *OAuthKeyService, deviceSvc *OAuthDeviceService, refreshTokenCache RefreshTokenCache, userRepo UserRepository, cfg *config.Config) *OAuthTokenService {
+	return NewOAuthTokenService(entClient, keySvc, deviceSvc, refreshTokenCache, userRepo, cfg.Server.FrontendURL)
+}
+
+// ProvideBillingContractService wires the /api/billing/* contract adapter over
+// the services that already hold the data.
+//
+// The BALANCE comes from BillingCacheService, not UserRepository: this
+// endpoint is polled by every running agent, the balance is its hottest field,
+// and BillingCacheService is where the Redis layer, the async write workers
+// and the singleflight on the miss path live. Every deploy is DB+Redis, so
+// that cache is never absent -- and when Redis is down it falls back to the
+// database itself, which is why reaching past it buys nothing and costs a
+// query storm.
+//
+// portalBaseURL is cfg.Server.FrontendURL, the same browser-facing base URL
+// ProvideOAuthDeviceService and ProvideOAuthTokenService already use. "" is a
+// supported value: BillingStateView.PortalURL is then omitted rather than
+// emitted as a relative path.
+//
+// SubscriptionService IS now a dependency, added by GET /api/billing/subscription
+// (Task 3): task-1-report.md F4 deferred it because nothing in
+// BillingStateView is subscription-derived, but BillingSubscriptionView is
+// entirely subscription-derived.
+//
+// paymentCfgSvc is threaded in TWICE, once per narrow interface it satisfies:
+// BillingPaymentSource (top-up bounds) and BillingPlanSource (the plan
+// catalog). Same concrete service, two call sites in Go's eyes -- kept
+// separate so a test can break one without the other, per this file's
+// one-interface-per-concern convention.
+//
+// paymentSvc is Task 5's addition, backing the ONE implemented write,
+// GET /charge/{id}: it satisfies BillingChargeOrderSource, which since ruling
+// D-2 is GetOrder ONLY (payment_order.go:918). *PaymentService still has
+// CreateOrder; the adapter deliberately cannot see it, because POST
+// /api/billing/charge must not be able to create an order nobody can pay --
+// see BillingChargeOrderSource and BillingContractService.Charge.
+//
+// The *IdempotencyCoordinator this used to take is gone with it: the only
+// caller was the order-creating Charge, and a refusal has no side effect to
+// deduplicate.
+func ProvideBillingContractService(
+	billingCache *BillingCacheService,
+	orgSvc *OrgService,
+	usageSvc *UsageService,
+	paymentCfgSvc *PaymentConfigService,
+	subSvc *SubscriptionService,
+	paymentSvc *PaymentService,
+	cfg *config.Config,
+) *BillingContractService {
+	return NewBillingContractService(billingCache, orgSvc, usageSvc, paymentCfgSvc, paymentCfgSvc, subSvc, paymentSvc, cfg.Server.FrontendURL)
 }
 
 // ProvideOAuthRefreshAPI creates OAuthRefreshAPI with the default lock TTL.
@@ -751,6 +826,20 @@ func ProvideAPIKeyService(
 var ProviderSet = wire.NewSet(
 	// Core services
 	ProvideAuthService,
+	NewOrgService,
+	NewOAuthKeyService,
+	NewOAuthClientService,
+	NewOAuthAuthorizeService,
+	// OAuthBackingKeyService resolves a verified OAuth access token to the
+	// api_keys row the gateway pipeline meters against. Both of its inputs
+	// (*dbent.Client, *config.Config) are already in the graph.
+	NewOAuthBackingKeyService,
+	ProvideOAuthDeviceService,
+	ProvideOAuthTokenService,
+	// The /api/billing/* contract adapter. All five inputs already exist in
+	// the graph; see ProvideBillingContractService for why the balance comes
+	// from BillingCacheService and not from a repository.
+	ProvideBillingContractService,
 	NewPasskeyService,
 	NewUserService,
 	ProvideAPIKeyService,

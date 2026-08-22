@@ -311,6 +311,11 @@ func mustCreateApiKey(t *testing.T, client *dbent.Client, k *service.APIKey) *se
 	if k.GroupID != nil {
 		create.SetGroupID(*k.GroupID)
 	}
+	// A non-nil OAuthClientID makes this an OAuth BACKING row rather than an
+	// ordinary user-created key -- the distinction every Task 5 filter keys on.
+	if k.OAuthClientID != nil {
+		create.SetOauthClientID(*k.OAuthClientID)
+	}
 	if !k.CreatedAt.IsZero() {
 		create.SetCreatedAt(k.CreatedAt)
 	}

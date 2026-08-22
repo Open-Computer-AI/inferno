@@ -12,6 +12,7 @@ import { useNavigationLoadingState } from '@/composables/useNavigationLoading'
 import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { getSetupStatus } from '@/api/setup'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
+import { resolveAuthenticatedLoginRedirect } from './loginRedirect'
 import { resolveRouteDocumentTitle } from './title'
 import { isSettingsSectionKey } from '@/components/admin/settings/settingsRegistry'
 
@@ -405,6 +406,51 @@ const routes: RouteRecordRaw[] = [
       requiresAdmin: false,
       title: 'Payment',
       requiresPayment: false
+    }
+  },
+  {
+    // Load-bearing path: OAuthDeviceService.RequestCode
+    // (backend/internal/service/oauth_device_service.go) hardcodes
+    // "{frontend_url}/device" as verification_uri, and the hermes CLI prints
+    // that URL verbatim for the human to open. Not in the sidebar
+    // (hideInMenu) -- it is reached only via that printed link/QR code, never
+    // by navigating the app.
+    path: '/device',
+    name: 'DeviceApproval',
+    component: () => import('@/views/oauth/DeviceApprovalView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      hideInMenu: true,
+      title: 'Authorize device',
+      titleKey: 'device.title',
+      descriptionKey: 'device.description'
+    }
+  },
+  {
+    // Load-bearing path: this is a Vue route ONLY for the authenticated leg
+    // of the flow. The FIRST hit at this exact path is always a real
+    // top-level browser navigation the hermes client's system browser makes
+    // directly to backend/internal/handler/oauth_authorize_handler.go's
+    // GET/POST /oauth/authorize -- that handler is bypassed out of the
+    // embedded-frontend SPA fallback (see shouldBypassEmbeddedFrontend in
+    // internal/web/bypass.go) precisely so it runs before this route ever
+    // could. This route only starts rendering once that handler has already
+    // sent an unauthenticated visitor to /login?redirect=/oauth/authorize?...
+    // and LoginView has pushed back here client-side (see LoginView.vue's
+    // post-login `router.push(redirectTo)`), with a JWT already in hand --
+    // AuthorizeConsentView.vue is what re-issues the request, this time
+    // authenticated, to actually complete the flow.
+    path: '/oauth/authorize',
+    name: 'OAuthAuthorize',
+    component: () => import('@/views/oauth/AuthorizeConsentView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      hideInMenu: true,
+      title: 'Authorize application',
+      titleKey: 'authorize.title',
+      descriptionKey: 'authorize.description'
     }
   },
   {
@@ -851,6 +897,14 @@ router.beforeEach(async (to, _from, next) => {
       // (they are blocked from all protected routes, so redirecting would cause a loop)
       if (appStore.backendModeEnabled && !authStore.isAdmin) {
         next()
+        return
+      }
+      // See loginRedirect.ts's doc comment for the full reasoning (why
+      // this exists, and why it is a separate importable function rather
+      // than inline logic here -- Task 4 fix round 2, review NEW-1).
+      const redirectTarget = resolveAuthenticatedLoginRedirect(to.path, to.query)
+      if (redirectTarget) {
+        next(redirectTarget)
         return
       }
       // Admin users go to admin dashboard, regular users go to user dashboard

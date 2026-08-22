@@ -407,7 +407,15 @@ func (s *adminServiceImpl) listUserAPIKeysForDeletion(ctx context.Context, userI
 			PageSize:  pageSize,
 			SortBy:    "id",
 			SortOrder: pagination.SortOrderAsc,
-		}, APIKeyListFilters{})
+		}, APIKeyListFilters{
+			// The ONLY caller that opts into backing rows. Deleting a user must
+			// tombstone every api_keys row they own; leaving the OAuth backing
+			// rows behind would strand live, never-expiring credentials owned by
+			// a user who no longer exists. The listing default (exclude) is what
+			// keeps them out of every response body -- this path writes
+			// tombstones, it does not answer an HTTP request.
+			IncludeOAuthBacking: true,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("list user api keys: %w", err)
 		}

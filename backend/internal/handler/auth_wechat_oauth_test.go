@@ -1401,6 +1401,7 @@ func newWeChatOAuthTestHandlerWithSettings(t *testing.T, invitationEnabled bool,
 		nil,
 		nil,
 		nil,
+		nil, // orgService
 	)
 
 	return &AuthHandler{
@@ -1462,6 +1463,10 @@ func (s *wechatOAuthRefreshTokenCacheStub) StoreRefreshToken(context.Context, st
 	return nil
 }
 
+func (s *wechatOAuthRefreshTokenCacheStub) PersistRefreshToken(context.Context, string, *service.RefreshTokenData, time.Duration) error {
+	return nil
+}
+
 func (s *wechatOAuthRefreshTokenCacheStub) GetRefreshToken(context.Context, string) (*service.RefreshTokenData, error) {
 	return nil, service.ErrRefreshTokenNotFound
 }
@@ -1496,4 +1501,8 @@ func (s *wechatOAuthRefreshTokenCacheStub) GetFamilyTokenHashes(context.Context,
 
 func (s *wechatOAuthRefreshTokenCacheStub) IsTokenInFamily(context.Context, string, string) (bool, error) {
 	return false, nil
+}
+
+func (s *wechatOAuthRefreshTokenCacheStub) MarkRotated(context.Context, string, *service.RefreshTokenData, []byte, time.Time) (*service.RefreshRotationResult, error) {
+	return nil, service.ErrRefreshTokenNotFound
 }

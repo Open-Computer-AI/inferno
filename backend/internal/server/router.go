@@ -34,6 +34,7 @@ func SetupRouter(
 	opsService *service.OpsService,
 	settingService *service.SettingService,
 	compositeResolver *service.CompositeRouteResolver,
+	oauthBackingKeyService *service.OAuthBackingKeyService,
 	cfg *config.Config,
 	redisClient *redis.Client,
 ) *gin.Engine {
@@ -90,7 +91,7 @@ func SetupRouter(
 	}
 
 	// 注册路由
-	registerRoutes(r, handlers, jwtAuth, optionalJWTAuth, adminAuth, apiKeyAuth, auditLog, stepUpAuth, apiKeyService, subscriptionService, opsService, settingService, compositeResolver, cfg, redisClient)
+	registerRoutes(r, handlers, jwtAuth, optionalJWTAuth, adminAuth, apiKeyAuth, auditLog, stepUpAuth, apiKeyService, subscriptionService, opsService, settingService, compositeResolver, oauthBackingKeyService, cfg, redisClient)
 
 	return r
 }
@@ -110,25 +111,70 @@ func registerRoutes(
 	opsService *service.OpsService,
 	settingService *service.SettingService,
 	compositeResolver *service.CompositeRouteResolver,
+	oauthBackingKeyService *service.OAuthBackingKeyService,
 	cfg *config.Config,
 	redisClient *redis.Client,
 ) {
-	// 通用路由（健康检查、状态等）
-	routes.RegisterCommonRoutes(r)
+	// 面板 API 限流器：认证接口按用户 ID、公开接口按安全客户端 IP，
+	// 防止高频刷管理面接口打爆数据库（阈值可在系统设置中调整）。
+	//
+	// Constructed here, ahead of /api/v1's registration below, purely so
+	// GET/POST /oauth/authorize (also registered before /api/v1) can use
+	// it too -- it only depends on redisClient/settingService, both
+	// already in scope from the top of this function, so moving it up is
+	// a reordering, not new wiring.
+	panelRateLimiter := middleware2.NewPanelRateLimiter(redisClient, settingService)
+
+	// 通用路由（健康检查、状态等）；also mounts OAuth 2.0 discovery
+	// (/.well-known/jwks.json) at the server ROOT, not under /api.
+	routes.RegisterCommonRoutes(r, h.OAuth)
+
+	// OAuth 2.0 self-service surface (bearer-authenticated), mounted at
+	// /api/oauth — not under /api/v1, see RegisterOAuthAPIRoutes.
+	routes.RegisterOAuthAPIRoutes(r, h.OAuth, jwtAuth)
+
+	// OAuth 2.0 device authorization flow (UNAUTHENTICATED — client_id is
+	// the identity), also under /api/oauth. See RegisterOAuthDeviceRoutes.
+	routes.RegisterOAuthDeviceRoutes(r, h.OAuth)
+
+	// OAuth resource-server surface: GET /api/oauth/account, authenticated
+	// by Task 6's RS256 bearer middleware (NOT jwtAuth). See
+	// RegisterOAuthAccountRoutes.
+	routes.RegisterOAuthAccountRoutes(r, h.OAuth)
+
+	// The Nous-shaped billing contract adapter: GET /api/billing/state.
+	// Mounted at /api/billing on the server ROOT -- deliberately NOT under
+	// /api/v1 and NOT on the panel's {code,message,data} envelope, for the
+	// same reason RegisterOAuthAccountRoutes is: the consumer is the hermes
+	// CLI, which hardcodes these paths and parses the raw object. Inferno's
+	// own /api/v1/payment/* surface (registered below) is untouched.
+	// h.OAuth is threaded in only so the route can build the RS256 bearer
+	// middleware from the same key service, client registry and issuer string
+	// the token mint used.
+	routes.RegisterBillingContractRoutes(r, h.OAuth, h.BillingContract)
+
+	// GET/POST /oauth/authorize (Task 4): the browser-facing authorization
+	// endpoint, mounted at the server root -- not under /api -- and NOT
+	// bypassed to the embedded frontend by web.FrontendServer (see
+	// shouldBypassEmbeddedFrontend in internal/web/bypass.go), since it
+	// is a real backend endpoint the hermes client's system browser
+	// navigates to directly, not a Vue route. panelRateLimiter passed
+	// through so RegisterOAuthAuthorizeRoute can apply
+	// PublicIPScoped("oauth_authorize") (Task 4 fix round 1, F15; scoped
+	// key added in fix round 2, review NEW-4 -- see that method's own doc
+	// comment for why a scoped key, not the bare PublicIP()
+	// RegisterModelPlazaRoutes uses, was needed here).
+	routes.RegisterOAuthAuthorizeRoute(r, h.OAuth, optionalJWTAuth, panelRateLimiter)
 
 	// API v1
 	v1 := r.Group("/api/v1")
-
-	// 面板 API 限流器：认证接口按用户 ID、公开接口按安全客户端 IP，
-	// 防止高频刷管理面接口打爆数据库（阈值可在系统设置中调整）。
-	panelRateLimiter := middleware2.NewPanelRateLimiter(redisClient, settingService)
 
 	// 注册各模块路由
 	routes.RegisterAuthRoutes(v1, h, jwtAuth, auditLog, redisClient, settingService, panelRateLimiter)
 	routes.RegisterUserRoutes(v1, h, jwtAuth, auditLog, settingService, panelRateLimiter)
 	routes.RegisterModelPlazaRoutes(v1, h, optionalJWTAuth, settingService, panelRateLimiter)
 	routes.RegisterAdminRoutes(v1, h, adminAuth, auditLog, stepUpAuth, settingService, panelRateLimiter)
-	routes.RegisterGatewayRoutes(r, h, apiKeyAuth, apiKeyService, subscriptionService, opsService, settingService, compositeResolver, cfg)
+	routes.RegisterGatewayRoutes(r, h, apiKeyAuth, apiKeyService, subscriptionService, opsService, settingService, compositeResolver, oauthBackingKeyService, cfg)
 	routes.RegisterPaymentRoutes(v1, h.Payment, h.PaymentWebhook, h.Admin.Payment, jwtAuth, adminAuth, auditLog, settingService, panelRateLimiter)
 
 	handler.RegisterPageRoutes(v1, cfg.Pricing.DataDir, gin.HandlerFunc(jwtAuth), gin.HandlerFunc(adminAuth), settingService)

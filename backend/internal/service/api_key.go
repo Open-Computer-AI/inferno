@@ -28,14 +28,21 @@ func IsWindowExpired(windowStart *time.Time, duration time.Duration) bool {
 }
 
 type APIKey struct {
-	ID          int64
-	UserID      int64
-	Key         string
-	Name        string
-	GroupID     *int64
-	Status      string
-	IPWhitelist []string
-	IPBlacklist []string
+	ID      int64
+	UserID  int64
+	Key     string
+	Name    string
+	GroupID *int64
+	// OAuthClientID is non-nil only on an internal OAuth backing row -- the
+	// api_keys row an OAuth access token resolves to (see
+	// OAuthBackingKeyService). It is NULL for every ordinary user-created key.
+	// Callers use it to refuse operations that must never touch a backing row:
+	// usage_logs_api_key_id_fkey is ON DELETE CASCADE and the row IS the quota
+	// ledger, so deleting one erases an agent's whole usage history.
+	OAuthClientID *string
+	Status        string
+	IPWhitelist   []string
+	IPBlacklist   []string
 	// 预编译的 IP 规则，用于认证热路径避免重复 ParseIP/ParseCIDR。
 	CompiledIPWhitelist *ip.CompiledIPRules `json:"-"`
 	CompiledIPBlacklist *ip.CompiledIPRules `json:"-"`
@@ -142,4 +149,21 @@ type APIKeyListFilters struct {
 	Search  string
 	Status  string
 	GroupID *int64 // nil=不筛选, 0=无分组, >0=指定分组
+
+	// IncludeOAuthBacking asks for OAuth backing rows to be listed too.
+	//
+	// The ZERO VALUE EXCLUDES THEM, and that default is deliberately the
+	// enforcement point for "a backing row appears in no key listing": a caller
+	// that has never heard of backing rows gets the safe behaviour, so a future
+	// endpoint cannot leak one by omission. The unsafe behaviour has to be
+	// asked for by name.
+	//
+	// It matters because a backing row carries a real, non-expiring
+	// api_keys.key that the server promised never to hand out (see
+	// OAuthBackingKeyService), and dto.APIKey serialises `key` verbatim --
+	// so listing one IS handing the secret out.
+	//
+	// Exactly one caller sets it: admin user deletion, which must tombstone
+	// every one of the user's rows, backing rows included.
+	IncludeOAuthBacking bool
 }

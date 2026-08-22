@@ -654,4 +654,73 @@ export default {
     },
   },
 
+  device: {
+    title: '授权设备',
+    description: '确认此代码与终端显示的一致,然后批准或拒绝。',
+    codeLabel: '设备代码',
+    codePlaceholder: 'XXXX-XXXX',
+    codeHint: '输入终端中显示的代码。',
+    approve: '批准',
+    approving: '批准中...',
+    deny: '拒绝',
+    denying: '拒绝中...',
+    checking: '正在校验该代码...',
+    check: '继续',
+    requestedBy: '发起请求的应用',
+    requestedAccess: '申请的权限',
+    grantWarning:
+      '批准后,该应用将以你的身份登录,并获得一份可长期在后台使用的凭据,直到你主动撤销为止,而不仅限于本次浏览器会话。',
+    unknownScope: '无法识别的权限,请拒绝此请求。',
+    scopes: {
+      inferenceInvoke: '发起模型请求并消耗你的额度',
+      billingRead: '查看你的账单与额度余额',
+      billingManage: '向你扣费、变更套餐并自动充值',
+      agentsRead: '查看你账户下的 agent 列表',
+      agentsManage: '在你的账户下注册和撤销 agent',
+    },
+    approvedTitle: '设备已批准',
+    approvedBody: '你可以返回终端,它会自动继续。',
+    deniedTitle: '设备请求已拒绝',
+    deniedBody: '该设备未登录,你可以关闭此页面。',
+    expiredTitle: '代码已过期',
+    expiredBody: '此代码已失效,请重新运行命令获取新代码。',
+    decidedTitle: '该代码已被使用',
+    decidedBody: '此代码已记录过一次决定,无法再次批准。如果这不是你预期的结果,请重新运行命令获取新代码。',
+    errors: {
+      notFound: '未找到该代码,请检查后重试。',
+      generic: '出错了,请重试。',
+    },
+  },
+
+  // 授权码 + PKCE 同意屏幕(/oauth/authorize)-- RFC 6749 4.1 授权码授权的浏览器步骤,
+  // 由 hermes 桌面客户端的系统浏览器打开。与上面的 device(RFC 8628)不同:该流程通常
+  // 不可见,会直接跳转返回而不显示此屏幕,仅在请求的权限需要人工决定时才会渲染。
+  authorize: {
+    title: '授权应用',
+    description: '在批准之前,请先确认该应用请求的内容。',
+    loading: '正在校验此请求...',
+    requestedBy: '发起请求的应用',
+    requestedAccess: '申请的权限',
+    grantWarning:
+      '批准后,该应用将以你的身份登录,并获得一份可长期在后台使用的凭据,直到你主动撤销为止,而不仅限于本次浏览器会话。',
+    unknownScope: '无法识别的权限,请拒绝此请求。',
+    scopes: {
+      agentDashboardAccess: '查看你的 agent 仪表盘',
+      inferenceInvoke: '发起模型请求并消耗你的额度',
+      toolInvoke: '代表你使用工具',
+      billingRead: '查看你的账单与额度余额',
+      billingManage: '向你扣费、变更套餐并自动充值',
+      agentsRead: '查看你账户下的 agent 列表',
+      agentsManage: '在你的账户下注册和撤销 agent',
+    },
+    approve: '批准',
+    approving: '批准中...',
+    deny: '拒绝',
+    denying: '拒绝中...',
+    redirecting: '正在跳转返回...',
+    errors: {
+      generic: '此请求无法被授权,请从应用中重新发起。',
+    },
+  },
+
 }

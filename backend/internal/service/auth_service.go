@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/mail"
 	"strconv"
 	"strings"
@@ -86,6 +87,7 @@ type AuthService struct {
 	affiliateService      *AffiliateService
 	defaultSubAssigner    DefaultSubscriptionAssigner
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	orgService            *OrgService
 }
 
 type CaptchaProof struct {
@@ -121,6 +123,7 @@ func NewAuthService(
 	defaultSubAssigner DefaultSubscriptionAssigner,
 	affiliateService *AffiliateService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	orgService *OrgService,
 ) *AuthService {
 	return &AuthService{
 		entClient:             entClient,
@@ -136,6 +139,7 @@ func NewAuthService(
 		affiliateService:      affiliateService,
 		defaultSubAssigner:    defaultSubAssigner,
 		userPlatformQuotaRepo: userPlatformQuotaRepo,
+		orgService:            orgService,
 	}
 }
 
@@ -255,6 +259,12 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		default:
 			logger.LegacyPrintf("service.auth", "[Auth] Database error creating user: %v", err)
 			return "", nil, ErrServiceUnavailable
+		}
+	}
+	if s.orgService != nil {
+		if _, err := s.orgService.EnsurePersonalOrg(ctx, user.ID, user.Username); err != nil {
+			slog.Warn("auth: personal org creation failed, will retry on next login",
+				"user_id", user.ID, "error", err)
 		}
 	}
 	s.postAuthUserBootstrap(ctx, user, "email", true)
@@ -802,6 +812,12 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 					}
 					user = newUser
 					created = true
+					if s.orgService != nil {
+						if _, err := s.orgService.EnsurePersonalOrg(ctx, user.ID, user.Username); err != nil {
+							slog.Warn("oauth: personal org creation failed, will retry on next login",
+								"user_id", user.ID, "error", err)
+						}
+					}
 					s.postAuthUserBootstrap(ctx, user, signupSource, false)
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 					// snapshot user × platform quota（fail-open）
@@ -823,6 +839,12 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 				} else {
 					user = newUser
 					created = true
+					if s.orgService != nil {
+						if _, err := s.orgService.EnsurePersonalOrg(ctx, user.ID, user.Username); err != nil {
+							slog.Warn("oauth: personal org creation failed, will retry on next login",
+								"user_id", user.ID, "error", err)
+						}
+					}
 					s.postAuthUserBootstrap(ctx, user, signupSource, false)
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 					// snapshot user × platform quota（fail-open）
@@ -1629,6 +1651,50 @@ type TokenPairWithUser struct {
 	UserRole string
 }
 
+// ensurePersonalOrgForSession provisions the caller's personal org if it does
+// not exist yet, and never fails the caller.
+//
+// WHY THIS HANGS OFF GenerateTokenPair rather than each login handler:
+// EnsurePersonalOrg used to be called on the three REGISTRATION paths only
+// (SignUp and the two OAuth create branches above). That left two holes that a
+// per-task view could not see:
+//
+//  1. Every user who signed up before the org tables existed has zero
+//     org_members rows, and migration 904 added orgs.personal_user_id with no
+//     backfill. For them POST /api/oauth/self-hosted-client takes its
+//     len(orgs)==0 branch and 500s (so `oc dashboard register` cannot work at
+//     all) and GET /api/oauth/account reports no org.
+//  2. The registration-time call is deliberately fail-open, so a transient DB
+//     fault at signup left even a brand-new user permanently org-less — the
+//     "will retry on next login" in that warning was aspirational: no login
+//     path ever retried.
+//
+// GenerateTokenPair is the single funnel every authenticated session in this
+// codebase passes through (password login, every OAuth provider callback, the
+// pending-OAuth bind/adopt flows, and 2FA completion all reach it, directly or
+// via handler.respondWithTokenPair), so hooking it here fixes both holes at
+// once and cannot be missed by a login path added later. That is worth more
+// than the alternative of editing each of the eight call sites, which is
+// exactly the shape of omission that produced this bug.
+//
+// It also runs on the refresh-token rotation path (RefreshTokenPair), which is
+// deliberate and cheap: EnsurePersonalOrg is idempotent and, once the org
+// exists, costs two indexed reads. A long-lived session therefore self-heals
+// too, instead of having to be logged out and back in.
+//
+// Failures are warned and swallowed: org provisioning is not an authentication
+// decision, and a tenancy hiccup must never lock a user out of their own
+// panel. This preserves the posture of the registration-path calls.
+func (s *AuthService) ensurePersonalOrgForSession(ctx context.Context, user *User) {
+	if s.orgService == nil || user == nil || user.ID <= 0 {
+		return
+	}
+	if _, err := s.orgService.EnsurePersonalOrg(ctx, user.ID, user.Username); err != nil {
+		slog.Warn("auth: personal org provisioning failed during session issuance",
+			"user_id", user.ID, "error", err)
+	}
+}
+
 // GenerateTokenPair 生成Access Token和Refresh Token对
 // familyID: 可选的Token家族ID，用于Token轮转时保持家族关系
 func (s *AuthService) GenerateTokenPair(ctx context.Context, user *User, familyID string) (*TokenPair, error) {
@@ -1636,6 +1702,9 @@ func (s *AuthService) GenerateTokenPair(ctx context.Context, user *User, familyI
 	if s.refreshTokenCache == nil {
 		return nil, errors.New("refresh token cache not configured")
 	}
+
+	// 每次签发会话都补齐个人组织（幂等，失败不阻塞登录）。
+	s.ensurePersonalOrgForSession(ctx, user)
 
 	// 提前确定家族ID：作为 access token 的会话ID（sid），保证同一会话的
 	// access/refresh token 可以互相关联（单会话撤销、step-up 授权绑定）。

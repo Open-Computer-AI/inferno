@@ -1,8 +1,17 @@
 # Inferno as OAuth 2.0 Authorization Server — Design
 
 **Date:** 2026-08-17
-**Status:** Approved design, pre-implementation
+**Status:** Implemented, with one step deliberately deferred — see
+[What was NOT built](#what-was-not-built-in-this-branch) before relying on
+anything in this document.
 **Sub-project:** #4 of 4 in the OpenComputer portal swap
+
+> ⚠️ **Read this before treating any section below as describing running code.**
+> Implementation-order step 5 — `GET /oauth/authorize`, the `authorization_code`
+> grant, and PKCE — was **not built**. This document was written as a design and
+> still describes it in the present tense. The
+> [What was NOT built](#what-was-not-built-in-this-branch) section is the
+> authoritative list of what does and does not exist.
 
 ---
 
@@ -105,8 +114,24 @@ never validated by the same code path.
 - Algorithm: **ES256** (P-256). Smaller tokens than RS256, and Go's stdlib support is
   first-class. `golang-jwt/jwt/v5` is already a dependency.
 - Keys are stored in the existing `security_secret` table, versioned, with `kid`.
-- Rotation: publish the new key in JWKS, wait one max-access-token-TTL, then start
-  signing with it. Never remove a `kid` from JWKS while unexpired tokens reference it.
+- Rotation (**designed, NOT currently executable — see below**): publish the new key in
+  JWKS, wait one max-access-token-TTL, then start signing with it. Never remove a `kid`
+  from JWKS while unexpired tokens reference it.
+
+> ⚠️ **The rotation procedure above cannot be carried out as written today.** As built,
+> `OAuthKeyService` maintains exactly ONE key: `Active()` returns a single key and
+> `JWKS()` publishes a single-entry key set, so there is no overlap window to wait
+> through. On the verification side, `middleware.RequireOAuthScope` resolves the
+> verification key from the service's active key rather than dispatching on the token's
+> `kid` header, so a token signed with a previous key would not verify even if JWKS
+> still advertised it. `kid` is emitted on every token and published in JWKS — the
+> plumbing is in place and the client (PyJWT via `PyJWKClient`) already selects by
+> `kid` — but the server side of key overlap is not implemented. Rotating the key today
+> is a hard cutover that invalidates every unexpired access token (15 minutes) and
+> requires agents to re-verify against the new JWKS. Making the documented procedure
+> real needs: a second stored key with a distinct `kid`, `JWKS()` emitting both, and a
+> `kid`-indexed lookup in the verification path. Treat that as prerequisite work for
+> any planned rotation, not as an operational runbook that already works.
 
 ## Data model
 
@@ -206,36 +231,94 @@ the fully-formed `agent:{id}`. This is what `oc dashboard register` calls and wh
 
 Public. Current + previous signing keys by `kid`.
 
-### `GET /oauth/authorize` (browser)
+### `GET /oauth/authorize` (browser) — **NOT IMPLEMENTED, deferred**
 
 The gateway's upstream leg. **Auto-approves any current member of the client's org when
 a live portal session exists** — this is what makes desktop cloud sign-in silent
 (`main.ts:6224`). It removes the human click, never a security check: the gateway still
 completes its own PKCE exchange.
 
+## What was NOT built in this branch
+
+Recorded 2026-08-18, at the end of the whole-branch review. Implementation order
+step 5 was skipped; everything else in the list at the bottom of this document
+shipped.
+
+### Step 5 — `GET /oauth/authorize`, `authorization_code`, PKCE: deferred
+
+**None of it exists.** There is no `/oauth/authorize` route, no
+`authorization_code` grant (`POST /api/oauth/token` implements
+`urn:ietf:params:oauth:grant-type:device_code` and `refresh_token`, and returns
+`unsupported_grant_type` for everything else), and **no PKCE anywhere** — no
+`code_challenge` is stored, and no `SHA256(verifier) == challenge` check exists
+to be performed.
+
+This is defensible for what shipped: the device flow is a complete, working
+authorization path and it is what the real `hermes` CLI drives. It is NOT
+defensible to read the security-requirements section below as describing running
+code — requirements 1 and 3 there describe step 5, which does not exist.
+
+**Consequence that outlives the deferral: `oauth_client.redirect_uri_origin` is
+stored WITHOUT VALIDATION.** `POST /api/oauth/self-hosted-client` takes whatever
+origin the caller supplies and persists it verbatim. Nothing parses it, checks
+its scheme, or rejects a loopback or attacker-controlled host, because nothing
+ever redirects to it — there is no consumer today. Whoever implements step 5
+must treat that column as untrusted caller input from every row already in the
+table, and add validation at the point of use as well as at the point of write.
+Existing rows were never checked.
+
+### Key rotation: designed, not executable
+
+See the ⚠️ note under "The one significant blocker" above. A single key is
+published and verification does not dispatch on `kid`, so the documented
+publish-then-cut-over overlap procedure cannot currently be performed.
+
 ## Scopes
 
 | Scope | Grants |
 |---|---|
-| `inference` | `/v1/*` |
+| `inference:invoke` | `/v1/*` (corrected from `inference` — Task 8 found the real hermes client, `hermes_cli/auth.py`'s `NOUS_INFERENCE_INVOKE_SCOPE`, hardcodes `inference:invoke`; Task 6's `scopeSatisfies` is exact-match, so this table must name what the client actually sends) |
 | `billing:read` | read billing state |
 | `billing:manage` | charge, auto-top-up, subscription changes |
 | `agents:read` | `GET /api/agents` |
 | `agents:manage` | register/revoke clients |
 
+This table is now a **closed vocabulary, enforced** at
+`POST /api/oauth/device/code`: `service.ValidateScope` rejects anything outside it with
+`invalid_scope` (RFC 6749 §4.1.2.1). An empty/omitted `scope` is still accepted — it is
+optional per RFC 6749 §3.3 and grants nothing, since every guarded route requires a
+specific scope. Before this, `scope` was pass-through, which combined with a consent
+screen that showed only a code box to make a phishable elevation: request a device code
+for the well-known public `hermes-cli` client with `billing:manage agents:manage`, get
+the victim to paste the `user_code`, and poll out a 30-day credential carrying scopes
+they never saw. The approval screen now renders the requesting client and a
+human-readable permission list before Approve is offered at all (RFC 8628 §5.4).
+
 `billing:manage` is deliberately **not** granted at initial login. The desktop re-runs
 the device flow to elevate — `apps/desktop/src/app/settings/billing/use-step-up.tsx`
-already implements this and its tests assert the behaviour.
+already implements this and its tests assert the behaviour. Note this is still a
+**policy, not a code-enforced rule**: the allowlist above makes it expressible (you
+cannot police an open set), but nothing yet refuses `billing:manage` on a first device
+authorization. That belongs with the billing sub-project, which owns what elevation
+means.
 
 ## Security requirements
 
+> Requirements 1 and 3 below belong to implementation-order step 5, which was
+> **not built** — see [What was NOT built](#what-was-not-built-in-this-branch).
+> They are requirements ON that future work, not descriptions of shipped code.
+> Requirements 2 and 4-7 are implemented.
+
 1. **PKCE required on `authorization_code`.** Verify `SHA256(verifier) == challenge`.
    Codes are single-use; a second redemption invalidates the session.
+   **(NOT IMPLEMENTED — no `authorization_code` grant exists.)**
 2. **Refresh-token reuse invalidates the family**, not just the presented token. Inferno
    already implements this — the OAuth path must route through it, not around it.
 3. **`redirect_uri` must match the client's registered origin and end in
    `/auth/callback`.** Loopback redirects are rejected. This is precisely why the
    gateway must broker for the desktop; relaxing it collapses the security model.
+   **(NOT IMPLEMENTED — nothing redirects anywhere, and `redirect_uri_origin` is
+   currently persisted unvalidated. Treat stored values as untrusted.)**
 4. **Never unsigned-decode.** Copy the upstream posture: an empty JWKS URL refuses all
    tokens rather than degrading to an unverified decode
    (`config.py:3040`, `nas_jwks_url`).
@@ -326,7 +409,9 @@ weeks later.
 2. ES256 keypair + `security_secret` storage + `GET /.well-known/jwks.json`
 3. `oauth_client` table + `POST /api/oauth/self-hosted-client`
 4. Device flow: `POST /api/oauth/device/code` + `POST /api/oauth/token` + approval page
-5. `authorization_code` + PKCE + `GET /oauth/authorize` with org auto-approve
+5. ~~`authorization_code` + PKCE + `GET /oauth/authorize` with org auto-approve~~
+   — **DEFERRED, not built.** See
+   [What was NOT built](#what-was-not-built-in-this-branch).
 6. Scope enforcement middleware + `GET /api/oauth/account`
 7. Conformance run against the desktop's fixtures
 

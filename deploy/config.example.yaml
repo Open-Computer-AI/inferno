@@ -1134,6 +1134,29 @@ default:
   rate_multiplier: 1.0
 
 # =============================================================================
+# OAuth Backing Key / OAuth 代理密钥
+# =============================================================================
+# Group policy for OAuth-bearer inference.
+#
+# An OAuth access token has no api_keys row of its own, but the gateway needs
+# one: usage_logs.api_key_id is NOT NULL with an ON DELETE CASCADE foreign key,
+# the quota and rate-limit ledger IS the key row, and the key's group is the
+# only input to platform routing, channel pool selection, model mapping and
+# pricing. The server therefore resolves each token to an internal backing row,
+# and that row needs a group.
+#
+# The group is named here rather than guessed. There is deliberately NO default:
+# while this is empty, every OAuth access token is refused with a 403 naming the
+# missing policy, instead of being bound to whichever group happened to sort
+# first. Matched by name against an ACTIVE group, the same way the platform's
+# other default groups are matched (e.g. "anthropic-default").
+#
+# OAuth 承载令牌推理的分组策略。留空表示未配置：此时所有 OAuth 令牌都会被拒绝
+# （403 并指明缺失的配置），而不会被绑定到任意分组。
+oauth_backing_key:
+  group_name: ""
+
+# =============================================================================
 # Rate Limiting
 # 速率限制
 # =============================================================================

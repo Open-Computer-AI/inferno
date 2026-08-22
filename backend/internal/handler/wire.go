@@ -144,6 +144,28 @@ func ProvideBatchImageHandler(
 	return h
 }
 
+// ProvideOAuthHandler adapts the concrete service.UserRepository that wire
+// knows how to build down to the one-method service.OAuthUserLookup the
+// handler actually wants (it only ever reads the bearer's email for
+// GET /api/oauth/account). Same narrowing ProvideOAuthTokenService does, for
+// the same reason: the handler should not be able to reach a user-mutating
+// method by accident, and tests only have to stub one method.
+func ProvideOAuthHandler(
+	keySvc *service.OAuthKeyService,
+	clientSvc *service.OAuthClientService,
+	orgSvc *service.OrgService,
+	deviceSvc *service.OAuthDeviceService,
+	tokenSvc *service.OAuthTokenService,
+	userRepo service.UserRepository,
+	authorizeSvc *service.OAuthAuthorizeService,
+	billingSvc *service.BillingContractService,
+) *OAuthHandler {
+	h := NewOAuthHandler(keySvc, clientSvc, orgSvc, deviceSvc, tokenSvc, userRepo)
+	h.SetAuthorizeService(authorizeSvc)
+	h.SetBillingContractService(billingSvc)
+	return h
+}
+
 // ProvideSystemHandler creates admin.SystemHandler with UpdateService
 func ProvideSystemHandler(updateService *service.UpdateService, lockService *service.SystemOperationLockService) *admin.SystemHandler {
 	return admin.NewSystemHandler(updateService, lockService)
@@ -188,6 +210,8 @@ func ProvideHandlers(
 	modelPlazaHandler *ModelPlazaHandler,
 	asyncImageHandler *AsyncImageHandler,
 	batchImageHandler *BatchImageHandler,
+	oauthHandler *OAuthHandler,
+	billingContractHandler *BillingContractHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 ) *Handlers {
@@ -213,6 +237,8 @@ func ProvideHandlers(
 		ModelPlaza:       modelPlazaHandler,
 		AsyncImage:       asyncImageHandler,
 		BatchImage:       batchImageHandler,
+		OAuth:            oauthHandler,
+		BillingContract:  billingContractHandler,
 	}
 }
 
@@ -239,6 +265,8 @@ var ProviderSet = wire.NewSet(
 	NewModelPlazaHandler,
 	NewAsyncImageHandler,
 	ProvideBatchImageHandler,
+	ProvideOAuthHandler,
+	NewBillingContractHandler,
 
 	// Admin handlers
 	admin.NewDashboardHandler,

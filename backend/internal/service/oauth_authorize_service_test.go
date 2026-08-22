@@ -1,0 +1,602 @@
+package service
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/Wei-Shaw/sub2api/ent/oauthauthorizationcode"
+	"github.com/Wei-Shaw/sub2api/ent/oauthclient"
+
+	dbent "github.com/Wei-Shaw/sub2api/ent"
+)
+
+// failOnceRefreshTokenCache wraps a *fakeRefreshTokenCache and, while armed,
+// fails the very first PersistRefreshToken call (issueRefreshToken's only
+// Redis write) — simulating a transient infrastructure fault (a Redis
+// hiccup) downstream of a fully-validated authorization code redemption,
+// with nothing wrong with the caller's credential.
+//
+// It overrides PersistRefreshToken, not StoreRefreshToken: the three-write
+// sequence this service used to perform was folded into one atomic write
+// (see RefreshTokenCache.PersistRefreshToken), and an injection left
+// pointing at StoreRefreshToken would silently stop firing — a test that
+// passes because it no longer tests anything.
+// onFail, if set, runs synchronously at the moment the injected failure
+// fires — i.e. AFTER ExchangeAuthorizationCode's family-recording update
+// has run but BEFORE its rollback (which clears the family again) has had
+// a chance to. This is the only point at which "family recorded before
+// mint" is observable from outside: rollbackConsumedCode's
+// ClearIssuedTokenFamily means the row looks the same (family nil) both
+// before the record-then-mint sequence starts AND after a rollback
+// completes, so asserting on the row's state after the call returns cannot
+// distinguish "recorded, then failed, then cleared" from "never recorded
+// at all". Checking mid-flight is what actually pins the ordering down.
+type failOnceRefreshTokenCache struct {
+	*fakeRefreshTokenCache
+	armed  bool
+	onFail func()
+}
+
+func (f *failOnceRefreshTokenCache) PersistRefreshToken(ctx context.Context, tokenHash string, data *RefreshTokenData, ttl time.Duration) error {
+	if f.armed {
+		f.armed = false
+		if f.onFail != nil {
+			f.onFail()
+		}
+		return errors.New("injected: transient refresh-token store failure")
+	}
+	return f.fakeRefreshTokenCache.PersistRefreshToken(ctx, tokenHash, data, ttl)
+}
+
+// pkcePair returns a fixed, valid-shaped PKCE verifier and its RFC 7636 S256
+// challenge (BASE64URL-NOPAD(SHA256(verifier))). The verifier's exact
+// content is irrelevant to these tests — only that redemption re-derives
+// the same challenge from it.
+func pkcePair() (verifier, challenge string) {
+	verifier = "test-code-verifier-with-enough-entropy-1234567890abcdefghijk"
+	sum := sha256.Sum256([]byte(verifier))
+	challenge = base64.RawURLEncoding.EncodeToString(sum[:])
+	return verifier, challenge
+}
+
+// authCodeFixture bundles the services and a registered client an
+// authorization-code test needs. redirectURI is the client's registered
+// origin plus the required /auth/callback suffix (service.ValidateRedirectURI).
+type authCodeFixture struct {
+	ctx         context.Context
+	entClient   *dbent.Client
+	authorize   *OAuthAuthorizeService
+	tokens      *OAuthTokenService
+	cache       *fakeRefreshTokenCache
+	users       *userLookupStub
+	clientID    string
+	redirectURI string
+}
+
+func newAuthCodeFixture(t *testing.T) *authCodeFixture {
+	t.Helper()
+	ctx := context.Background()
+	entClient := newPaymentConfigServiceTestClient(t)
+	clients := NewOAuthClientService(entClient)
+	keys := NewOAuthKeyService(entClient)
+	devices := NewOAuthDeviceService(entClient, "https://portal.example.com")
+	authorize := NewOAuthAuthorizeService(entClient)
+	cache := newFakeRefreshTokenCache()
+	users := newUserLookupStub()
+	tokens := NewOAuthTokenService(entClient, keys, devices, cache, users, "https://portal.example.com")
+
+	oc, err := clients.RegisterSelfHosted(ctx, 1, 42, "https://agent.example.com", "")
+	if err != nil {
+		t.Fatalf("RegisterSelfHosted: %v", err)
+	}
+
+	return &authCodeFixture{
+		ctx:         ctx,
+		entClient:   entClient,
+		authorize:   authorize,
+		tokens:      tokens,
+		cache:       cache,
+		users:       users,
+		clientID:    oc.ClientID,
+		redirectURI: "https://agent.example.com/auth/callback",
+	}
+}
+
+// issue issues a code for f's registered client with a fresh PKCE pair,
+// returning the raw code and the verifier that will redeem it.
+func (f *authCodeFixture) issue(t *testing.T) (code, verifier string) {
+	t.Helper()
+	verifier, challenge := pkcePair()
+	code, err := f.authorize.IssueCode(f.ctx, IssueCodeInput{
+		ClientID:            f.clientID,
+		RedirectURI:         f.redirectURI,
+		Scope:               ScopeInferenceInvoke,
+		CodeChallenge:       challenge,
+		CodeChallengeMethod: "S256",
+		UserID:              42,
+	})
+	if err != nil {
+		t.Fatalf("IssueCode: %v", err)
+	}
+	return code, verifier
+}
+
+// assertCodeStillConsumed re-reads code's row and fails the test unless its
+// status is still "consumed". Shared by every
+// TestAuthorizationCodeRejects* test that follows a credential-rejecting
+// ExchangeAuthorizationCode call: the property under test is not merely
+// "that call returned an error" (every one of these tests already checks
+// that) but "the code was not silently rolled back by it" — a rollback on
+// any of these branches would make the code retryable, defeating the
+// single-use guarantee ExchangeAuthorizationCode's docs describe at length.
+// Without a re-read here, a mutant that adds rollbackConsumedCode to a
+// validation branch passes the surrounding assertion unnoticed; see
+// TestAuthorizationCodeRejectsWrongVerifier's and
+// TestAuthorizationCodeRejectsRevokedClientWithoutRollback's doc comments
+// for the mutation evidence this pattern is built to catch, and
+// task-3-report.md's round-3 section for a newly-covered branch
+// specifically re-verified this way.
+func (f *authCodeFixture) assertCodeStillConsumed(t *testing.T, code string) {
+	t.Helper()
+	row, err := f.entClient.OAuthAuthorizationCode.Query().
+		Where(oauthauthorizationcode.Code(code)).
+		Only(f.ctx)
+	if err != nil {
+		t.Fatalf("query authorization code row: %v", err)
+	}
+	if row.Status != authCodeStatusConsumed {
+		t.Fatalf("a credential-rejecting validation failure must NOT roll the code back — "+
+			"expected status %q, got %q; a rolled-back code here would be retryable, defeating the single-use guarantee",
+			authCodeStatusConsumed, row.Status)
+	}
+}
+
+// TestAuthorizationCodeRoundTrip is the happy path: issue with a challenge,
+// redeem with the matching verifier.
+func TestAuthorizationCodeRoundTrip(t *testing.T) {
+	f := newAuthCodeFixture(t)
+	code, verifier := f.issue(t)
+
+	got, err := f.tokens.ExchangeAuthorizationCode(f.ctx, f.clientID, code, f.redirectURI, verifier)
+	if err != nil {
+		t.Fatalf("ExchangeAuthorizationCode: %v", err)
+	}
+	if got.AccessToken == "" || got.RefreshToken == "" {
+		t.Fatal("expected both access and refresh tokens")
+	}
+	if got.Scope != ScopeInferenceInvoke {
+		t.Fatalf("expected scope %q, got %q", ScopeInferenceInvoke, got.Scope)
+	}
+
+	// The row must now carry the issued family, ready for a replay to
+	// revoke it.
+	row, err := f.entClient.OAuthAuthorizationCode.Query().
+		Where(oauthauthorizationcode.Code(code)).
+		Only(f.ctx)
+	if err != nil {
+		t.Fatalf("query authorization code row: %v", err)
+	}
+	if row.Status != authCodeStatusConsumed {
+		t.Fatalf("expected status %q after redemption, got %q", authCodeStatusConsumed, row.Status)
+	}
+	if row.IssuedTokenFamily == nil || *row.IssuedTokenFamily == "" {
+		t.Fatal("expected issued_token_family to be recorded on the redeemed row")
+	}
+}
+
+// TestAuthorizationCodeIsSingleUseAndReplayRevokes proves RFC 6749 §4.1.2's
+// requirement: a replayed authorization code must not just fail for the
+// replayer, it must kill the token family the FIRST redemption minted. A
+// test that only checks the replay's own failure would pass against an
+// implementation that merely marks the code consumed and leaves the stolen
+// tokens live — assertion (b) below is the one that actually catches that.
+func TestAuthorizationCodeIsSingleUseAndReplayRevokes(t *testing.T) {
+	f := newAuthCodeFixture(t)
+	code, verifier := f.issue(t)
+
+	original, err := f.tokens.ExchangeAuthorizationCode(f.ctx, f.clientID, code, f.redirectURI, verifier)
+	if err != nil {
+		t.Fatalf("first exchange: %v", err)
+	}
+
+	// (a) The replay itself must be rejected.
+	if _, err := f.tokens.ExchangeAuthorizationCode(f.ctx, f.clientID, code, f.redirectURI, verifier); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("(a) expected ErrInvalidGrant on replay, got %v", err)
+	}
+
+	// (b) The refresh token the FIRST redemption minted must now be dead —
+	// the whole point of RFC 6749 §4.1.2's revoke-on-replay requirement.
+	// A dead family means DeleteTokenFamily removed the cache entry
+	// entirely, so the correct outcome is ErrInvalidGrant (not found), the
+	// same as ExchangeRefreshToken's own reuse test asserts for its
+	// equivalent case.
+	if _, err := f.tokens.ExchangeRefreshToken(f.ctx, f.clientID, original.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("(b) expected ErrInvalidGrant for the refresh token minted by the replayed code, got %v — "+
+			"the tokens from a replayed authorization code must be revoked, not just the replay rejected", err)
+	}
+}
+
+// TestAuthorizationCodeRejectsWrongVerifier: challenge derived from verifier
+// A, redemption attempted with verifier B.
+//
+// A wrong-verifier attempt must ALSO leave the code burned, not merely
+// fail its own call — this is the property the earlier internal-failure
+// rollback tests do NOT cover, and its absence is exactly what let a
+// mutant that rolls back on ANY failure (including this one, a genuine
+// credential rejection) pass all the other tests in this file: nothing
+// re-read the row or tried the code again. Two assertions close that gap:
+// the row is still "consumed" immediately after the failed attempt, and a
+// SECOND attempt — this time with the CORRECT verifier — still fails,
+// proving the code was not silently made retryable by the rejection.
+func TestAuthorizationCodeRejectsWrongVerifier(t *testing.T) {
+	f := newAuthCodeFixture(t)
+	code, verifier := f.issue(t)
+
+	if _, err := f.tokens.ExchangeAuthorizationCode(f.ctx, f.clientID, code, f.redirectURI, "a-completely-different-verifier-value"); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected ErrInvalidGrant for a mismatched code_verifier, got %v", err)
+	}
+	f.assertCodeStillConsumed(t, code)
+
+	// Retrying with the CORRECT verifier must still fail: the code is
+	// burned, full stop, regardless of which verifier is presented next.
+	if _, err := f.tokens.ExchangeAuthorizationCode(f.ctx, f.clientID, code, f.redirectURI, verifier); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected the code to remain burned even when retried with the correct verifier, got %v", err)
+	}
+}
+
+// TestAuthorizationCodeRejectsRedirectURIMismatch: redemption presents a
+// different redirect_uri than the one bound at issue.
+func TestAuthorizationCodeRejectsRedirectURIMismatch(t *testing.T) {
+	f := newAuthCodeFixture(t)
+	code, verifier := f.issue(t)
+
+	if _, err := f.tokens.ExchangeAuthorizationCode(f.ctx, f.clientID, code, "https://attacker.example.com/auth/callback", verifier); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected ErrInvalidGrant for a mismatched redirect_uri, got %v", err)
+	}
+	f.assertCodeStillConsumed(t, code)
+}
+
+// TestAuthorizationCodeRejectsPlainChallengeMethod: code_challenge_method
+// "plain" must be refused at issue time — RFC 7636 permits it, but it
+// provides no protection, so this server only ever issues S256 codes.
+func TestAuthorizationCodeRejectsPlainChallengeMethod(t *testing.T) {
+	f := newAuthCodeFixture(t)
+	_, challenge := pkcePair()
+
+	_, err := f.authorize.IssueCode(f.ctx, IssueCodeInput{
+		ClientID:            f.clientID,
+		RedirectURI:         f.redirectURI,
+		Scope:               ScopeInferenceInvoke,
+		CodeChallenge:       challenge,
+		CodeChallengeMethod: "plain",
+		UserID:              42,
+	})
+	if !errors.Is(err, ErrPlainChallengeMethodRejected) {
+		t.Fatalf("expected ErrPlainChallengeMethodRejected, got %v", err)
+	}
+}
+
+// TestIssueCodeRejectsUnknownClient proves the review's fourth finding is
+// closed: an unknown (or unusable) client_id must return the dedicated
+// ErrUnknownClient sentinel, discoverable via errors.Is, not a bare wrapped
+// error nothing can branch on. Task 4's /oauth/authorize handler MUST be
+// able to tell this apart from an ordinary rejection and refuse to redirect
+// — an unknown client_id has no registered redirect_uri to validate
+// against, so redirecting anywhere the caller names is an open redirect.
+func TestIssueCodeRejectsUnknownClient(t *testing.T) {
+	f := newAuthCodeFixture(t)
+	_, challenge := pkcePair()
+
+	_, err := f.authorize.IssueCode(f.ctx, IssueCodeInput{
+		ClientID:            "agent:this-client-id-was-never-registered",
+		RedirectURI:         f.redirectURI,
+		Scope:               ScopeInferenceInvoke,
+		CodeChallenge:       challenge,
+		CodeChallengeMethod: "S256",
+		UserID:              42,
+	})
+	if !errors.Is(err, ErrUnknownClient) {
+		t.Fatalf("expected ErrUnknownClient for an unregistered client_id, got %v", err)
+	}
+}
+
+// TestAuthorizationCodeRejectsForeignClient: a code issued for client A is
+// not redeemable by client B — the classic authorization-code interception
+// vector RFC 6749 §10.5 exists to close.
+func TestAuthorizationCodeRejectsForeignClient(t *testing.T) {
+	f := newAuthCodeFixture(t)
+	code, verifier := f.issue(t)
+
+	clients := NewOAuthClientService(f.entClient)
+	other, err := clients.RegisterSelfHosted(f.ctx, 1, 43, "https://other-agent.example.com", "")
+	if err != nil {
+		t.Fatalf("RegisterSelfHosted (other client): %v", err)
+	}
+
+	if _, err := f.tokens.ExchangeAuthorizationCode(f.ctx, other.ClientID, code, f.redirectURI, verifier); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected ErrInvalidGrant for a code redeemed by a different client, got %v", err)
+	}
+	f.assertCodeStillConsumed(t, code)
+}
+
+// TestAuthorizationCodeInternalFailureRollsBackAndFamilyIsRecordedBeforeMint
+// covers two of the review's Important findings at once:
+//
+//  1. An internal failure downstream of the consuming CAS (here: a
+//     transient refresh-token-store fault, the exact scenario the review
+//     used — "OAuthKeyService.Active blips... the user is bounced through a
+//     full browser re-login for a fault that had nothing to do with their
+//     credential") must roll the code back to "pending" rather than burn it
+//     — proven by redeeming the SAME code a second time, after the
+//     injected fault clears, and getting real tokens instead of
+//     ErrInvalidGrant.
+//  2. issued_token_family is recorded on the row BEFORE minting is
+//     attempted, not after — proven because the row still carries a
+//     non-nil IssuedTokenFamily immediately after the failed (and rolled
+//     back) first attempt, even though that attempt never produced a
+//     token. The old ordering (record-after-mint) would have left
+//     IssuedTokenFamily nil here, since the failure happens before the
+//     record-family step ever runs in that ordering.
+func TestAuthorizationCodeInternalFailureRollsBackAndFamilyIsRecordedBeforeMint(t *testing.T) {
+	ctx := context.Background()
+	entClient := newPaymentConfigServiceTestClient(t)
+	clients := NewOAuthClientService(entClient)
+	keys := NewOAuthKeyService(entClient)
+	devices := NewOAuthDeviceService(entClient, "https://portal.example.com")
+	authorize := NewOAuthAuthorizeService(entClient)
+	cache := &failOnceRefreshTokenCache{fakeRefreshTokenCache: newFakeRefreshTokenCache(), armed: true}
+	users := newUserLookupStub()
+	tokens := NewOAuthTokenService(entClient, keys, devices, cache, users, "https://portal.example.com")
+
+	oc, err := clients.RegisterSelfHosted(ctx, 1, 42, "https://agent.example.com", "")
+	if err != nil {
+		t.Fatalf("RegisterSelfHosted: %v", err)
+	}
+	redirectURI := "https://agent.example.com/auth/callback"
+	verifier, challenge := pkcePair()
+	code, err := authorize.IssueCode(ctx, IssueCodeInput{
+		ClientID:            oc.ClientID,
+		RedirectURI:         redirectURI,
+		Scope:               ScopeInferenceInvoke,
+		CodeChallenge:       challenge,
+		CodeChallengeMethod: "S256",
+		UserID:              42,
+	})
+	if err != nil {
+		t.Fatalf("IssueCode: %v", err)
+	}
+
+	// Checked mid-flight, at the exact moment the injected failure fires —
+	// after the family-recording update has run, before the rollback that
+	// is about to clear it again. This is the only point from which
+	// "family recorded before mint" is externally observable at all: the
+	// rollback's ClearIssuedTokenFamily (the Minor-review fold-in) makes
+	// the row's post-call state (family nil) identical whether the family
+	// was ever recorded or not.
+	var familyObservedMidFlight *string
+	var statusObservedMidFlight string
+	cache.onFail = func() {
+		row, qerr := entClient.OAuthAuthorizationCode.Query().
+			Where(oauthauthorizationcode.Code(code)).
+			Only(ctx)
+		if qerr != nil {
+			t.Fatalf("query authorization code row mid-flight: %v", qerr)
+		}
+		familyObservedMidFlight = row.IssuedTokenFamily
+		statusObservedMidFlight = row.Status
+	}
+
+	// First attempt: the code is fully valid, but the refresh-token store
+	// fails with an injected transient error.
+	if _, err := tokens.ExchangeAuthorizationCode(ctx, oc.ClientID, code, redirectURI, verifier); err == nil {
+		t.Fatal("expected the injected store failure to surface as an error")
+	} else if errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("an internal infrastructure failure must NOT be folded into ErrInvalidGrant, got %v", err)
+	}
+
+	if statusObservedMidFlight != authCodeStatusConsumed {
+		t.Fatalf("expected status %q at the moment of failure (before rollback), got %q", authCodeStatusConsumed, statusObservedMidFlight)
+	}
+	if familyObservedMidFlight == nil || *familyObservedMidFlight == "" {
+		t.Fatal("expected issued_token_family to already be recorded at the moment of failure — " +
+			"it must be written BEFORE mintAccessToken/issueRefreshToken run, not after")
+	}
+
+	// Post-call: the row must be back to pending AND the stale family
+	// cleared (the Minor fold-in) — a replay landing in the retry window
+	// below must not be able to find and revoke a family nothing was ever
+	// actually stored under.
+	row, err := entClient.OAuthAuthorizationCode.Query().
+		Where(oauthauthorizationcode.Code(code)).
+		Only(ctx)
+	if err != nil {
+		t.Fatalf("query authorization code row after failed attempt: %v", err)
+	}
+	if row.Status != authCodeStatusPending {
+		t.Fatalf("expected status %q after an internal failure (rolled back), got %q", authCodeStatusPending, row.Status)
+	}
+	if row.IssuedTokenFamily != nil {
+		t.Fatalf("expected issued_token_family to be cleared by the rollback, got %q", *row.IssuedTokenFamily)
+	}
+
+	// Second attempt, fault cleared: the SAME code must still redeem
+	// successfully — this is the whole point of rolling back rather than
+	// leaving the code permanently burned by an unrelated infrastructure
+	// blip.
+	got, err := tokens.ExchangeAuthorizationCode(ctx, oc.ClientID, code, redirectURI, verifier)
+	if err != nil {
+		t.Fatalf("retry after the fault cleared should succeed, got %v", err)
+	}
+	if got.AccessToken == "" || got.RefreshToken == "" {
+		t.Fatal("expected both access and refresh tokens on the successful retry")
+	}
+}
+
+// TestAuthorizationCodeReplayRevocationIsGatedOnClientID proves the
+// Minor-4 review fix: a client_id that is NOT the one an authorization code
+// was bound to at issue must not be able to revoke the family a DIFFERENT,
+// legitimate client already redeemed, merely by replaying that other
+// client's (leaked, e.g. via proxy logs or Referer) code with its own
+// client_id. Revocation must be gated on row.ClientID == the presented
+// client_id, not fire for any replay of any code.
+func TestAuthorizationCodeReplayRevocationIsGatedOnClientID(t *testing.T) {
+	f := newAuthCodeFixture(t)
+	code, verifier := f.issue(t)
+
+	original, err := f.tokens.ExchangeAuthorizationCode(f.ctx, f.clientID, code, f.redirectURI, verifier)
+	if err != nil {
+		t.Fatalf("legitimate exchange: %v", err)
+	}
+
+	clients := NewOAuthClientService(f.entClient)
+	foreign, err := clients.RegisterSelfHosted(f.ctx, 1, 43, "https://foreign-agent.example.com", "")
+	if err != nil {
+		t.Fatalf("RegisterSelfHosted (foreign client): %v", err)
+	}
+
+	// The foreign client replays the ALREADY-CONSUMED code under its own
+	// client_id. It must be rejected exactly like any other replay...
+	if _, err := f.tokens.ExchangeAuthorizationCode(f.ctx, foreign.ClientID, code, f.redirectURI, verifier); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected ErrInvalidGrant for a cross-client replay, got %v", err)
+	}
+
+	// ...but it must NOT have been able to revoke the legitimate client's
+	// family: the original refresh token must still work. Without the
+	// client_id gate, the line above would have called DeleteTokenFamily on
+	// f.clientID's family, and this call would fail with ErrInvalidGrant
+	// instead of succeeding.
+	if _, err := f.tokens.ExchangeRefreshToken(f.ctx, f.clientID, original.RefreshToken); err != nil {
+		t.Fatalf("expected the legitimate client's refresh token to still be live after a cross-client replay attempt, got %v", err)
+	}
+}
+
+// TestAuthorizationCodeExpires: past expires_at must reject redemption, and
+// no tokens must be minted.
+func TestAuthorizationCodeExpires(t *testing.T) {
+	f := newAuthCodeFixture(t)
+	code, verifier := f.issue(t)
+
+	if _, err := f.entClient.OAuthAuthorizationCode.Update().
+		Where(oauthauthorizationcode.Code(code)).
+		SetExpiresAt(time.Now().Add(-time.Minute)).
+		Save(f.ctx); err != nil {
+		t.Fatalf("backdate expires_at: %v", err)
+	}
+
+	if _, err := f.tokens.ExchangeAuthorizationCode(f.ctx, f.clientID, code, f.redirectURI, verifier); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected ErrInvalidGrant for an expired code, got %v", err)
+	}
+
+	// Two DIFFERENT properties, and both matter: the code must not have
+	// rolled back (assertCodeStillConsumed — status is still "consumed",
+	// not silently made retryable), AND no tokens were minted from it
+	// (IssuedTokenFamily is nil). These are not redundant: a rollback
+	// clears IssuedTokenFamily as part of reverting the row (see
+	// rollbackConsumedCode's ClearIssuedTokenFamily), so a family-only
+	// check here is satisfied by BOTH the correct behavior (never minted,
+	// so never recorded) AND the exact bug this test exists to catch (rolled
+	// back, which also clears any stale family) — it cannot tell the two
+	// apart. The status check is what actually discriminates them.
+	f.assertCodeStillConsumed(t, code)
+
+	row, err := f.entClient.OAuthAuthorizationCode.Query().
+		Where(oauthauthorizationcode.Code(code)).
+		Only(f.ctx)
+	if err != nil {
+		t.Fatalf("query authorization code row: %v", err)
+	}
+	if row.IssuedTokenFamily != nil {
+		t.Fatal("expected no issued_token_family for an expired code — no tokens should have been minted")
+	}
+}
+
+// TestAuthorizationCodeRejectsRevokedClientWithoutRollback proves the
+// review's first finding is closed on the RIGHT side too: assertClientUsable
+// returning ErrClientNotUsable is a genuine, deliberate, permanent policy
+// rejection (the client was revoked between issue and redemption), not an
+// infrastructure fault — so it must stay ErrInvalidGrant AND the code must
+// stay burned (no rollback). Rolling back here would make a revoked
+// client's already-consumed code retryable, which is exactly backwards:
+// revocation is supposed to be a one-way door.
+func TestAuthorizationCodeRejectsRevokedClientWithoutRollback(t *testing.T) {
+	f := newAuthCodeFixture(t)
+	code, verifier := f.issue(t)
+
+	if _, err := f.entClient.OAuthClient.Update().
+		Where(oauthclient.ClientID(f.clientID)).
+		SetStatus(ClientRevoked).
+		Save(f.ctx); err != nil {
+		t.Fatalf("revoke client: %v", err)
+	}
+
+	if _, err := f.tokens.ExchangeAuthorizationCode(f.ctx, f.clientID, code, f.redirectURI, verifier); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected ErrInvalidGrant for a revoked client, got %v", err)
+	}
+
+	row, err := f.entClient.OAuthAuthorizationCode.Query().
+		Where(oauthauthorizationcode.Code(code)).
+		Only(f.ctx)
+	if err != nil {
+		t.Fatalf("query authorization code row: %v", err)
+	}
+	if row.Status != authCodeStatusConsumed {
+		t.Fatalf("a revoked-client rejection (ErrClientNotUsable, a policy decision) must NOT roll the code back — "+
+			"expected status %q, got %q", authCodeStatusConsumed, row.Status)
+	}
+}
+
+// TestIssueCodeRefusesBillingManage is I-4.
+//
+// billing:manage is never grantable at initial login — only via a second,
+// explicit device-flow elevation (knownScopes' doc comment; ruling R-4.2).
+// The Authorize HANDLER enforced that and the SERVICE did not, and today the
+// handler is IssueCode's only caller, so there was no live hole. The rule
+// belongs to the GRANT, though, not to one HTTP entry point: a second caller
+// would otherwise silently mint a code carrying the exact scope the rule
+// exists to gate.
+//
+// Same precedent as ExchangeAuthorizationCode's CodeChallengeMethod != "S256"
+// check, which is likewise unreachable through the only caller that exists
+// and is likewise kept.
+func TestIssueCodeRefusesBillingManage(t *testing.T) {
+	f := newAuthCodeFixture(t)
+	_, challenge := pkcePair()
+
+	for _, scope := range []string{
+		ScopeBillingManage,
+		ScopeInferenceInvoke + " " + ScopeBillingManage,
+		ScopeBillingManage + " " + ScopeBillingRead,
+	} {
+		_, err := f.authorize.IssueCode(f.ctx, IssueCodeInput{
+			ClientID:            f.clientID,
+			RedirectURI:         f.redirectURI,
+			Scope:               scope,
+			CodeChallenge:       challenge,
+			CodeChallengeMethod: "S256",
+			UserID:              42,
+		})
+		if !errors.Is(err, ErrInvalidScope) {
+			t.Fatalf("scope %q: expected ErrInvalidScope, got %v", scope, err)
+		}
+	}
+
+	// The near-miss must NOT be refused: the check is exact, whitespace-split
+	// equality, so a scope that merely contains the string is unaffected.
+	// (billing:manage_nothing is outside the vocabulary, so use a real scope
+	// pair that would trip a strings.Contains implementation only if the
+	// entry itself were present.)
+	if _, err := f.authorize.IssueCode(f.ctx, IssueCodeInput{
+		ClientID:            f.clientID,
+		RedirectURI:         f.redirectURI,
+		Scope:               ScopeInferenceInvoke + " " + ScopeBillingRead,
+		CodeChallenge:       challenge,
+		CodeChallengeMethod: "S256",
+		UserID:              42,
+	}); err != nil {
+		t.Fatalf("an ordinary scope set must still be issuable: %v", err)
+	}
+}

@@ -66,6 +66,12 @@ type Handlers struct {
 	ModelPlaza       *ModelPlazaHandler
 	AsyncImage       *AsyncImageHandler
 	BatchImage       *BatchImageHandler
+	OAuth            *OAuthHandler
+	// BillingContract serves the Nous-shaped /api/billing/* surface the
+	// hermes client reads. Separate from Payment, which is Inferno's own
+	// enveloped /api/v1/payment/* panel API -- this one translates for one
+	// client and does not replace it.
+	BillingContract *BillingContractHandler
 }
 
 // BuildInfo contains build-time information

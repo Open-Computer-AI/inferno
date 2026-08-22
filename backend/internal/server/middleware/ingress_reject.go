@@ -28,6 +28,25 @@ const (
 	IngressRejectGroupUnassigned        IngressRejectReason = "group_unassigned"
 	IngressRejectInvalidAuthRateLimited IngressRejectReason = "invalid_auth_rate_limited"
 	IngressRejectAPIKeyAuthOverloaded   IngressRejectReason = "api_key_auth_overloaded"
+
+	// OAuth-bearer admission failures on the /v1 inference chain
+	// (OAuthOrAPIKeyAuth). They are separate reasons rather than reuses of
+	// IngressRejectInvalidAPIKey because the whole operator-side complaint the
+	// gap evidence records is that a request carrying a genuine OAuth
+	// credential was indistinguishable, in the access log, from a script
+	// spraying garbage API keys.
+	IngressRejectOAuthInvalidToken            IngressRejectReason = "oauth_invalid_token"
+	IngressRejectOAuthInsufficientScope       IngressRejectReason = "oauth_insufficient_scope"
+	IngressRejectOAuthBackingGroupUnavailable IngressRejectReason = "oauth_backing_group_unavailable"
+	// Backing-row expiry and quota exhaustion get their own reasons rather than
+	// sharing IngressRejectAPIKeyDisabled: this field is what an operator greps,
+	// and collapsing three distinct conditions onto one value makes "why did
+	// this agent stop" unanswerable from the access log. A DISABLED backing row
+	// keeps IngressRejectAPIKeyDisabled, which is exactly what it is and is
+	// worth aggregating together with the API-key path's version.
+	IngressRejectOAuthBackingKeyExpired        IngressRejectReason = "oauth_backing_key_expired"
+	IngressRejectOAuthBackingKeyQuotaExhausted IngressRejectReason = "oauth_backing_key_quota_exhausted"
+	IngressRejectOAuthSubscriptionNotFound     IngressRejectReason = "oauth_subscription_not_found"
 )
 
 const ingressRejectReasonContextKey = "ingress_reject_reason"

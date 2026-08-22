@@ -127,6 +127,10 @@ func (s *refreshTokenCacheStub) StoreRefreshToken(context.Context, string, *Refr
 	return nil
 }
 
+func (s *refreshTokenCacheStub) PersistRefreshToken(context.Context, string, *RefreshTokenData, time.Duration) error {
+	return nil
+}
+
 func (s *refreshTokenCacheStub) GetRefreshToken(context.Context, string) (*RefreshTokenData, error) {
 	return nil, ErrRefreshTokenNotFound
 }
@@ -161,6 +165,10 @@ func (s *refreshTokenCacheStub) GetFamilyTokenHashes(context.Context, string) ([
 
 func (s *refreshTokenCacheStub) IsTokenInFamily(context.Context, string, string) (bool, error) {
 	return false, nil
+}
+
+func (s *refreshTokenCacheStub) MarkRotated(context.Context, string, *RefreshTokenData, []byte, time.Time) (*RefreshRotationResult, error) {
+	return nil, ErrRefreshTokenNotFound
 }
 
 func (s *emailCacheStub) GetVerificationCode(ctx context.Context, email string) (*VerificationCodeData, error) {
@@ -254,6 +262,7 @@ func newAuthService(repo *userRepoStub, settings map[string]string, emailCache E
 		nil, // defaultSubAssigner
 		nil, // affiliateService
 		quotaRepo,
+		nil, // orgService
 	)
 }
 
@@ -908,7 +917,7 @@ func newAuthServiceWithDingTalkCfg(settings map[string]string, dtCfg config.Ding
 		DingTalk: dtCfg,
 	}
 	settingService := NewSettingService(&settingRepoStub{values: settings}, cfg)
-	return NewAuthService(nil, nil, nil, nil, cfg, settingService, nil, nil, nil, nil, nil, nil, nil)
+	return NewAuthService(nil, nil, nil, nil, cfg, settingService, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 // minDingTalkURLs 返回一个包含必填字段的基础 DingTalkConnectConfig（不设 Enabled/BypassRegistration/Policy）。
