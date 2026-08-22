@@ -3,11 +3,11 @@ package service
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 
@@ -115,32 +115,32 @@ func (f *fakeBillingSubscriptionSource) ListActiveUserSubscriptions(_ context.Co
 	return f.byUser[userID], nil
 }
 
-// fakeBillingChargeOrderSource stands in for *PaymentService's
-// BillingChargeOrderSource half (CreateOrder + GetOrder). GetOrder
+// fakeBillingChargeOrderSource stands in for *PaymentService. GetOrder
 // faithfully reproduces the REAL PaymentService.GetOrder's own error
 // contract (payment_order.go:918-927: infraerrors.NotFound for an unknown
 // id, infraerrors.Forbidden for one owned by someone else) so
 // ChargeStatus's "always pending, never distinguishable" behaviour is
 // exercised against the actual error shapes production returns, not an
 // invented pair of sentinels.
+//
+// It KEEPS CreateOrder even though BillingChargeOrderSource no longer declares
+// it (ruling D-2), for two reasons: the real *PaymentService still has the
+// method, so a fake without it would be a less faithful stand-in; and
+// TestChargeCannotCreateAnOrderAtAll needs a value that HAS CreateOrder to
+// prove its assertion is discriminating rather than vacuous. createCalls is
+// what that test's premise rests on -- if any charge path ever reached it
+// again, it would be non-zero.
 type fakeBillingChargeOrderSource struct {
-	createResp   *CreateOrderResponse
-	createErr    error
-	gotCreateReq CreateOrderRequest
-	createCalls  int
+	createCalls int
 
 	// orders is keyed by order id; UserID on the stored order drives the
 	// ownership check, exactly like the real GetOrder.
 	orders map[int64]*dbent.PaymentOrder
 }
 
-func (f *fakeBillingChargeOrderSource) CreateOrder(_ context.Context, req CreateOrderRequest) (*CreateOrderResponse, error) {
+func (f *fakeBillingChargeOrderSource) CreateOrder(context.Context, CreateOrderRequest) (*CreateOrderResponse, error) {
 	f.createCalls++
-	f.gotCreateReq = req
-	if f.createErr != nil {
-		return nil, f.createErr
-	}
-	return f.createResp, nil
+	return nil, errors.New("fake: CreateOrder must never be reached from the billing contract adapter")
 }
 
 func (f *fakeBillingChargeOrderSource) GetOrder(_ context.Context, orderID, userID int64) (*dbent.PaymentOrder, error) {
@@ -157,16 +157,14 @@ func (f *fakeBillingChargeOrderSource) GetOrder(_ context.Context, orderID, user
 // billingContractFixture holds the fakes so a test can reach in and break one
 // source at a time -- that is what the partial-degradation test needs.
 type billingContractFixture struct {
-	balance     *fakeBillingBalanceSource
-	org         *fakeBillingOrgSource
-	usage       *fakeBillingUsageSource
-	payment     *fakeBillingPaymentSource
-	plan        *fakeBillingPlanSource
-	sub         *fakeBillingSubscriptionSource
-	charge      *fakeBillingChargeOrderSource
-	idempotency *IdempotencyCoordinator
-	idemRepo    *inMemoryIdempotencyRepo
-	now         time.Time
+	balance *fakeBillingBalanceSource
+	org     *fakeBillingOrgSource
+	usage   *fakeBillingUsageSource
+	payment *fakeBillingPaymentSource
+	plan    *fakeBillingPlanSource
+	sub     *fakeBillingSubscriptionSource
+	charge  *fakeBillingChargeOrderSource
+	now     time.Time
 }
 
 // recordUsage sets the month-to-date ACTUAL cost -- actual_cost, not
@@ -194,10 +192,7 @@ func newBillingContractFixture(t *testing.T) (*BillingContractService, *billingC
 		charge: &fakeBillingChargeOrderSource{orders: map[int64]*dbent.PaymentOrder{}},
 		now:    time.Date(2026, 8, 19, 13, 45, 0, 0, time.UTC),
 	}
-	fx.idemRepo = newInMemoryIdempotencyRepo()
-	fx.idempotency = NewIdempotencyCoordinator(fx.idemRepo, DefaultIdempotencyConfig())
-
-	svc := NewBillingContractService(fx.balance, fx.org, fx.usage, fx.payment, fx.plan, fx.sub, fx.charge, fx.idempotency, "https://portal.example.com")
+	svc := NewBillingContractService(fx.balance, fx.org, fx.usage, fx.payment, fx.plan, fx.sub, fx.charge, "https://portal.example.com")
 	svc.now = func() time.Time { return fx.now }
 	return svc, fx
 }
@@ -1107,96 +1102,109 @@ func TestAccountSubscriptionIsolatesBetweenTwoUsers(t *testing.T) {
 // service-level behaviour + mapping-table tests.
 // ===========================================================================
 
-// TestChargeCreatesABalanceOrderAndReturnsItsIDAsChargeID pins the request
-// CreateOrder actually receives (nous_billing.py:525's amountUsd, a JSON
-// number, becomes the order Amount 1:1) and the 202 body's shape
-// (nous_billing.py:513-514, cli_billing_mixin.py:1155's `chargeId`).
-func TestChargeCreatesABalanceOrderAndReturnsItsIDAsChargeID(t *testing.T) {
-	svc, fx := newBillingContractFixture(t)
-	fx.charge.createResp = &CreateOrderResponse{OrderID: 501}
+// TestChargeRefusesWithNoPaymentMethodAndCreatesNothing is ruling D-2.
+//
+// The endpoint used to call the real CreateOrder and answer 202 {chargeId},
+// discarding CreateOrderResponse.PayURL -- the only thing that could pay the
+// order it had just created (payment_service.go:90-103). The order was
+// unpayable, and from the third attempt checkPendingLimit
+// (payment_order.go:251-264) refused new orders at defaultMaxPendingOrders=3
+// (payment_config_service.go:48), locking the user out of top-up from the
+// PANEL too, for defaultOrderTimeoutMin=30 minutes.
+//
+// The error code is the CLIENT's own vocabulary, which is what makes this a
+// usable refusal rather than a generic failure:
+// hermes_cli/cli_billing_mixin.py:1239 renders `no_payment_method` as
+// "No card on file -- top up and manage billing on the portal.", and
+// ui-tui/src/app/slash/commands/topup.ts:112 has its own copy for it.
+func TestChargeRefusesWithNoPaymentMethodAndCreatesNothing(t *testing.T) {
+	svc, _ := newBillingContractFixture(t)
 
-	got, err := svc.Charge(context.Background(), 7, 25.5, "idem-key-1")
+	got := svc.Charge(context.Background(), 7, 25.5, "idem-key-1")
 
-	require.NoError(t, err)
 	require.NotNil(t, got)
-	require.Equal(t, "501", got.ChargeID)
-	require.Equal(t, 1, fx.charge.createCalls)
-	require.Equal(t, int64(7), fx.charge.gotCreateReq.UserID)
-	require.Equal(t, 25.5, fx.charge.gotCreateReq.Amount)
-	require.Equal(t, payment.OrderTypeBalance, fx.charge.gotCreateReq.OrderType)
+	require.Equal(t, "no_payment_method", got.Error,
+		"the code the client keys its copy on (cli_billing_mixin.py:1239, topup.ts:112)")
+	require.NotEmpty(t, got.Message)
+	require.Equal(t, "https://portal.example.com/purchase", got.PortalURL,
+		"the refusal must carry a portalUrl -- _billing_render_charge_error prints it at :1265-1266")
 }
 
-// TestChargeMissingIdempotencyKeyIs400 pins the brief's exact requirement:
-// "a missing header is a 400, not a default" (nous_billing.py:511-521). The
-// order source must never be touched -- a missing key is refused before any
-// side effect, not defaulted into one.
-func TestChargeMissingIdempotencyKeyIs400(t *testing.T) {
-	svc, fx := newBillingContractFixture(t)
-	fx.charge.createResp = &CreateOrderResponse{OrderID: 501}
+// TestChargeCannotCreateAnOrderAtAll is the structural half of D-2, and it is
+// the assertion that actually holds the guarantee.
+//
+// Asserting "Charge did not call CreateOrder" would only pin today's control
+// flow; a future edit could reintroduce the call. BillingChargeOrderSource no
+// longer HAS CreateOrder, so the adapter cannot create an order by any path.
+// This test states that as a compile-time fact: the interface satisfies a
+// read-only shape, and a CreateOrder method on it would not compile here.
+func TestChargeCannotCreateAnOrderAtAll(t *testing.T) {
+	var src BillingChargeOrderSource = &fakeBillingChargeOrderSource{orders: map[int64]*dbent.PaymentOrder{}}
 
-	_, err := svc.Charge(context.Background(), 7, 25, "")
+	// The read half is present...
+	_, _ = src.GetOrder(context.Background(), 1, 7)
 
-	require.Error(t, err)
-	require.Equal(t, 400, infraerrors.Code(err))
-	require.Equal(t, 0, fx.charge.createCalls, "a missing Idempotency-Key must never reach CreateOrder")
+	// ...and the write half is absent. A type assertion to an interface
+	// carrying CreateOrder must FAIL for the value as seen through
+	// BillingChargeOrderSource -- if CreateOrder were ever added back to the
+	// interface, the compiler would let the assertion succeed and this fails.
+	type orderCreator interface {
+		CreateOrder(ctx context.Context, req CreateOrderRequest) (*CreateOrderResponse, error)
+	}
+	var iface any = src
+	_, isCreator := iface.(orderCreator)
+	require.True(t, isCreator, "the fake itself still has CreateOrder -- this pins the assertion is meaningful")
+
+	// The real check: the SERVICE holds only the narrow read interface, so
+	// nothing reachable from Charge can create an order. Proven by the fact
+	// that BillingChargeOrderSource has exactly one method.
+	require.Equal(t, 1, reflect.TypeOf((*BillingChargeOrderSource)(nil)).Elem().NumMethod(),
+		"BillingChargeOrderSource must stay READ-ONLY (GetOrder); adding a mutating method reopens the unpayable-order defect")
+	require.Equal(t, "GetOrder", reflect.TypeOf((*BillingChargeOrderSource)(nil)).Elem().Method(0).Name)
 }
 
-// TestChargeMissingIdempotencyKeyIs400EvenWhitespaceOnly: the client's own
-// pre-flight check trims before checking truthiness (nous_billing.py:518-521:
-// `idempotency_key.strip()` in the truthiness test) -- a whitespace-only
-// header must be treated the same as an absent one, not accepted as "present".
-func TestChargeMissingIdempotencyKeyIs400EvenWhitespaceOnly(t *testing.T) {
-	svc, fx := newBillingContractFixture(t)
-	_, err := svc.Charge(context.Background(), 7, 25, "   ")
-	require.Error(t, err)
-	require.Equal(t, 400, infraerrors.Code(err))
-	require.Equal(t, 0, fx.charge.createCalls)
+// TestChargeRefusesRegardlessOfIdempotencyKeyOrAmount: the refusal is
+// unconditional. It used to 400 IDEMPOTENCY_KEY_REQUIRED on a missing header
+// (nous_billing.py:511-521 makes the header mandatory), which was right while
+// the call had a side effect to deduplicate. It no longer has one, and a 400
+// about a header would reach _billing_render_charge_error's generic `else`
+// branch (cli_billing_mixin.py:1259) telling the user to fix a header that
+// would not have helped, instead of the true answer.
+func TestChargeRefusesRegardlessOfIdempotencyKeyOrAmount(t *testing.T) {
+	svc, _ := newBillingContractFixture(t)
+
+	for _, tc := range []struct {
+		name   string
+		amount float64
+		key    string
+	}{
+		{"no idempotency key", 25, ""},
+		{"whitespace-only key", 25, "   "},
+		{"zero amount", 0, "k"},
+		{"negative amount", -5, "k"},
+		{"huge amount", 1e9, "k"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := svc.Charge(context.Background(), 7, tc.amount, tc.key)
+			require.NotNil(t, got)
+			require.Equal(t, "no_payment_method", got.Error)
+		})
+	}
 }
 
-// TestChargeReusesTheSameKeyOnRetryWithoutCreatingASecondOrder is the brief's
-// other Step-6 requirement, proved against the REAL *IdempotencyCoordinator
-// (backed by the in-memory repo idempotency_test.go already defines in this
-// package) -- not a re-implementation of dedup logic in a fake, so this
-// actually exercises the production code path.
-func TestChargeReusesTheSameKeyOnRetryWithoutCreatingASecondOrder(t *testing.T) {
-	svc, fx := newBillingContractFixture(t)
-	fx.charge.createResp = &CreateOrderResponse{OrderID: 777}
+// TestChargeRefusalIsIdenticalForEveryUser: no per-caller state, so no caller
+// can be put into a worse position by anything an earlier caller did. The
+// MaxPendingOrders lockout C-3 describes was exactly that -- a user's own
+// earlier attempts denying their later ones.
+func TestChargeRefusalIsIdenticalForEveryUser(t *testing.T) {
+	svc, _ := newBillingContractFixture(t)
 
-	first, err := svc.Charge(context.Background(), 7, 25, "same-key")
-	require.NoError(t, err)
-	require.Equal(t, "777", first.ChargeID)
+	first := svc.Charge(context.Background(), 7, 25, "shared-key")
+	repeat := svc.Charge(context.Background(), 7, 25, "shared-key")
+	other := svc.Charge(context.Background(), 8, 25, "shared-key")
 
-	second, err := svc.Charge(context.Background(), 7, 25, "same-key")
-	require.NoError(t, err)
-	require.Equal(t, "777", second.ChargeID, "a retried charge must resolve to the SAME chargeId")
-	require.Equal(t, 1, fx.charge.createCalls, "the retry must never create a second order")
-}
-
-// TestChargeDifferentUsersSameLiteralKeyConflictsRatherThanCrossReplays
-// documents a real property of the SHARED IdempotencyCoordinator (not
-// something Task 5 introduces: internal/handler/idempotency_helper.go's
-// executeUserIdempotentJSON has the identical shape for every other
-// idempotent write in this app). The storage key is (scope, sha256(literal
-// key)) -- NOT actor-scoped -- so two different users choosing the exact
-// same literal key string under this scope hit the SAME stored record.
-// ActorScope only enters the FINGERPRINT, so the collision is caught as a
-// fingerprint mismatch -> 409 IDEMPOTENCY_KEY_CONFLICT, never a silent
-// cross-user replay of user 7's chargeId to user 8. That 409 is the safe
-// outcome: no data crosses the tenant boundary, and in production this is
-// academic anyway (the client's new_idempotency_key() mints a UUID per
-// purchase, so a real cross-user literal collision is not a live risk).
-func TestChargeDifferentUsersSameLiteralKeyConflictsRatherThanCrossReplays(t *testing.T) {
-	svc, fx := newBillingContractFixture(t)
-	fx.charge.createResp = &CreateOrderResponse{OrderID: 1}
-
-	gotUser7, err := svc.Charge(context.Background(), 7, 25, "shared-key")
-	require.NoError(t, err)
-	require.Equal(t, "1", gotUser7.ChargeID)
-
-	_, err = svc.Charge(context.Background(), 8, 25, "shared-key")
-	require.Error(t, err, "a different user's identical literal key must never replay user 7's chargeId")
-	require.Equal(t, 409, infraerrors.Code(err))
-	require.Equal(t, 1, fx.charge.createCalls, "the conflicting request must never create a second order either")
+	require.Equal(t, *first, *repeat, "a repeated charge must never degrade into a different answer")
+	require.Equal(t, *first, *other, "one user's attempts must never affect another's")
 }
 
 // TestChargeStatusMapsEveryInfernoOrderStatusToTheClientsThreeStates is the

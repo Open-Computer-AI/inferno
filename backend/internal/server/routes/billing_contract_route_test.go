@@ -120,28 +120,30 @@ func billingRouteActiveSubscription() stubBillingSubscription {
 	}}}
 }
 
-// stubBillingChargeSource backs Task 5's two IMPLEMENTED writes over the
-// REAL entClient the harness already builds -- GetOrder issues a REAL query
-// against the REAL PaymentOrder table (mirroring PaymentService.GetOrder's
-// exact error contract, payment_order.go:918-927), so the cross-tenant test
-// below seeds a genuine second user's row in the SAME database rather than a
-// fake stand-in. CreateOrder is a controllable stub: actually invoking a
-// payment provider needs a configured Razorpay/Stripe instance this harness
-// has no reason to stand up, and the wire-level property under test is the
-// STATUS CODE + BODY SHAPE of the surrounding contract, not provider I/O.
+// stubBillingChargeSource backs Task 5's ONE implemented write,
+// GET /charge/{id} (ruling R-5.1 as amended by D-2), over the REAL entClient
+// the harness already builds -- GetOrder issues a REAL query against the REAL
+// PaymentOrder table (mirroring PaymentService.GetOrder's exact error
+// contract, payment_order.go:918-927), so the cross-tenant test below seeds a
+// genuine second user's row in the SAME database rather than a fake stand-in.
+//
+// It still declares CreateOrder even though BillingChargeOrderSource no longer
+// does: *PaymentService has it, so a stub without it would be a less faithful
+// stand-in, and keeping it lets the charge tests assert over real HTTP that
+// nothing reached it.
 type stubBillingChargeSource struct {
-	entClient   *dbent.Client
-	createResp  *service.CreateOrderResponse
-	createErr   error
+	entClient *dbent.Client
+
+	// createCalls is a TRIPWIRE, not a knob. Since ruling D-2 the adapter's
+	// BillingChargeOrderSource declares GetOrder only, so nothing it holds can
+	// create an order; this counter exists so a test can assert that stayed
+	// true over real HTTP. It must be 0 after any /api/billing/charge request.
 	createCalls int
 }
 
-func (s *stubBillingChargeSource) CreateOrder(_ context.Context, _ service.CreateOrderRequest) (*service.CreateOrderResponse, error) {
+func (s *stubBillingChargeSource) CreateOrder(context.Context, service.CreateOrderRequest) (*service.CreateOrderResponse, error) {
 	s.createCalls++
-	if s.createErr != nil {
-		return nil, s.createErr
-	}
-	return s.createResp, nil
+	return nil, errors.New("stub: CreateOrder must never be reached from /api/billing/charge")
 }
 
 func (s *stubBillingChargeSource) GetOrder(ctx context.Context, orderID, userID int64) (*dbent.PaymentOrder, error) {
@@ -371,7 +373,6 @@ func newBillingRouteEnvWithSources(t *testing.T, planSrc service.BillingPlanSour
 	oauthH := handler.NewOAuthHandler(keySvc, clientSvc, nil, nil, tokenSvc, nil)
 
 	chargeSrc := &stubBillingChargeSource{entClient: entClient}
-	idemCoord := service.NewIdempotencyCoordinator(newInMemoryIdempotencyRepo(), service.DefaultIdempotencyConfig())
 
 	billingSvc := service.NewBillingContractService(
 		stubBillingBalance{balance: 42.50},
@@ -381,7 +382,6 @@ func newBillingRouteEnvWithSources(t *testing.T, planSrc service.BillingPlanSour
 		planSrc,
 		subSrc,
 		chargeSrc,
-		idemCoord,
 		billingRouteIssuer,
 	)
 
@@ -974,18 +974,35 @@ func TestBillingWriteRoutesRejectAnUnauthenticatedCall(t *testing.T) {
 
 // TestBillingWriteRoutesAdmitABillingManageToken proves the gate is not
 // simply broken closed for everyone: a token that DOES carry billing:manage
-// (the only way any of these becomes reachable, per a future step-up flow
-// this branch does not build) gets PAST the gate to the handler -- pinned
-// here by NOT getting 403, and each endpoint's own status is checked in
-// detail further down.
+// gets PAST the gate to the handler.
+//
+// Such a token is obtainable in production -- the device grant issues this
+// scope and the client's own step_up_nous_billing_scope requests it (ruling
+// D-1; pinned by
+// TestDeviceGrantIssuesBillingManageWhileAuthorizeCodeGrantRefusesIt in
+// internal/service). An earlier version of this comment said the step-up was
+// "a future flow this branch does not build", which was false.
+//
+// The property is asserted on the BODY, not the status, because POST /charge
+// legitimately answers 403 from its HANDLER (ruling D-2). The middleware's
+// refusal is `insufficient_scope` (server/middleware/oauth_scope.go:402) and
+// the handler's is `no_payment_method`; only the first means the gate
+// rejected us. Asserting NotEqual(403) would have to special-case /charge and
+// would then stop checking anything for it.
 func TestBillingWriteRoutesAdmitABillingManageToken(t *testing.T) {
 	env := newBillingRouteEnv(t)
-	env.charge.createResp = &service.CreateOrderResponse{OrderID: 1}
 	tok := "Bearer " + env.mint(t, service.ScopeBillingManage)
 
 	for _, w := range billingWrites() {
 		t.Run(w.name, func(t *testing.T) {
 			rec := env.do(t, w.method, w.path, tok, w.body, w.headers)
+			require.NotContains(t, rec.Body.String(), "insufficient_scope",
+				"a billing:manage token must never be refused BY THE GATE; body: %s", rec.Body.String())
+			if w.method == http.MethodPost && w.path == "/api/billing/charge" {
+				require.Equal(t, http.StatusForbidden, rec.Code, "charge refuses from the handler (D-2); body: %s", rec.Body.String())
+				require.Contains(t, rec.Body.String(), `"error":"no_payment_method"`)
+				return
+			}
 			require.NotEqual(t, http.StatusForbidden, rec.Code, "body: %s", rec.Body.String())
 		})
 	}
@@ -1026,59 +1043,103 @@ func TestBillingWriteRoutesWrongMethodIs405PinningTheExactMethod(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// The 2 implementable writes.
+// POST /charge (refused, ruling D-2) and GET /charge/{id} (implemented).
 // ---------------------------------------------------------------------------
 
-// TestChargeRouteMissingIdempotencyKeyIs400 pins the brief's exact wording:
-// "a missing header is a 400, not a default" (nous_billing.py:511-521).
-func TestChargeRouteMissingIdempotencyKeyIs400(t *testing.T) {
+// TestChargeRouteRefusesWithNoPaymentMethodOnTheWire is D-2 asserted where the
+// client actually reads it: the encoded response bytes.
+//
+// The status and the code are chosen by reading hermes_cli/nous_billing.py's
+// _raise_for_error (:310-380). 403 + `no_payment_method` is not
+// remote_spending_revoked (:363) and not insufficient_scope (:367), so it
+// raises a plain BillingError, not BillingScopeRequired -- which matters,
+// because cli_billing_mixin.py:1147 catches BillingScopeRequired FIRST and
+// would launch a device-flow step-up for a scope the caller already holds.
+// _billing_render_charge_error then hits its `elif code == "no_payment_method"`
+// branch (:1239) and prints the portalUrl (:1265-1266).
+//
+// The assertions are on rec.Body bytes, not a decoded map, because the client
+// fails open: a quoted number or a renamed key yields a blank screen and a
+// green test suite.
+func TestChargeRouteRefusesWithNoPaymentMethodOnTheWire(t *testing.T) {
 	env := newBillingRouteEnv(t)
-	env.charge.createResp = &service.CreateOrderResponse{OrderID: 1}
-	tok := "Bearer " + env.mint(t, service.ScopeBillingManage)
-
-	rec := env.do(t, http.MethodPost, "/api/billing/charge", tok, `{"amountUsd":10}`, nil)
-
-	require.Equal(t, http.StatusBadRequest, rec.Code, "body: %s", rec.Body.String())
-	require.Equal(t, 0, env.charge.createCalls, "a missing Idempotency-Key must never reach CreateOrder")
-}
-
-// TestChargeRouteAcceptsAndReturns202WithChargeId pins the 202 + {chargeId}
-// shape (nous_billing.py:513-514 docstring; cli_billing_mixin.py:1155 reads
-// result.get("chargeId")), asserted against the encoded JSON bytes.
-func TestChargeRouteAcceptsAndReturns202WithChargeId(t *testing.T) {
-	env := newBillingRouteEnv(t)
-	env.charge.createResp = &service.CreateOrderResponse{OrderID: 4242}
 	tok := "Bearer " + env.mint(t, service.ScopeBillingManage)
 
 	rec := env.do(t, http.MethodPost, "/api/billing/charge", tok, `{"amountUsd":10}`, map[string]string{"Idempotency-Key": "route-key-1"})
 
-	require.Equal(t, http.StatusAccepted, rec.Code, "body: %s", rec.Body.String())
-	require.Contains(t, rec.Body.String(), `"chargeId":"4242"`)
-	for _, k := range []string{"code", "message", "data"} {
-		var body map[string]any
-		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, http.StatusForbidden, rec.Code, "body: %s", rec.Body.String())
+	require.Contains(t, rec.Body.String(), `"error":"no_payment_method"`)
+	require.Contains(t, rec.Body.String(), `"portalUrl":"`+billingRouteIssuer+`/purchase"`)
+	require.NotContains(t, rec.Body.String(), "chargeId",
+		"a chargeId here would send the client into a 5-minute poll (cli_billing_mixin.py:1155-1160) for an order that does not exist")
+	require.NotContains(t, rec.Body.String(), "insufficient_scope",
+		"must not raise BillingScopeRequired -- that launches a step-up for a scope the caller already has")
+
+	// Bare JSON, never the panel envelope.
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	for _, k := range []string{"code", "data"} {
 		require.NotContains(t, body, k, "bare JSON, never the panel envelope")
 	}
+
+	// The whole point of D-2: no order was created, so nothing counts toward
+	// checkPendingLimit's MaxPendingOrders and no lockout can occur.
+	require.Equal(t, 0, env.charge.createCalls, "POST /charge must create NO order")
 }
 
-// TestChargeRouteSameIdempotencyKeyTwiceIsOneOrderSameChargeId is the
-// brief's other Step-6 requirement, over real HTTP + the real
-// *IdempotencyCoordinator backed by a real sqlite-backed repository (not a
-// fake dedup re-implementation).
-func TestChargeRouteSameIdempotencyKeyTwiceIsOneOrderSameChargeId(t *testing.T) {
+// TestChargeRouteRefusesEveryTimeAndNeverAccumulatesState is the lockout
+// property stated directly. The old behaviour created a real, unpayable
+// PaymentOrder per attempt and checkPendingLimit (payment_order.go:251-264)
+// refused at defaultMaxPendingOrders=3 (payment_config_service.go:48) with 429
+// TOO_MANY_PENDING -- for THIRTY MINUTES, and from the panel too. Four
+// identical attempts must now be four identical refusals.
+func TestChargeRouteRefusesEveryTimeAndNeverAccumulatesState(t *testing.T) {
 	env := newBillingRouteEnv(t)
-	env.charge.createResp = &service.CreateOrderResponse{OrderID: 555}
 	tok := "Bearer " + env.mint(t, service.ScopeBillingManage)
-	headers := map[string]string{"Idempotency-Key": "route-key-retry"}
 
-	first := env.do(t, http.MethodPost, "/api/billing/charge", tok, `{"amountUsd":10}`, headers)
-	second := env.do(t, http.MethodPost, "/api/billing/charge", tok, `{"amountUsd":10}`, headers)
+	var bodies []string
+	for i := 0; i < 4; i++ {
+		rec := env.do(t, http.MethodPost, "/api/billing/charge", tok, `{"amountUsd":10}`,
+			map[string]string{"Idempotency-Key": fmt.Sprintf("route-key-%d", i)})
+		require.Equal(t, http.StatusForbidden, rec.Code, "attempt %d must not degrade into another status; body: %s", i, rec.Body.String())
+		require.NotContains(t, rec.Body.String(), "TOO_MANY_PENDING", "attempt %d hit the pending-order limit C-3 describes", i)
+		bodies = append(bodies, rec.Body.String())
+	}
+	for i, b := range bodies {
+		require.Equal(t, bodies[0], b, "attempt %d answered differently from the first", i)
+	}
+	require.Equal(t, 0, env.charge.createCalls)
+}
 
-	require.Equal(t, http.StatusAccepted, first.Code, "body: %s", first.Body.String())
-	require.Equal(t, http.StatusAccepted, second.Code, "body: %s", second.Body.String())
-	require.Contains(t, first.Body.String(), `"chargeId":"555"`)
-	require.Contains(t, second.Body.String(), `"chargeId":"555"`, "a retried charge must resolve to the SAME chargeId")
-	require.Equal(t, 1, env.charge.createCalls, "the retry must never create a second order")
+// TestChargeRouteRefusesWithoutAnIdempotencyKeyToo: the refusal is
+// unconditional. This used to be a 400 IDEMPOTENCY_KEY_REQUIRED
+// (nous_billing.py:511-521 makes the header mandatory), correct while the call
+// had a side effect to deduplicate. It has none now, and a 400 about a header
+// falls through to _billing_render_charge_error's generic `else` branch
+// (cli_billing_mixin.py:1259) -- telling the user to fix a header instead of
+// telling them the truth.
+func TestChargeRouteRefusesWithoutAnIdempotencyKeyToo(t *testing.T) {
+	env := newBillingRouteEnv(t)
+	tok := "Bearer " + env.mint(t, service.ScopeBillingManage)
+
+	rec := env.do(t, http.MethodPost, "/api/billing/charge", tok, `{"amountUsd":10}`, nil)
+
+	require.Equal(t, http.StatusForbidden, rec.Code, "body: %s", rec.Body.String())
+	require.Contains(t, rec.Body.String(), `"error":"no_payment_method"`)
+	require.Equal(t, 0, env.charge.createCalls)
+}
+
+// TestChargeRouteMalformedBodyIsStill400: a garbage body is a caller bug and is
+// answered as one. The refusal is about payment methods; a request that never
+// parsed did not validly ask that question.
+func TestChargeRouteMalformedBodyIsStill400(t *testing.T) {
+	env := newBillingRouteEnv(t)
+	tok := "Bearer " + env.mint(t, service.ScopeBillingManage)
+
+	rec := env.do(t, http.MethodPost, "/api/billing/charge", tok, `{"amountUsd":`, map[string]string{"Idempotency-Key": "k"})
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, "body: %s", rec.Body.String())
+	require.Equal(t, 0, env.charge.createCalls)
 }
 
 // billingSeedForeignOrder inserts a REAL PaymentOrder row owned by a

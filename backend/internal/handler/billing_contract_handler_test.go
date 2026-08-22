@@ -82,14 +82,14 @@ func newBillingContractHandlerUnderTest(bal *billingHandlerBalance) *BillingCont
 }
 
 // newBillingContractHandlerUnderTestWithSub passes nil for the Task 5 charge
-// source and idempotency executor: none of the tests in this file exercise
-// Charge/ChargeStatus (those live in billing_contract_route_test.go, over
-// real HTTP, because the scope gate and the cross-tenant guarantee are wire-
-// level properties). Charge/ChargeStatus both guard against a nil dependency
-// (billing_contract.go) rather than panicking, so this is safe.
+// source: none of the tests in this file exercise Charge/ChargeStatus (those
+// live in billing_contract_route_test.go, over real HTTP, because the scope
+// gate and the cross-tenant guarantee are wire-level properties). ChargeStatus
+// guards against a nil dependency (billing_contract.go) rather than panicking,
+// and Charge has no dependency at all since ruling D-2, so this is safe.
 func newBillingContractHandlerUnderTestWithSub(bal *billingHandlerBalance, sub *billingHandlerSubscription) *BillingContractHandler {
 	return NewBillingContractHandler(service.NewBillingContractService(
-		bal, billingHandlerOrg{}, billingHandlerUsage{}, billingHandlerPayment{}, billingHandlerPlan{}, sub, nil, nil, "https://portal.example.com",
+		bal, billingHandlerOrg{}, billingHandlerUsage{}, billingHandlerPayment{}, billingHandlerPlan{}, sub, nil, "https://portal.example.com",
 	))
 }
 

@@ -144,12 +144,16 @@ func ProvideOAuthTokenService(entClient *dbent.Client, keySvc *OAuthKeyService, 
 // separate so a test can break one without the other, per this file's
 // one-interface-per-concern convention.
 //
-// paymentSvc and idempotency are Task 5's additions, backing the two
-// IMPLEMENTED writes (POST /charge, GET /charge/{id}): paymentSvc satisfies
-// BillingChargeOrderSource (it already has CreateOrder/GetOrder with the
-// exact signature, payment_order.go:25,918); idempotency is the SAME
-// *IdempotencyCoordinator every other idempotent write in this app already
-// shares (ProvideIdempotencyCoordinator), not a second store.
+// paymentSvc is Task 5's addition, backing the ONE implemented write,
+// GET /charge/{id}: it satisfies BillingChargeOrderSource, which since ruling
+// D-2 is GetOrder ONLY (payment_order.go:918). *PaymentService still has
+// CreateOrder; the adapter deliberately cannot see it, because POST
+// /api/billing/charge must not be able to create an order nobody can pay --
+// see BillingChargeOrderSource and BillingContractService.Charge.
+//
+// The *IdempotencyCoordinator this used to take is gone with it: the only
+// caller was the order-creating Charge, and a refusal has no side effect to
+// deduplicate.
 func ProvideBillingContractService(
 	billingCache *BillingCacheService,
 	orgSvc *OrgService,
@@ -157,10 +161,9 @@ func ProvideBillingContractService(
 	paymentCfgSvc *PaymentConfigService,
 	subSvc *SubscriptionService,
 	paymentSvc *PaymentService,
-	idempotency *IdempotencyCoordinator,
 	cfg *config.Config,
 ) *BillingContractService {
-	return NewBillingContractService(billingCache, orgSvc, usageSvc, paymentCfgSvc, paymentCfgSvc, subSvc, paymentSvc, idempotency, cfg.Server.FrontendURL)
+	return NewBillingContractService(billingCache, orgSvc, usageSvc, paymentCfgSvc, paymentCfgSvc, subSvc, paymentSvc, cfg.Server.FrontendURL)
 }
 
 // ProvideOAuthRefreshAPI creates OAuthRefreshAPI with the default lock TTL.

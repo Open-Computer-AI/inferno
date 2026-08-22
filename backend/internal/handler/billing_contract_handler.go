@@ -147,11 +147,23 @@ func billingContractWriteError(c *gin.Context, err error) {
 // own encoding for what it sends), unlike this adapter's own money OUTPUT
 // fields, which are decimal strings (see BillingChargeStatusView.AmountUSD's
 // doc comment).
+//
+// It is still parsed, and a malformed body is still a 400, even though the
+// service refuses every charge: a caller sending garbage should be told its
+// request was garbage, not handed a substantive answer about payment methods
+// it never validly asked for.
 type billingChargeRequest struct {
 	AmountUSD float64 `json:"amountUsd"`
 }
 
 // Charge handles POST /api/billing/charge (nous_billing.py:504-528).
+//
+// 403 + BillingRefusalView, never 202 (ruling D-2). The status is not
+// arbitrary: it is the one hermes_cli/nous_billing.py's _raise_for_error maps
+// to a plain BillingError carrying `error`, which
+// cli_billing_mixin.py:1239 renders as "No card on file". See
+// BillingContractService.Charge for the full status-to-exception reading, and
+// for why creating an order here locked users out of their own top-up flow.
 func (h *BillingContractHandler) Charge(c *gin.Context) {
 	userID, ok := billingContractUserID(c)
 	if !ok {
@@ -169,13 +181,8 @@ func (h *BillingContractHandler) Charge(c *gin.Context) {
 		return
 	}
 
-	idempotencyKey := c.GetHeader("Idempotency-Key")
-	accepted, err := h.svc.Charge(c.Request.Context(), userID, req.AmountUSD, idempotencyKey)
-	if err != nil {
-		billingContractWriteError(c, err)
-		return
-	}
-	c.JSON(http.StatusAccepted, accepted)
+	refusal := h.svc.Charge(c.Request.Context(), userID, req.AmountUSD, c.GetHeader("Idempotency-Key"))
+	c.JSON(http.StatusForbidden, refusal)
 }
 
 // ChargeStatus handles GET /api/billing/charge/{id} (nous_billing.py:530-545).
