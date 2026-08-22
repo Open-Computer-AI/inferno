@@ -1,4 +1,4 @@
-STATUS: complete
+STATUS: complete (fix round 1/5 addressed)
 
 # Task 4: /api/agent-cron/{provision,cancel,list}
 
@@ -249,3 +249,134 @@ Neither known flake (`TestFilterGrokFreeQuotaAccounts*`,
   `_nas_client.py` precisely once located (it is not in this repo -- found
   under `~/.cache/uv/archive-v0/.../plugins/cron_providers/chronos/_nas_client.py`,
   matching the brief's citation path 1:1).
+
+## Fix round 1/5 (review: spec ❌ / quality not approved -- 1 Critical, 1 Important, 1 accepted Minor)
+
+### CRITICAL -- Provision let one agent collide into another agent's row
+
+`agent_cron.go`'s `OnConflictColumns(agentcronfire.FieldDedupKey)` targeted a
+column that was field-level (globally) `.Unique()`. `dedup_key` is
+`{job_id}:{fire_at}` and `job_id` lives in the CALLING AGENT's own
+namespace -- two different agents legitimately arm identically-named jobs.
+Reviewer reproduced: agent 2 provisioning agent 1's `dedup_key` got HTTP 200
+carrying agent 1's `job_id`/`schedule_id`, no row of its own, agent 1's
+`updated_at` touched. Same shape as the T2-2 `Register` hijack; the reasoning
+did not get carried across from `public_id` to `dedup_key`.
+
+**Ruling T4-1 (structural fix, not just a guard):**
+
+1. `ent/schema/agent_cron_fire.go`: dropped `dedup_key`'s field-level
+   `.Unique()`, added a composite `index.Fields("agent_row_id",
+   "dedup_key").Unique()`. `go generate ./ent` regenerated only
+   `ent/migrate/schema.go` (uniqueness is a pure DB-constraint property, no
+   CRUD/validator code touches it).
+2. `backend/migrations/913_agent_cron_fires_dedup_key_per_agent.sql`: drops
+   912's inline constraint (Postgres's default name for a column-level
+   `UNIQUE`, `agent_cron_fires_dedup_key_key`) and creates the composite
+   index under the exact name ent generates
+   (`agentcronfire_agent_row_id_dedup_key`), styled after
+   `910_api_key_oauth_client_uniq_live_only.sql`.
+3. `agent_cron.go`'s `Provision`: `OnConflictColumns(agentcronfire.FieldAgentRowID,
+   agentcronfire.FieldDedupKey)` -- targets the composite index, so a
+   foreign agent's row can no longer be a conflict target at all.
+4. Kept a post-upsert `if row.AgentRowID != agentRowID { return
+   fmt.Errorf(...) }` assertion as defense in depth -- the composite index
+   should make this unreachable; asserted anyway per the instruction.
+
+**New test** `TestProvisionByTwoDifferentAgentsWithTheSameDedupKeyGivesEachItsOwnRow`:
+two agents provision the identical `dedup_key`, each gets its own row and
+its own `schedule_id`, `countFires() == 2`. Existing same-agent idempotency
+test (`TestProvisionTwiceWithTheSameDedupKeyArmsExactlyOneFire`) verified
+still green, unmodified.
+
+**Mutation proof** (compiles): reverted `OnConflictColumns` to
+`agentcronfire.FieldDedupKey` alone (the pre-fix single-column target).
+Against the now-composite-only schema this doesn't silently collide (as it
+did against Postgres's old single-column constraint) -- sqlite has no
+matching constraint to target at all, so the two-agent test fails with:
+
+```
+Error: agent cron: provision job "daily-report": SQL logic error:
+ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint (1)
+--- FAIL: TestProvisionByTwoDifferentAgentsWithTheSameDedupKeyGivesEachItsOwnRow
+```
+
+Proof that the composite target is load-bearing (a schema/query mismatch is
+the strongest form of "this wiring matters" available once the old
+single-column constraint no longer exists to collide against). Reverted,
+diffed empty against the pre-mutation copy, rebuilt clean.
+
+### IMPORTANT -- ruling T4-2: ResolveOwnedAgentRowID accepted a revoked agent
+
+`ListForUser` already filters `agent.RevokedAtIsNil()` (with its own test);
+`ResolveOwnedAgentRowID` -- the entry point for the entire
+`/api/agent-cron/*` surface -- did not. Revocation is the intended kill
+switch, and cron is precisely the capability that keeps running UNATTENDED
+after revocation if unchecked. Nothing sets `revoked_at` in production code
+yet (unreachable today), fixed before it needed to be reachable.
+
+Fix: added `agent.RevokedAtIsNil()` to the `Where` in
+`ResolveOwnedAgentRowID`. New test
+`TestResolveOwnedAgentRowIDRejectsARevokedAgent`: a revoked agent's
+`public_id` no longer resolves, even for its own owner.
+
+### MINOR (accepted) -- cross-tenant route coverage used the same user_id twice
+
+`TestAgentCronListRouteReturnsOnlyThisAgentsArmedFires` seeded two agents
+both under `agentRouteUserID`, so it could not distinguish `user_id`
+isolation from `agent_row_id` isolation at the route layer -- only the
+service-layer tests had a genuinely different `user_id`.
+
+Added two route tests:
+- `TestAgentCronListRouteIsolatesTwoGenuinelyDifferentUsers`: two real,
+  distinct users (7 and 9), each with their own registered agent; each
+  user's list call sees only their own fire.
+- `TestAgentCronProvisionRouteRejectsATokenWhoseSubDoesNotOwnTheAgentNamedByAud`:
+  a validly-signed token whose `sub` (9) does NOT own the agent its `aud`
+  names (registered to user 7) -> 403. Proves `agentCronHandlerAgentRowID`'s
+  ownership check is reachable and enforced at the HTTP layer, not just
+  exercised in the service's own unit tests.
+
+### No action
+
+Reviewer's Minor #4 (`org_id` absent from `ResolveOwnedAgentRowID`) --
+deliberate and correct per the reviewer's own note: `public_id` is globally
+unique and names one already-registered agent, unlike `ListForUser`'s
+multi-org browsing case. Left as-is.
+
+### Divergence for this round
+
+Declared `backend/migrations/913_agent_cron_fires_dedup_key_per_agent.sql`
+in both `check-divergence.sh`'s `DECLARED` list (under D8, since
+`agent_cron_fire.go` and `migrate/schema.go` were already declared there)
+and a new sub-note continuing D8 in `check-divergence.sh`. Corrected GOAL.md's
+D8 row: it previously documented `dedup_key` as globally `UNIQUE`, which
+this round makes false -- rewrote the description and the "re-apply after
+rebase" column to describe the composite-index behaviour and the
+912-then-913 apply order.
+
+### Commits (5, one per fix)
+
+- `8c9cf248ce` -- schema + migration 913 (composite unique index)
+- `f3f3b46499` -- service: target composite index in Provision's upsert +
+  two-agent test + mutation proof
+- `d682ba8b55` -- service: ResolveOwnedAgentRowID excludes revoked agents +
+  test
+- `1a561d5232` -- route tests: genuinely-different-user cross-tenant
+  coverage + forged-token ownership test
+- `7aa6d87228` -- divergence ledger: declare 913, correct D8's description
+
+### Gates after this round
+
+Divergence: `./inferno-frontend/scripts/check-divergence.sh` from repo root
+-- exit 1, same 9 pre-existing undeclared files as the original baseline
+(`auth_email_binding.go`, `auth_oauth_email_flow.go`,
+`balance_notify_service.go`, `content_moderation.go`,
+`domain_constants.go`, `payment_order_result_test.go`,
+`setting_features.go`, `setting_service_update_test.go`,
+`totp_service.go`). None of these are mine; count unchanged by this round.
+
+Full gate: `cd backend && go test -tags unit ./...` (timeout 600000) -- 52
+packages `ok`, 0 `FAIL` lines. Neither known flake
+(`TestFilterGrokFreeQuotaAccounts*`, `TestApplyCodexFingerprintClientMetadataRaw*`)
+fired.
