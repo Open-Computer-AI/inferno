@@ -152,3 +152,52 @@ Findings: C-1 (blank gateway-state label — PROMOTED to blocking by the review 
 IM-1, since `dashboardGatewayState` turns out to be the only status text the
 desktop renders) and C-2 (no activation path for a pending self-hosted client —
 triaged as genuinely out of scope, sub-project #1's).
+
+
+---
+
+# SUPERSEDED IN PART — the CR-2 fix invalidates this run's reproduction (2026-08-22)
+
+The whole-branch review's **CR-2** (SSRF: `agent_callback_url` was unvalidated and
+we POSTed to it carrying a JWT we had signed) is now fixed in `07f1dcc881`:
+`Provision` validates the callback (https, absolute, no userinfo, no loopback /
+private / link-local / metadata addresses) AND the firer dials through
+`newSSRFSafeHTTPClient`.
+
+**That means the run recorded above can no longer be reproduced as written.** It
+used `http://127.0.0.1:19099`, which is now rejected twice over — once at
+`Provision` for being http and loopback, and again at dial time by
+`safeDialContext`. `https://agent.localtest.me` would pass `Provision` but still
+be refused when dialled, because it resolves to 127.0.0.1.
+
+This does not retract the evidence. What was proven on 2026-08-22 stands: a real
+fire reached a listener, the agent's own `verify.py` returned VERIFIED, an
+ordinary access token was REJECTED at the fire endpoint, and a fire survived
+killing and restarting the server. It was proven against code that then changed
+underneath it, which is the normal life of a conformance record.
+
+**To re-run it after the CR-2 fix**, one of:
+  - terminate the callback on a real non-loopback address (a tunnel to a host
+    with a public IP), or
+  - assert the new contract instead: `Provision` answers 200 for a valid public
+    https callback, and the fire is refused at dial time with the SSRF client's
+    error recorded in `last_error`.
+
+Do not "fix" this by relaxing the callback validation. The whole point of CR-2 is
+that we sign a token and hand it to whatever address the caller names.
+
+# A THIRD FLAKE CLASS, found during the fix wave — a TIME BOMB, not a race
+
+`TestFireTokenCarriesEveryClaimTheAgentVerifierRequires` and
+`TestFireNowPostsAuthorizationBearer` began failing at 12:05 UTC on 2026-08-22
+with `token has invalid claims: token is expired`. The fixture minted at a FAKE
+`2026-08-22T12:00Z` with a 5-minute TTL while `parseWithJWKS` validated `exp`
+against the WALL CLOCK. It passed until real time crossed 12:05, then failed
+forever. Reproduced on clean `ad1d3386` before any fix-wave change, and fixed in
+`d8ac8f8eef` by pinning the parser to the fixture clock.
+
+This one is worse than the two known races, because it DECAYS rather than
+flickering: every "52 ok, exit 0" recorded on this branch before 12:05 UTC was
+true when written and is not reproducible now. A green gate has a shelf life if
+any test compares a minted `exp` against real time. The project's known-flake
+list now has three entries, and this is the only deterministic one.
