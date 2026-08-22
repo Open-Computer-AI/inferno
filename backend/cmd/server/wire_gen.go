@@ -322,6 +322,14 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	agentRegistryService := service.NewAgentRegistryService(client)
 	agentCronService := service.NewAgentCronService(client)
 	agentHandler := handler.NewAgentHandler(agentRegistryService, orgService, agentCronService)
+	// service.ProvideAgentCronFirer rehydrates every armed agent_cron_fires row
+	// into timingWheelService (constructed above, line ~125 -- already
+	// started) as its own side effect, at boot, before ListenAndServe. Its
+	// result is intentionally discarded here: nothing downstream in this
+	// graph holds a reference to the firer today (Task 5's brief wires only
+	// RehydrateOnBoot into startup; FireNow is reached solely through the
+	// timing wheel's own callbacks, armed by RehydrateOnBoot itself).
+	service.ProvideAgentCronFirer(client, oAuthKeyService, timingWheelService, configConfig)
 	idempotencyCleanupService := service.ProvideIdempotencyCleanupService(idempotencyRepository, configConfig)
 	handlers := handler.ProvideHandlers(authHandler, userHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, announcementHandler, channelMonitorUserHandler, channelMonitorV2Handler, adminHandlers, gatewayHandler, openAIGatewayHandler, handlerSettingHandler, totpHandler, passkeyHandler, handlerPaymentHandler, paymentWebhookHandler, availableChannelHandler, modelPlazaHandler, asyncImageHandler, batchImageHandler, handlerOAuthHandler, billingContractHandler, agentHandler, idempotencyCoordinator, idempotencyCleanupService)
 	jwtAuthMiddleware := middleware.NewJWTAuthMiddleware(authService, userService, settingService, auditLogService)

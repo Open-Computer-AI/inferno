@@ -515,6 +515,14 @@ backend/internal/service/agent_registry_test.go
 backend/internal/service/agent_cron.go
 backend/internal/service/agent_cron_test.go
 backend/internal/server/routes/agent_cron_route_test.go
+# D12 -- Chronos firer (task 5): mints an RS256 "fire" token
+# (purpose=cron_fire), POSTs it to an armed row's callback_url, applies the
+# non-2xx-retries/2xx-terminal response contract, and rehydrates every armed
+# row into the (in-memory) timing wheel on boot. Additive; upstream has no
+# such surface. service/wire.go and cmd/server/wire_gen.go (ProvideAgentCronFirer,
+# wired after the timing wheel is constructed) are already declared above.
+backend/internal/service/agent_cron_firer.go
+backend/internal/service/agent_cron_firer_test.go
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }
