@@ -431,20 +431,35 @@ func billingMoney(v float64) string {
 	return strconv.FormatFloat(v, 'f', -1, 64)
 }
 
-// billingDisplayMoney formats a value the client renders VERBATIM into a label,
-// as opposed to one it parses for arithmetic. Two decimal places, always.
+// billingDisplayMoney formats a DISPLAY field -- one whose name ends in
+// ...Display and whose only job is to be read -- as opposed to billingMoney,
+// which encodes a value the client parses for arithmetic. Two decimal places,
+// always.
 //
-// billingMoney uses shortest-round-trip precision, which is right for a stored
-// balance (the client parses it with Decimal and wants it exact) and WRONG for
-// dollarsPerMonthDisplay, which is the result of a DIVISION: a $200/12-month
-// plan normalises to 16.666666666666668, and ui-tui's subscriptionOverlay.tsx:437
-// interpolates that string straight into
+// Its one caller is dollarsPerMonthDisplay, which is the result of a DIVISION
+// (billingDollarsPerMonth normalises a plan's price over its validity period),
+// so billingMoney's shortest-round-trip precision would emit
+// 16.666666666666668 for a $200/12-month plan. That is float noise in a field
+// nothing computes with, and this server should not put it on the wire.
 //
-//	`${tier.name} · ${tier.dollars_per_month_display}/mo`
+// CORRECTION (finding M-3). An earlier version of this comment said the client
+// interpolates this string VERBATIM, citing
+// ui-tui/src/components/subscriptionOverlay.tsx:437. That reading traced only
+// the last hop. The value does not arrive at ui-tui as our string: it reaches
+// it via tui_gateway/server.py:9432, `format_money(t.dollars_per_month)`, by
+// which point agent/subscription_view.py:186 has already run it through
+// parse_money into a Decimal -- and format_money (agent/billing_view.py:47-61)
+// quantizes to Decimal('0.01'). The Python CLI's own row builder,
+// subscription_view.py's _format_dollars_grouped (:353-365), quantizes too. So
+// 16.666666666666668 would have rendered as "$16.67" on BOTH surfaces anyway,
+// and the "user would read 16.666666666666668" claim in the Task 6 record was
+// wrong.
 //
-// so the user would read "Pro Annual · 16.666666666666668/mo". Caught by the
-// Task 6 conformance run against real seeded plans; every unit test passed with
-// the raw value because the SHAPE was correct and only the rendering was wrong.
+// The 2dp behaviour STAYS, on the reason that actually holds: it matches what
+// both client surfaces and Inferno's own panel display, it costs nothing, and a
+// field named ...Display should not carry digits no one will ever see. The
+// justification is now the true one rather than one the next reader would check
+// and find false.
 func billingDisplayMoney(v float64) string {
 	return strconv.FormatFloat(v, 'f', 2, 64)
 }
@@ -649,11 +664,39 @@ func (s *BillingContractService) Subscription(ctx context.Context, userID int64)
 		out.Context = "team"
 	}
 
-	current, activeGroupID, hasActive := s.resolveCurrentSubscription(ctx, userID)
+	// The plan catalogue is resolved ONCE per request and threaded into both
+	// consumers (ruling I-3). resolveCurrentSubscription needs it for
+	// current.tierName and resolveTiers needs it for the picker; they used to
+	// call ListPlans separately, issuing two identical uncached full-table
+	// reads per request against an endpoint agents POLL.
+	plans := s.listPlans(ctx)
+
+	current, activeGroupID, hasActive := s.resolveCurrentSubscription(ctx, userID, plans)
 	out.Current = current
-	out.Tiers = s.resolveTiers(ctx, activeGroupID, hasActive)
+	out.Tiers = s.resolveTiers(ctx, plans, activeGroupID, hasActive)
 
 	return out, nil
+}
+
+// listPlans reads the plan catalogue once, degrading to an empty catalogue on
+// failure rather than propagating -- every caller here already treats "no
+// plans" as a survivable state (nil tierName, empty tiers[]), and this
+// endpoint's contract is that no single section is fatal.
+//
+// The RESULT is what gets threaded through resolveCurrentSubscription and
+// resolveTiers, not the service: they take []*dbent.SubscriptionPlan, so
+// neither can issue a second read even by accident. PaymentConfigService.ListPlans
+// is NOT cached -- it is entClient.SubscriptionPlan.Query().Order(...).All(ctx)
+// (payment_config_plans.go:127-129) -- so on GET /api/oauth/account and
+// GET /api/billing/subscription, both of which agents poll, each avoided call
+// is a full-table read avoided per poll per agent.
+func (s *BillingContractService) listPlans(ctx context.Context) []*dbent.SubscriptionPlan {
+	plans, err := s.planSvc.ListPlans(ctx)
+	if err != nil {
+		slog.Error("billing contract: plan catalog lookup failed", "error", err)
+		return nil
+	}
+	return plans
 }
 
 // resolveCurrentSubscription returns the caller's current plan (nil when the
@@ -661,7 +704,7 @@ func (s *BillingContractService) Subscription(ctx context.Context, userID int64)
 // whether one was actually found -- the group id alone cannot distinguish
 // "no subscription" from "subscription in group 0", though group ids in
 // practice start above 0.
-func (s *BillingContractService) resolveCurrentSubscription(ctx context.Context, userID int64) (*BillingCurrentSubscriptionView, int64, bool) {
+func (s *BillingContractService) resolveCurrentSubscription(ctx context.Context, userID int64, plans []*dbent.SubscriptionPlan) (*BillingCurrentSubscriptionView, int64, bool) {
 	subs, err := s.subSvc.ListActiveUserSubscriptions(ctx, userID)
 	if err != nil {
 		slog.Error("billing contract: active subscription lookup failed", "user_id", userID, "error", err)
@@ -686,7 +729,7 @@ func (s *BillingContractService) resolveCurrentSubscription(ctx context.Context,
 	// "Test " (the group's internal admin label). Falls back to the group name
 	// only when the group sells no plans. Caught by Task 6 conformance.
 	tierName := sub.Group.Name
-	if rep, ok := s.representativePlanName(ctx, sub.GroupID); ok {
+	if rep, ok := billingRepresentativePlanName(plans, sub.GroupID); ok {
 		tierName = rep
 	}
 
@@ -741,16 +784,16 @@ func (s *BillingContractService) resolveCurrentSubscription(ctx context.Context,
 // picker conventionally shows), then the lowest plan id as a deterministic
 // tie-break. isEnabled is independent of which plan was chosen: true if ANY
 // plan in the group is for sale.
-// representativePlanName returns the name of the SAME plan resolveTiers would
-// choose to represent this group, so current.tierName and the matching tiers[]
-// entry's name agree. Both carry the same tierId (the group id), so disagreeing
-// names describe one tier under two labels.
-func (s *BillingContractService) representativePlanName(ctx context.Context, groupID int64) (string, bool) {
-	plans, err := s.planSvc.ListPlans(ctx)
-	if err != nil {
-		slog.Error("billing contract: plan catalog lookup failed resolving current tier name", "error", err)
-		return "", false
-	}
+// billingRepresentativePlanName returns the name of the SAME plan resolveTiers
+// would choose to represent this group, so current.tierName and the matching
+// tiers[] entry's name agree. Both carry the same tierId (the group id), so
+// disagreeing names describe one tier under two labels.
+//
+// It takes the ALREADY-READ catalogue rather than the plan service (ruling
+// I-3): it was a method that called ListPlans itself, which meant one request
+// issued that uncached full-table read twice -- once here and once in
+// resolveTiers. A plain function over a slice cannot reintroduce that.
+func billingRepresentativePlanName(plans []*dbent.SubscriptionPlan, groupID int64) (string, bool) {
 	inGroup := make([]*dbent.SubscriptionPlan, 0, 2)
 	for _, pl := range plans {
 		if pl.GroupID == groupID {
@@ -767,10 +810,8 @@ func (s *BillingContractService) representativePlanName(ctx context.Context, gro
 	return rep.Name, true
 }
 
-func (s *BillingContractService) resolveTiers(ctx context.Context, activeGroupID int64, hasActive bool) []BillingTierView {
-	plans, err := s.planSvc.ListPlans(ctx)
-	if err != nil {
-		slog.Error("billing contract: plan catalog lookup failed", "error", err)
+func (s *BillingContractService) resolveTiers(ctx context.Context, plans []*dbent.SubscriptionPlan, activeGroupID int64, hasActive bool) []BillingTierView {
+	if len(plans) == 0 {
 		return []BillingTierView{}
 	}
 
@@ -964,7 +1005,10 @@ func billingDollarsPerMonth(price float64, validityDays int, validityUnit string
 // embedded in GET /api/oauth/account's payload.
 type BillingAccountSubscriptionView struct {
 	// Plan -- _subscription_from_payload:709. Reuses
-	// BillingCurrentSubscriptionView.TierName (the group's Name) verbatim.
+	// BillingCurrentSubscriptionView.TierName verbatim, which since the Task 6
+	// fix 6299007e is the group's REPRESENTATIVE PLAN name (falling back to
+	// Group.Name only when the group sells no plans) -- not Group.Name itself,
+	// as this comment used to say. See resolveCurrentSubscription.
 	// omitempty costs nothing: _coerce_str already turns "" into None the
 	// same as a missing key.
 	Plan string `json:"plan,omitempty"`
@@ -1028,7 +1072,13 @@ type BillingAccountSubscriptionView struct {
 // drifts from the first is exactly the defect class this task exists to
 // avoid (see task-4-brief.md).
 func (s *BillingContractService) AccountSubscription(ctx context.Context, userID int64) *BillingAccountSubscriptionView {
-	current, activeGroupID, hasActive := s.resolveCurrentSubscription(ctx, userID)
+	// One catalogue read for the whole request (ruling I-3) -- see
+	// Subscription and listPlans. This endpoint is polled by every running
+	// agent, and Task 4 originally put THREE uncached reads on it, two of them
+	// the identical ListPlans query.
+	plans := s.listPlans(ctx)
+
+	current, activeGroupID, hasActive := s.resolveCurrentSubscription(ctx, userID, plans)
 	if !hasActive || current == nil {
 		return nil
 	}
@@ -1040,7 +1090,7 @@ func (s *BillingContractService) AccountSubscription(ctx context.Context, userID
 		CreditsRemaining: billingMoneyStringToFloat(current.CreditsRemaining),
 	}
 
-	for _, t := range s.resolveTiers(ctx, activeGroupID, hasActive) {
+	for _, t := range s.resolveTiers(ctx, plans, activeGroupID, hasActive) {
 		if t.IsCurrent {
 			order := t.TierOrder
 			view.Tier = &order

@@ -965,14 +965,30 @@ is worthless without saying what data it ran against.
 ## TWO DEFECTS THIS RUN CAUGHT — both green through every unit test
 
 Fixed in `6299007e`. Both had a VALID SHAPE and a wrong rendered VALUE, which is
-precisely what a shape assertion cannot see:
+precisely what a shape assertion cannot see. (See #1's CORRECTION: only the
+second was actually user-visible.)
 
-1. `dollarsPerMonthDisplay` was `16.666666666666668`. ui-tui
-   subscriptionOverlay.tsx:437 interpolates that string VERBATIM into
-   `${tier.name} · ${...}/mo`, so the user would have read
-   "Pro Annual · 16.666666666666668/mo". It is the output of a DIVISION, unlike
-   every other money field, which is a stored value. New `billingDisplayMoney`
-   (2dp) is used for it; `billingMoney` (exact) still serves balances.
+1. `dollarsPerMonthDisplay` was `16.666666666666668` — the output of a
+   DIVISION, unlike every other money field, which is a stored value. New
+   `billingDisplayMoney` (2dp) is used for it; `billingMoney` (exact) still
+   serves balances.
+
+   **CORRECTED (finding M-3, 2026-08-22.)** This entry originally claimed
+   ui-tui subscriptionOverlay.tsx:437 interpolates that string VERBATIM, so
+   "the user would have read Pro Annual · 16.666666666666668/mo". That is
+   FALSE and the "user-visible" framing was wrong. The value never reaches
+   ui-tui as our string: it arrives via `tui_gateway/server.py:9432`
+   `format_money(t.dollars_per_month)`, after `agent/subscription_view.py:186`
+   has parsed it to a `Decimal`, and `format_money`
+   (`agent/billing_view.py:47-61`) quantizes to `Decimal('0.01')`. The Python
+   CLI's own row builder, `_format_dollars_grouped`
+   (`subscription_view.py:353-365`), quantizes too. Both surfaces would have
+   rendered `$16.67`. The 2dp change is still correct — it matches both client
+   surfaces and the panel, and a `...Display` field should not carry digits
+   nobody sees — but this was a hygiene fix, NOT a user-visible defect, and
+   listing it as one overstated what the conformance run caught. The error was
+   tracing a TypeScript interpolation and missing that the value passes through
+   a Python formatter first.
 2. `current.tierName` was `Group.Name` = "Test " — the group's internal admin
    label, trailing space included — while the picker offered the SAME tierId as
    "Pro Annual". One tier under two names.

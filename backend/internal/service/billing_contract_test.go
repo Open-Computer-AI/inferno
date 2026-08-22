@@ -85,9 +85,18 @@ type fakeBillingPlanSource struct {
 	plans     []*dbent.SubscriptionPlan
 	groupInfo map[int64]PlanGroupInfo
 	err       error
+
+	// listCalls / groupInfoCalls count QUERIES. The real ListPlans is
+	// entClient.SubscriptionPlan.Query().Order(...).All(ctx)
+	// (payment_config_plans.go:127-129) and GetGroupInfoMap is a Group query
+	// (:92-125) -- neither is cached, and both sit behind endpoints agents
+	// POLL, so the count is a contract (ruling I-3), not a curiosity.
+	listCalls      int
+	groupInfoCalls int
 }
 
 func (f *fakeBillingPlanSource) ListPlans(_ context.Context) ([]*dbent.SubscriptionPlan, error) {
+	f.listCalls++
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -95,6 +104,7 @@ func (f *fakeBillingPlanSource) ListPlans(_ context.Context) ([]*dbent.Subscript
 }
 
 func (f *fakeBillingPlanSource) GetGroupInfoMap(_ context.Context, _ []*dbent.SubscriptionPlan) map[int64]PlanGroupInfo {
+	f.groupInfoCalls++
 	return f.groupInfo
 }
 
@@ -1360,15 +1370,23 @@ func TestAutoTopUpIsAnHonestRefusal(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestDollarsPerMonthDisplayIsATwoDecimalDisplayString pins the first.
-// ui-tui/src/components/subscriptionOverlay.tsx:437 interpolates this field
-// VERBATIM into a user-visible label:
-//
-//	`${tier.name} · ${tier.dollars_per_month_display}/mo`
 //
 // dollarsPerMonthDisplay is the result of a DIVISION (price normalised by the
 // billing period), so shortest-round-trip float formatting emits
-// 16.666666666666668 for a $200/12-month plan and the user reads
-// "Pro Annual · 16.666666666666668/mo".
+// 16.666666666666668 for a $200/12-month plan.
+//
+// CORRECTION (finding M-3). This comment used to say
+// ui-tui/src/components/subscriptionOverlay.tsx:437 interpolates the field
+// VERBATIM, so the user would read "Pro Annual · 16.666666666666668/mo". It
+// does not, and they would not. The string reaches ui-tui only through
+// tui_gateway/server.py:9432 `format_money(t.dollars_per_month)`, after
+// agent/subscription_view.py:186 parsed it to a Decimal, and format_money
+// (agent/billing_view.py:47-61) quantizes to 2dp -- as does the Python CLI's
+// own _format_dollars_grouped (subscription_view.py:353-365). Both surfaces
+// would have rendered "$16.67".
+//
+// The assertion stays because the BEHAVIOUR is still right (see
+// billingDisplayMoney); only the stated reason was wrong.
 func TestDollarsPerMonthDisplayIsATwoDecimalDisplayString(t *testing.T) {
 	svc, fx := newBillingContractFixture(t)
 	limit := 1000.0
@@ -1389,7 +1407,7 @@ func TestDollarsPerMonthDisplayIsATwoDecimalDisplayString(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, got.Tiers, 1)
 	require.Equal(t, "16.67", got.Tiers[0].DollarsPerMonthDisplay,
-		"this string is rendered verbatim into a TUI label -- it must never carry float noise")
+		"a ...Display field must not carry float noise; both client surfaces quantize to 2dp and so should we")
 }
 
 // TestCurrentTierNameAgreesWithItsTiersEntry pins the second. current and its
@@ -1548,4 +1566,97 @@ func TestBillingSubscriptionTierOrderIsDistinctWhenSortOrdersCollide(t *testing.
 	require.Equal(t, 1, byID["3"].TierOrder, "$5/mo")
 	require.Equal(t, 2, byID["5"].TierOrder, "$180/yr normalises to $15/mo and must outrank neither $20/mo nor be ranked on its raw 180")
 	require.Equal(t, 3, byID["9"].TierOrder, "$20/mo")
+}
+
+// ---------------------------------------------------------------------------
+// I-3 -- one plan-catalogue read per request, on endpoints agents poll.
+// ---------------------------------------------------------------------------
+
+// TestAccountSubscriptionIssuesOnePlanQueryPerRequest is I-3.
+//
+// Task 4 put THREE uncached DB reads on GET /api/oauth/account, against the
+// plan's explicit constraint ("use the cached service, not the repo... this
+// endpoint is polled by agents; reaching past them turns a cached read into a
+// query storm"). Two of the three were the SAME ListPlans query, issued once by
+// resolveCurrentSubscription (for current.tierName) and again by resolveTiers.
+// Neither is cached: PaymentConfigService.ListPlans is
+// entClient.SubscriptionPlan.Query().Order(...).All(ctx)
+// (payment_config_plans.go:127-129).
+//
+// The count is asserted, not the mechanism, because the mechanism can change:
+// what must not change is that one poll costs one catalogue read.
+func TestAccountSubscriptionIssuesOnePlanQueryPerRequest(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	limit := 100.0
+	fx.sub.byUser[7] = []UserSubscription{{
+		ID: 42, UserID: 7, GroupID: 9,
+		ExpiresAt:       time.Date(2026, 9, 19, 0, 0, 0, 0, time.UTC),
+		MonthlyUsageUSD: 30,
+		Group:           &Group{ID: 9, Name: "Pro", MonthlyLimitUSD: &limit},
+	}}
+	fx.plan.plans = []*dbent.SubscriptionPlan{
+		{ID: 100, GroupID: 9, Name: "Pro", Price: 20, ForSale: true},
+		{ID: 101, GroupID: 5, Name: "Starter", Price: 5, ForSale: true},
+	}
+
+	got := svc.AccountSubscription(context.Background(), 7)
+
+	require.NotNil(t, got, "the fixture must actually produce a subscription, or the counts below prove nothing")
+	require.Equal(t, "Pro", got.Plan, "the tierName path -- the one that used to issue the DUPLICATE ListPlans -- must still run")
+	require.NotNil(t, got.Tier, "the tiers path must still run too")
+
+	require.Equal(t, 1, fx.plan.listCalls, "GET /api/oauth/account must issue exactly ONE ListPlans query per request")
+	require.Equal(t, 1, fx.plan.groupInfoCalls, "and exactly one GetGroupInfoMap query")
+}
+
+// TestSubscriptionIssuesOnePlanQueryPerRequest: the same property on
+// GET /api/billing/subscription, which carried the identical duplicate.
+func TestSubscriptionIssuesOnePlanQueryPerRequest(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	limit := 100.0
+	fx.sub.byUser[7] = []UserSubscription{{
+		ID: 42, UserID: 7, GroupID: 9,
+		ExpiresAt: time.Date(2026, 9, 19, 0, 0, 0, 0, time.UTC),
+		Group:     &Group{ID: 9, Name: "Pro", MonthlyLimitUSD: &limit},
+	}}
+	fx.plan.plans = []*dbent.SubscriptionPlan{
+		{ID: 100, GroupID: 9, Name: "Pro", Price: 20, ForSale: true},
+	}
+
+	got, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+	require.NotNil(t, got.Current)
+	require.Equal(t, "Pro", got.Current.TierName)
+	require.Len(t, got.Tiers, 1)
+
+	require.Equal(t, 1, fx.plan.listCalls)
+	require.Equal(t, 1, fx.plan.groupInfoCalls)
+}
+
+// TestSubscriptionDegradesToAnEmptyCatalogueWhenListPlansFails pins that
+// folding the two reads into one did not turn a survivable failure into a
+// fatal one. A failing catalogue must still produce a well-formed response:
+// current falls back to the GROUP's own name (not nil -- the subscription row
+// itself is fine) and tiers is an empty ARRAY, never null
+// (subscription_view.py tolerates an empty list; a null tiers would break
+// `for t in (state.tiers or ())`... which also tolerates it, but the route
+// test pins the array literal on the wire).
+func TestSubscriptionDegradesToAnEmptyCatalogueWhenListPlansFails(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.sub.byUser[7] = []UserSubscription{{
+		ID: 42, UserID: 7, GroupID: 9,
+		ExpiresAt: time.Date(2026, 9, 19, 0, 0, 0, 0, time.UTC),
+		Group:     &Group{ID: 9, Name: "Group Nine"},
+	}}
+	fx.plan.err = errors.New("plan catalog query failed")
+
+	got, err := svc.Subscription(context.Background(), 7)
+
+	require.NoError(t, err, "a failed catalogue must never 500 this endpoint")
+	require.NotNil(t, got.Current, "the subscription row is still readable")
+	require.Equal(t, "Group Nine", got.Current.TierName, "falls back to the group name")
+	require.NotNil(t, got.Tiers)
+	require.Empty(t, got.Tiers)
+	require.Equal(t, 1, fx.plan.listCalls, "one attempt, not one per consumer")
+	require.Equal(t, 0, fx.plan.groupInfoCalls, "no catalogue means no group query either")
 }

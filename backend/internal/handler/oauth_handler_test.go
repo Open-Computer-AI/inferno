@@ -830,6 +830,65 @@ func TestAccountOmitsSubscriptionKeyWithNoActiveSubscription(t *testing.T) {
 	require.NotContains(t, rec.Body.String(), `"subscription":`)
 }
 
+// TestAccountHasActiveSubscriptionAgreesWithTheSubscriptionObject is I-4,
+// asserted in BOTH directions in one test because the defect was a
+// DISAGREEMENT, not a wrong value: has_active_subscription was hardcoded false
+// thirteen lines above the code that attached a real `subscription` object, so
+// a user on plan "Pro" was told by the same payload that they had no
+// subscription. Either half alone could pass while the two contradict.
+//
+// Asserted on the ENCODED BYTES as well as the decoded map: JSON true/false is
+// a bare literal and hermes_cli/nous_account.py:722 _coerce_bool returns None
+// for anything that is not a Python bool, so a quoted "true" would parse to
+// None -- neither true nor false -- and silently take a third branch.
+func TestAccountHasActiveSubscriptionAgreesWithTheSubscriptionObject(t *testing.T) {
+	limit := 100.0
+	subscribed := &billingHandlerSubscription{subs: []service.UserSubscription{{
+		ID:              42,
+		UserID:          7,
+		GroupID:         9,
+		ExpiresAt:       time.Date(2026, 9, 19, 0, 0, 0, 0, time.UTC),
+		MonthlyUsageUSD: 30,
+		Group:           &service.Group{ID: 9, Name: "Pro", MonthlyLimitUSD: &limit},
+	}}}
+
+	t.Run("with an active subscription both agree it exists", func(t *testing.T) {
+		router, h := newOAuthAccountTestRouterWithBilling(t, subscribed)
+		_, err := h.orgSvc.EnsurePersonalOrg(context.Background(), 7, "alice")
+		require.NoError(t, err)
+
+		rec := getOAuthAccount(router, mintTestAccountToken(t, h, 7, "inference:invoke"))
+		require.Equal(t, http.StatusOK, rec.Code)
+		raw := rec.Body.String()
+
+		require.Contains(t, raw, `"has_active_subscription":true`,
+			"must be a bare JSON true -- _coerce_bool (nous_account.py:722) reads a quoted \"true\" as None; body: %s", raw)
+		require.NotContains(t, raw, `"has_active_subscription":"true"`)
+
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		require.Contains(t, body, "subscription", "body: %s", raw)
+		require.Equal(t, true, body["paid_service_access"].(map[string]any)["has_active_subscription"])
+	})
+
+	t.Run("with no active subscription both agree it does not", func(t *testing.T) {
+		router, h := newOAuthAccountTestRouterWithBilling(t, &billingHandlerSubscription{})
+		_, err := h.orgSvc.EnsurePersonalOrg(context.Background(), 7, "alice")
+		require.NoError(t, err)
+
+		rec := getOAuthAccount(router, mintTestAccountToken(t, h, 7, "inference:invoke"))
+		require.Equal(t, http.StatusOK, rec.Code)
+		raw := rec.Body.String()
+
+		require.Contains(t, raw, `"has_active_subscription":false`, "body: %s", raw)
+
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		require.NotContains(t, body, "subscription", "body: %s", raw)
+		require.Equal(t, false, body["paid_service_access"].(map[string]any)["has_active_subscription"])
+	})
+}
+
 // TestAccountOmitsSubscriptionKeyWhenBillingServiceIsUnset covers the
 // pre-Task-4 wiring: h.billingSvc left nil (the newOAuthAccountTestHandler
 // default, used by every other test in this file) must still produce a valid

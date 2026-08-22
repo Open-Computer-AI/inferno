@@ -491,16 +491,44 @@ func (h *OAuthHandler) Account(c *gin.Context) {
 	// endpoint disagree about the same user -- the client is told it cannot pay
 	// while inference succeeds, or told it can while every request 403s.
 	//
-	// Still deliberately absent from paid_service_access: it does not read
-	// `subscription` at all (that gap was `subscription` itself, closed below
-	// by Task 4) -- `has_active_subscription` here stays hardcoded false, an
-	// unrelated stub within a different object that this task does not touch.
-	// `tool_access` also stays fully omitted: there is no honest free-tool-pool
+	// `tool_access` stays fully omitted: there is no honest free-tool-pool
 	// model in Inferno yet.
+	//
+	// `has_active_subscription` was hardcoded false, thirteen lines above the
+	// code that attaches a real `subscription` object built from the caller's
+	// active user_subscription row. Once Task 4 made the fact knowable in this
+	// exact function, "an unrelated stub in a different object" stopped being
+	// true and the two halves of one response contradicted each other: a user
+	// on plan "Pro" with a zero wallet was told, by a payload that names their
+	// subscription, that they had none. It now comes from the same value
+	// (ruling I-4) -- resolved BEFORE paidAccess is built, which is why the
+	// AccountSubscription call moved above it.
+	//
+	// Client consequence, hermes_cli/nous_account.py's _no_paid_access_message:
+	// with has_active_subscription false it prints "no active subscription or
+	// usable credits ... Subscribe or add credits" (:305-310); with it true and
+	// active_subscription_is_paid ABSENT -- which it is, Inferno has no such
+	// concept, and _coerce_bool(None) is None, not False (:722) -- the two
+	// intermediate branches (:292, :299) are both skipped and it falls through
+	// to "no usable paid credits ... Add credits or update billing", which is
+	// the true statement for a subscribed user whose balance ran out.
+	//
+	// Nothing entitlement-bearing hangs on this: `allowed`/`paid_access` carry
+	// that, and both still report what the gateway itself enforces.
+	//
+	// subscription (Task 4). Nil (billingSvc unset, or the caller has no
+	// active subscription) means the key is omitted entirely -- see the
+	// Account doc comment and AccountSubscription's own doc comment in
+	// billing_contract.go for why that is the correct, and safe, wire shape.
+	var accountSub *service.BillingAccountSubscriptionView
+	if h.billingSvc != nil {
+		accountSub = h.billingSvc.AccountSubscription(ctx, userID)
+	}
+
 	paidAccess := gin.H{
 		"allowed":                 canPay,
 		"paid_access":             canPay,
-		"has_active_subscription": false,
+		"has_active_subscription": accountSub != nil,
 	}
 
 	payload := gin.H{
@@ -509,14 +537,8 @@ func (h *OAuthHandler) Account(c *gin.Context) {
 		"paid_service_access": paidAccess,
 	}
 
-	// subscription (Task 4). Nil (billingSvc unset, or the caller has no
-	// active subscription) means the key is omitted entirely -- see the
-	// Account doc comment and AccountSubscription's own doc comment in
-	// billing_contract.go for why that is the correct, and safe, wire shape.
-	if h.billingSvc != nil {
-		if sub := h.billingSvc.AccountSubscription(ctx, userID); sub != nil {
-			payload["subscription"] = sub
-		}
+	if accountSub != nil {
+		payload["subscription"] = accountSub
 	}
 
 	if len(orgs) > 0 {
