@@ -505,6 +505,7 @@ backend/internal/service/agent_registry.go
 backend/internal/handler/agent_handler.go
 backend/internal/server/routes/agents.go
 backend/internal/server/routes/agents_route_test.go
+backend/scripts/agent-registry-chronos-conformance.md
 backend/internal/service/agent_registry_test.go
 # D11 -- Chronos scheduler surface (task 4): an agent arms/cancels/lists its
 # own one-shot fires at /api/agent-cron/{provision,cancel,list}. Additive;
