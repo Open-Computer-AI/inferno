@@ -405,15 +405,24 @@ func TestProvisionRejectsAnSSRFCallbackURL(t *testing.T) {
 // TestProvisionAcceptsAPublicHTTPSCallbackURL is the other side of CR-2's
 // validation: the guard must not reject the callbacks real agents use.
 func TestProvisionAcceptsAPublicHTTPSCallbackURL(t *testing.T) {
-	accepted := []string{
-		"https://agent.example/",
-		"https://gw.example.com/v1/cron/fire",
-		"https://gw.example.com:8443/v1/cron/fire?token=abc",
-		"https://8.8.8.8/cron", // a public IP literal is fine
+	// Subtest NAMES are short labels, never the URL: newAgentCronTestClient
+	// interpolates t.Name() into a `file:NAME?mode=memory` sqlite DSN, and a
+	// name carrying "://" or a ":port" breaks that URI badly enough that
+	// sqlite writes a REAL FILE into the package directory instead of an
+	// in-memory database -- which then shows up as undeclared divergence.
+	accepted := []struct {
+		name string
+		url  string
+	}{
+		{"bare origin", "https://agent.example/"},
+		{"path", "https://gw.example.com/v1/cron/fire"},
+		{"port and query", "https://gw.example.com:8443/v1/cron/fire?token=abc"},
+		{"public ip literal", "https://8.8.8.8/cron"},
 	}
 
-	for _, u := range accepted {
-		t.Run(u, func(t *testing.T) {
+	for _, tc := range accepted {
+		u := tc.url
+		t.Run(tc.name, func(t *testing.T) {
 			svc, fx := newAgentCronFixture(t)
 			_, err := svc.Provision(context.Background(), 1, ProvisionInput{
 				JobID:            "job-1",
