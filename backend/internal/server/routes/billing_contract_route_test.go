@@ -79,11 +79,16 @@ func (stubBillingPayment) IsPaymentEnabled(context.Context) bool { return true }
 // stubBillingPlan is the plan catalog GET /api/billing/subscription's
 // `tiers` picker is built from -- one for-sale plan, group 9, matching
 // stubBillingSubscription's active row below so isCurrent is exercised.
+//
+// SortOrder is deliberately LEFT AT ZERO (ruling C-2): that is
+// ent/schema/subscription_plan.go:62's Default(0) and what Inferno's own plan
+// editor posts, so the route harness exercises the real default case rather
+// than a hand-picked positive value. tierOrder on the wire must still be >= 1.
 type stubBillingPlan struct{}
 
 func (stubBillingPlan) ListPlans(context.Context) ([]*dbent.SubscriptionPlan, error) {
 	return []*dbent.SubscriptionPlan{
-		{ID: 100, GroupID: 9, Name: "Pro", Price: 20, SortOrder: 1, ForSale: true},
+		{ID: 100, GroupID: 9, Name: "Pro", Price: 20, ForSale: true},
 	}, nil
 }
 
@@ -713,10 +718,21 @@ func TestBillingSubscriptionRouteReturnsBareJSONNotThePanelEnvelope(t *testing.T
 	require.True(t, ok)
 	require.Equal(t, "9", tier["tierId"])
 	require.Equal(t, "Pro", tier["name"])
-	require.Equal(t, "20.00", tier["dollarsPerMonthDisplay"], "always 2dp -- this string is rendered verbatim into a TUI label")
+	require.Equal(t, "20.00", tier["dollarsPerMonthDisplay"], "always 2dp -- see billingDisplayMoney")
 	require.Equal(t, "100", tier["monthlyCredits"])
 	require.Equal(t, true, tier["isCurrent"])
 	require.Equal(t, true, tier["isEnabled"])
+
+	// tierOrder on the WIRE (ruling C-2). stubBillingPlan leaves SortOrder at
+	// the schema default 0; the emitted rank must still be a bare JSON number
+	// >= 1, because agent/subscription_view.py:373-379 and
+	// ui-tui/src/components/subscriptionOverlay.tsx:381,525 all drop
+	// tier_order <= 0 and the user gets a blank picker with no error.
+	require.Contains(t, string(raw), `"tierOrder":1`, "tierOrder must be an unquoted JSON number >= 1; body: %s", string(raw))
+	require.NotContains(t, string(raw), `"tierOrder":0`)
+	require.NotContains(t, string(raw), `"tierOrder":"1"`, "tierOrder must not be a string -- _parse_tier calls int() on it")
+	require.IsType(t, float64(0), tier["tierOrder"])
+	require.Equal(t, float64(1), tier["tierOrder"])
 
 	// current: a real object here (the active-subscription case).
 	current, ok := body["current"].(map[string]any)

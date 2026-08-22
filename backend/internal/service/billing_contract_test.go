@@ -498,6 +498,10 @@ func TestBillingSubscriptionReportsCurrentPlanTiersAndContext(t *testing.T) {
 	require.True(t, byID["9"].IsCurrent)
 	require.False(t, byID["5"].IsCurrent)
 	require.Equal(t, "20.00", byID["9"].DollarsPerMonthDisplay)
+	// tierOrder is a COMPUTED 1-based rank by normalised dollars-per-month
+	// (billingAssignTierOrder, ruling C-2), not SubscriptionPlan.SortOrder:
+	// group 5 sells at $5/mo and ranks 1, group 9 at $20/mo ranks 2.
+	require.Equal(t, 1, byID["5"].TierOrder)
 	require.Equal(t, 2, byID["9"].TierOrder)
 	require.True(t, byID["9"].IsEnabled)
 }
@@ -978,7 +982,11 @@ func TestAccountSubscriptionReportsPlanTierAndCredits(t *testing.T) {
 	require.NotNil(t, got, "an active subscription must produce a non-nil subscription object")
 	require.Equal(t, "Pro", got.Plan)
 	require.NotNil(t, got.Tier)
-	require.Equal(t, 2, *got.Tier, "tier must be the plan's SortOrder, the same int Task 3's tiers[].tierOrder uses")
+	// The same int Task 3's tiers[].tierOrder uses -- read straight off the
+	// tiers[] row with IsCurrent, so the two endpoints cannot disagree. It is
+	// the computed rank (billingAssignTierOrder), not SortOrder: group 5 at
+	// $5/mo ranks 1, group 9 at $20/mo ranks 2, and the caller is on group 9.
+	require.Equal(t, 2, *got.Tier)
 	require.NotNil(t, got.MonthlyCredits)
 	require.Equal(t, 100.0, *got.MonthlyCredits)
 	require.NotNil(t, got.CreditsRemaining)
@@ -1406,4 +1414,130 @@ func TestCurrentTierNameAgreesWithItsTiersEntry(t *testing.T) {
 	require.Equal(t, got.Tiers[0].Name, got.Current.TierName,
 		"one tierId must not carry two different names")
 	require.NotEqual(t, "Test ", got.Current.TierName, "must not leak the group's admin label")
+}
+
+// ---------------------------------------------------------------------------
+// C-2 -- tierOrder must be a 1-based rank, because every client surface drops
+// tier_order <= 0.
+// ---------------------------------------------------------------------------
+
+// billingClientSelectableTiers is agent/subscription_view.py:373-379's
+// selectable_tiers, transliterated:
+//
+//	t.is_enabled and not t.is_current and (t.tier_order or 0) > 0
+//
+// sorted by tier_order. ui-tui/src/components/subscriptionOverlay.tsx:381
+// (the Free plan catalogue) and :525 (the change-plan picker) apply the
+// IDENTICAL filter, so this one helper models all three surfaces.
+//
+// It exists because asserting "tierOrder is 1" only pins the number; the
+// property that actually matters is that the PICKER IS NOT EMPTY, and a
+// future change could satisfy the first while breaking the second. This
+// re-derives the client's answer from our own emitted array.
+func billingClientSelectableTiers(tiers []BillingTierView) []BillingTierView {
+	out := []BillingTierView{}
+	for _, t := range tiers {
+		if t.IsEnabled && !t.IsCurrent && t.TierOrder > 0 {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// TestBillingSubscriptionTierOrderIsOneBasedOnDefaultSortOrder is the C-2
+// reproduction and its fix, in one test.
+//
+// The seed is the DEFAULT case, not a hand-picked one: SortOrder is left at
+// Go's zero value, which is also ent/schema/subscription_plan.go:62's
+// field.Int("sort_order").Default(0), which is also what Inferno's own plan
+// editor posts (inferno-frontend/src/views/admin/orders/PlanEditDialog.vue:126
+// initialises sort_order:0, :182 resets to it, :199 posts it) because
+// CreatePlanRequest.SortOrder carries no binding:"required"
+// (payment_config_service.go:177). An operator who adds two plans through the
+// admin panel and never touches the sort-order box produces exactly this.
+//
+// Before the fix this emitted tierOrder:0 on both rows, giving a well-formed
+// two-element tiers[] array that every client surface filtered down to an
+// EMPTY plan picker -- no error, no empty response, nothing to notice. Task 6's
+// conformance run missed it because it seeded SortOrder 1 and 2 and only
+// asserted the rows were PRESENT, never calling selectable_tiers.
+func TestBillingSubscriptionTierOrderIsOneBasedOnDefaultSortOrder(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.plan.plans = []*dbent.SubscriptionPlan{
+		// SortOrder deliberately OMITTED -- the schema default.
+		{ID: 100, GroupID: 9, Name: "Pro", Price: 20, ForSale: true, ValidityDays: 1, ValidityUnit: "months"},
+		{ID: 101, GroupID: 5, Name: "Starter", Price: 5, ForSale: true, ValidityDays: 1, ValidityUnit: "months"},
+	}
+
+	got, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+	require.Len(t, got.Tiers, 2)
+
+	for _, tier := range got.Tiers {
+		require.GreaterOrEqual(t, tier.TierOrder, 1,
+			"every emitted tier must rank >= 1; tier %q at %d is invisible to selectable_tiers "+
+				"(subscription_view.py:373-379) and to subscriptionOverlay.tsx:381,525",
+			tier.Name, tier.TierOrder)
+	}
+
+	// The property that actually broke: the picker the user sees.
+	require.Len(t, billingClientSelectableTiers(got.Tiers), 2,
+		"the client's own filter must keep BOTH tiers; an empty result is the silently-blank picker C-2 describes")
+
+	// Ranks ascend by normalised dollars-per-month and are DISTINCT, so
+	// is_upgrade (subscription_view.py:409-411) can order any two rows.
+	// $5 Starter ranks below $20 Pro regardless of which came first out of
+	// ListPlans.
+	byID := map[string]BillingTierView{}
+	for _, tier := range got.Tiers {
+		byID[tier.TierID] = tier
+	}
+	require.Equal(t, 1, byID["5"].TierOrder, "the cheaper group must rank first")
+	require.Equal(t, 2, byID["9"].TierOrder)
+
+	// Emission order is unchanged (ListPlans' own order); only the rank is
+	// re-derived. The client sorts by tier_order itself on every surface.
+	require.Equal(t, "9", got.Tiers[0].TierID)
+	require.Equal(t, "5", got.Tiers[1].TierID)
+}
+
+// TestBillingSubscriptionTierOrderIsDistinctWhenSortOrdersCollide covers the
+// SortOrder+1 shortcut the brief rules out. Two groups both left at the
+// default would both become 1 under `SortOrder + 1`, and is_upgrade
+// (subscription_view.py:409-411, `orders.get(tier_id, 0) > cur_order`) then
+// answers False in BOTH directions between them -- the picker offers a change
+// it cannot characterise. Distinctness is a contract property, not a tidiness
+// one.
+//
+// The prices here are also deliberately NOT the raw Price column: a $180/year
+// plan normalises to $15/month (billingDollarsPerMonth, ruling R-3.2) and so
+// must rank BELOW the $20/month plan, even though 180 > 20. Ranking on raw
+// Price would order the picker by a number the user never sees.
+func TestBillingSubscriptionTierOrderIsDistinctWhenSortOrdersCollide(t *testing.T) {
+	svc, fx := newBillingContractFixture(t)
+	fx.plan.plans = []*dbent.SubscriptionPlan{
+		{ID: 100, GroupID: 9, Name: "Pro Monthly", Price: 20, ForSale: true, ValidityDays: 1, ValidityUnit: "months"},
+		{ID: 200, GroupID: 5, Name: "Team Annual", Price: 180, ForSale: true, ValidityDays: 12, ValidityUnit: "months"},
+		{ID: 300, GroupID: 3, Name: "Starter", Price: 5, ForSale: true, ValidityDays: 1, ValidityUnit: "months"},
+	}
+
+	got, err := svc.Subscription(context.Background(), 7)
+	require.NoError(t, err)
+	require.Len(t, got.Tiers, 3)
+
+	seen := map[int]string{}
+	for _, tier := range got.Tiers {
+		require.GreaterOrEqual(t, tier.TierOrder, 1)
+		prev, dup := seen[tier.TierOrder]
+		require.False(t, dup, "tierOrder %d is shared by %q and %q; is_upgrade cannot order them", tier.TierOrder, prev, tier.Name)
+		seen[tier.TierOrder] = tier.Name
+	}
+
+	byID := map[string]BillingTierView{}
+	for _, tier := range got.Tiers {
+		byID[tier.TierID] = tier
+	}
+	require.Equal(t, 1, byID["3"].TierOrder, "$5/mo")
+	require.Equal(t, 2, byID["5"].TierOrder, "$180/yr normalises to $15/mo and must outrank neither $20/mo nor be ranked on its raw 180")
+	require.Equal(t, 3, byID["9"].TierOrder, "$20/mo")
 }

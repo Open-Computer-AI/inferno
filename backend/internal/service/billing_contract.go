@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -555,15 +556,35 @@ type BillingTierView struct {
 	// id must be that same group id, not the underlying plan's own id.
 	TierID string `json:"tierId"`
 	Name   string `json:"name"`
-	// TierOrder is the SubscriptionPlan's SortOrder, the same field the panel's
-	// own /api/v1/payment/plans already orders by.
+	// TierOrder is a 1-BASED RANK this adapter computes (billingAssignTierOrder),
+	// NOT SubscriptionPlan.SortOrder.
+	//
+	// It carried SortOrder until C-2. SortOrder's schema default is 0
+	// (ent/schema/subscription_plan.go:62), CreatePlanRequest.SortOrder has no
+	// binding:"required" (payment_config_service.go:177), and Inferno's own plan
+	// editor posts 0 (inferno-frontend/src/views/admin/orders/PlanEditDialog.vue:126,
+	// :182, :199) -- so plans created through the panel without an admin typing a
+	// number all arrive here as 0. Every client surface then DROPS them:
+	// agent/subscription_view.py:373-379 selectable_tiers keeps only
+	// `is_enabled and not is_current and (t.tier_order or 0) > 0`, and
+	// ui-tui/src/components/subscriptionOverlay.tsx:381 and :525 apply the same
+	// `tier.tier_order > 0` filter. The result was a well-formed, non-empty
+	// tiers[] array that rendered as an EMPTY plan picker, with no error anywhere.
+	//
+	// tierOrder is a RANK on the client, not a display hint: subscription_view.py's
+	// is_upgrade (:409-411) compares it to decide whether a pick is an upgrade, and
+	// both surfaces SORT by it. 0 is the client's encoding for "free / no
+	// subscription", which on Inferno is the ABSENCE of a subscription
+	// (subscriptionOverlay.tsx:370, `isFree = !c?.tier_id`), never a catalogue row
+	// -- so every row this adapter emits is a paid tier and must rank >= 1.
 	TierOrder int `json:"tierOrder"`
-	// DollarsPerMonthDisplay is the plan's Price as-is. Inferno's SubscriptionPlan
-	// has no notion of "normalize to a monthly rate" -- the panel's own
-	// /api/v1/payment/plans response (payment_handler.go's GetPlans) shows the
-	// same raw Price with no such normalization -- so a non-monthly-validity
-	// plan's price is shown unmodified, consistent with how the rest of this
-	// product already displays it.
+	// DollarsPerMonthDisplay is the plan's Price NORMALISED to a 30-day rate by
+	// billingDollarsPerMonth (ruling R-3.2) and rendered to exactly 2 decimal
+	// places by billingDisplayMoney -- an annual plan priced 1200 reports
+	// "100.00", not "1200". The field's NAME asserts a unit, so it has to mean it;
+	// the panel's own /api/v1/payment/plans (payment_handler.go's GetPlans) shows
+	// the raw Price instead, but it shows it beside a validity label and asserts no
+	// unit, which this key does.
 	DollarsPerMonthDisplay string `json:"dollarsPerMonthDisplay"`
 	// MonthlyCredits is absent when the plan's group has no MonthlyLimitUSD
 	// configured (an uncapped group has no "credits" concept to report) --
@@ -782,13 +803,14 @@ func (s *BillingContractService) resolveTiers(ctx context.Context, activeGroupID
 	}
 
 	tiers := make([]BillingTierView, 0, len(groupOrder))
+	perMonth := make([]float64, 0, len(groupOrder))
 	for _, groupID := range groupOrder {
 		rep, anyForSale := billingRepresentativePlan(byGroup[groupID])
+		dollars := billingDollarsPerMonth(rep.Price, rep.ValidityDays, rep.ValidityUnit)
 		view := BillingTierView{
 			TierID:                 strconv.FormatInt(groupID, 10),
 			Name:                   rep.Name,
-			TierOrder:              rep.SortOrder,
-			DollarsPerMonthDisplay: billingDisplayMoney(billingDollarsPerMonth(rep.Price, rep.ValidityDays, rep.ValidityUnit)),
+			DollarsPerMonthDisplay: billingDisplayMoney(dollars),
 			IsCurrent:              hasActive && groupID == activeGroupID,
 			IsEnabled:              anyForSale,
 		}
@@ -797,8 +819,53 @@ func (s *BillingContractService) resolveTiers(ctx context.Context, activeGroupID
 			view.MonthlyCredits = &mc
 		}
 		tiers = append(tiers, view)
+		perMonth = append(perMonth, dollars)
 	}
+	billingAssignTierOrder(tiers, perMonth)
 	return tiers
+}
+
+// billingAssignTierOrder stamps every tier row with a 1-based rank, in place
+// (ruling C-2). perMonth[i] is tiers[i]'s normalised dollars-per-month.
+//
+// WHY A COMPUTED RANK AND NOT SubscriptionPlan.SortOrder: see
+// BillingTierView.TierOrder's doc comment. The short version is that SortOrder
+// defaults to 0, the panel's own plan editor posts 0, and every client surface
+// filters `tier_order > 0` -- so carrying SortOrder emitted an invisible plan
+// picker on default data.
+//
+// WHY NOT SortOrder+1: SortOrder is not unique and is not required to be
+// meaningful. Two groups both left at the default would both become 1, which
+// makes is_upgrade (subscription_view.py:409-411) answer False in BOTH
+// directions between them -- neither plan is an upgrade over the other, so the
+// picker offers a change it then refuses to characterise. The rank has to be
+// distinct per group, and it has to be derived from something that actually
+// orders plans.
+//
+// The ordering key is normalised dollars-per-month ascending -- the same figure
+// dollarsPerMonthDisplay reports, so a user reading the picker sees rows whose
+// prices ascend in the order the ranks claim. Ties break on the tiers[] index,
+// which is ListPlans' own BySortOrder order (payment_config_plans.go:127-129):
+// an admin who DID set sort orders still gets their intent among equal-priced
+// groups, and the result is total, so the rank is deterministic across requests
+// on unchanged data. Ranks are 1..len(tiers) with no gaps.
+//
+// Sorting a slice of indices rather than the views themselves is deliberate:
+// tiers[] keeps its first-seen (BySortOrder) emission order, which is what the
+// panel and the previous behaviour both show. Only the rank is re-derived; the
+// client sorts by it itself on every surface that cares
+// (selectable_tiers, subscriptionOverlay.tsx:381,525).
+func billingAssignTierOrder(tiers []BillingTierView, perMonth []float64) {
+	idx := make([]int, len(tiers))
+	for i := range idx {
+		idx[i] = i
+	}
+	sort.SliceStable(idx, func(a, b int) bool {
+		return perMonth[idx[a]] < perMonth[idx[b]]
+	})
+	for rank, i := range idx {
+		tiers[i].TierOrder = rank + 1
+	}
 }
 
 // billingRepresentativePlan picks the one plan that stands in for its whole
@@ -916,10 +983,13 @@ type BillingAccountSubscriptionView struct {
 	// same as a missing key.
 	Plan string `json:"plan,omitempty"`
 
-	// Tier -- :710. The only int ordering this codebase has is the active
-	// group's representative plan's SortOrder -- Task 3's resolveTiers /
-	// billingRepresentativePlan (ruling R-3.1/R-3.2), found by locating the
-	// tiers[] entry with IsCurrent==true. Omitted, never a fabricated 0,
+	// Tier -- :710. The active group's rank in Task 3's tiers[] --
+	// resolveTiers / billingAssignTierOrder (rulings R-3.1/R-3.2, C-2),
+	// found by locating the tiers[] entry with IsCurrent==true. Sourcing it
+	// from the SAME array GET /api/billing/subscription emits is the point:
+	// the two endpoints cannot report different ranks for one subscription.
+	// (It was SubscriptionPlan.SortOrder until C-2 -- see
+	// BillingTierView.TierOrder.) Omitted, never a fabricated 0,
 	// when the active group is not present in the plan catalog (a
 	// data-integrity edge case: an active subscription pointing at a group
 	// that ListPlans no longer returns any plan for).

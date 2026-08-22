@@ -759,11 +759,23 @@ func TestAccountReportsSubscriptionForActiveSubscriber(t *testing.T) {
 	raw := rec.Body.String()
 
 	// billingHandlerPlan's fixed catalog is {ID:100, GroupID:9, Name:"Pro",
-	// Price:20, ForSale:true} -- one plan, in group 9, SortOrder defaults to
-	// Go's zero value (0), so tier must be 0 here. The wire-byte assertion is
-	// that it appears as a bare number, not a quoted string.
-	require.Contains(t, raw, `"tier":0`, "tier must be an unquoted JSON number; body: %s", raw)
-	require.NotContains(t, raw, `"tier":"0"`)
+	// Price:20, ForSale:true} -- one plan, in group 9, SortOrder left at Go's
+	// zero value (0), which is also the schema default
+	// (ent/schema/subscription_plan.go:62) and what Inferno's own plan editor
+	// posts (PlanEditDialog.vue:126,182,199).
+	//
+	// tier is 1, NOT 0. It used to be 0 -- this assertion previously read
+	// `"tier":0` with a comment explaining SortOrder's zero value, pinning the
+	// C-2 defect as correct without asking what the client does with a 0. It
+	// drops the row: agent/subscription_view.py:373-379 and
+	// ui-tui/src/components/subscriptionOverlay.tsx:381,525 all filter
+	// `tier_order > 0`. tierOrder is now a computed 1-based rank
+	// (billingAssignTierOrder), so the sole catalog group ranks 1.
+	//
+	// The wire-byte assertion is that it appears as a bare number, not a
+	// quoted string.
+	require.Contains(t, raw, `"tier":1`, "tier must be an unquoted JSON number; body: %s", raw)
+	require.NotContains(t, raw, `"tier":"1"`)
 
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
@@ -773,7 +785,7 @@ func TestAccountReportsSubscriptionForActiveSubscriber(t *testing.T) {
 
 	require.Equal(t, "Pro", subBody["plan"])
 	require.IsType(t, float64(0), subBody["tier"], "tier must decode as a JSON number")
-	require.Equal(t, float64(0), subBody["tier"])
+	require.Equal(t, float64(1), subBody["tier"])
 	require.IsType(t, float64(0), subBody["monthly_credits"], "monthly_credits must be a JSON number, not a decimal string")
 	require.Equal(t, 100.0, subBody["monthly_credits"])
 	require.IsType(t, float64(0), subBody["credits_remaining"], "credits_remaining must be a JSON number, not a decimal string")
