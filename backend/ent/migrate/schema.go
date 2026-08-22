@@ -260,6 +260,71 @@ var (
 			},
 		},
 	}
+	// AgentsColumns holds the columns for the "agents" table.
+	AgentsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "public_id", Type: field.TypeString, Unique: true, Size: 64},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "org_id", Type: field.TypeInt64},
+		{Name: "name", Type: field.TypeString, Size: 200},
+		{Name: "dashboard_url", Type: field.TypeString, Size: 500, Default: ""},
+		{Name: "oc_platform_user_id", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "last_seen_at", Type: field.TypeTime, Nullable: true},
+		{Name: "revoked_at", Type: field.TypeTime, Nullable: true},
+	}
+	// AgentsTable holds the schema information for the "agents" table.
+	AgentsTable = &schema.Table{
+		Name:       "agents",
+		Columns:    AgentsColumns,
+		PrimaryKey: []*schema.Column{AgentsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "agent_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{AgentsColumns[4]},
+			},
+			{
+				Name:    "agent_org_id",
+				Unique:  false,
+				Columns: []*schema.Column{AgentsColumns[5]},
+			},
+		},
+	}
+	// AgentCronFiresColumns holds the columns for the "agent_cron_fires" table.
+	AgentCronFiresColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "agent_row_id", Type: field.TypeInt64},
+		{Name: "job_id", Type: field.TypeString, Size: 200},
+		{Name: "fire_at", Type: field.TypeTime},
+		{Name: "callback_url", Type: field.TypeString, Size: 500},
+		{Name: "dedup_key", Type: field.TypeString, Unique: true, Size: 300},
+		{Name: "schedule_id", Type: field.TypeString, Size: 64},
+		{Name: "state", Type: field.TypeEnum, Enums: []string{"armed", "fired", "cancelled"}, Default: "armed"},
+		{Name: "attempts", Type: field.TypeInt, Default: 0},
+		{Name: "last_error", Type: field.TypeString, Size: 500, Default: ""},
+	}
+	// AgentCronFiresTable holds the schema information for the "agent_cron_fires" table.
+	AgentCronFiresTable = &schema.Table{
+		Name:       "agent_cron_fires",
+		Columns:    AgentCronFiresColumns,
+		PrimaryKey: []*schema.Column{AgentCronFiresColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "agentcronfire_agent_row_id",
+				Unique:  false,
+				Columns: []*schema.Column{AgentCronFiresColumns[3]},
+			},
+			{
+				Name:    "agentcronfire_state_fire_at",
+				Unique:  false,
+				Columns: []*schema.Column{AgentCronFiresColumns[9], AgentCronFiresColumns[5]},
+			},
+		},
+	}
 	// AnnouncementsColumns holds the columns for the "announcements" table.
 	AnnouncementsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -2227,6 +2292,8 @@ var (
 		APIKeysTable,
 		AccountsTable,
 		AccountGroupsTable,
+		AgentsTable,
+		AgentCronFiresTable,
 		AnnouncementsTable,
 		AnnouncementReadsTable,
 		AuthIdentitiesTable,
@@ -2286,6 +2353,12 @@ func init() {
 	AccountGroupsTable.ForeignKeys[1].RefTable = GroupsTable
 	AccountGroupsTable.Annotation = &entsql.Annotation{
 		Table: "account_groups",
+	}
+	AgentsTable.Annotation = &entsql.Annotation{
+		Table: "agents",
+	}
+	AgentCronFiresTable.Annotation = &entsql.Annotation{
+		Table: "agent_cron_fires",
 	}
 	AnnouncementsTable.Annotation = &entsql.Annotation{
 		Table: "announcements",

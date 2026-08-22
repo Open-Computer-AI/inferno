@@ -7,6 +7,8 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
+	"github.com/Wei-Shaw/sub2api/ent/agent"
+	"github.com/Wei-Shaw/sub2api/ent/agentcronfire"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
@@ -271,6 +273,164 @@ func init() {
 	accountgroupDescCreatedAt := accountgroupFields[3].Descriptor()
 	// accountgroup.DefaultCreatedAt holds the default value on creation for the created_at field.
 	accountgroup.DefaultCreatedAt = accountgroupDescCreatedAt.Default.(func() time.Time)
+	agentMixin := schema.Agent{}.Mixin()
+	agentMixinFields0 := agentMixin[0].Fields()
+	_ = agentMixinFields0
+	agentFields := schema.Agent{}.Fields()
+	_ = agentFields
+	// agentDescCreatedAt is the schema descriptor for created_at field.
+	agentDescCreatedAt := agentMixinFields0[0].Descriptor()
+	// agent.DefaultCreatedAt holds the default value on creation for the created_at field.
+	agent.DefaultCreatedAt = agentDescCreatedAt.Default.(func() time.Time)
+	// agentDescUpdatedAt is the schema descriptor for updated_at field.
+	agentDescUpdatedAt := agentMixinFields0[1].Descriptor()
+	// agent.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	agent.DefaultUpdatedAt = agentDescUpdatedAt.Default.(func() time.Time)
+	// agent.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	agent.UpdateDefaultUpdatedAt = agentDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// agentDescPublicID is the schema descriptor for public_id field.
+	agentDescPublicID := agentFields[0].Descriptor()
+	// agent.PublicIDValidator is a validator for the "public_id" field. It is called by the builders before save.
+	agent.PublicIDValidator = func() func(string) error {
+		validators := agentDescPublicID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(public_id string) error {
+			for _, fn := range fns {
+				if err := fn(public_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// agentDescName is the schema descriptor for name field.
+	agentDescName := agentFields[3].Descriptor()
+	// agent.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	agent.NameValidator = func() func(string) error {
+		validators := agentDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// agentDescDashboardURL is the schema descriptor for dashboard_url field.
+	agentDescDashboardURL := agentFields[4].Descriptor()
+	// agent.DefaultDashboardURL holds the default value on creation for the dashboard_url field.
+	agent.DefaultDashboardURL = agentDescDashboardURL.Default.(string)
+	// agent.DashboardURLValidator is a validator for the "dashboard_url" field. It is called by the builders before save.
+	agent.DashboardURLValidator = agentDescDashboardURL.Validators[0].(func(string) error)
+	// agentDescOcPlatformUserID is the schema descriptor for oc_platform_user_id field.
+	agentDescOcPlatformUserID := agentFields[5].Descriptor()
+	// agent.OcPlatformUserIDValidator is a validator for the "oc_platform_user_id" field. It is called by the builders before save.
+	agent.OcPlatformUserIDValidator = agentDescOcPlatformUserID.Validators[0].(func(string) error)
+	agentcronfireMixin := schema.AgentCronFire{}.Mixin()
+	agentcronfireMixinFields0 := agentcronfireMixin[0].Fields()
+	_ = agentcronfireMixinFields0
+	agentcronfireFields := schema.AgentCronFire{}.Fields()
+	_ = agentcronfireFields
+	// agentcronfireDescCreatedAt is the schema descriptor for created_at field.
+	agentcronfireDescCreatedAt := agentcronfireMixinFields0[0].Descriptor()
+	// agentcronfire.DefaultCreatedAt holds the default value on creation for the created_at field.
+	agentcronfire.DefaultCreatedAt = agentcronfireDescCreatedAt.Default.(func() time.Time)
+	// agentcronfireDescUpdatedAt is the schema descriptor for updated_at field.
+	agentcronfireDescUpdatedAt := agentcronfireMixinFields0[1].Descriptor()
+	// agentcronfire.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	agentcronfire.DefaultUpdatedAt = agentcronfireDescUpdatedAt.Default.(func() time.Time)
+	// agentcronfire.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	agentcronfire.UpdateDefaultUpdatedAt = agentcronfireDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// agentcronfireDescJobID is the schema descriptor for job_id field.
+	agentcronfireDescJobID := agentcronfireFields[1].Descriptor()
+	// agentcronfire.JobIDValidator is a validator for the "job_id" field. It is called by the builders before save.
+	agentcronfire.JobIDValidator = func() func(string) error {
+		validators := agentcronfireDescJobID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(job_id string) error {
+			for _, fn := range fns {
+				if err := fn(job_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// agentcronfireDescCallbackURL is the schema descriptor for callback_url field.
+	agentcronfireDescCallbackURL := agentcronfireFields[3].Descriptor()
+	// agentcronfire.CallbackURLValidator is a validator for the "callback_url" field. It is called by the builders before save.
+	agentcronfire.CallbackURLValidator = func() func(string) error {
+		validators := agentcronfireDescCallbackURL.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(callback_url string) error {
+			for _, fn := range fns {
+				if err := fn(callback_url); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// agentcronfireDescDedupKey is the schema descriptor for dedup_key field.
+	agentcronfireDescDedupKey := agentcronfireFields[4].Descriptor()
+	// agentcronfire.DedupKeyValidator is a validator for the "dedup_key" field. It is called by the builders before save.
+	agentcronfire.DedupKeyValidator = func() func(string) error {
+		validators := agentcronfireDescDedupKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(dedup_key string) error {
+			for _, fn := range fns {
+				if err := fn(dedup_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// agentcronfireDescScheduleID is the schema descriptor for schedule_id field.
+	agentcronfireDescScheduleID := agentcronfireFields[5].Descriptor()
+	// agentcronfire.ScheduleIDValidator is a validator for the "schedule_id" field. It is called by the builders before save.
+	agentcronfire.ScheduleIDValidator = func() func(string) error {
+		validators := agentcronfireDescScheduleID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(schedule_id string) error {
+			for _, fn := range fns {
+				if err := fn(schedule_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// agentcronfireDescAttempts is the schema descriptor for attempts field.
+	agentcronfireDescAttempts := agentcronfireFields[7].Descriptor()
+	// agentcronfire.DefaultAttempts holds the default value on creation for the attempts field.
+	agentcronfire.DefaultAttempts = agentcronfireDescAttempts.Default.(int)
+	// agentcronfireDescLastError is the schema descriptor for last_error field.
+	agentcronfireDescLastError := agentcronfireFields[8].Descriptor()
+	// agentcronfire.DefaultLastError holds the default value on creation for the last_error field.
+	agentcronfire.DefaultLastError = agentcronfireDescLastError.Default.(string)
+	// agentcronfire.LastErrorValidator is a validator for the "last_error" field. It is called by the builders before save.
+	agentcronfire.LastErrorValidator = agentcronfireDescLastError.Validators[0].(func(string) error)
 	announcementFields := schema.Announcement{}.Fields()
 	_ = announcementFields
 	// announcementDescTitle is the schema descriptor for title field.

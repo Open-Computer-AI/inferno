@@ -17,6 +17,8 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
+	"github.com/Wei-Shaw/sub2api/ent/agent"
+	"github.com/Wei-Shaw/sub2api/ent/agentcronfire"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
@@ -74,6 +76,10 @@ type Client struct {
 	Account *AccountClient
 	// AccountGroup is the client for interacting with the AccountGroup builders.
 	AccountGroup *AccountGroupClient
+	// Agent is the client for interacting with the Agent builders.
+	Agent *AgentClient
+	// AgentCronFire is the client for interacting with the AgentCronFire builders.
+	AgentCronFire *AgentCronFireClient
 	// Announcement is the client for interacting with the Announcement builders.
 	Announcement *AnnouncementClient
 	// AnnouncementRead is the client for interacting with the AnnouncementRead builders.
@@ -170,6 +176,8 @@ func (c *Client) init() {
 	c.APIKey = NewAPIKeyClient(c.config)
 	c.Account = NewAccountClient(c.config)
 	c.AccountGroup = NewAccountGroupClient(c.config)
+	c.Agent = NewAgentClient(c.config)
+	c.AgentCronFire = NewAgentCronFireClient(c.config)
 	c.Announcement = NewAnnouncementClient(c.config)
 	c.AnnouncementRead = NewAnnouncementReadClient(c.config)
 	c.AuthIdentity = NewAuthIdentityClient(c.config)
@@ -306,6 +314,8 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		APIKey:                        NewAPIKeyClient(cfg),
 		Account:                       NewAccountClient(cfg),
 		AccountGroup:                  NewAccountGroupClient(cfg),
+		Agent:                         NewAgentClient(cfg),
+		AgentCronFire:                 NewAgentCronFireClient(cfg),
 		Announcement:                  NewAnnouncementClient(cfg),
 		AnnouncementRead:              NewAnnouncementReadClient(cfg),
 		AuthIdentity:                  NewAuthIdentityClient(cfg),
@@ -369,6 +379,8 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		APIKey:                        NewAPIKeyClient(cfg),
 		Account:                       NewAccountClient(cfg),
 		AccountGroup:                  NewAccountGroupClient(cfg),
+		Agent:                         NewAgentClient(cfg),
+		AgentCronFire:                 NewAgentCronFireClient(cfg),
 		Announcement:                  NewAnnouncementClient(cfg),
 		AnnouncementRead:              NewAnnouncementReadClient(cfg),
 		AuthIdentity:                  NewAuthIdentityClient(cfg),
@@ -439,18 +451,19 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.APIKey, c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead,
-		c.AuthIdentity, c.AuthIdentityChannel, c.BatchImageEvent, c.BatchImageItem,
-		c.BatchImageJob, c.ChannelMonitor, c.ChannelMonitorDailyRollup,
-		c.ChannelMonitorHistory, c.ChannelMonitorRequestTemplate,
-		c.CompositeModelRoute, c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
-		c.IdentityAdoptionDecision, c.OAuthAuthorizationCode, c.OAuthClient,
-		c.OAuthDeviceAuthorization, c.Org, c.OrgMember, c.PaymentAuditLog,
-		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
-		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
-		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.APIKey, c.Account, c.AccountGroup, c.Agent, c.AgentCronFire, c.Announcement,
+		c.AnnouncementRead, c.AuthIdentity, c.AuthIdentityChannel, c.BatchImageEvent,
+		c.BatchImageItem, c.BatchImageJob, c.ChannelMonitor,
+		c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
+		c.ChannelMonitorRequestTemplate, c.CompositeModelRoute, c.ErrorPassthroughRule,
+		c.Group, c.IdempotencyRecord, c.IdentityAdoptionDecision,
+		c.OAuthAuthorizationCode, c.OAuthClient, c.OAuthDeviceAuthorization, c.Org,
+		c.OrgMember, c.PaymentAuditLog, c.PaymentOrder, c.PaymentProviderInstance,
+		c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage, c.Proxy, c.RedeemCode,
+		c.SecuritySecret, c.Setting, c.SubscriptionPlan, c.TLSFingerprintProfile,
+		c.UsageCleanupTask, c.UsageLog, c.User, c.UserAllowedGroup,
+		c.UserAttributeDefinition, c.UserAttributeValue, c.UserPlatformQuota,
+		c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -460,18 +473,19 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.APIKey, c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead,
-		c.AuthIdentity, c.AuthIdentityChannel, c.BatchImageEvent, c.BatchImageItem,
-		c.BatchImageJob, c.ChannelMonitor, c.ChannelMonitorDailyRollup,
-		c.ChannelMonitorHistory, c.ChannelMonitorRequestTemplate,
-		c.CompositeModelRoute, c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
-		c.IdentityAdoptionDecision, c.OAuthAuthorizationCode, c.OAuthClient,
-		c.OAuthDeviceAuthorization, c.Org, c.OrgMember, c.PaymentAuditLog,
-		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
-		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
-		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.APIKey, c.Account, c.AccountGroup, c.Agent, c.AgentCronFire, c.Announcement,
+		c.AnnouncementRead, c.AuthIdentity, c.AuthIdentityChannel, c.BatchImageEvent,
+		c.BatchImageItem, c.BatchImageJob, c.ChannelMonitor,
+		c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
+		c.ChannelMonitorRequestTemplate, c.CompositeModelRoute, c.ErrorPassthroughRule,
+		c.Group, c.IdempotencyRecord, c.IdentityAdoptionDecision,
+		c.OAuthAuthorizationCode, c.OAuthClient, c.OAuthDeviceAuthorization, c.Org,
+		c.OrgMember, c.PaymentAuditLog, c.PaymentOrder, c.PaymentProviderInstance,
+		c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage, c.Proxy, c.RedeemCode,
+		c.SecuritySecret, c.Setting, c.SubscriptionPlan, c.TLSFingerprintProfile,
+		c.UsageCleanupTask, c.UsageLog, c.User, c.UserAllowedGroup,
+		c.UserAttributeDefinition, c.UserAttributeValue, c.UserPlatformQuota,
+		c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -486,6 +500,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Account.mutate(ctx, m)
 	case *AccountGroupMutation:
 		return c.AccountGroup.mutate(ctx, m)
+	case *AgentMutation:
+		return c.Agent.mutate(ctx, m)
+	case *AgentCronFireMutation:
+		return c.AgentCronFire.mutate(ctx, m)
 	case *AnnouncementMutation:
 		return c.Announcement.mutate(ctx, m)
 	case *AnnouncementReadMutation:
@@ -1100,6 +1118,272 @@ func (c *AccountGroupClient) mutate(ctx context.Context, m *AccountGroupMutation
 		return (&AccountGroupDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown AccountGroup mutation op: %q", m.Op())
+	}
+}
+
+// AgentClient is a client for the Agent schema.
+type AgentClient struct {
+	config
+}
+
+// NewAgentClient returns a client for the Agent from the given config.
+func NewAgentClient(c config) *AgentClient {
+	return &AgentClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `agent.Hooks(f(g(h())))`.
+func (c *AgentClient) Use(hooks ...Hook) {
+	c.hooks.Agent = append(c.hooks.Agent, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `agent.Intercept(f(g(h())))`.
+func (c *AgentClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Agent = append(c.inters.Agent, interceptors...)
+}
+
+// Create returns a builder for creating a Agent entity.
+func (c *AgentClient) Create() *AgentCreate {
+	mutation := newAgentMutation(c.config, OpCreate)
+	return &AgentCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Agent entities.
+func (c *AgentClient) CreateBulk(builders ...*AgentCreate) *AgentCreateBulk {
+	return &AgentCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AgentClient) MapCreateBulk(slice any, setFunc func(*AgentCreate, int)) *AgentCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AgentCreateBulk{err: fmt.Errorf("calling to AgentClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AgentCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AgentCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Agent.
+func (c *AgentClient) Update() *AgentUpdate {
+	mutation := newAgentMutation(c.config, OpUpdate)
+	return &AgentUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AgentClient) UpdateOne(_m *Agent) *AgentUpdateOne {
+	mutation := newAgentMutation(c.config, OpUpdateOne, withAgent(_m))
+	return &AgentUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AgentClient) UpdateOneID(id int64) *AgentUpdateOne {
+	mutation := newAgentMutation(c.config, OpUpdateOne, withAgentID(id))
+	return &AgentUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Agent.
+func (c *AgentClient) Delete() *AgentDelete {
+	mutation := newAgentMutation(c.config, OpDelete)
+	return &AgentDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AgentClient) DeleteOne(_m *Agent) *AgentDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AgentClient) DeleteOneID(id int64) *AgentDeleteOne {
+	builder := c.Delete().Where(agent.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AgentDeleteOne{builder}
+}
+
+// Query returns a query builder for Agent.
+func (c *AgentClient) Query() *AgentQuery {
+	return &AgentQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAgent},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Agent entity by its id.
+func (c *AgentClient) Get(ctx context.Context, id int64) (*Agent, error) {
+	return c.Query().Where(agent.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AgentClient) GetX(ctx context.Context, id int64) *Agent {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *AgentClient) Hooks() []Hook {
+	return c.hooks.Agent
+}
+
+// Interceptors returns the client interceptors.
+func (c *AgentClient) Interceptors() []Interceptor {
+	return c.inters.Agent
+}
+
+func (c *AgentClient) mutate(ctx context.Context, m *AgentMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AgentCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AgentUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AgentUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AgentDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Agent mutation op: %q", m.Op())
+	}
+}
+
+// AgentCronFireClient is a client for the AgentCronFire schema.
+type AgentCronFireClient struct {
+	config
+}
+
+// NewAgentCronFireClient returns a client for the AgentCronFire from the given config.
+func NewAgentCronFireClient(c config) *AgentCronFireClient {
+	return &AgentCronFireClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `agentcronfire.Hooks(f(g(h())))`.
+func (c *AgentCronFireClient) Use(hooks ...Hook) {
+	c.hooks.AgentCronFire = append(c.hooks.AgentCronFire, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `agentcronfire.Intercept(f(g(h())))`.
+func (c *AgentCronFireClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AgentCronFire = append(c.inters.AgentCronFire, interceptors...)
+}
+
+// Create returns a builder for creating a AgentCronFire entity.
+func (c *AgentCronFireClient) Create() *AgentCronFireCreate {
+	mutation := newAgentCronFireMutation(c.config, OpCreate)
+	return &AgentCronFireCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AgentCronFire entities.
+func (c *AgentCronFireClient) CreateBulk(builders ...*AgentCronFireCreate) *AgentCronFireCreateBulk {
+	return &AgentCronFireCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AgentCronFireClient) MapCreateBulk(slice any, setFunc func(*AgentCronFireCreate, int)) *AgentCronFireCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AgentCronFireCreateBulk{err: fmt.Errorf("calling to AgentCronFireClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AgentCronFireCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AgentCronFireCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AgentCronFire.
+func (c *AgentCronFireClient) Update() *AgentCronFireUpdate {
+	mutation := newAgentCronFireMutation(c.config, OpUpdate)
+	return &AgentCronFireUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AgentCronFireClient) UpdateOne(_m *AgentCronFire) *AgentCronFireUpdateOne {
+	mutation := newAgentCronFireMutation(c.config, OpUpdateOne, withAgentCronFire(_m))
+	return &AgentCronFireUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AgentCronFireClient) UpdateOneID(id int64) *AgentCronFireUpdateOne {
+	mutation := newAgentCronFireMutation(c.config, OpUpdateOne, withAgentCronFireID(id))
+	return &AgentCronFireUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AgentCronFire.
+func (c *AgentCronFireClient) Delete() *AgentCronFireDelete {
+	mutation := newAgentCronFireMutation(c.config, OpDelete)
+	return &AgentCronFireDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AgentCronFireClient) DeleteOne(_m *AgentCronFire) *AgentCronFireDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AgentCronFireClient) DeleteOneID(id int64) *AgentCronFireDeleteOne {
+	builder := c.Delete().Where(agentcronfire.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AgentCronFireDeleteOne{builder}
+}
+
+// Query returns a query builder for AgentCronFire.
+func (c *AgentCronFireClient) Query() *AgentCronFireQuery {
+	return &AgentCronFireQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAgentCronFire},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AgentCronFire entity by its id.
+func (c *AgentCronFireClient) Get(ctx context.Context, id int64) (*AgentCronFire, error) {
+	return c.Query().Where(agentcronfire.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AgentCronFireClient) GetX(ctx context.Context, id int64) *AgentCronFire {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *AgentCronFireClient) Hooks() []Hook {
+	return c.hooks.AgentCronFire
+}
+
+// Interceptors returns the client interceptors.
+func (c *AgentCronFireClient) Interceptors() []Interceptor {
+	return c.inters.AgentCronFire
+}
+
+func (c *AgentCronFireClient) mutate(ctx context.Context, m *AgentCronFireMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AgentCronFireCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AgentCronFireUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AgentCronFireUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AgentCronFireDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AgentCronFire mutation op: %q", m.Op())
 	}
 }
 
@@ -7532,30 +7816,30 @@ func (c *UserSubscriptionClient) mutate(ctx context.Context, m *UserSubscription
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
-		AuthIdentityChannel, BatchImageEvent, BatchImageItem, BatchImageJob,
-		ChannelMonitor, ChannelMonitorDailyRollup, ChannelMonitorHistory,
-		ChannelMonitorRequestTemplate, CompositeModelRoute, ErrorPassthroughRule,
-		Group, IdempotencyRecord, IdentityAdoptionDecision, OAuthAuthorizationCode,
-		OAuthClient, OAuthDeviceAuthorization, Org, OrgMember, PaymentAuditLog,
-		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
-		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
-		UserSubscription []ent.Hook
+		APIKey, Account, AccountGroup, Agent, AgentCronFire, Announcement,
+		AnnouncementRead, AuthIdentity, AuthIdentityChannel, BatchImageEvent,
+		BatchImageItem, BatchImageJob, ChannelMonitor, ChannelMonitorDailyRollup,
+		ChannelMonitorHistory, ChannelMonitorRequestTemplate, CompositeModelRoute,
+		ErrorPassthroughRule, Group, IdempotencyRecord, IdentityAdoptionDecision,
+		OAuthAuthorizationCode, OAuthClient, OAuthDeviceAuthorization, Org, OrgMember,
+		PaymentAuditLog, PaymentOrder, PaymentProviderInstance, PendingAuthSession,
+		PromoCode, PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting,
+		SubscriptionPlan, TLSFingerprintProfile, UsageCleanupTask, UsageLog, User,
+		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		UserPlatformQuota, UserSubscription []ent.Hook
 	}
 	inters struct {
-		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
-		AuthIdentityChannel, BatchImageEvent, BatchImageItem, BatchImageJob,
-		ChannelMonitor, ChannelMonitorDailyRollup, ChannelMonitorHistory,
-		ChannelMonitorRequestTemplate, CompositeModelRoute, ErrorPassthroughRule,
-		Group, IdempotencyRecord, IdentityAdoptionDecision, OAuthAuthorizationCode,
-		OAuthClient, OAuthDeviceAuthorization, Org, OrgMember, PaymentAuditLog,
-		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
-		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
-		UserSubscription []ent.Interceptor
+		APIKey, Account, AccountGroup, Agent, AgentCronFire, Announcement,
+		AnnouncementRead, AuthIdentity, AuthIdentityChannel, BatchImageEvent,
+		BatchImageItem, BatchImageJob, ChannelMonitor, ChannelMonitorDailyRollup,
+		ChannelMonitorHistory, ChannelMonitorRequestTemplate, CompositeModelRoute,
+		ErrorPassthroughRule, Group, IdempotencyRecord, IdentityAdoptionDecision,
+		OAuthAuthorizationCode, OAuthClient, OAuthDeviceAuthorization, Org, OrgMember,
+		PaymentAuditLog, PaymentOrder, PaymentProviderInstance, PendingAuthSession,
+		PromoCode, PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting,
+		SubscriptionPlan, TLSFingerprintProfile, UsageCleanupTask, UsageLog, User,
+		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		UserPlatformQuota, UserSubscription []ent.Interceptor
 	}
 )
 

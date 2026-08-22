@@ -10,6 +10,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
+	"github.com/Wei-Shaw/sub2api/ent/agent"
+	"github.com/Wei-Shaw/sub2api/ent/agentcronfire"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
@@ -190,6 +192,60 @@ func (f TraverseAccountGroup) Traverse(ctx context.Context, q ent.Query) error {
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *ent.AccountGroupQuery", q)
+}
+
+// The AgentFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AgentFunc func(context.Context, *ent.AgentQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AgentFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AgentQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AgentQuery", q)
+}
+
+// The TraverseAgent type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAgent func(context.Context, *ent.AgentQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAgent) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAgent) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AgentQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AgentQuery", q)
+}
+
+// The AgentCronFireFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AgentCronFireFunc func(context.Context, *ent.AgentCronFireQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AgentCronFireFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AgentCronFireQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AgentCronFireQuery", q)
+}
+
+// The TraverseAgentCronFire type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAgentCronFire func(context.Context, *ent.AgentCronFireQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAgentCronFire) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAgentCronFire) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AgentCronFireQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AgentCronFireQuery", q)
 }
 
 // The AnnouncementFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -1308,6 +1364,10 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.AccountQuery, predicate.Account, account.OrderOption]{typ: ent.TypeAccount, tq: q}, nil
 	case *ent.AccountGroupQuery:
 		return &query[*ent.AccountGroupQuery, predicate.AccountGroup, accountgroup.OrderOption]{typ: ent.TypeAccountGroup, tq: q}, nil
+	case *ent.AgentQuery:
+		return &query[*ent.AgentQuery, predicate.Agent, agent.OrderOption]{typ: ent.TypeAgent, tq: q}, nil
+	case *ent.AgentCronFireQuery:
+		return &query[*ent.AgentCronFireQuery, predicate.AgentCronFire, agentcronfire.OrderOption]{typ: ent.TypeAgentCronFire, tq: q}, nil
 	case *ent.AnnouncementQuery:
 		return &query[*ent.AnnouncementQuery, predicate.Announcement, announcement.OrderOption]{typ: ent.TypeAnnouncement, tq: q}, nil
 	case *ent.AnnouncementReadQuery:
