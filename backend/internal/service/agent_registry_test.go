@@ -296,6 +296,49 @@ func TestRegisterRejectsABlankPublicID(t *testing.T) {
 	require.Nil(t, got)
 }
 
+// ---------------------------------------------------------------------------
+// ResolveOwnedAgentRowID
+// ---------------------------------------------------------------------------
+
+// TestResolveOwnedAgentRowIDReturnsTheRowIDForTheCallersOwnAgent is the
+// happy path Task 4's /api/agent-cron/* handlers depend on: the caller's
+// verified OAuth aud claim (their agent's public_id) resolves to that
+// agent's row id.
+func TestResolveOwnedAgentRowIDReturnsTheRowIDForTheCallersOwnAgent(t *testing.T) {
+	svc, fx := newAgentRegistryFixture(t)
+	_, err := svc.Register(context.Background(), 7, 1, RegisterAgentInput{PublicID: "agent:mine"})
+	require.NoError(t, err)
+
+	row, err := fx.client.Agent.Query().Where(agent.PublicIDEQ("agent:mine")).Only(context.Background())
+	require.NoError(t, err)
+
+	id, err := svc.ResolveOwnedAgentRowID(context.Background(), 7, "agent:mine")
+	require.NoError(t, err)
+	require.Equal(t, row.ID, id)
+}
+
+// TestResolveOwnedAgentRowIDRejectsAnAgentTheCallerDoesNotOwn: an agent id
+// the caller does not own must not be addressable (task-4-brief.md) --
+// user 9 must not be able to arm/cancel/list fires under user 7's agent
+// just by presenting a token whose aud names it.
+func TestResolveOwnedAgentRowIDRejectsAnAgentTheCallerDoesNotOwn(t *testing.T) {
+	svc, _ := newAgentRegistryFixture(t)
+	_, err := svc.Register(context.Background(), 7, 1, RegisterAgentInput{PublicID: "agent:not-yours"})
+	require.NoError(t, err)
+
+	_, err = svc.ResolveOwnedAgentRowID(context.Background(), 9, "agent:not-yours")
+	require.Error(t, err)
+}
+
+// TestResolveOwnedAgentRowIDRejectsAnUnknownPublicID: a public_id that
+// belongs to no agent at all must 404, not silently resolve to row 0.
+func TestResolveOwnedAgentRowIDRejectsAnUnknownPublicID(t *testing.T) {
+	svc, _ := newAgentRegistryFixture(t)
+
+	_, err := svc.ResolveOwnedAgentRowID(context.Background(), 7, "agent:no-such-agent")
+	require.Error(t, err)
+}
+
 // TestRegisterNameFallsBackToPublicIDWhenBlank mirrors the desktop's own
 // `name: typeof a.name === 'string' ? a.name : a.id`
 // (apps/desktop/electron/main.ts:7924).

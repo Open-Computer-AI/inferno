@@ -176,6 +176,40 @@ func (s *AgentRegistryService) ListForUser(ctx context.Context, userID, orgID in
 	return out, nil
 }
 
+// ResolveOwnedAgentRowID resolves an agent's public_id (its OAuth
+// client_id -- see RegisterAgentInput.PublicID's doc comment) to its row
+// id, scoped to the caller. Chronos's /api/agent-cron/* surface
+// (task-4-brief.md) works in row ids, but the agent identifies itself by
+// its OWN OAuth token, whose verified `aud` claim IS its public_id
+// (RequireOAuthScope publishes it as the caller's identity,
+// middleware/oauth_scope.go) -- there is no separate agent-id field in the
+// wire contract (plugins/cron_providers/chronos/_nas_client.py has none),
+// so this is the one place that translation happens.
+//
+// Mirrors Register's own ownership check (ruling T2-2) rather than
+// inventing a second pattern: an agent id the caller does not own must not
+// be addressable, so a public_id that exists but belongs to a different
+// user_id is rejected with Forbidden, never silently resolved to someone
+// else's row.
+func (s *AgentRegistryService) ResolveOwnedAgentRowID(ctx context.Context, userID int64, publicID string) (int64, error) {
+	if publicID == "" {
+		return 0, infraerrors.BadRequest("AGENT_CRON_CALLER_UNIDENTIFIED", "the calling agent could not be identified")
+	}
+
+	row, err := s.client.Agent.Query().Where(agent.PublicIDEQ(publicID)).Only(ctx)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return 0, infraerrors.NotFound("AGENT_NOT_FOUND", "agent not found")
+		}
+		return 0, fmt.Errorf("agent registry: resolve owned agent row id for public_id %q: %w", publicID, err)
+	}
+	if row.UserID != userID {
+		return 0, infraerrors.Forbidden("AGENT_NOT_OWNED_BY_CALLER", "this agent does not belong to you")
+	}
+
+	return row.ID, nil
+}
+
 // toView maps a dbent.Agent row to the service's read model, deriving Status
 // as human-readable prose from last_seen_at -- apps/desktop/src/i18n/en.ts:812
 // renders it VERBATIM (`cloudStatusLabel: status => "Status: ${status}"`), so
