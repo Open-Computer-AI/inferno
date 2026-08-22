@@ -46,6 +46,18 @@ const (
 // test already runs against its own isolated in-memory database.
 var agentRouteSeq int
 
+// noopCronArmer satisfies service.AgentCronService's unexported cronArmer
+// interface (ruling T5-1) for these wire/routing tests: this file asserts
+// status codes, JSON shape and org-selection branching, never the timing
+// wheel's real arming behavior, which internal/service/agent_cron_test.go
+// and agent_cron_firer_test.go already cover directly. Deliberately a
+// silent no-op rather than a real *service.AgentCronFirer -- standing one
+// of those up here would need a real OAuthKeyService key, a running timing
+// wheel and an HTTP client that none of these tests exercise or assert on.
+type noopCronArmer struct{}
+
+func (noopCronArmer) ArmNow(context.Context, int64, time.Time) {}
+
 // --- harness ---------------------------------------------------------------
 
 type agentRouteEnv struct {
@@ -96,7 +108,7 @@ func newAgentRouteEnv(t *testing.T) *agentRouteEnv {
 	tokenSvc := service.NewOAuthTokenService(entClient, keySvc, nil, nil, nil, agentRouteIssuer)
 	orgSvc := service.NewOrgService(entClient)
 	agentSvc := service.NewAgentRegistryService(entClient)
-	agentCronSvc := service.NewAgentCronService(entClient)
+	agentCronSvc := service.NewAgentCronService(entClient, noopCronArmer{})
 
 	oauthH := handler.NewOAuthHandler(keySvc, clientSvc, orgSvc, nil, tokenSvc, nil)
 	agentH := handler.NewAgentHandler(agentSvc, orgSvc, agentCronSvc)

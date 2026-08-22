@@ -49,6 +49,18 @@ const (
 	// schedule the way an arbitrarily-far-future fire_at could.
 	fireRetryBackoffBase = 30 * time.Second
 	fireRetryBackoffMax  = 10 * time.Minute
+
+	// fireMinDelay is the floor every computed wheel delay is clamped to.
+	// go-zero's TimingWheel.SetTimer REJECTS delay <= 0 outright
+	// (ErrArgument, collection/timingwheel.go), and TimingWheelService.Schedule
+	// only LOGS that rejection rather than firing immediately or surfacing an
+	// error to this caller (timing_wheel_service.go). An overdue fire_at (the
+	// server was down past its moment, or a caller computes an exactly-zero
+	// delay) would therefore silently NEVER be scheduled at all -- precisely
+	// the "nothing errors when this is broken" failure mode this entire type
+	// exists to close. 1ms is not an observable delay to anything that reads
+	// fire_at, but it is > 0.
+	fireMinDelay = time.Millisecond
 )
 
 // cronTimingWheel is the narrow slice of *TimingWheelService this file
@@ -174,10 +186,53 @@ func (f *AgentCronFirer) mintFireToken(ctx context.Context, aud, jobID string) (
 }
 
 // fireWheelKey names one fire row's timer inside the timing wheel, shared by
-// RehydrateOnBoot's initial arm and FireNow's retry re-arm so a retry
-// replaces (rather than duplicates) the row's own outstanding timer.
+// ArmNow's initial arm, RehydrateOnBoot's re-arm, and FireNow's retry re-arm,
+// so none of the three ever leaves two live timers for one row: go-zero's
+// TimingWheel.SetTimer looks up this exact key and MOVES the existing entry
+// to its new position instead of adding a duplicate when the key already has
+// one (setTask/moveTask, collection/timingwheel.go) -- so a row that gets
+// ArmNow'd on Provision and then RehydrateOnBoot'd on the next restart is
+// re-pointed at the same single timer slot both times, never doubled.
 func fireWheelKey(fireID int64) string {
 	return fmt.Sprintf("agent_cron_fire:%d", fireID)
+}
+
+// clampFireDelay floors a computed wheel delay to fireMinDelay -- see that
+// constant's doc comment for why a delay of exactly (or below) zero must
+// never reach cronTimingWheel.Schedule.
+func clampFireDelay(delay time.Duration) time.Duration {
+	if delay < fireMinDelay {
+		return fireMinDelay
+	}
+	return delay
+}
+
+// ArmNow schedules an already-persisted fire into the timing wheel for THIS
+// process, without waiting for the next boot. RehydrateOnBoot only covers
+// process START (ent/schema/agent_cron_fire.go's doc comment: "a restart
+// drops every pending timer... rows are rehydrated into the wheel on
+// boot") -- it says nothing about a row created or re-armed while a process
+// is already running, and until ruling T5-1 nothing did: AgentCronService.Provision
+// upserted the row and returned, and the row sat "armed" in the database with
+// no timer anywhere until the NEXT restart. ArmNow is that missing arm.
+//
+// Called from AgentCronService.Provision after its upsert succeeds (ruling
+// T5-1) — NOT from AgentCronFirer itself on any schedule, since this type has
+// no way to learn about a fresh Provision call on its own.
+//
+// Uses the SAME wheel key fireWheelKey derives for RehydrateOnBoot and
+// markRetry, so Provision's own idempotent re-arm of the identical row
+// (ruling T4-1: the composite (agent_row_id, dedup_key) upsert returns the
+// SAME row, not a new one) moves this process's existing timer for that row
+// to the new fire_at rather than leaving a stale one running alongside a
+// fresh one.
+func (f *AgentCronFirer) ArmNow(_ context.Context, fireID int64, fireAt time.Time) {
+	delay := clampFireDelay(fireAt.Sub(f.now()))
+	f.wheel.Schedule(fireWheelKey(fireID), delay, func() {
+		if err := f.FireNow(context.Background(), fireID); err != nil {
+			logger.LegacyPrintf("service.agent_cron_firer", "[AgentCronFirer] armed fire %d failed: %v", fireID, err)
+		}
+	})
 }
 
 // fireCallbackPayload is the JSON body POSTed to callback_url. job_id and
@@ -344,9 +399,9 @@ func truncateFireError(s string) string {
 // timer but not the row).
 //
 // A fire already overdue while the server was down (fire_at in the past) is
-// armed with a zero delay rather than skipped or delayed further -- it fires
-// once, immediately, rather than being silently dropped for having missed
-// its original moment.
+// armed with the minimum delay (clampFireDelay) rather than skipped or
+// delayed further -- it fires once, effectively immediately, rather than
+// being silently dropped for having missed its original moment.
 func (f *AgentCronFirer) RehydrateOnBoot(ctx context.Context) (int, error) {
 	rows, err := f.client.AgentCronFire.Query().
 		Where(agentcronfire.StateEQ(agentcronfire.StateArmed)).
@@ -358,10 +413,7 @@ func (f *AgentCronFirer) RehydrateOnBoot(ctx context.Context) (int, error) {
 
 	now := f.now()
 	for _, row := range rows {
-		delay := row.FireAt.Sub(now)
-		if delay < 0 {
-			delay = 0
-		}
+		delay := clampFireDelay(row.FireAt.Sub(now))
 		fireID := row.ID
 		f.wheel.Schedule(fireWheelKey(fireID), delay, func() {
 			if err := f.FireNow(context.Background(), fireID); err != nil {

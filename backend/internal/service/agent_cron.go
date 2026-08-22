@@ -12,6 +12,32 @@ import (
 	"github.com/google/uuid"
 )
 
+// cronArmer is the narrow slice of *AgentCronFirer that Provision needs: arm
+// a freshly-(re)provisioned row into the timing wheel for THIS process,
+// without waiting for the next boot. RehydrateOnBoot only covers process
+// START (ent/schema/agent_cron_fire.go's doc comment: "a restart drops
+// every pending timer... rows are rehydrated into the wheel on boot") -- it
+// says nothing about a row provisioned while a process is already running,
+// and until ruling T5-1 nothing armed that case either: Provision upserted
+// the row and returned, and it sat "armed" in the database with no timer
+// anywhere until the next restart. This interface is how Provision closes
+// that gap.
+//
+// Deliberately the ONLY thing AgentCronService knows about AgentCronFirer --
+// never a *AgentCronFirer field. That keeps the dependency one-directional
+// (AgentCronService -> AgentCronFirer): AgentCronFirer's own methods are
+// inherently cross-agent (RehydrateOnBoot must see every agent's armed rows
+// at once), so it talks to dbent.AgentCronFire directly rather than holding
+// a *AgentCronService whose surface is scoped to one caller -- see
+// AgentCronFirer's doc comment. Two structs each holding a pointer to the
+// other would force an awkward two-phase construction; routing the
+// dependency through this one narrow interface avoids that entirely, and
+// lets Provision's own tests substitute a fake with no real timing wheel or
+// HTTP client involved.
+type cronArmer interface {
+	ArmNow(ctx context.Context, fireID int64, fireAt time.Time)
+}
+
 // AgentCronService is the service layer over the `agent_cron_fires` table
 // (Task 1's dbent.AgentCronFire schema): provision/cancel/list the one-shot
 // fires behind /api/agent-cron/{provision,cancel,list}. Modeled on
@@ -30,15 +56,26 @@ import (
 type AgentCronService struct {
 	client *dbent.Client
 
+	// armer arms a freshly-(re)provisioned row into the CURRENT process's
+	// timing wheel -- see cronArmer's doc comment. Required, not an optional
+	// nil-checked dependency: a nil-tolerant "skip arming silently" design
+	// would reintroduce the exact failure mode ruling T5-1 exists to close
+	// (a fire that sits armed in the database with no timer anywhere until
+	// the next restart) -- so a caller that forgets to wire one panics
+	// immediately on the first Provision call, loudly, in tests, rather than
+	// shipping a server that silently never arms anything.
+	armer cronArmer
+
 	// newScheduleID mints this service's own schedule_id on a fresh arm.
 	// Injected so a test can pin it, mirroring AgentRegistryService.now's
 	// seam for the same reason.
 	newScheduleID func() string
 }
 
-func NewAgentCronService(client *dbent.Client) *AgentCronService {
+func NewAgentCronService(client *dbent.Client, armer cronArmer) *AgentCronService {
 	return &AgentCronService{
 		client:        client,
+		armer:         armer,
 		newScheduleID: newAgentCronScheduleID,
 	}
 }
@@ -148,6 +185,18 @@ func (s *AgentCronService) Provision(ctx context.Context, agentRowID int64, in P
 		// returning another agent's fire.
 		return nil, fmt.Errorf("agent cron: provision job %q resolved to agent_row_id %d, want %d", in.JobID, row.AgentRowID, agentRowID)
 	}
+
+	// Ruling T5-1: arm this row into the CURRENT process's timing wheel right
+	// now, rather than leaving it to the next restart's RehydrateOnBoot. Runs
+	// AFTER the upsert has committed -- an arm racing ahead of the row it
+	// names existing would have nothing to load when its timer fires -- and
+	// unconditionally on every Provision call, fresh arm or idempotent
+	// re-arm alike: fireWheelKey is keyed on row.ID, which the composite
+	// (agent_row_id, dedup_key) upsert above resolves to the SAME id both
+	// times (ruling T4-1), so a re-arm MOVES this process's existing timer
+	// to the (possibly unchanged) fire_at rather than adding a second one --
+	// see ArmNow's doc comment.
+	s.armer.ArmNow(ctx, row.ID, row.FireAt)
 
 	view := agentCronFireView(row)
 	return &view, nil

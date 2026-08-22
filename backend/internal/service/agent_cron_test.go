@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +19,36 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// fakeCronArmer stands in for AgentCronFirer.ArmNow in AgentCronService
+// tests (ruling T5-1), modeling exactly the invariant fireWheelKey buys in
+// production: keyed by fireID, so a re-arm of the SAME row overwrites its
+// own entry rather than accumulating a second one -- the identical "one
+// timer per row" property go-zero's real TimingWheel.SetTimer enforces by
+// key (agent_cron_firer.go's fireWheelKey doc comment).
+type fakeCronArmer struct {
+	mu    sync.Mutex
+	calls map[int64]time.Time // fireID -> most recently armed fire_at
+}
+
+func newFakeCronArmer() *fakeCronArmer {
+	return &fakeCronArmer{calls: make(map[int64]time.Time)}
+}
+
+func (a *fakeCronArmer) ArmNow(_ context.Context, fireID int64, fireAt time.Time) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.calls[fireID] = fireAt
+}
+
+// count returns how many DISTINCT rows have been armed -- not how many times
+// ArmNow was called, which is the whole point: a re-arm of an already-armed
+// row must not grow this number.
+func (a *fakeCronArmer) count() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.calls)
+}
+
 // agentCronSeq gives every seeded fire a distinct dedup_key across a test's
 // seed calls -- dedup_key is UNIQUE (ent/schema/agent_cron_fire.go), so two
 // fires sharing a job_id across two different agents still need distinct
@@ -26,9 +57,11 @@ var agentCronSeq int
 
 // agentCronFixture holds the real ent client AgentCronService reads and
 // writes -- like AgentRegistryService, Provision/Cancel/ListArmed talk to
-// dbent.AgentCronFire directly, so the fixture needs an actual database.
+// dbent.AgentCronFire directly, so the fixture needs an actual database --
+// plus the fake armer standing in for AgentCronFirer (ruling T5-1).
 type agentCronFixture struct {
 	client *dbent.Client
+	armer  *fakeCronArmer
 }
 
 // newAgentCronTestClient opens an isolated in-memory sqlite database per
@@ -60,8 +93,8 @@ func newAgentCronTestClient(t *testing.T) *dbent.Client {
 func newAgentCronFixture(t *testing.T) (*AgentCronService, *agentCronFixture) {
 	t.Helper()
 
-	fx := &agentCronFixture{client: newAgentCronTestClient(t)}
-	svc := NewAgentCronService(fx.client)
+	fx := &agentCronFixture{client: newAgentCronTestClient(t), armer: newFakeCronArmer()}
+	svc := NewAgentCronService(fx.client, fx.armer)
 	return svc, fx
 }
 
@@ -121,6 +154,45 @@ func TestProvisionTwiceWithTheSameDedupKeyArmsExactlyOneFire(t *testing.T) {
 
 	require.Equal(t, first.ScheduleID, second.ScheduleID, "same fire, same schedule_id")
 	require.Equal(t, 1, fx.countFires(), "the UNIQUE dedup_key is what enforces this")
+}
+
+// TestProvisionArmsTheNewRowIntoTheTimingWheel is ruling T5-1: a fire armed
+// while the server is RUNNING must not wait for the next boot's
+// RehydrateOnBoot to get a timer -- Provision itself must arm it, via
+// AgentCronFirer.ArmNow, the moment the upsert commits.
+func TestProvisionArmsTheNewRowIntoTheTimingWheel(t *testing.T) {
+	svc, fx := newAgentCronFixture(t)
+
+	_, err := svc.Provision(context.Background(), 1, ProvisionInput{
+		JobID:            "job-1",
+		FireAt:           "2026-09-01T10:00:00Z",
+		AgentCallbackURL: "https://agent.example/",
+		DedupKey:         "job-1:2026-09-01T10:00:00Z",
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, 1, fx.armer.count(), "Provision must arm exactly one row into the current process's timing wheel")
+}
+
+// TestProvisionReArmDoesNotLeaveTwoTimersForOneRow is ruling T5-1's other
+// half: Provision's own idempotent re-arm (same agent_row_id + dedup_key,
+// ruling T4-1) resolves to the SAME row both times, so arming it twice must
+// still leave exactly one timer for that row, never two.
+func TestProvisionReArmDoesNotLeaveTwoTimersForOneRow(t *testing.T) {
+	svc, fx := newAgentCronFixture(t)
+	in := ProvisionInput{
+		JobID:            "job-1",
+		FireAt:           "2026-09-01T10:00:00Z",
+		AgentCallbackURL: "https://agent.example/",
+		DedupKey:         "job-1:2026-09-01T10:00:00Z",
+	}
+
+	_, err := svc.Provision(context.Background(), 1, in)
+	require.NoError(t, err)
+	_, err = svc.Provision(context.Background(), 1, in)
+	require.NoError(t, err)
+
+	require.Equal(t, 1, fx.armer.count(), "a re-arm of the same row must not leave two timers for it")
 }
 
 // TestProvisionRejectsMissingRequiredFields pins the 400s: job_id,
