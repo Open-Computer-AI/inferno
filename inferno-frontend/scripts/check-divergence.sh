@@ -467,6 +467,30 @@ backend/internal/handler/billing_contract_handler.go
 backend/internal/handler/billing_contract_handler_test.go
 backend/internal/server/routes/billing_contract.go
 backend/internal/server/routes/billing_contract_route_test.go
+# D8 -- agent registry + Chronos cron signer (Task 1: agents +
+# agent_cron_fires ent schemas and migrations). The shared codegen files
+# this go generate ./ent run touched (client.go, ent.go, hook/hook.go,
+# intercept/intercept.go, migrate/schema.go, mutation.go,
+# predicate/predicate.go, runtime/runtime.go, tx.go) are already declared
+# above (D7's org/oauth_client tasks) -- not re-listed here, same files.
+backend/ent/schema/agent.go
+backend/ent/schema/agent_cron_fire.go
+backend/ent/agent.go
+backend/ent/agent/agent.go
+backend/ent/agent/where.go
+backend/ent/agent_create.go
+backend/ent/agent_delete.go
+backend/ent/agent_query.go
+backend/ent/agent_update.go
+backend/ent/agentcronfire.go
+backend/ent/agentcronfire/agentcronfire.go
+backend/ent/agentcronfire/where.go
+backend/ent/agentcronfire_create.go
+backend/ent/agentcronfire_delete.go
+backend/ent/agentcronfire_query.go
+backend/ent/agentcronfire_update.go
+backend/migrations/911_agents.sql
+backend/migrations/912_agent_cron_fires.sql
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }
