@@ -258,6 +258,53 @@ func TestAgentsRouteAnswers409WithTheOrgListWhenMultiOrgAndNoOrgParam(t *testing
 	require.Len(t, body.Orgs, 2, "the picker needs the list, or the user is stuck")
 }
 
+// TestAgentsRouteHonorsExplicitOrgQueryParam is ruling T3-2: a user in two
+// orgs passes ?org=<slug> for one they ARE a member of. agent_handler.go's
+// resolveOrg (:122-130) must scope the response to THAT org, not silently
+// fall back to the caller's first membership -- Task 2's ListForUser now
+// filters on org_id as well as user_id (ruling T2-1), so this parameter is
+// what decides what a multi-org user sees.
+//
+// An agent is seeded in EACH org so the assertion can actually distinguish
+// them: a single-agent fixture would pass this test even with no org
+// filtering at all.
+func TestAgentsRouteHonorsExplicitOrgQueryParam(t *testing.T) {
+	env := newAgentRouteEnv(t)
+	orgs := env.seedOrgs(t, 7, "acme", "globex") // user 7 belongs to BOTH
+	env.seedAgent(t, 7, orgs[0].ID, "acme-agent")
+	env.seedAgent(t, 7, orgs[1].ID, "globex-agent")
+
+	rec := env.get(t, "/api/agents?org=acme", "Bearer "+env.mint(t, service.ScopeInferenceInvoke))
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	var body struct {
+		Agents []map[string]any `json:"agents"`
+		Org    map[string]any   `json:"org"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "acme", body.Org["slug"])
+	require.Len(t, body.Agents, 1, "?org=acme must return ONLY acme's agents")
+	require.Equal(t, "acme-agent", body.Agents[0]["name"])
+}
+
+// TestAgentsRouteRejectsOrgQueryParamForNonMemberOrg is ruling T3-2's other
+// direction: a user passes ?org=<slug> for an org they are NOT a member of.
+// The failure mode being guarded is a silent fallback to an org the caller
+// DOES belong to -- an unrecognized slug must 403, not quietly substitute
+// another org and leak its agents -- so this asserts both the status code
+// AND that the caller's own org's agent never appears in the response.
+func TestAgentsRouteRejectsOrgQueryParamForNonMemberOrg(t *testing.T) {
+	env := newAgentRouteEnv(t) // default env: user 7 belongs only to "default-org" (id 1)
+	env.seedAgent(t, 7, 1, "my-own-agent")
+
+	rec := env.get(t, "/api/agents?org=not-a-member-org", "Bearer "+env.mint(t, service.ScopeInferenceInvoke))
+	require.Equal(t, http.StatusForbidden, rec.Code, "body: %s", rec.Body.String())
+	require.JSONEq(t, `{"error":"org_not_found"}`, rec.Body.String(),
+		"must be a clean 403, not the caller's own org's agents silently substituted in")
+	require.NotContains(t, rec.Body.String(), "my-own-agent",
+		"a non-member ?org= must never fall back to leaking the caller's own org")
+}
+
 // TestAgentsRouteAdmitsASingleOrgUserWithoutAPicker: a single-org user must
 // NOT get a 409 -- most users belong only to their personal org, and the
 // desktop must not force a picker on every single-org user.
