@@ -191,12 +191,22 @@ func (s *AgentRegistryService) ListForUser(ctx context.Context, userID, orgID in
 // be addressable, so a public_id that exists but belongs to a different
 // user_id is rejected with Forbidden, never silently resolved to someone
 // else's row.
+//
+// Also excludes revoked agents (ruling T4-2), mirroring ListForUser's own
+// agent.RevokedAtIsNil() filter: revocation is the intended kill switch for
+// an agent, and /api/agent-cron/* is precisely the capability that keeps
+// running UNATTENDED after revocation if this did not check it -- a kill
+// switch that does not stop cron is not a kill switch. Treated the same as
+// "not found" rather than a distinct status: a revoked agent is not
+// addressable, the same as one that never existed.
 func (s *AgentRegistryService) ResolveOwnedAgentRowID(ctx context.Context, userID int64, publicID string) (int64, error) {
 	if publicID == "" {
 		return 0, infraerrors.BadRequest("AGENT_CRON_CALLER_UNIDENTIFIED", "the calling agent could not be identified")
 	}
 
-	row, err := s.client.Agent.Query().Where(agent.PublicIDEQ(publicID)).Only(ctx)
+	row, err := s.client.Agent.Query().
+		Where(agent.PublicIDEQ(publicID), agent.RevokedAtIsNil()).
+		Only(ctx)
 	if err != nil {
 		if dbent.IsNotFound(err) {
 			return 0, infraerrors.NotFound("AGENT_NOT_FOUND", "agent not found")

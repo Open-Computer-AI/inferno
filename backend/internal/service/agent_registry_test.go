@@ -339,6 +339,22 @@ func TestResolveOwnedAgentRowIDRejectsAnUnknownPublicID(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestResolveOwnedAgentRowIDRejectsARevokedAgent is ruling T4-2's proof.
+// revoked_at is the intended kill switch for an agent, and
+// /api/agent-cron/* is precisely the capability that keeps running
+// UNATTENDED after revocation if this resolver did not check it -- mirrors
+// ListForUser's own agent.RevokedAtIsNil() filter
+// (TestListForUserExcludesRevokedAgents).
+func TestResolveOwnedAgentRowIDRejectsARevokedAgent(t *testing.T) {
+	svc, fx := newAgentRegistryFixture(t)
+	revoked := fx.seedAgent(7, 1, "revoked")
+	_, err := fx.client.Agent.UpdateOne(revoked).SetRevokedAt(fx.now).Save(context.Background())
+	require.NoError(t, err)
+
+	_, err = svc.ResolveOwnedAgentRowID(context.Background(), 7, revoked.PublicID)
+	require.Error(t, err, "a revoked agent's public_id must no longer resolve, even for its own owner")
+}
+
 // TestRegisterNameFallsBackToPublicIDWhenBlank mirrors the desktop's own
 // `name: typeof a.name === 'string' ? a.name : a.id`
 // (apps/desktop/electron/main.ts:7924).
