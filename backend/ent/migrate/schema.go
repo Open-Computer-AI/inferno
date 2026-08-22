@@ -301,7 +301,7 @@ var (
 		{Name: "job_id", Type: field.TypeString, Size: 200},
 		{Name: "fire_at", Type: field.TypeTime},
 		{Name: "callback_url", Type: field.TypeString, Size: 500},
-		{Name: "dedup_key", Type: field.TypeString, Unique: true, Size: 300},
+		{Name: "dedup_key", Type: field.TypeString, Size: 300},
 		{Name: "schedule_id", Type: field.TypeString, Size: 64},
 		{Name: "state", Type: field.TypeEnum, Enums: []string{"armed", "fired", "cancelled"}, Default: "armed"},
 		{Name: "attempts", Type: field.TypeInt, Default: 0},
@@ -322,6 +322,11 @@ var (
 				Name:    "agentcronfire_state_fire_at",
 				Unique:  false,
 				Columns: []*schema.Column{AgentCronFiresColumns[9], AgentCronFiresColumns[5]},
+			},
+			{
+				Name:    "agentcronfire_agent_row_id_dedup_key",
+				Unique:  true,
+				Columns: []*schema.Column{AgentCronFiresColumns[3], AgentCronFiresColumns[7]},
 			},
 		},
 	}

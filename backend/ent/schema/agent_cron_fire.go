@@ -36,10 +36,21 @@ func (AgentCronFire) Fields() []ent.Field {
 		field.Time("fire_at"),
 		field.String("callback_url").MaxLen(500).NotEmpty(),
 		// dedup_key is "{job_id}:{fire_at}" (plugins/cron_providers/chronos/
-		// _nas_client.py:96-109). UNIQUE is what makes re-arming idempotent AT
-		// THE DATABASE rather than by a read-then-write that races itself --
-		// the agent's cold-start reconcile re-arms everything it wants.
-		field.String("dedup_key").MaxLen(300).NotEmpty().Unique(),
+		// _nas_client.py:96-109). It is UNIQUE PER AGENT (see the composite
+		// index below), never globally -- job_id lives in the calling
+		// agent's OWN namespace, so two different agents legitimately arm
+		// the identically-named job "daily-report" on the same day. A
+		// field-level (globally) unique dedup_key was ruling T4-1's plan
+		// defect (task-1-brief.md originally specified it): it let one
+		// agent's arm collide into another agent's row (a field-level
+		// .Unique() IS an index on that column alone, so ON CONFLICT could
+		// only ever target across every agent at once) and it permanently
+		// blocked a second agent from ever arming a same-named job. The
+		// composite index is what makes re-arming idempotent AT THE
+		// DATABASE, scoped to one agent, rather than by a read-then-write
+		// that races itself -- the agent's cold-start reconcile re-arms
+		// everything it wants.
+		field.String("dedup_key").MaxLen(300).NotEmpty(),
 		field.String("schedule_id").MaxLen(64).NotEmpty(),
 		field.Enum("state").Values("armed", "fired", "cancelled").Default("armed"),
 		field.Int("attempts").Default(0),
@@ -51,5 +62,12 @@ func (AgentCronFire) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("agent_row_id"),
 		index.Fields("state", "fire_at"),
+		// Composite UNIQUE on (agent_row_id, dedup_key) -- ruling T4-1.
+		// Scopes idempotent re-arming to ONE agent's own namespace instead
+		// of a global one: a foreign agent's row can no longer be a
+		// conflict target for this agent's INSERT ... ON CONFLICT at all,
+		// closing the cross-agent collision structurally rather than by a
+		// check a future refactor could drop.
+		index.Fields("agent_row_id", "dedup_key").Unique(),
 	}
 }
