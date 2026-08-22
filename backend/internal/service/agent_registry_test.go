@@ -119,6 +119,40 @@ func TestListForUserReturnsOnlyTheCallersAgents(t *testing.T) {
 	require.Equal(t, "ours", got[0].Name)
 }
 
+// TestListForUserExcludesAnotherUsersAgentInTheSameOrg isolates the user_id
+// predicate specifically (ruling T2-1): both agents share org 1, so this can
+// only pass if user_id is actually enforced. Combined with
+// TestListForUserExcludesTheCallersOwnAgentInAnotherOrg below, dropping
+// EITHER of ListForUser's two predicates fails exactly one of these two
+// tests -- see the mutation-proof section of task-2-report.md.
+func TestListForUserExcludesAnotherUsersAgentInTheSameOrg(t *testing.T) {
+	svc, fx := newAgentRegistryFixture(t)
+	fx.seedAgent(7, 1, "ours")
+	fx.seedAgent(8, 1, "someone else's, same org")
+
+	got, err := svc.ListForUser(context.Background(), 7, 1)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.Equal(t, "ours", got[0].Name)
+}
+
+// TestListForUserExcludesTheCallersOwnAgentInAnotherOrg isolates the org_id
+// predicate specifically (ruling T2-1): both agents belong to user 7, so
+// this can only pass if org_id is actually enforced. A multi-org user who
+// has picked org A must never see org B's agents just because both orgs
+// belong to them -- Task 3's org picker (apps/desktop/electron/main.ts:7849)
+// is built directly on this call.
+func TestListForUserExcludesTheCallersOwnAgentInAnotherOrg(t *testing.T) {
+	svc, fx := newAgentRegistryFixture(t)
+	fx.seedAgent(7, 1, "org 1 agent")
+	fx.seedAgent(7, 2, "org 2 agent")
+
+	got, err := svc.ListForUser(context.Background(), 7, 1)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.Equal(t, "org 1 agent", got[0].Name)
+}
+
 // TestStatusIsHumanReadableProseDerivedFromHeartbeat pins the exact three
 // display strings apps/desktop/src/i18n/en.ts:812 renders VERBATIM into the
 // UI (cloudStatusLabel: status => "Status: ${status}") -- status is prose,

@@ -147,27 +147,26 @@ func (s *AgentRegistryService) Register(ctx context.Context, userID, orgID int64
 	return &view, nil
 }
 
-// ListForUser returns the caller's own agents, excluding revoked ones
-// (revoked_at IS NOT NULL). Filtered on user_id only -- orgID is accepted for
-// signature symmetry with Register (the brief's Interfaces block specifies
-// it), but agents.org_id is not part of this query's WHERE clause: the
-// brief's own mutation-proof (Step 6) drops "the user_id predicate" and
-// expects a SECOND user's agent (seeded in a different org, 8/2 vs 7/1) to
-// leak into the result. If org_id were also filtered, dropping only user_id
-// would not leak it (org_id=1 would still exclude org_id=2) -- so user_id is
-// the sole isolation boundary this method enforces today.
+// ListForUser returns the caller's agents within the given org, excluding
+// revoked ones (revoked_at IS NOT NULL). Filtered on BOTH user_id AND org_id
+// (ruling T2-1): Task 3 builds the 409 org_selection_required org picker
+// directly on this call (apps/desktop/electron/main.ts:7849), so a
+// multi-org user who has picked org A must never see org B's agents just
+// because both orgs belong to them -- an org-blind list would make that
+// picker decorative. user_id alone is not enough either: it is the OTHER
+// half of the isolation boundary, proven independently below by
+// TestListForUserExcludesAnotherUsersAgentInTheSameOrg.
 func (s *AgentRegistryService) ListForUser(ctx context.Context, userID, orgID int64) ([]AgentView, error) {
-	_ = orgID
-
 	rows, err := s.client.Agent.Query().
 		Where(
 			agent.UserIDEQ(userID),
+			agent.OrgIDEQ(orgID),
 			agent.RevokedAtIsNil(),
 		).
 		Order(dbent.Asc(agent.FieldID)).
 		All(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("agent registry: list agents for user %d: %w", userID, err)
+		return nil, fmt.Errorf("agent registry: list agents for user %d org %d: %w", userID, orgID, err)
 	}
 
 	out := make([]AgentView, 0, len(rows))
