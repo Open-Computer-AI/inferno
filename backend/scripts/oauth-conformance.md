@@ -1000,3 +1000,46 @@ against three `{"error":"invalid_token"}` bodies, because the token had expired.
 An assertion over an error body proves nothing. The run now asserts the status
 code first and hard-fails on any `error` key before parsing. Recorded because it
 is the same defect class this document has been tracking all project.
+
+## C-3 verified through the client's own renderer (2026-08-22, post-fix)
+
+`POST /api/billing/charge` now creates NO order and refuses. Driven for real, not
+asserted from the JSON:
+
+    POST /api/billing/charge  x3, token carrying billing:manage
+      -> 403 {"error":"no_payment_method",
+              "message":"This portal has no stored payment method to charge --
+                         add funds on the billing portal instead.",
+              "portalUrl":"http://127.0.0.1:18480/purchase"}
+    payment_orders count: 0 BEFORE, 0 AFTER  -> the MaxPendingOrders lockout is
+                                                structurally impossible, not merely
+                                                unlikely
+
+Then through `hermes_cli.nous_billing.post_charge` and the CLI's own
+`_billing_render_charge_error`:
+
+    (exception: BillingError, code='no_payment_method')
+    💳 No card on file — top up and manage billing on the portal.
+    Portal: http://127.0.0.1:18480/purchase
+
+403 is the correct status and this was checked, not assumed: `nous_billing.py:361-374`
+raises `BillingScopeRequired` ONLY when `error == "insufficient_scope"`, and its own
+comment lists `no_payment_method` among the "business 403s" that fall through to a
+generic `BillingError` carrying the code. A 402 or 501 would have missed the
+`elif code == "no_payment_method"` branch that produces the message above.
+
+### Harness note — the earlier /subscription transcript in the ledger was WRONG
+
+`cli._cprint` routes through prompt_toolkit's `print_formatted_text`, which writes to
+the REAL stdout. An earlier harness wrapped the calls in `contextlib.redirect_stdout`,
+silently dropping every `_cprint` line and leaving only the plain `print()` dividers --
+which I mis-read as an empty screen and reported as C-2 confirmed. Without the
+redirect the screen renders correctly:
+
+    ⚕ Plan: Pro Annual · renews Sep 15, 2026
+    Org: admin@t8.local · Owner
+
+Use `/tmp/t6/drive2.py`-style harnesses (no redirect). C-2 is still a real defect,
+proven instead by: sort_order at the schema default 0 emitted tierOrder 0 and the
+client's own `selectable_tiers()` returned 0 from a payload with a live tier; after
+the fix the same row emits tierOrder 1.
