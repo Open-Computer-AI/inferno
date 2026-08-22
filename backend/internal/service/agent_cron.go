@@ -73,23 +73,42 @@ type ArmedFireView struct {
 	ScheduleID string
 }
 
-// Provision arms (or re-arms) one one-shot fire. The UNIQUE dedup_key
-// constraint is the entire idempotency mechanism: the agent's cold-start
-// reconcile re-arms every job it still wants (_nas_client.py:114-120), so
-// calling this twice with the SAME dedup_key is normal reconcile traffic,
-// never an error -- it must return the SAME schedule_id both times, and
-// must never create a second row.
+// Provision arms (or re-arms) one one-shot fire. The composite
+// (agent_row_id, dedup_key) UNIQUE index (ent/schema/agent_cron_fire.go,
+// ruling T4-1) is the entire idempotency mechanism, scoped to ONE agent:
+// the agent's cold-start reconcile re-arms every job it still wants
+// (_nas_client.py:114-120), so calling this twice with the SAME
+// agentRowID+dedup_key is normal reconcile traffic, never an error -- it
+// must return the SAME schedule_id both times, and must never create a
+// second row.
+//
+// dedup_key ("{job_id}:{fire_at}") is NOT globally unique -- job_id lives
+// in the calling agent's own namespace, so two different agents legitimately
+// hold the identical dedup_key for their own, unrelated jobs. Ruling T4-1
+// is why this targets the COMPOSITE index rather than dedup_key alone: a
+// field-level-unique dedup_key let one agent's re-arm collide into a
+// DIFFERENT agent's row (agent 2 provisioning agent 1's dedup_key got back
+// agent 1's job_id/schedule_id, agent 1's row silently touched). Targeting
+// the composite index makes a foreign agent's row structurally unreachable
+// as a conflict target at all -- there is no INSERT this agent can issue
+// that conflicts on any row it does not itself own.
 //
 // This is deliberately NOT a read-then-write existence check -- that races
 // with itself under two concurrent re-arms. It is a single
-// INSERT ... ON CONFLICT (dedup_key) DO UPDATE SET updated_at = now():
-// OnConflictColumns(dedup_key) + a conflict clause that touches ONLY
-// updated_at (never UpdateNewValues, which would also overwrite
-// schedule_id on every re-arm). Touching updated_at is what makes the
-// upsert a real UPDATE, so RETURNING id still resolves to the EXISTING
-// row's id on conflict -- "same fire, same schedule_id" -- while a fresh
-// dedup_key still inserts a brand new row with the schedule_id minted for
-// this call.
+// INSERT ... ON CONFLICT (agent_row_id, dedup_key) DO UPDATE SET
+// updated_at = now(): OnConflictColumns(agentRowID, dedupKey) + a conflict
+// clause that touches ONLY updated_at (never UpdateNewValues, which would
+// also overwrite schedule_id on every re-arm). Touching updated_at is what
+// makes the upsert a real UPDATE, so RETURNING id still resolves to the
+// EXISTING row's id on conflict -- "same fire, same schedule_id" -- while a
+// fresh dedup_key (or a fresh agent) still inserts a brand new row with the
+// schedule_id minted for this call.
+//
+// The post-upsert agentRowID equality check below is DEFENSE IN DEPTH, not
+// the primary guard -- the composite index already makes a foreign row
+// unreachable as a conflict target, so this should be unreachable. It is
+// kept anyway: an assertion a future refactor could see fail loudly beats
+// one that can only be reasoned about from the index definition.
 func (s *AgentCronService) Provision(ctx context.Context, agentRowID int64, in ProvisionInput) (*ArmedFireView, error) {
 	if in.JobID == "" {
 		return nil, infraerrors.BadRequest("AGENT_CRON_JOB_ID_REQUIRED", "job_id is required")
@@ -112,7 +131,7 @@ func (s *AgentCronService) Provision(ctx context.Context, agentRowID int64, in P
 		SetCallbackURL(in.AgentCallbackURL).
 		SetDedupKey(in.DedupKey).
 		SetScheduleID(s.newScheduleID()).
-		OnConflictColumns(agentcronfire.FieldDedupKey).
+		OnConflictColumns(agentcronfire.FieldAgentRowID, agentcronfire.FieldDedupKey).
 		UpdateUpdatedAt().
 		ID(ctx)
 	if err != nil {
@@ -122,6 +141,12 @@ func (s *AgentCronService) Provision(ctx context.Context, agentRowID int64, in P
 	row, err := s.client.AgentCronFire.Get(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("agent cron: reload fire %d after provision: %w", id, err)
+	}
+	if row.AgentRowID != agentRowID {
+		// Unreachable given the composite index above -- see this
+		// function's doc comment. Fails loudly rather than silently
+		// returning another agent's fire.
+		return nil, fmt.Errorf("agent cron: provision job %q resolved to agent_row_id %d, want %d", in.JobID, row.AgentRowID, agentRowID)
 	}
 
 	view := agentCronFireView(row)

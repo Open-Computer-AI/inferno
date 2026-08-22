@@ -192,6 +192,43 @@ func TestProvisionOfADifferentDedupKeyArmsASecondFire(t *testing.T) {
 	require.Equal(t, 2, fx.countFires())
 }
 
+// TestProvisionByTwoDifferentAgentsWithTheSameDedupKeyGivesEachItsOwnRow is
+// ruling T4-1's proof. dedup_key is "{job_id}:{fire_at}" and job_id lives
+// in the CALLING AGENT's own namespace, not a global one -- two different
+// agents legitimately arm the identically-named job on the same instant
+// (e.g. both run a job literally named "daily-report"). Before T4-1, a
+// field-level-unique dedup_key let agent 2's Provision collide into agent
+// 1's row: agent 2 got back agent 1's job_id/schedule_id, no row of its
+// own, and agent 1's row was silently touched. The composite
+// (agent_row_id, dedup_key) index fixes this structurally.
+func TestProvisionByTwoDifferentAgentsWithTheSameDedupKeyGivesEachItsOwnRow(t *testing.T) {
+	svc, fx := newAgentCronFixture(t)
+	in := ProvisionInput{
+		JobID:            "daily-report",
+		FireAt:           "2026-09-01T10:00:00Z",
+		AgentCallbackURL: "https://agent.example/",
+		DedupKey:         "daily-report:2026-09-01T10:00:00Z",
+	}
+
+	forAgent1, err := svc.Provision(context.Background(), 1, in)
+	require.NoError(t, err)
+	forAgent2, err := svc.Provision(context.Background(), 2, in)
+	require.NoError(t, err, "a second agent's identical dedup_key must not collide into the first agent's row")
+
+	require.NotEqual(t, forAgent1.ScheduleID, forAgent2.ScheduleID, "each agent must get its OWN schedule_id, not the other's")
+	require.Equal(t, 2, fx.countFires(), "each agent must get its OWN row -- the composite index scopes uniqueness per agent")
+
+	agent1Fires, err := svc.ListArmed(context.Background(), 1)
+	require.NoError(t, err)
+	require.Len(t, agent1Fires, 1)
+	require.Equal(t, forAgent1.ScheduleID, agent1Fires[0].ScheduleID, "agent 1's own fire must still carry agent 1's schedule_id")
+
+	agent2Fires, err := svc.ListArmed(context.Background(), 2)
+	require.NoError(t, err)
+	require.Len(t, agent2Fires, 1)
+	require.Equal(t, forAgent2.ScheduleID, agent2Fires[0].ScheduleID, "agent 2's own fire must still carry agent 2's schedule_id")
+}
+
 // ---------------------------------------------------------------------------
 // ListArmed
 // ---------------------------------------------------------------------------
