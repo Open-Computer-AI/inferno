@@ -102,6 +102,7 @@ docs/superpowers/specs/2026-08-19-oauth-bearer-inference-design.md
 docs/superpowers/plans/2026-08-19-oauth-bearer-inference.md
 docs/superpowers/specs/2026-08-19-billing-contract-adapter-design.md
 docs/superpowers/specs/2026-08-22-agent-registry-and-chronos-design.md
+docs/superpowers/plans/2026-08-22-agent-registry-and-chronos.md
 # D7 -- Inferno product identity + honest paid-tier reporting
 backend/internal/service/setting_public.go
 backend/internal/service/setting_parse.go
