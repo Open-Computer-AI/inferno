@@ -117,6 +117,31 @@ func randomUserCode() (string, error) {
 // clientID must belong to an already-registered service.OAuthClient — an
 // unknown client_id is rejected rather than silently starting a flow for an
 // identity nobody issued.
+//
+// SCOPE: this grant accepts the FULL vocabulary, billing:manage included.
+// ValidateScope is a membership test against knownScopes
+// (oauth_scope_vocabulary.go:56-64), which contains ScopeBillingManage; the
+// requested string is then stored verbatim (createWithUniqueCodes, :190),
+// Approve (:363) does not filter it, and OAuthTokenService.ExchangeDeviceCode
+// mints the access token with row.Scope as-is (oauth_token_service.go:513,518,535).
+// A device grant therefore CAN issue billing:manage, and that is intended --
+// hermes_cli/auth.py:9093 step_up_nous_billing_scope is exactly this flow, run
+// with billing:manage appended to the prior scope (:9119-9128) and returning
+// true iff the new token carries it (:9157). It is the shipped recovery path
+// for the 403 insufficient_scope the /api/billing write routes emit
+// (hermes_cli/cli_billing_mixin.py:1149-1153, :1303-1305).
+//
+// OAuthAuthorizeService.IssueCode REFUSES the same scope
+// (oauth_authorize_service.go:221). The asymmetry is deliberate and the
+// dividing line is the CONSENT STEP, not the vocabulary: RFC 8628 §3.3 puts a
+// human approval screen in front of this grant -- the user must carry the
+// user_code to Inferno's own approval page, which renders the requested scopes
+// (PendingByUserCode, :324, returning Scopes: ScopeList(row.Scope) at :357)
+// before Approve records a decision -- whereas the
+// authorization_code grant re-consents SILENTLY for an already-logged-in
+// session. A scope that spends the user's money is reachable only through the
+// grant that shows it to them and makes them press the button. See
+// IssueCode's own comment at the refusal for the mirror of this note.
 func (s *OAuthDeviceService) RequestCode(ctx context.Context, clientID, scope string) (*DeviceCodeGrant, error) {
 	if s.portalBaseURL == "" {
 		slog.Error("oauth: device code request rejected, portal base URL not configured", "client_id", clientID)

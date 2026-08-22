@@ -179,9 +179,31 @@ func (s *OAuthAuthorizeService) IssueCode(ctx context.Context, in IssueCodeInput
 	if err := ValidateScope(in.Scope); err != nil {
 		return "", err
 	}
-	// billing:manage is never grantable at initial login — only via a
+	// billing:manage is never grantable through THIS grant — only via a
 	// second, explicit device-flow elevation (see knownScopes' doc comment
 	// in oauth_scope_vocabulary.go, and ruling R-4.2).
+	//
+	// THE ASYMMETRY WITH THE DEVICE GRANT IS DELIBERATE, NOT AN OVERSIGHT.
+	// OAuthDeviceService.RequestCode (oauth_device_service.go:144) accepts
+	// billing:manage — it calls ValidateScope only, and knownScopes contains
+	// ScopeBillingManage (oauth_scope_vocabulary.go:56-64) — so a device
+	// grant CAN and DOES mint a token carrying it. That is a real, shipped
+	// feature: hermes_cli/auth.py:9093 step_up_nous_billing_scope re-runs the
+	// device flow with billing:manage appended (:9128) and returns true iff
+	// the minted token carries it (:9157). It is what /topup's in-flight
+	// reauth (hermes_cli/cli_billing_mixin.py:1303-1305) drives.
+	//
+	// What separates the two grants is the CONSENT STEP, not the scope
+	// vocabulary. RFC 8628 §3.3 puts a human in front of every device
+	// grant: the user must type the user_code into Inferno's own approval
+	// screen, which renders the requested scopes
+	// (OAuthDeviceService.PendingByUserCode returns Scopes: ScopeList(row.Scope),
+	// oauth_device_service.go:357) before Approve (:363) records a decision.
+	// The authorization_code
+	// grant here has no such screen — an already-logged-in session
+	// re-consents SILENTLY on the redirect — so a scope that spends the
+	// user's money must not be reachable through it. Elevating money
+	// authority is exactly the case that must cost a deliberate human act.
 	//
 	// The Authorize HANDLER already refuses it, and today that handler is
 	// this function's only caller, so this is not closing a live hole. It

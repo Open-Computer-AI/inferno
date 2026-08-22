@@ -1022,11 +1022,22 @@ func billingMoneyStringToFloat(s *string) *float64 {
 // HONESTLY REFUSED. Every method/key/status below is cited to
 // hermes_cli/nous_billing.py (task-5-brief.md, task-5-report.md).
 //
-// billing:manage is refused outright by /oauth/authorize
-// (oauth_authorize_service.go:200) and no other flow can grant it, so all 7
-// of these are unreachable in production today -- see
-// server/routes/billing_contract.go's mount comment. The scope gate in front
-// of them is the valuable artifact; the handlers behind it matter less.
+// billing:manage IS GRANTABLE and these 7 ARE reachable in production. An
+// earlier version of this comment said the opposite; it was false. It is
+// refused only by the authorization_code grant
+// (OAuthAuthorizeService.IssueCode, oauth_authorize_service.go:221); the
+// DEVICE grant accepts it (OAuthDeviceService.RequestCode,
+// oauth_device_service.go:144, validates with ValidateScope only, and
+// knownScopes contains ScopeBillingManage, oauth_scope_vocabulary.go:56-64),
+// and ExchangeDeviceCode mints the token with that scope verbatim
+// (oauth_token_service.go:513,518,535). The client runs exactly that flow --
+// hermes_cli/auth.py:9093 step_up_nous_billing_scope, triggered from
+// hermes_cli/cli_billing_mixin.py:1303-1305 on a 403 insufficient_scope.
+//
+// So the handlers below are LIVE code paths, not dead ones behind a gate
+// nobody can pass. Each body has to be right on its own merits; see Charge in
+// particular (ruling D-2), which refuses rather than create an order nobody
+// can pay.
 // ---------------------------------------------------------------------------
 
 const (
