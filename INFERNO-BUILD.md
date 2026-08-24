@@ -1737,3 +1737,87 @@ re-litigated.
 
 **Last reviewed upstream SHA: `baeac1f3de21d37b129405f092ef86c24b3f203d`**
 (2026-08-15 13:40:21 UTC, "chore: sync VERSION to 0.1.177 [skip ci]").
+
+### 2026-08-24 — BLOCKED: undeclared backend divergence, Gate 5 red
+
+**4,838 commits behind by raw `git rev-list --count`** (range `baeac1f3d` ..
+`a177b88e5`), but that number overstates it: only **112** are first-parent
+merges into `upstream/main`; the rest is old, previously-unmerged branch
+history landing now with original (much older, back to 2025-12-18) commit
+dates. Not investigated further since it did not matter to the outcome below.
+
+**Rebase: clean apart from two `.gitignore` conflicts, both the known site.**
+Both were purely additive on both sides (our own two prior appends colliding
+with one upstream `/plugins/` line and, separately, with each other) and were
+resolved by keeping every line, no drop. One of our commits
+(`d082205633 chore: align Docker Go toolchain`) dropped itself during the
+rebase — empty diff, contents already upstream. New HEAD `a177b88e5`.
+
+**Gate 5 (`check-divergence.sh`) exits 1 — stopping here, not porting.**
+52 files differ from `merge-base(HEAD, upstream/main)`; 38 match the ledger
+(D1, D2, D4, D5, D6), **12 do not**:
+
+    backend/internal/config/config.go
+    backend/internal/service/auth_email_binding.go
+    backend/internal/service/auth_oauth_email_flow.go
+    backend/internal/service/auth_service.go
+    backend/internal/service/balance_notify_service.go
+    backend/internal/service/content_moderation.go
+    backend/internal/service/domain_constants.go
+    backend/internal/service/payment_order_result_test.go
+    backend/internal/service/setting_features.go
+    backend/internal/service/setting_parse.go
+    backend/internal/service/setting_service_update_test.go
+    backend/internal/service/totp_service.go
+
+**All 12 trace to one commit, already on this branch before this run:**
+`4817289c4` — "fix: make Inferno the default product branding"
+(2026-08-22, author `saksham`). It is not a mislabeled commit like `84a3c4ac`
+— the diff matches its subject: it adds `DefaultSiteName` /
+`DefaultSiteSubtitle` constants to `domain_constants.go` and replaces every
+hardcoded `"Sub2API"` fallback string (TOTP issuer, email site-name fallback,
+webauthn RP display name, settings defaults, a payment-subject test) with
+the constant. Coherent, single-purpose, real work — just never added to
+`DECLARED` in `check-divergence.sh` or to GOAL.md's ledger. This predates
+today's run: confirmed by diffing `pre-sync-backup` against the *old* base
+(`baeac1f3d`) before touching anything — all 12 files already differed there.
+The rebase did not introduce this; it only made Gate 5 visible again (it had
+gone unrun/unenforced since `4817289c4` landed).
+
+**Per the runbook, stopping rather than deciding:** not reverting
+`4817289c4` (a human might want this branding row declared, not undone —
+reverting would resurface `"Sub2API"` strings in a rebranded product and
+break the new `TestSettingService_InitializeDefaultSettingsUsesInfernoBrandDefaults`
+test), and not adding it to `DECLARED` myself. Either is a product call.
+
+**Everything else checked is green**, run to give the reviewer full
+information despite the block:
+
+- `june-lint`: 899 violation(s) across 282 file(s), same 899 total as
+  `pre-sync-backup` at 281 files (verified in a throwaway worktree) — the
+  rebase added zero lint violations, the +1 file count is the same
+  now-identical-to-mirror wash GOAL.md warns to distrust, confirmed harmless.
+- `vue-tsc --noEmit`: 0 errors.
+- `vitest run`: 229/230 files, 1618/1620 tests. The 2 red
+  (`siteLogoSanitization.spec.ts`) are pre-existing — same 2 fail on
+  `pre-sync-backup` in an isolated worktree, unrelated to this sync.
+- `vite build`: succeeded, only pre-existing >500kB chunk warnings.
+- Backend `go build ./...`: clean. `go test -tags unit ./internal/... ./ent/...`:
+  all packages `ok`.
+
+**Not done, because Gate 5 must pass first:** Step 6 (stale-file diff against
+the mirror), Step 7 (porting), and the API-contract diff. The rebase and
+divergence check are the whole result of this run.
+
+**Left as-is, for a human to pick:**
+1. Declare `4817289c4`'s 12 files as a new ledger row (e.g. "D7 — Inferno
+   branding defaults") in both `GOAL.md` and `check-divergence.sh`'s
+   `DECLARED`, or
+2. Revert the branding change (and its new test) if it was not supposed to
+   land yet.
+
+**Last reviewed upstream SHA: unchanged, still `baeac1f3de21d37b129405f092ef86c24b3f203d`.**
+The rebase moved this branch's base to `a177b88e5`, but "reviewed" here means
+the frontend-contract diff was actually read for portable work, which never
+happened this run — Gate 5 stopped everything before Step 6. Advancing the
+marker would make a future "what have I not looked at" query wrong.
