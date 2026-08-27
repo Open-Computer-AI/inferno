@@ -72,6 +72,10 @@ export function formIntervalsToAPI(intervals: IntervalFormEntry[]): PricingInter
     output_price: mTokToPerToken(iv.output_price),
     cache_write_price: mTokToPerToken(iv.cache_write_price),
     cache_read_price: mTokToPerToken(iv.cache_read_price),
+    input_multiplier: null,
+    output_multiplier: null,
+    cache_write_multiplier: null,
+    cache_read_multiplier: null,
     per_request_price: toNullableNumber(iv.per_request_price),
     sort_order: iv.sort_order
   }))

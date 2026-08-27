@@ -11,16 +11,19 @@
  */
 
 import { useI18n } from 'vue-i18n'
-import type { MonitorStatus, Provider } from '@/api/admin/channelMonitor'
+import type { CheckMode, MonitorStatus, Provider } from '@/api/admin/channelMonitor'
 import {
   PROVIDER_OPENAI,
   PROVIDER_ANTHROPIC,
   PROVIDER_GEMINI,
   PROVIDER_GROK,
+  PROVIDERS,
   STATUS_OPERATIONAL,
   STATUS_DEGRADED,
   STATUS_FAILED,
   STATUS_ERROR,
+  CHECK_MODE_QUOTA,
+  CHECK_MODE_QUOTA_PROBE,
 } from '@/constants/channelMonitor'
 
 const NEUTRAL_BADGE = 'bg-[var(--surface-subtle)] text-[var(--body-copy)]'
@@ -58,15 +61,32 @@ export function useChannelMonitorFormat() {
   }
 
   function providerLabel(p: Provider | string): string {
-    if (
-      p === PROVIDER_OPENAI ||
-      p === PROVIDER_ANTHROPIC ||
-      p === PROVIDER_GEMINI ||
-      p === PROVIDER_GROK
-    ) {
+    if (PROVIDERS.includes(p as Provider)) {
       return t(`monitorCommon.providers.${p}`)
     }
     return p || '-'
+  }
+
+  function checkModeLabel(m: CheckMode | string): string {
+    if (m === 'probe' || m === 'quota' || m === 'quota_probe') {
+      return t(`monitorCommon.checkMode.${m}`)
+    }
+    return m || '-'
+  }
+
+  /**
+   * Display label for a monitor's primary model. Pure-quota monitors carry the
+   * literal placeholder "quota" (the probe target is an account, not a model),
+   * which must not leak into the UI as a fake model name — render the
+   * localized mode label instead. quota_probe keeps a real model name.
+   */
+  const QUOTA_MODEL_PLACEHOLDER = 'quota'
+
+  function formatMonitorModel(model: string): string {
+    if (model === QUOTA_MODEL_PLACEHOLDER) {
+      return t('monitorCommon.checkMode.quota')
+    }
+    return model
   }
 
   function providerBadgeClass(p: Provider | string): string {
@@ -79,6 +99,22 @@ export function useChannelMonitorFormat() {
         return 'bg-[var(--brand-tint)] text-[var(--brand)]'
       case PROVIDER_GROK:
         return 'bg-[var(--surface-subtle)] text-[var(--body-copy)]'
+      default:
+        return NEUTRAL_BADGE
+    }
+  }
+
+  /**
+   * Badge class for the check-mode tag shown next to the provider badge in the
+   * admin monitor list. Reuses the brand tint (the same treatment as the
+   * first-party providers above) to flag "this row reads account quota", and
+   * falls through to the neutral badge for plain probe — no new hue added.
+   */
+  function checkModeBadgeClass(m: CheckMode | string): string {
+    switch (m) {
+      case CHECK_MODE_QUOTA:
+      case CHECK_MODE_QUOTA_PROBE:
+        return 'bg-[var(--brand-tint)] text-[var(--brand)]'
       default:
         return NEUTRAL_BADGE
     }
@@ -147,7 +183,10 @@ export function useChannelMonitorFormat() {
     statusLabel,
     statusBadgeClass,
     providerLabel,
+    checkModeLabel,
+    formatMonitorModel,
     providerBadgeClass,
+    checkModeBadgeClass,
     providerPickerClass,
     formatLatency,
     formatPercent,

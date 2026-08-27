@@ -1737,3 +1737,207 @@ re-litigated.
 
 **Last reviewed upstream SHA: `baeac1f3de21d37b129405f092ef86c24b3f203d`**
 (2026-08-15 13:40:21 UTC, "chore: sync VERSION to 0.1.177 [skip ci]").
+
+### 2026-08-27 — fifth sync, BLOCKED on pre-existing Gate 5 breach; rebase + partial port land regardless
+
+**430 commits behind**, by far the largest gap of any reconcile so far (prior
+syncs: 13, 124, 0, 124). Range `baeac1f3de21d37b129405f092ef86c24b3f203d` (old
+last-reviewed) .. `efb46db0a960fdad94502b1c3a982a0051cf5245` (2026-08-26, new
+last-reviewed).
+
+**Procedural note:** the container's clone of this repo was shallow. A naive
+`git rev-list --count HEAD..upstream/main` read **4936**, because commits
+before the shallow boundary are grafted with no parents and so are not
+reachable from `HEAD` locally even though `merge-base` still resolves through
+them. `git fetch --unshallow` before trusting any commit count; after that the
+real number was 430. Flagging this so the next run doesn't repeat the scare or,
+worse, trust the inflated number in a PR body.
+
+**Rebase: two known conflict sites, one new one, all resolved.**
+- Root `.gitignore`, twice (upstream added `/plugins/` and, later,
+  `!docs/superpowers/`; both resolved by keeping both sides — see GOAL.md's D3/D4).
+- `Dockerfile`'s `GOLANG_IMAGE`: our commit `d08220563` ("align Docker Go
+  toolchain", 1.26.5→1.26.6) no longer applies — upstream's own `cbe258fd1`
+  already moved both `Dockerfile` and `backend/go.mod` to 1.27.0 first. Took
+  upstream's side; our commit is now a no-op. **D6 in GOAL.md is the
+  `NODE_OPTIONS` heap bump, a different line — unaffected, not re-checked this
+  cycle.**
+
+**Gate 4 (`go generate ./ent`), run because upstream changed two entity
+schemas this cycle** (`615e6901e` channel-monitor quota-mode fields, `901a0439f`
+CN-provider support): regenerated with zero diff in the generated files
+themselves (`go.sum` picked up new indirect checksums for entc's own CLI
+deps — `cobra`, `tablewriter`, etc. — from running with `-mod=mod`; harmless,
+not a real dependency addition). Confirms the rebase's automatic merge of
+`ent/` was already correct; D1's `avatar_seed` survived intact.
+
+**Gate 5 (`check-divergence.sh`): FAILS, and it predates this sync.**
+12 undeclared backend + frontend files differ from `git merge-base`:
+`backend/internal/config/config.go`,
+`backend/internal/service/{auth_email_binding,auth_oauth_email_flow,auth_service,balance_notify_service,content_moderation,domain_constants,payment_order_result_test,setting_features,setting_parse,setting_service_update_test,totp_service}.go`.
+Traced to a single existing commit already on `inferno-redesign` before this
+session touched anything — `4817289c4` / rebased to `02b817bf7`, subject
+`fix: make Inferno the default product branding`. It replaces hardcoded
+`"Sub2API"` fallback strings with a new `DefaultSiteName`/`DefaultSiteSubtitle`
+pair (`domain_constants.go`) across auth emails, TOTP issuer, content
+moderation, balance-notify defaults, and the WebAuthn RP display name — a
+coherent extension of D2's "English legal-document defaults" theme, but never
+added to GOAL.md's ledger or `check-divergence.sh`'s `DECLARED` array. Per the
+hard rule, **not added to DECLARED by this session** — that is a product
+decision, not a reconcile-time one. `payment_order.go` and `user_service.go`,
+touched by the same commit, don't show as undeclared because they already fall
+under D5 and D1 respectively; the 12 above are the genuinely new surface.
+**Owner: decide whether to fold this into D2 (rename it, e.g. "Inferno
+branding defaults") or revert it, then update GOAL.md + the script together.**
+
+**Frontend gate, run after every port below:** `june-lint` 899 violation(s)
+across 283 file(s) (started the cycle at 899/282 immediately post-rebase; the
+one extra file is `ChannelsView.vue` and friends now differing from the mirror
+because of the type-consistency fixes below — an increase, the safe direction).
+`npx vue-tsc --noEmit` 0 errors, but only after fixing four real breaks (below).
+`npx vitest run` 229 files / 1619 tests, **2 pre-existing failures, not caused
+by this sync**: `siteLogoSanitization.spec.ts` expects `AppSidebar.vue`,
+`HomeView.vue`, and `KeyUsageView.vue` to sanitize `site_logo` with
+`sanitizeUrl(...)`; `AppSidebar.vue` no longer references `sanitizeUrl` or
+`siteLogo` at all as of `0e60b2e48` ("fix(ui): remove sidebar brand mark"),
+which replaced the sidebar's logo with a text-only site name. Confirmed via
+`git show pre-sync-backup:...AppSidebar.vue` that this predates today's
+rebase entirely. **Owner: decide whether the sidebar logo removal was
+intentional (then fix the test) or a regression (then restore the logo +
+sanitizer) — same shape as the already-open `AppSidebar.vue:114` avatar_url
+sanitizer gap in the log above.** `npx vite build` succeeded, same pre-existing
+>500kB chunk warnings as every prior cycle.
+
+**Backend gate, run because upstream touched `backend/` extensively:**
+`go build ./...` clean. `go test -tags unit ./internal/... ./ent/...` all
+packages `ok`.
+
+**Ported** (headless API/type/composable/store/constants/utils layer only, per
+the standing rule to ignore `components/`, `views/`, `features/`):
+- Wholesale copy (file untouched by us since the June vendor point, mirror's
+  version taken as-is): `src/api/tokenRefresh.ts` (+ its spec — fixes a real
+  token-refresh race: a stale "boundary timer jitter" heuristic could mistake
+  a fresh token for a completed peer refresh), `src/api/admin/accounts.ts`,
+  `src/api/admin/channelMonitor.ts`, `src/api/admin/channels.ts`,
+  `src/api/channelMonitor.ts`, `src/api/modelPlaza.ts`,
+  `src/constants/channelMonitor.ts`, `src/utils/featureFlags.ts`,
+  `src/utils/platformColors.ts` (still on the legacy Tailwind palette, so no
+  June-token trap here), `src/i18n/locales/zh/dashboard.ts`,
+  `src/stores/__tests__/app.spec.ts`.
+- Hand merge (file already customized by us): `src/types/index.ts` (new
+  optional fields + `Provider`/`GroupPlatform`/`AccountPlatform` union
+  extensions for antigravity/kimi/zhipu/deepseek — all additive), `src/api/admin/settings.ts`
+  (`SCHEDULING_THRESHOLD_PLATFORMS` gains kimi/zhipu, `channel_monitor_show_quota`
+  field), `src/composables/useModelWhitelist.ts` (+ spec — new grok-imagine and
+  kimi model IDs; same "additive model list" shape as the 2026-08-15
+  grok-4.6 precedent, no palette involved this time),
+  `src/composables/useChannelMonitorFormat.ts` (**this one WAS the June-token
+  trap**: upstream's diff is written against the pre-conversion Tailwind-rainbow
+  version and adds 4 new providers with 4 new raw-Tailwind hues; our file is
+  already on June tokens with exactly two buckets, brand-tint for first-party
+  providers and neutral for everyone else. Ported the new `checkMode`/`quota`
+  functions on their merits, but folded all 4 new providers into the existing
+  neutral bucket instead of inventing 4 new hues — zero palette regression),
+  `src/i18n/locales/en/dashboard.ts` (mirrored the zh additions; two lines
+  needed a ground-rule-2 fix — upstream's copy used an en dash and an em dash,
+  rewrote both to plain hyphens/wording before committing, confirmed lint
+  count unchanged at 899 after the fix), `src/stores/app.ts`, `src/style.css`
+  (`color-scheme: light`/`.dark { color-scheme: dark }`, a real native-control
+  theming fix, unrelated to any feature flag).
+- `dompurify` bumped `^3.3.1` → `^3.4.14` in `package.json` (+ a pnpm
+  `overrides` floor) and the lockfile — upstream's own security bump, ported
+  because we already lean on this library for our own `sanitizeUrl` avatar/logo
+  work.
+- Compile-fix-only changes forced by the above (no redesign work, no new
+  product surface — these were TypeScript errors, not style choices):
+  `src/components/admin/channel/types.ts` (`formIntervalsToAPI` now emits the
+  4 new `null` multiplier fields `PricingInterval` requires),
+  `src/components/admin/monitor/MonitorTemplateManagerDialog.vue` (provider
+  count map gains the 4 new providers, all initialized to 0),
+  `src/components/user/monitor/ProviderIcon.vue` (`PROVIDER_ICONS` changed
+  from `Record<Provider, IconData>` to `Partial<...>` — we have no real
+  brand-icon SVG paths for antigravity/kimi/zhipu/deepseek, and the component
+  already had a graceful `iconInfo ?? null` → letter-avatar fallback; used it
+  rather than inventing icon paths), `src/views/admin/ChannelsView.vue` (two
+  object literals building `ChannelModelPricing` now set `time_pricing: null`,
+  since the form has no time-pricing UI yet).
+
+**Skipped, with reasons — the skips that matter this cycle:**
+- **Everything CN-provider / plugin-management / channel-monitor-quota-mode
+  shaped, at the UI layer.** Upstream added first-class Kimi/Zhipu/DeepSeek
+  provider support, a plugin system, and quota-mode channel monitoring
+  (linked-account quota snapshots instead of LLM probes) across ~15 backend
+  handler files and a dozen frontend surfaces this cycle. None of it has a
+  consuming view in `inferno-frontend` today — verified by grep before
+  skipping, not assumed: zero references to `cnProviders`, `checkMode`,
+  `linkedAccount`, or `PluginsView` anywhere under `src/components` or
+  `src/views`. Backend handlers (`cn_provider_handler.go`, `plugin_handler.go`,
+  `channel_monitor_handler.go` additions) were left entirely alone — untouched,
+  not reverted, just not read into any client. Frontend: did NOT add the new
+  `/admin/plugins` route (`router/index.ts`) since `PluginsView.vue` does not
+  exist here and importing it would break the build; did NOT port
+  `src/api/admin/{cnProviders,plugins}.ts`, `src/api/codex.ts`,
+  `src/constants/platforms.ts`, `src/utils/codexCatalogConfig.ts` (all
+  upstream-only files, no local equivalent to merge into); did NOT port the
+  `plugins` i18n locale bundle or `admin.plugins.*`/`monitorAdmin.checkMode.*`
+  hand-authored form copy in `admin/channels.ts` (time-based/multiplier
+  pricing UI, monitor check-mode + linked-account picker) or `admin/accounts.ts`
+  (CN-provider account-mode copy, shadow-account bulk-update messaging) — kept
+  the type/API layer in sync (see Ported above) so a future UI pass has
+  something to build against, but did not touch the locale files that only
+  that unbuilt UI would read.
+- **`admin/settings.ts` locale (en+zh), in full.** The diff bundles three
+  unrelated things inside the single deferred `SettingsView.vue` surface
+  (GOAL.md item 3, still awaiting an owner routing decision): removal of the
+  entire Sora client/storage feature (~100 lines of now-dead keys upstream
+  deleted), an `openaiFastPolicy` terminology rename ("whitelist" → "target
+  models" — confirmed our copy still uses the old wording and old key names
+  inside `SettingsView.vue`), and new Plugin Management / channel-monitor-quota
+  settings copy (skipped per the point above). Untangling which of the ~106 deleted / 26
+  added lines are safe to move independently of the SettingsView split is real
+  work belonging to that project, not a mechanical port.
+- **`admin/overview.ts`'s `concurrencyMin` → `concurrencyNonNegative` rename.**
+  Real behavior change (0 becomes "unlimited" instead of being rejected) in
+  `src/components/admin/user/UserEditModal.vue`, which is in the standing
+  ignore-scope (`src/components/`). The old key is still called there, so the
+  locale text was left as-is rather than adding an unreferenced new key next
+  to a stale old one. Flagging for whoever converts that modal.
+- **`admin/ops.ts`'s new `errorDetail.{upstreamStatus,rootCause,diagnosticPayloads,payloads.*}`
+  keys.** `OpsErrorDetailModal.vue` — a *converted* component (GOAL.md item 2)
+  — uses the `admin.ops.errorDetail.*` namespace extensively but has none of
+  these four keys; confirmed by grep, not assumed. This is upstream adding new
+  ops-diagnostic capability (root-cause classification, structured
+  client/upstream diagnostic payloads) to a screen we've already redesigned.
+  Porting the copy alone does nothing without new `<dl>` rows in the modal,
+  which is real component + design work this reconcile is not positioned to
+  do safely (GOAL.md requires rendering and measuring visual changes in a
+  browser, not just typechecking). Flagged here as a concrete, scoped
+  follow-up rather than silently dropped.
+- `backup.ts` (multi-part download shape) and `admin/groups.ts`'s
+  `getUsageSummary` (dropped `timezone`, new `yesterday_cost`) — re-checked
+  against `upstream/main`, **unchanged since the 2026-08-15/08-16 skip**, same
+  reasons still apply verbatim, not re-litigated.
+- `channelMonitorV2.ts` (en+zh) — zero diff since last review, nothing to do.
+
+**Unsure about / flagging for review:**
+- This is the first reconcile cycle with a real, un-mechanical judgment call
+  baked into a "Ported" item: `useChannelMonitorFormat.ts`'s new providers
+  were deliberately given the *neutral* badge treatment instead of inventing
+  purple/pink/indigo/teal hues, to match the file's already-established
+  two-bucket palette. That's a design opinion, not just a merge — worth a
+  second pair of eyes if/when the channel-monitor-quota UI actually gets
+  built, since whoever builds it may want the 4 new providers visually
+  distinguishable from each other, not just from "OpenAI/Anthropic/Gemini".
+- Gate 5's breach (above) and the `siteLogoSanitization` test failure (above)
+  are both **pre-existing and blocking**, not introduced by this sync. Opening
+  this as a BLOCKED PR per the runbook's hard rule rather than silently
+  merging past a red gate.
+- The PR diff will look large for a reconcile (430 commits' worth of rebase,
+  visible as every one of our commits getting a new hash) but the actual new
+  content is: the rebase's 3 conflict resolutions, the ent regeneration
+  no-op, the ~26-file frontend port above, and this log entry. Recommend
+  fast-forwarding rather than merging, same as every prior cycle.
+
+**New last reviewed upstream SHA: `efb46db0a960fdad94502b1c3a982a0051cf5245`**
+(2026-08-26 15:49:38 +0800, "Merge pull request #5926 from
+baryon/contrib/routed-codex-model-catalog").
