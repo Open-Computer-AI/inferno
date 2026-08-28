@@ -148,3 +148,70 @@ configuration surface is missing entirely.
 
 - `en/admin/settings.ts` has `payment.field_keyId`, `field_keySecret`, `providerRazorpay`, `razorpayWebhookHint`; `zh/` does not.
 - 25 `profile.settings.*` / `profile.avatar.*` keys exist in our EN and not our ZH.
+
+---
+
+# The full frontend gap — three separate things
+
+The feature list above is only ONE of three. Measured 2026-08-28 with the
+runbook's own stale detection, not estimated.
+
+| gap | size | what it is |
+|---|---|---|
+| **A. Never built** | **17 files** | Upstream has them, we have no counterpart. This is the feature list above. |
+| **B. Stale** | **52 files** | Upstream changed them since vendoring; our copy is upstream's OLD version, untouched. |
+| **C. Never converted** | **94 `.vue` files** | Byte-identical to the mirror. Still literally upstream's code and design — the June rewrite never reached them. |
+
+**A and B overlap heavily** — most stale files are the ones carrying the features
+above. **C overlaps with neither**: zero of the 94 unconverted files are also
+stale, which makes sense — nobody has touched them since vendoring, so upstream
+hasn't diverged from them either.
+
+## C is the one nobody was counting
+
+`.vue` files: **94 of 292 are still byte-identical to the mirror** — 32% of the
+UI is unconverted. By area: 73 components, 15 views, 6 features.
+
+The 15 unconverted views:
+
+```
+NotFoundView              ModelPlazaView            admin/UsersView
+admin/PromoCodesView      user/PaymentQRCodeView    user/ChannelStatusView
+user/ChannelStatusV1View  user/StripePopupView      user/BatchImageGuideView
+admin/settings/OpenAIFastPolicyUserSelector         admin/settings/EmailTemplateEditor
+admin/affiliates/AdminAffiliateRebatesView          admin/affiliates/AdminAffiliateRecordsTable
+admin/affiliates/AdminAffiliateTransfersView        admin/affiliates/AdminAffiliateInvitesView
+```
+
+`admin/UsersView` and `ModelPlazaView` are core screens. The whole affiliates
+section is untouched.
+
+**The 143 identical `.ts` files are NOT debt.** API clients, utils and types have
+no design surface — identical is the correct state for them, and converting them
+would be meaningless churn. Only the `.vue` count measures design debt.
+
+## Why this matters for sequencing
+
+A file in C is cheap to sync and expensive to convert. A file in B is the
+opposite. Do not batch them:
+
+- **C** — porting upstream's newest version is a `cp`, because we never touched
+  ours. Then it needs the full June conversion, which is the real cost.
+- **B** — never `cp`. Our copy diverged deliberately; a copy destroys that. Hand-merge.
+
+The rule is the same as always: **if it appears in `git diff $VB..HEAD --
+inferno-frontend`, hand-merge it; if it does not, a wholesale copy is safe.** That
+single check separates B from C mechanically.
+
+## Regenerate these numbers
+
+```sh
+VB=$(git log --format=%H -1 --grep='vendor upstream frontend as the redesign target')
+diff -rq frontend/src inferno-frontend/src | grep '^Files' | sed 's|Files frontend/||; s| and .*||' | sort > /tmp/differ
+git diff --name-only "$VB..HEAD" -- inferno-frontend | sed 's|^inferno-frontend/||' | sort -u > /tmp/ours
+comm -23 /tmp/differ /tmp/ours          # B: stale
+# C: identical .vue files
+find frontend/src -name '*.vue' ! -path '*__tests__*' | while read f; do
+  r="${f#frontend/}"; [ -f "inferno-frontend/$r" ] && cmp -s "$f" "inferno-frontend/$r" && echo "$r"
+done
+```
