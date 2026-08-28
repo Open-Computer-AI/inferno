@@ -68,8 +68,9 @@ backend/migrations/900_add_user_avatar_seed.sql
 backend/internal/service/setting_public.go
 backend/internal/server/api_contract_test.go
 # D4 -- OpenComputer portal design specs + plans
-docs/superpowers/specs/2026-08-17-inferno-oauth-authorization-server-design.md
-docs/superpowers/plans/2026-08-17-inferno-oauth-authorization-server.md
+# docs/superpowers/ is entirely ours -- upstream has no such directory, so a
+# glob here is unambiguously safe and stops every new spec tripping the gate.
+docs/superpowers/**
 # D5 -- Razorpay payment provider. Files that are ours by name may glob;
 # the upstream files we MODIFIED to add the provider are listed exactly,
 # because those are the seams that will actually conflict on a reconcile.
@@ -96,11 +97,6 @@ deploy/Dockerfile
 # Merged from feat/billing-contract-adapter 2026-08-22. Their D5 (Razorpay)
 # and D6 (Dockerfile) labels were already on this branch, so these renumber
 # to D7 rather than colliding.
-docs/superpowers/specs/2026-08-18-authorization-code-pkce-design.md
-docs/superpowers/plans/2026-08-18-authorization-code-pkce.md
-docs/superpowers/specs/2026-08-19-oauth-bearer-inference-design.md
-docs/superpowers/plans/2026-08-19-oauth-bearer-inference.md
-docs/superpowers/specs/2026-08-19-billing-contract-adapter-design.md
 # D7 -- Inferno product identity + honest paid-tier reporting
 backend/internal/service/setting_public.go
 backend/internal/service/setting_parse.go
@@ -477,7 +473,6 @@ backend/internal/service/setting_features.go
 backend/internal/service/payment_order_result_test.go
 backend/internal/service/setting_service_update_test.go
 # D9 -- agent registry / Chronos design spec (docs only, same as D4)
-docs/superpowers/specs/2026-08-22-agent-registry-and-chronos-design.md
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }
