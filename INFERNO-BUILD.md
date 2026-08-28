@@ -531,6 +531,81 @@ Everything else unique to those branches was either a rebase-rewritten copy of
 one of our own commits (same subject, new hash) or Razorpay lint debt that PR
 #15 re-raises against current code.
 
+#### Frontend port policy (moved out of the routine prompt, 2026-08-28)
+
+These rules were load-bearing and lived ONLY in the daily routine's cloud prompt,
+where nothing could review them and they drifted out of date. They belong here.
+
+**The three trees.**
+- `frontend/` — a pristine mirror of upstream's frontend. **Never edit it.**
+  Because nothing edits it, upstream's commits always replay cleanly and it
+  always shows what upstream currently looks like.
+- `inferno-frontend/` — our product, rewritten onto the June design system.
+- The two share **no git history**. You never merge one into the other. You read
+  what changed in the mirror and decide what to rewrite in ours.
+
+**Finding what went stale.** The scope base is the commit that vendored the
+mirror — found by subject, never by hash, because rebases rewrote it:
+
+```sh
+VB=$(git log --format=%H -1 --grep='vendor upstream frontend as the redesign target')
+diff -rq frontend inferno-frontend -x node_modules -x dist   # differs from mirror
+git diff --name-only $VB..HEAD -- inferno-frontend            # we changed deliberately
+```
+
+Anything in the first list but not the second is **stale**: upstream moved it and
+our copy did not follow.
+
+**june-lint's scope rule**, which was got wrong twice before it was right:
+"converted" means files *we* changed since `$VB`. It is NOT "differs from
+`../frontend`" — after a sync, our untouched copy of anything upstream edited
+differs merely by being older. It is also NOT diffed against `upstream/main`,
+where `inferno-frontend/` does not exist at all. If the lint reports violations
+in files nobody touched, the scope has regressed: say so rather than fixing the
+files.
+
+**Never `cp` a file we have modified.** On 2026-08-11 a wholesale copy of four
+locale files silently reverted our June i18n work — it dropped a key a converted
+component actually renders and reintroduced an em dash and an emoji that ground
+rules 2 and 8 had removed. The only tell was june-lint's converted FILE COUNT
+dropping 96 → 92, because copying made the files byte-identical to the mirror and
+took them out of lint scope. **A health signal that improves when work is
+destroyed is the one to distrust.** Any file in both lists above must be
+hand-merged, even for "just one new key".
+
+The same trap has a June-token form: on 2026-08-15 upstream's
+`useModelWhitelist.ts` carried a new `grok-4.6` row wrapped in dead Tailwind
+(`bg-slate-100`, `dark:` variants). Correct resolution was to keep ours and hand-add
+the one row in June tokens — +3 lines, zero palette regression. Separate the
+**data** upstream added from the **styling** it arrived wrapped in; take the data,
+never the styling. Check first whether our copy of that particular file is
+actually June-tokenised — some are still literal Tailwind, and there a verbatim
+merge is correct.
+
+**The components/views skip rule, and its limit.** Upstream changes under
+`frontend/src/{components,views,features}` are the bulk of its volume and are
+being replaced by the June redesign, so they are skipped by default.
+
+> **This rule is right for styling and wrong for logic.** Our versions are
+> rewrites, not restyles. When upstream fixes a bug inside a component's
+> calculation, guard, or permission check, that fix lands in a file we replaced —
+> and skipping it leaves the bug in our copy silently, forever. Classify before
+> skipping: pure presentation is safe to skip; a bug fix, a security fix, or a
+> behaviour change must be re-applied to our equivalent by hand.
+
+**The contract lives in two places.** Upstream can change a JSON response shape
+in Go without touching any TS file. A stale client does not fail loudly — it
+parses the old shape and renders wrong numbers on a billing screen. Diff both:
+
+```sh
+git diff <lastReviewedSha>..upstream/main -- frontend/src/api frontend/src/types
+git diff <lastReviewedSha>..upstream/main -- backend/internal/handler
+```
+
+**Never edit `inferno-frontend/src/design-system/tokens/` or `components/`.**
+They are byte-identical copies of the design bundle and get re-synced; a local
+edit turns every future sync into a merge.
+
 #### Runbook v2 (merge model) — adopted 2026-08-28
 
 **Why it changed.** v1 chose rebase on the premise in its own step 3: *"we edit
