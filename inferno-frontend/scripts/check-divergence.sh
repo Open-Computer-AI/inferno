@@ -123,7 +123,6 @@ backend/ent/orgmember_query.go
 backend/ent/orgmember_update.go
 backend/ent/client.go
 backend/ent/ent.go
-backend/ent/group.go
 backend/ent/hook/hook.go
 backend/ent/intercept/intercept.go
 backend/ent/migrate/schema.go
