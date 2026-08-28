@@ -102,7 +102,7 @@ func (s *PaymentService) HandleRazorpaySubscriptionWebhook(ctx context.Context, 
 		return markFailed(err)
 	}
 	if !isValidProviderAmount(n.Amount) || absFloat(n.Amount-order.PayAmount) > paymentAmountToleranceForCurrency(PaymentOrderCurrency(order)) {
-		return markFailed(fmt.Errorf("Razorpay subscription amount mismatch: expected %v, got %v", order.PayAmount, n.Amount))
+		return markFailed(fmt.Errorf("razorpay subscription amount mismatch: expected %v, got %v", order.PayAmount, n.Amount))
 	}
 
 	// If the browser callback was missed, this first charged webhook is still
@@ -114,7 +114,7 @@ func (s *PaymentService) HandleRazorpaySubscriptionWebhook(ctx context.Context, 
 		}
 	} else {
 		if order.SubscriptionGroupID == nil || order.SubscriptionDays == nil || s.subscriptionSvc == nil {
-			return markFailed(fmt.Errorf("Razorpay subscription order is missing entitlement data"))
+			return markFailed(fmt.Errorf("razorpay subscription order is missing entitlement data"))
 		}
 		if _, _, err := s.subscriptionSvc.assignOrExtendSubscription(ctx, &AssignSubscriptionInput{
 			UserID:       order.UserID,
@@ -176,7 +176,7 @@ func (s *PaymentService) HandleRazorpaySubscriptionLifecycleWebhook(ctx context.
 		return markFailed(err)
 	}
 	if order.OrderType != payment.OrderTypeSubscription || payment.GetBasePaymentType(order.PaymentType) != payment.TypeRazorpay {
-		return markFailed(fmt.Errorf("Razorpay subscription lifecycle references a non-subscription order"))
+		return markFailed(fmt.Errorf("razorpay subscription lifecycle references a non-subscription order"))
 	}
 	if err := validateProviderSnapshotMetadata(order, payment.TypeRazorpay, n.Metadata); err != nil {
 		return markFailed(err)
