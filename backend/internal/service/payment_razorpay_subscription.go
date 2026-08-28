@@ -44,7 +44,7 @@ func (s *PaymentService) VerifyRazorpaySubscriptionPayment(ctx context.Context, 
 	}
 	subscriptionProvider, ok := prov.(payment.RazorpaySubscriptionProvider)
 	if !ok {
-		return nil, fmt.Errorf("Razorpay subscription capability is unavailable")
+		return nil, fmt.Errorf("razorpay subscription capability is unavailable")
 	}
 	notification, err := subscriptionProvider.VerifySubscriptionPayment(ctx, payment.RazorpaySubscriptionPaymentVerificationRequest{
 		InternalOrderID:        order.OutTradeNo,
@@ -96,7 +96,7 @@ func (s *PaymentService) HandleRazorpaySubscriptionWebhook(ctx context.Context, 
 		return markFailed(err)
 	}
 	if order.OrderType != payment.OrderTypeSubscription || payment.GetBasePaymentType(order.PaymentType) != payment.TypeRazorpay {
-		return markFailed(fmt.Errorf("Razorpay subscription webhook references a non-subscription order"))
+		return markFailed(fmt.Errorf("razorpay subscription webhook references a non-subscription order"))
 	}
 	if err := validateProviderSnapshotMetadata(order, payment.TypeRazorpay, n.Metadata); err != nil {
 		return markFailed(err)

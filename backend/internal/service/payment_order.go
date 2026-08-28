@@ -549,11 +549,11 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 	return resp, nil
 }
 
-func cloneProviderSnapshot(snapshot map[string]interface{}) map[string]interface{} {
+func cloneProviderSnapshot(snapshot map[string]any) map[string]any {
 	if snapshot == nil {
-		return map[string]interface{}{}
+		return map[string]any{}
 	}
-	cloned := make(map[string]interface{}, len(snapshot)+1)
+	cloned := make(map[string]any, len(snapshot)+1)
 	for key, value := range snapshot {
 		cloned[key] = value
 	}
@@ -613,7 +613,7 @@ func razorpaySubscriptionCadence(plan *dbent.SubscriptionPlan) (string, int, err
 	case 365:
 		return "yearly", 1, nil
 	default:
-		return "", 0, fmt.Errorf("Razorpay recurring plans require a 1, 7, 30, or 365 day validity period; this plan is %d days", days)
+		return "", 0, fmt.Errorf("razorpay recurring plans require a 1, 7, 30, or 365 day validity period; this plan is %d days", days)
 	}
 }
 
