@@ -21,11 +21,14 @@
 
 services:
   # ===========================================================================
-  # Sub2API Application
+  # Inferno Application
   # ===========================================================================
-  sub2api:
-    image: weishaw/sub2api:latest
-    container_name: sub2api
+  inferno:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: inferno:local
+    container_name: inferno
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -208,7 +211,7 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - sub2api-network
+      - inferno-network
     healthcheck:
       test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8080/health"]
       interval: 30s
@@ -237,7 +240,7 @@ services:
       - PGDATA=/var/lib/postgresql/data
       - TZ=${TZ:-Asia/Shanghai}
     networks:
-      - sub2api-network
+      - inferno-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sub2api} -d ${POSTGRES_DB:-sub2api}"]
       interval: 10s
@@ -277,7 +280,7 @@ services:
       # REDISCLI_AUTH is used by redis-cli for authentication (safer than -a flag)
       - REDISCLI_AUTH=${REDIS_PASSWORD:-}
     networks:
-      - sub2api-network
+      - inferno-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -289,5 +292,5 @@ services:
 # Networks
 # =============================================================================
 networks:
-  sub2api-network:
+  inferno-network:
     driver: bridge

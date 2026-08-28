@@ -142,6 +142,46 @@ Beware the unrelated `betaPolicy.modelWhitelist` block in the same file.
 `dashboard.modelPlaza.table.timePricingRowHintPeak`. The ZH counterparts are
 clean, so the risk is specific to the EN files. No emoji anywhere.
 
+### Two live i18n defects — do these first
+
+**1. Our settings page renders stale terminology today.**
+`admin.settings.openaiFastPolicy.*` — 8 keys whose values upstream rewrote in a
+"whitelist to target models" rename. Ours still hold the OLD strings, and unlike
+every other key in this audit they have **live consumers**:
+`components/admin/settings/AdminGatewaySettingsPage.vue`,
+`views/admin/SettingsView.vue`, `views/admin/settings/OpenAIFastPolicyUserSelector.vue`.
+Merge all eight atomically or the page shows mixed vocabulary. Beware the
+unrelated `betaPolicy.modelWhitelist` block in the same file. Port
+`__tests__/openaiFastPolicyLocales.spec.ts` in the same change — it asserts the
+new strings and that the hints no longer contain "whitelist"/"白名单".
+
+**2. Empty announcements list shows a "failed to load" error.**
+`views/admin/AnnouncementsView.vue:151` passes
+`t('admin.announcements.failedToLoad')` as the description of its **empty-state**
+slot. Upstream uses `createFirstAnnouncement` there. So an admin with no
+announcements is told loading failed. Found incidentally by the locale audit, not
+by the component pass. Needs the new key AND the `.vue` reference changed.
+
+### Corrections the EN pass made to its own parent
+
+`dashboard.ts` was reported as having zero June-only keys; it has **25**, all
+under `profile.settings.*` / `profile.avatar.*`. Those would have been destroyed
+by a `cp` that the parent's report said was safe.
+
+### An EN/ZH parity gap, unrelated to upstream
+
+Our own `en/admin/settings.ts` has `payment.field_keyId`, `field_keySecret`,
+`providerRazorpay` and `razorpayWebhookHint`; our `zh/` file does not. Likewise
+25 `profile.*` keys exist in our EN and not our ZH. That is our own untranslated
+surface, independent of this reconcile.
+
+### Style: six dash violations, not three
+
+`june-lint` ground rule 2 bans **both** en and em dashes in `i18n/**.ts`. The
+added upstream strings carry three em dashes and three en dashes (including
+"0.1–100" and "Mon–Fri", which read as innocent numeric ranges and are not).
+Rewrite each on merge. Zero emoji anywhere.
+
 ## Zero security regressions
 
 Both classifiers grepped specifically for `sanitize|escapeHtml|encodeURI|innerHTML|
