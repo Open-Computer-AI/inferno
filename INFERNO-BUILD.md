@@ -511,6 +511,26 @@ which is why sync PRs #5-#13 piled up unmerged for two weeks.
 7. Port only what converted components depend on. Record ports AND skips here,
    then advance the last reviewed SHA.
 
+#### Pending port carried over from the closed sync PRs (2026-08-28)
+
+Before closing sync PRs #5-#13 as superseded, every branch was checked for work
+that existed only there. Across all nine, exactly **one** file qualified:
+
+- `inferno-frontend/src/api/admin/cnProviders.ts` — from #6
+  (`sync/reconcile-2026-08-18-b`, commit `34857b189`). The admin API client for
+  CN provider (Kimi / Zhipu / DeepSeek) rolling-window quota and payg balance
+  probes, ported from upstream's `frontend/src/api/admin/cnProviders.ts`.
+
+**Deliberately not carried over yet.** Nothing in `inferno-frontend/` imports it,
+so landing it now adds an unreferenced module — dead code that june-lint counts
+against us. Upstream's original is in the tree at
+`frontend/src/api/admin/cnProviders.ts`, and the branch survives on origin, so
+the port is a two-minute redo whenever an admin view actually needs it.
+
+Everything else unique to those branches was either a rebase-rewritten copy of
+one of our own commits (same subject, new hash) or Razorpay lint debt that PR
+#15 re-raises against current code.
+
 #### Runbook v2 (merge model) — adopted 2026-08-28
 
 **Why it changed.** v1 chose rebase on the premise in its own step 3: *"we edit
