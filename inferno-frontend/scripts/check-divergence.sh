@@ -92,6 +92,8 @@ backend/internal/service/payment_order_provider_snapshot.go
 backend/internal/service/payment_webhook_provider.go
 # D6 -- NODE_OPTIONS heap bump for the larger Inferno bundle
 deploy/Dockerfile
+# D10 -- local dev compose rebranded to Inferno, builds from source
+deploy/docker-compose.local.yml
 
 # ---- OAuth authorization server / bearer inference / billing adapter ----
 # Merged from feat/billing-contract-adapter 2026-08-22. Their D5 (Razorpay)
