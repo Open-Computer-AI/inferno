@@ -199,3 +199,51 @@ git log --oneline 49457d7e..HEAD                                      # authorit
 4. `GET /oauth/authorize` + consent screen + org auto-approve
 5. the 60-second refresh reuse grace the Portal contract documents
 6. conformance against the real `plugins/dashboard_auth/nous` provider
+
+# Swarm registry — upstream frontend port audit (2026-08-28)
+
+Answering: after the 473-commit reconcile, what has upstream changed in the
+frontend that we should bring into `inferno-frontend/`? Specifically whether the
+standing "IGNORE components/views/features" rule has been hiding real defects.
+
+| field | value |
+|---|---|
+| run dir | `/Users/saksham/OpenComputerV2/inferno` (branch `inferno-redesign`) |
+| transcripts | `~/.claude/projects/-Users-saksham/3555e339-7e70-40ff-8a71-1c207a51ba41/subagents/` |
+| distilled output | `docs/sync-analysis-2026-08-28/` (written when the verifier lands) |
+| baseline | vendor point `47b1130cb`; upstream base `baeac1f3d`; upstream tip `e866ff6ec` |
+| status | 5 of 6 COMPLETE; adversarial verifier RUNNING; i18n agent resumed after returning no result |
+
+## Agents
+
+| # | model | scope | status |
+|---|---|---|---|
+| 1 | Opus | API contract (`src/api`, `src/types`) + Go handler JSON shapes | COMPLETE — 3 MUST-FIX |
+| 2 | Sonnet | stores / composables / utils / constants / router | COMPLETE — 2 MUST-PORT |
+| 3 | Sonnet | i18n (22 locale files) | RESUMED — first return was empty |
+| 4 | Opus | components (40 source files) | COMPLETE — 36 of 40 are NOT pure styling |
+| 5 | Opus | views (18 source files) | COMPLETE — 16 of 18 are NOT pure styling |
+| 6 | Opus | adversarial verifier — refutes 1-5's claims | RUNNING |
+
+## Recover
+
+Cross-session, always works: the transcripts above are the durable record. Each
+agent's final message carries its full table. Do NOT tail them into a main-thread
+context — they are 400-800KB each; extract the last assistant message only.
+
+## Headline, pending verification
+
+The recurring finding is not "we are behind upstream". It is that **our own Go
+backend already ships these capabilities and our June frontend cannot reach
+them**: `restrict_public_groups` (migration 231), composite live/dispatch,
+`fast_multiplier`/`time_pricing`, Kimi/Zhipu/DeepSeek routing, concurrency 0 =
+unlimited. The backend half arrives automatically by merge; the frontend half
+arrives by manual port under a rule that skips components and views. So the two
+halves of one upstream feature take different paths and one silently does not
+arrive. The gap is between our own two halves, not against upstream.
+
+Zero security regressions found — both classifiers grepped for them specifically.
+
+Both classifier agents independently proposed the same replacement rule: ignore
+`<template>` and `<style>` diffs, always review `<script setup>` and `.ts` hunks.
+On this window that catches all 15 bug fixes for the cost of 4 extra files.
