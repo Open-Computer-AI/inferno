@@ -169,6 +169,18 @@ export default defineConfig(({ mode }) => {
         '/setup': {
           target: backendUrl,
           changeOrigin: true
+        },
+        // GET/POST /oauth/authorize (backend/internal/handler/
+        // oauth_authorize_handler.go) -- a real backend route at the
+        // server root, not under /api. Without this, buildGatewayUrl's
+        // origin resolution falls back to the Vite dev server's own
+        // origin (VITE_API_BASE_URL is unset in local dev), so
+        // checkAuthorize's request hits Vite's SPA fallback instead of
+        // the backend and gets back index.html -- the flow was entirely
+        // unusable under `npm run dev` until this was added.
+        '/oauth': {
+          target: backendUrl,
+          changeOrigin: true
         }
       }
     }

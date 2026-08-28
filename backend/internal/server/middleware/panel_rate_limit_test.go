@@ -313,3 +313,46 @@ func TestIsPubliclyRoutableClientIP(t *testing.T) {
 	require.False(t, isPubliclyRoutableClientIP(""))
 	require.False(t, isPubliclyRoutableClientIP("not-an-ip"))
 }
+
+// TestPanelRateLimiterPublicIPScopedHasItsOwnBudget is Task 4 fix round 2's
+// regression guard for review NEW-4: PublicIP() (RegisterModelPlazaRoutes)
+// and PublicIPScoped("oauth_authorize") (RegisterOAuthAuthorizeRoute) used
+// to share one "panel:public:ip:<ip>" bucket per client IP -- a burst on
+// either surface could exhaust the other's budget for the same visitor.
+func TestPanelRateLimiterPublicIPScopedHasItsOwnBudget(t *testing.T) {
+	allower := &fakePanelAllower{}
+	p := &PanelRateLimiter{
+		limiter:        allower,
+		settingService: newPanelRateLimitTestService(t, `{"enabled":true,"user_rpm":0,"heavy_rpm":0,"exempt_admin":true,"public_ip_rpm":1}`),
+	}
+	modelPlaza := newPanelTestRouter(p.PublicIP(), nil)
+	oauthAuthorize := newPanelTestRouter(p.PublicIPScoped("oauth_authorize"), nil)
+
+	// Exhaust Model Plaza's budget for this IP...
+	require.Equal(t, http.StatusOK, performPanelRequest(modelPlaza, "203.0.113.9:1000").Code)
+	require.Equal(t, http.StatusTooManyRequests, performPanelRequest(modelPlaza, "203.0.113.9:1000").Code)
+
+	// ...and /oauth/authorize's budget for the SAME IP must be untouched.
+	require.Equal(t, http.StatusOK, performPanelRequest(oauthAuthorize, "203.0.113.9:1000").Code)
+
+	// And the reverse: exhausting /oauth/authorize's budget must not touch
+	// Model Plaza's independently-tracked budget for a fresh IP.
+	require.Equal(t, http.StatusTooManyRequests, performPanelRequest(oauthAuthorize, "203.0.113.9:1000").Code)
+	require.Equal(t, http.StatusOK, performPanelRequest(modelPlaza, "198.51.100.7:1000").Code)
+
+	allower.mu.Lock()
+	defer allower.mu.Unlock()
+	// PublicIP()'s key is UNCHANGED -- no behavior change for its existing
+	// caller (RegisterModelPlazaRoutes).
+	require.Contains(t, allower.counts, "panel:public:ip:203.0.113.9")
+	require.Contains(t, allower.counts, "panel:public:ip:198.51.100.7")
+	// PublicIPScoped's key is genuinely distinct, not a coincidental match
+	// with PublicIP()'s -- if it were the same key, the request sequence
+	// above (2 hits via each router) would have hit the rpm=1 limit on the
+	// FIRST oauthAuthorize request too, since modelPlaza already consumed
+	// the shared budget; the OK/429 sequence asserted above already proves
+	// that did not happen, and this just confirms it is because the key
+	// itself differs, not by coincidence.
+	require.Contains(t, allower.counts, "panel:public:ip:oauth_authorize:203.0.113.9")
+	require.Len(t, allower.counts, 3, "three independent buckets: plain public IP x2 + the scoped one")
+}

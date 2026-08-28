@@ -29,6 +29,8 @@ const (
 	FieldName = "name"
 	// FieldGroupID holds the string denoting the group_id field in the database.
 	FieldGroupID = "group_id"
+	// FieldOauthClientID holds the string denoting the oauth_client_id field in the database.
+	FieldOauthClientID = "oauth_client_id"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
 	// FieldLastUsedAt holds the string denoting the last_used_at field in the database.
@@ -102,6 +104,7 @@ var Columns = []string{
 	FieldKey,
 	FieldName,
 	FieldGroupID,
+	FieldOauthClientID,
 	FieldStatus,
 	FieldLastUsedAt,
 	FieldIPWhitelist,
@@ -211,6 +214,11 @@ func ByName(opts ...sql.OrderTermOption) OrderOption {
 // ByGroupID orders the results by the group_id field.
 func ByGroupID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldGroupID, opts...).ToFunc()
+}
+
+// ByOauthClientID orders the results by the oauth_client_id field.
+func ByOauthClientID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOauthClientID, opts...).ToFunc()
 }
 
 // ByStatus orders the results by the status field.

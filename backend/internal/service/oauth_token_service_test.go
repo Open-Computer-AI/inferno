@@ -1,0 +1,2213 @@
+package service
+
+import (
+	"bytes"
+	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/hkdf"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/oauthauthorizationcode"
+	"github.com/Wei-Shaw/sub2api/ent/oauthclient"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+// fakeRefreshTokenCache is an in-memory RefreshTokenCache for tests in this
+// package (which uses the SQLite-backed newPaymentConfigServiceTestClient
+// and therefore has no live Redis). It mirrors the real Redis-backed
+// implementation's family-set bookkeeping (internal/repository/refresh_token_cache.go)
+// closely enough that DeleteTokenFamily has the same observable behavior:
+// deleting every token hash ever added to that family, not just one.
+type fakeRefreshTokenCache struct {
+	mu       sync.Mutex
+	tokens   map[string]*RefreshTokenData
+	replays  map[string]fakeReplayEntry
+	families map[string]map[string]struct{}
+	users    map[int64]map[string]struct{}
+	// revokedFamilies mirrors the real family_revoked:{id} marker
+	// DeleteTokenFamily writes BEFORE it enumerates a family, and that
+	// PersistRefreshToken refuses under. Without it the fake would answer
+	// the I-3 interleaving differently from Redis and the test would be
+	// testing the fake.
+	revokedFamilies map[string]struct{}
+	// failIndexWrite makes the backing store accept a record write and then
+	// fail on the index writes that follow — a transient Redis error
+	// between the SET and the SADDs.
+	//
+	// It is deliberately honoured DIFFERENTLY by the two write paths,
+	// because that difference IS the defect under test: the three-write
+	// sequence (StoreRefreshToken -> AddToUserTokenSet ->
+	// AddToFamilyTokenSet) leaves the record committed and unindexed, while
+	// PersistRefreshToken, being one atomic operation, leaves nothing at
+	// all. A test asserting "no orphan survives" therefore passes against
+	// the atomic path and fails against the three-write path, which is what
+	// makes it a real guard rather than a restatement of the fake.
+	failIndexWrite bool
+}
+
+// fakeReplayEntry mirrors the refresh_replay:{hash} key the Redis
+// implementation writes: the SEALED pair a rotation minted (opaque bytes —
+// the fake, like the real cache, has no key to open it with), plus the
+// moment Redis would expire it (service.RefreshReplayRetention after the
+// rotation).
+type fakeReplayEntry struct {
+	sealed    []byte
+	expiresAt time.Time
+}
+
+func newFakeRefreshTokenCache() *fakeRefreshTokenCache {
+	return &fakeRefreshTokenCache{
+		tokens:          make(map[string]*RefreshTokenData),
+		replays:         make(map[string]fakeReplayEntry),
+		families:        make(map[string]map[string]struct{}),
+		users:           make(map[int64]map[string]struct{}),
+		revokedFamilies: make(map[string]struct{}),
+	}
+}
+
+func (f *fakeRefreshTokenCache) StoreRefreshToken(_ context.Context, tokenHash string, data *RefreshTokenData, _ time.Duration) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	cloned := *data
+	f.tokens[tokenHash] = &cloned
+	return nil
+}
+
+// PersistRefreshToken mirrors repository.refreshTokenPersistScript: the
+// revoked-family check and all three writes happen inside one critical
+// section, so either everything lands or nothing does.
+func (f *fakeRefreshTokenCache) PersistRefreshToken(_ context.Context, tokenHash string, data *RefreshTokenData, _ time.Duration) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, revoked := f.revokedFamilies[data.FamilyID]; revoked {
+		return ErrTokenFamilyRevoked
+	}
+	if f.failIndexWrite {
+		// Atomic: the failure leaves NOTHING behind, not even the record.
+		return errors.New("simulated redis failure persisting refresh token")
+	}
+	cloned := *data
+	f.tokens[tokenHash] = &cloned
+	if f.users[data.UserID] == nil {
+		f.users[data.UserID] = make(map[string]struct{})
+	}
+	f.users[data.UserID][tokenHash] = struct{}{}
+	if f.families[data.FamilyID] == nil {
+		f.families[data.FamilyID] = make(map[string]struct{})
+	}
+	f.families[data.FamilyID][tokenHash] = struct{}{}
+	return nil
+}
+
+func (f *fakeRefreshTokenCache) GetRefreshToken(_ context.Context, tokenHash string) (*RefreshTokenData, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	data, ok := f.tokens[tokenHash]
+	if !ok {
+		return nil, ErrRefreshTokenNotFound
+	}
+	cloned := *data
+	return &cloned, nil
+}
+
+func (f *fakeRefreshTokenCache) DeleteRefreshToken(_ context.Context, tokenHash string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.tokens, tokenHash)
+	delete(f.replays, tokenHash)
+	return nil
+}
+
+func (f *fakeRefreshTokenCache) DeleteUserRefreshTokens(_ context.Context, userID int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for hash := range f.users[userID] {
+		delete(f.tokens, hash)
+		delete(f.replays, hash)
+	}
+	delete(f.users, userID)
+	return nil
+}
+
+func (f *fakeRefreshTokenCache) DeleteTokenFamily(_ context.Context, familyID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	// Marked BEFORE the family is enumerated, exactly as the Redis
+	// implementation does, so a persist that arrives afterwards is refused
+	// rather than re-creating the family behind the revocation.
+	f.revokedFamilies[familyID] = struct{}{}
+	for hash := range f.families[familyID] {
+		delete(f.tokens, hash)
+		delete(f.replays, hash)
+	}
+	delete(f.families, familyID)
+	return nil
+}
+
+func (f *fakeRefreshTokenCache) AddToUserTokenSet(_ context.Context, userID int64, tokenHash string, _ time.Duration) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.failIndexWrite {
+		// NOT atomic: whatever StoreRefreshToken already committed stays.
+		return errors.New("simulated redis failure adding to user set")
+	}
+	if f.users[userID] == nil {
+		f.users[userID] = make(map[string]struct{})
+	}
+	f.users[userID][tokenHash] = struct{}{}
+	return nil
+}
+
+func (f *fakeRefreshTokenCache) AddToFamilyTokenSet(_ context.Context, familyID, tokenHash string, _ time.Duration) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.failIndexWrite {
+		// NOT atomic: whatever StoreRefreshToken already committed stays.
+		return errors.New("simulated redis failure adding to family set")
+	}
+	if f.families[familyID] == nil {
+		f.families[familyID] = make(map[string]struct{})
+	}
+	f.families[familyID][tokenHash] = struct{}{}
+	return nil
+}
+
+func (f *fakeRefreshTokenCache) GetUserTokenHashes(_ context.Context, userID int64) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, 0, len(f.users[userID]))
+	for hash := range f.users[userID] {
+		out = append(out, hash)
+	}
+	return out, nil
+}
+
+func (f *fakeRefreshTokenCache) GetFamilyTokenHashes(_ context.Context, familyID string) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, 0, len(f.families[familyID]))
+	for hash := range f.families[familyID] {
+		out = append(out, hash)
+	}
+	return out, nil
+}
+
+func (f *fakeRefreshTokenCache) IsTokenInFamily(_ context.Context, familyID, tokenHash string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, ok := f.families[familyID][tokenHash]
+	return ok, nil
+}
+
+// MarkRotated mirrors the real Redis Lua script
+// (repository.refreshTokenMarkRotatedScript) statement for statement: the
+// whole read-decide-write happens while holding f.mu, so exactly one
+// concurrent caller ever claims a given token, and the grace verdict — the
+// window, the supersession marker, the skew tolerance — is reached in the
+// same critical section from the same injected clock. That is what makes
+// TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins a meaningful
+// test of OAuthTokenService.ExchangeRefreshToken's own serialization rather
+// than of this fake's.
+func (f *fakeRefreshTokenCache) MarkRotated(_ context.Context, tokenHash string, tombstoned *RefreshTokenData, sealedReplay []byte, now time.Time) (*RefreshRotationResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	data, ok := f.tokens[tokenHash]
+	if !ok {
+		return nil, ErrRefreshTokenNotFound
+	}
+	cloned := *data
+	if data.Rotated {
+		graceSeconds := int64(RefreshReuseGracePeriod / time.Second)
+		skewSeconds := int64(RefreshGraceClockSkewAllowance / time.Second)
+		age := now.Unix() - data.RotatedAtUnix
+		if data.RotatedAtUnix > 0 && age <= graceSeconds && -age <= skewSeconds {
+			entry, stored := f.replays[tokenHash]
+			switch {
+			case stored && string(entry.sealed) == RefreshReplaySupersededMarker:
+				// The chain moved on: no longer the immediately previous token.
+				return &RefreshRotationResult{Data: &cloned, Outcome: RefreshRotationReuse}, nil
+			case stored && now.Before(entry.expiresAt):
+				return &RefreshRotationResult{Data: &cloned, Outcome: RefreshRotationGraceReplay, SealedReplay: entry.sealed}, nil
+			default:
+				return &RefreshRotationResult{Data: &cloned, Outcome: RefreshRotationGraceUnavailable}, nil
+			}
+		}
+		return &RefreshRotationResult{Data: &cloned, Outcome: RefreshRotationReuse}, nil
+	}
+	if len(sealedReplay) == 0 {
+		return nil, fmt.Errorf("mark refresh token rotated: refused to claim an un-rotated record without a replay pair")
+	}
+	tomb := *tombstoned
+	f.tokens[tokenHash] = &tomb
+	f.replays[tokenHash] = fakeReplayEntry{sealed: sealedReplay, expiresAt: now.Add(RefreshReplayRetention)}
+	if tombstoned.PredecessorHash != "" {
+		// Close the predecessor's window in the same critical section.
+		f.replays[tombstoned.PredecessorHash] = fakeReplayEntry{
+			sealed:    []byte(RefreshReplaySupersededMarker),
+			expiresAt: now.Add(RefreshReplayRetention),
+		}
+	}
+	return &RefreshRotationResult{Data: &cloned, Outcome: RefreshRotationClaimed}, nil
+}
+
+// userLookupStub is a minimal OAuthUserLookup for tests: every ID not
+// explicitly marked inactive/missing resolves to an active user, which is
+// enough for tests that aren't specifically about account-status
+// re-validation.
+type userLookupStub struct {
+	mu       sync.Mutex
+	inactive map[int64]bool
+	missing  map[int64]bool
+	// passwordHash and email back the credential-invalidation tests:
+	// resolvedTokenVersion fingerprints email+password_hash, so mutating either
+	// is exactly what an in-app password or email change does to the value
+	// stamped on a refresh token.
+	passwordHash map[int64]string
+	email        map[int64]string
+}
+
+func newUserLookupStub() *userLookupStub {
+	return &userLookupStub{
+		inactive:     map[int64]bool{},
+		missing:      map[int64]bool{},
+		passwordHash: map[int64]string{},
+		email:        map[int64]string{},
+	}
+}
+
+func (u *userLookupStub) GetByID(_ context.Context, id int64) (*User, error) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.missing[id] {
+		return nil, ErrUserNotFound
+	}
+	status := StatusActive
+	if u.inactive[id] {
+		status = "banned"
+	}
+	hash, ok := u.passwordHash[id]
+	if !ok {
+		hash = "original-bcrypt-hash"
+	}
+	mail, ok := u.email[id]
+	if !ok {
+		mail = "user@example.com"
+	}
+	return &User{ID: id, Email: mail, PasswordHash: hash, Status: status}, nil
+}
+
+// setPasswordHash simulates UserService.ChangePassword: the new hash is
+// written and nothing else happens — in particular RevokeAllUserSessions is
+// NOT called, which is precisely the production behaviour the OAuth path has
+// to defend itself against.
+func (u *userLookupStub) setPasswordHash(id int64, hash string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.passwordHash[id] = hash
+}
+
+func (u *userLookupStub) setEmail(id int64, mail string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.email[id] = mail
+}
+
+func (u *userLookupStub) setInactive(id int64) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.inactive[id] = true
+}
+
+func (u *userLookupStub) setMissing(id int64) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.missing[id] = true
+}
+
+func newDeviceFlowFixtureWithDeps(t *testing.T) (context.Context, *OAuthTokenService, *OAuthDeviceService, string, string, *fakeRefreshTokenCache, *userLookupStub) {
+	t.Helper()
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	clients := NewOAuthClientService(client)
+	keys := NewOAuthKeyService(client)
+	devices := NewOAuthDeviceService(client, "https://portal.example.com")
+	cache := newFakeRefreshTokenCache()
+	users := newUserLookupStub()
+	tokens := NewOAuthTokenService(client, keys, devices, cache, users, "https://portal.example.com")
+
+	oc, err := clients.RegisterSelfHosted(ctx, 1, 42, "https://agent.example.com", "")
+	if err != nil {
+		t.Fatalf("RegisterSelfHosted: %v", err)
+	}
+	grant, err := devices.RequestCode(ctx, oc.ClientID, "inference:invoke")
+	if err != nil {
+		t.Fatalf("RequestCode: %v", err)
+	}
+	return ctx, tokens, devices, oc.ClientID, grant.DeviceCode, cache, users
+}
+
+// testClock is the codebase's way of crossing OAuthTokenService's
+// refresh-reuse grace window without sleeping through a real minute: the
+// service reads its clock through the injected OAuthTokenService.now, so a
+// test can simply move time. Sleeping would make these tests take >60s each
+// AND make them flaky under load, which is how a grace-window test quietly
+// stops discriminating.
+//
+// Mutex-guarded because TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins
+// reads it from N goroutines under -race.
+type testClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *testClock) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+func (c *testClock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = c.t.Add(d)
+}
+
+// freezeClock puts the service on a stopped clock starting at the real
+// current time, so unrelated real-time deadlines in the fixture (device code
+// expiry, authorization code expiry) stay valid.
+func freezeClock(tokens *OAuthTokenService) *testClock {
+	clock := &testClock{t: time.Now()}
+	tokens.now = clock.now
+	return clock
+}
+
+func newDeviceFlowFixture(t *testing.T) (context.Context, *OAuthTokenService, *OAuthDeviceService, string, string) {
+	t.Helper()
+	ctx, tokens, devices, clientID, deviceCode, _, _ := newDeviceFlowFixtureWithDeps(t)
+	return ctx, tokens, devices, clientID, deviceCode
+}
+
+func TestExchangeReturnsAuthorizationPendingBeforeApproval(t *testing.T) {
+	ctx, tokens, _, clientID, deviceCode := newDeviceFlowFixture(t)
+
+	_, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if !errors.Is(err, ErrAuthorizationPending) {
+		t.Fatalf("expected ErrAuthorizationPending, got %v", err)
+	}
+}
+
+func TestExchangeReturnsSlowDownOnFastRepoll(t *testing.T) {
+	ctx, tokens, _, clientID, deviceCode := newDeviceFlowFixture(t)
+
+	if _, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode); !errors.Is(err, ErrAuthorizationPending) {
+		t.Fatalf("first poll: expected ErrAuthorizationPending, got %v", err)
+	}
+	// Immediate repoll, well inside the 5s interval.
+	if _, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode); !errors.Is(err, ErrSlowDown) {
+		t.Fatalf("second poll: expected ErrSlowDown, got %v", err)
+	}
+}
+
+func TestExchangeReturnsSignedRS256TokenAfterApproval(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode := newDeviceFlowFixture(t)
+
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+
+	got, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+	if got.AccessToken == "" || got.RefreshToken == "" {
+		t.Fatal("expected both access and refresh tokens")
+	}
+	if got.Scope != "inference:invoke" {
+		t.Fatalf("expected scope %q, got %q", "inference:invoke", got.Scope)
+	}
+
+	claims := jwt.MapClaims{}
+	parsed, _, err := jwt.NewParser().ParseUnverified(got.AccessToken, claims)
+	if err != nil {
+		t.Fatalf("parse access token: %v", err)
+	}
+	if parsed.Method.Alg() != "RS256" {
+		t.Fatalf("expected RS256, got %s", parsed.Method.Alg())
+	}
+	if parsed.Header["kid"] == nil || parsed.Header["kid"] == "" {
+		t.Fatal("access token header must carry a kid")
+	}
+
+	// The two claims the gateway's own verifier reads
+	// (plugins/dashboard_auth/nous/__init__.py in the read-only client repo).
+	if v, _ := claims["oauth_contract_version"].(float64); v != 1 {
+		t.Fatalf("expected oauth_contract_version claim 1, got %v", claims["oauth_contract_version"])
+	}
+	wantInstanceID, ok := strings.CutPrefix(clientID, "agent:")
+	if !ok {
+		t.Fatalf("test fixture clientID %q does not have the expected agent: prefix", clientID)
+	}
+	if got, _ := claims["agent_instance_id"].(string); got != wantInstanceID {
+		t.Fatalf("expected agent_instance_id %q, got %q", wantInstanceID, got)
+	}
+}
+
+func TestDeviceCodeIsSingleUse(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode := newDeviceFlowFixture(t)
+
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	if _, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode); err != nil {
+		t.Fatalf("first exchange: %v", err)
+	}
+
+	if _, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode); err == nil {
+		t.Fatal("a device code must not be redeemable twice")
+	}
+}
+
+func TestExchangeRejectsMismatchedClient(t *testing.T) {
+	ctx, tokens, devices, _, deviceCode := newDeviceFlowFixture(t)
+
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+
+	if _, err := tokens.ExchangeDeviceCode(ctx, "agent:someone-else", deviceCode); err == nil {
+		t.Fatal("a device code must only be redeemable by the client that requested it")
+	}
+}
+
+// TestRefreshTokenReuseIsRejected proves rotation's entire point: replaying
+// an already-rotated refresh token must not just fail for the replayer, it
+// must kill the session for the LEGITIMATE client too. A single-token-delete
+// implementation would pass a test that only checked the replay's own
+// failure — assertion (b) below is the one that catches that bug.
+func TestRefreshTokenReuseIsRejected(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode := newDeviceFlowFixture(t)
+
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+
+	original, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+
+	// Legitimate client rotates once.
+	clock := freezeClock(tokens)
+	rotated, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err != nil {
+		t.Fatalf("legitimate rotation: %v", err)
+	}
+	if rotated.RefreshToken == original.RefreshToken {
+		t.Fatal("rotation must issue a NEW refresh token, not return the same one")
+	}
+
+	// An attacker (or a retried request) replays the ORIGINAL, now-rotated
+	// token — from OUTSIDE the reuse grace, which is what makes this the
+	// reuse case rather than the forgiven one. A replay inside the grace is
+	// a different, deliberately non-fatal outcome; see
+	// TestRefreshReplayInsideGraceReturnsCurrentPair.
+	//
+	// 90 seconds is written as a literal, not as RefreshReuseGracePeriod+1:
+	// a test whose clock is expressed in terms of the constant it is
+	// checking moves with that constant, so widening the window would slide
+	// the test along with it and the test would stop discriminating.
+	clock.advance(90 * time.Second)
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); !errors.Is(err, ErrRefreshTokenReused) {
+		t.Fatalf("(a) expected ErrRefreshTokenReused on replay, got %v", err)
+	}
+
+	// The token the LEGITIMATE client received from the rotation must also
+	// be dead now — reuse detection revokes the whole family, not just the
+	// replayed token. Checking the exact sentinel (not just "any error")
+	// matters: an unrelated failure (e.g. a broken test double) must not be
+	// able to masquerade as successful family revocation. A dead family
+	// means the token's cache entry is gone entirely, so the correct
+	// outcome is ErrInvalidGrant (not found), not ErrRefreshTokenReused.
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, rotated.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("(b) expected ErrInvalidGrant for the legitimately-rotated token after reuse revoked its family, got %v", err)
+	}
+}
+
+// secondDeviceFlow registers an independent client and device authorization
+// on the same services, for tests that need two families whose fates are
+// unrelated.
+func secondDeviceFlow(t *testing.T, ctx context.Context, tokens *OAuthTokenService, devices *OAuthDeviceService) (string, string) {
+	t.Helper()
+	clients := NewOAuthClientService(tokens.entClient)
+	oc, err := clients.RegisterSelfHosted(ctx, 1, 43, "https://other.example.com", "")
+	if err != nil {
+		t.Fatalf("RegisterSelfHosted: %v", err)
+	}
+	grant, err := devices.RequestCode(ctx, oc.ClientID, "inference:invoke")
+	if err != nil {
+		t.Fatalf("RequestCode: %v", err)
+	}
+	return oc.ClientID, grant.DeviceCode
+}
+
+// grantedTokens runs the device flow to completion and returns the first
+// token pair, so the refresh tests can start from a real issued credential.
+func grantedTokens(t *testing.T, ctx context.Context, tokens *OAuthTokenService, devices *OAuthDeviceService, clientID, deviceCode string) *OAuthTokens {
+	t.Helper()
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	got, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+	return got
+}
+
+// TestRefreshReplayInsideGraceReturnsCurrentPair is one half of the
+// 60-second reuse grace.
+//
+// Instant revocation punishes benign clients: a desktop agent whose refresh
+// response was lost in flight retries with the token it still holds, and two
+// windows of one session refresh at the same moment. Both present an
+// already-rotated token. Within RefreshReuseGracePeriod that must return the
+// pair the rotation ALREADY minted — the same access token and the same
+// refresh token, not a second pair (two live tokens in one family is the
+// fork that permanently disables reuse detection) — and must leave the
+// family alive.
+//
+// The assertions to keep: the returned pair is byte-identical to the
+// rotation's, no additional token record was created, and the current token
+// still works afterwards. An implementation that quietly minted a fresh pair
+// would satisfy "the replay succeeded" but fails all three.
+func TestRefreshReplayInsideGraceReturnsCurrentPair(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, cache, _ := newDeviceFlowFixtureWithDeps(t)
+	original := grantedTokens(t, ctx, tokens, devices, clientID, deviceCode)
+
+	clock := freezeClock(tokens)
+	rotated, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err != nil {
+		t.Fatalf("legitimate rotation: %v", err)
+	}
+
+	cache.mu.Lock()
+	recordsAfterRotation := len(cache.tokens)
+	cache.mu.Unlock()
+
+	clock.advance(30 * time.Second)
+
+	replayed, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err != nil {
+		t.Fatalf("replay 30s after rotation must be forgiven, got %v", err)
+	}
+	if replayed.RefreshToken != rotated.RefreshToken {
+		t.Fatal("a replay inside the grace must return the CURRENT refresh token, not a newly minted one")
+	}
+	if replayed.AccessToken != rotated.AccessToken {
+		t.Fatal("a replay inside the grace must return the CURRENT access token, not a newly minted one")
+	}
+	if replayed.Scope != rotated.Scope {
+		t.Fatalf("scope must survive a grace replay unchanged: rotated %q, replayed %q", rotated.Scope, replayed.Scope)
+	}
+	// The access token was minted 30s ago, so what is left of it is 30s
+	// less than a full TTL. Re-reporting the full TTL would leave the client
+	// believing a dead token is still live.
+	if want := rotated.ExpiresIn - 30; replayed.ExpiresIn != want {
+		t.Fatalf("expected expires_in %d (the remaining lifetime of the already-minted access token), got %d", want, replayed.ExpiresIn)
+	}
+
+	// Nothing new was stored: minting on this path is exactly the family
+	// fork the grace is designed NOT to create.
+	cache.mu.Lock()
+	recordsAfterReplay := len(cache.tokens)
+	cache.mu.Unlock()
+	if recordsAfterReplay != recordsAfterRotation {
+		t.Fatalf("a grace replay must not create a token record: had %d before, %d after", recordsAfterRotation, recordsAfterReplay)
+	}
+
+	// The family is alive: the legitimate client's current token still
+	// rotates. This is the assertion that fails if the grace path were to
+	// revoke as a side effect.
+	next, err := tokens.ExchangeRefreshToken(ctx, clientID, rotated.RefreshToken)
+	if err != nil {
+		t.Fatalf("the family must survive a forgiven replay, but the current token failed with %v", err)
+	}
+	if next.RefreshToken == rotated.RefreshToken {
+		t.Fatal("rotation must issue a NEW refresh token")
+	}
+}
+
+// TestRefreshReplayPairIsNeverStoredInPlaintext is the regression test for
+// the one property the grace window threatened.
+//
+// Everything else in this system stores a refresh token as a SHA256 hash, so
+// read access to Redis yields nothing usable. Answering a replay with the
+// SAME pair means that pair has to be persisted — and persisting it in the
+// clear would mean the newest tombstone in every family held that family's
+// current live token, turning Redis read access into account takeover.
+//
+// So the stored blob is sealed under a key derived from the token being
+// rotated. This test asserts all three halves of that: the blob contains
+// neither token, the party holding the predecessor can open it, and nobody
+// else can.
+func TestRefreshReplayPairIsNeverStoredInPlaintext(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, cache, _ := newDeviceFlowFixtureWithDeps(t)
+	original := grantedTokens(t, ctx, tokens, devices, clientID, deviceCode)
+
+	clock := freezeClock(tokens)
+	rotated, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err != nil {
+		t.Fatalf("legitimate rotation: %v", err)
+	}
+
+	cache.mu.Lock()
+	entry, stored := cache.replays[hashToken(original.RefreshToken)]
+	cache.mu.Unlock()
+	if !stored {
+		t.Fatal("expected the rotation to store a replay blob")
+	}
+	if len(entry.sealed) == 0 {
+		t.Fatal("expected a non-empty sealed blob")
+	}
+
+	// (a) The blob leaks neither token. Checked as a raw byte search, not by
+	// unmarshalling: a future implementation that stored the pair in some
+	// other plaintext encoding would still be caught by this.
+	blob := string(entry.sealed)
+	if strings.Contains(blob, rotated.RefreshToken) {
+		t.Fatal("the successor refresh token must never be stored in the clear")
+	}
+	if strings.Contains(blob, rotated.AccessToken) {
+		t.Fatal("the successor access token must never be stored in the clear")
+	}
+	if strings.Contains(blob, original.RefreshToken) {
+		t.Fatal("the presented refresh token must never be stored in the clear either")
+	}
+
+	// (b) The party holding the predecessor — the only party entitled to the
+	// successor — can open it.
+	opened, err := openRefreshReplay(original.RefreshToken, entry.sealed)
+	if err != nil {
+		t.Fatalf("the holder of the predecessor token must be able to open the sealed pair: %v", err)
+	}
+	if opened.RefreshToken != rotated.RefreshToken || opened.AccessToken != rotated.AccessToken {
+		t.Fatal("the sealed pair must round-trip to exactly the pair the rotation minted")
+	}
+
+	// (c) Nobody else can. A Redis-only compromise yields this blob and a
+	// hash, which is what it yielded before the grace existed.
+	if _, err := openRefreshReplay(rotated.RefreshToken, entry.sealed); err == nil {
+		t.Fatal("a different token must not open the sealed pair")
+	}
+	if _, err := openRefreshReplay(original.RefreshToken+"x", entry.sealed); err == nil {
+		t.Fatal("a near-miss token must not open the sealed pair")
+	}
+
+	// And the end-to-end path still works: the grace replay unseals and
+	// returns the same pair.
+	clock.advance(30 * time.Second)
+	replayed, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err != nil {
+		t.Fatalf("grace replay: %v", err)
+	}
+	if replayed.RefreshToken != rotated.RefreshToken {
+		t.Fatal("the unsealed replay must be the pair the rotation minted")
+	}
+}
+
+// TestRefreshReplaySealInfoIsPinned is the third member of the
+// sliding-expectation family found in this task, and the reason it needed
+// finding: the domain-separation test above spells the info string as
+// refreshReplaySealInfo on BOTH sides of every comparison, so changing the
+// constant moves the test with it and fails nothing.
+//
+// The value is a cross-version compatibility constant, not decoration.
+// During a rolling deploy, blobs sealed by old instances are opened by new
+// ones; a changed info string derives a different key, every in-flight grace
+// replay fails to open its pair, and those requests become 500s for the
+// length of the rollout. Bumping it is therefore a deliberate act — which is
+// exactly what a pinned value forces it to be.
+func TestRefreshReplaySealInfoIsPinned(t *testing.T) {
+	if refreshReplaySealInfo != "inferno/oauth/refresh-replay/v1" {
+		t.Fatalf("the HKDF info string is a cross-version constant: changing it makes every in-flight sealed pair unopenable during a rolling deploy. Bump it deliberately, and update this test in the same commit. Got %q", refreshReplaySealInfo)
+	}
+}
+
+// TestRefreshReplayKeyIsDomainSeparatedFromTheLookupHash is the guard the
+// review found missing (F3), and it is the one test holding up the entire
+// justification for storing replay pairs at all.
+//
+// The sealing key and the Redis key name are derived from the SAME secret:
+// the raw refresh token. That is safe only while the two derivations are
+// structurally separated — HKDF-Extract-then-Expand with a domain string on
+// one side, plain SHA-256 on the other. Collapse the derivation to
+// sha256(token) and the AES-256-GCM key becomes byte-for-byte the value
+// whose hex encoding IS the Redis key name: anyone who can read the
+// keyspace can decrypt every blob in it by un-hexing the key they are
+// already looking at. Escalation #1 reopens in full, silently, with a green
+// suite — the reviewer proved that mutation passes everything else.
+//
+// So: assert the separation directly, not the behaviour that depends on it.
+func TestRefreshReplayKeyIsDomainSeparatedFromTheLookupHash(t *testing.T) {
+	token := "art_" + strings.Repeat("9f", 32)
+
+	key, err := hkdf.Key(sha256.New, []byte(token), nil, refreshReplaySealInfo, 32)
+	if err != nil {
+		t.Fatalf("derive: %v", err)
+	}
+	if len(key) != 32 {
+		t.Fatalf("expected a 32-byte AES-256 key, got %d", len(key))
+	}
+
+	// (a) Not the bare hash of the token.
+	sum := sha256.Sum256([]byte(token))
+	if bytes.Equal(key, sum[:]) {
+		t.Fatal("the sealing key must not be sha256(token) — that value's hex form is the Redis key name")
+	}
+	// (b) Not the lookup hash this record is stored under, in any encoding.
+	if hex.EncodeToString(key) == hashToken(token) {
+		t.Fatal("the sealing key must not encode to the record's own cache key")
+	}
+	// (c) The domain string is load-bearing: a different info must yield a
+	// different key, or the "separation" is not coming from where the doc
+	// comment claims it is.
+	other, err := hkdf.Key(sha256.New, []byte(token), nil, refreshReplaySealInfo+"/other", 32)
+	if err != nil {
+		t.Fatalf("derive: %v", err)
+	}
+	if bytes.Equal(key, other) {
+		t.Fatal("changing the HKDF info string must change the derived key")
+	}
+
+	// (d) End-to-end: a blob sealed with the real derivation must not open
+	// under the collapsed one. This is the assertion that fails if someone
+	// swaps hkdf.Key for sha256 inside refreshReplayAEAD.
+	sealed, err := sealRefreshReplay(token, &RefreshReplayPair{RefreshToken: "art_successor"})
+	if err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	block, err := aes.NewCipher(sum[:])
+	if err != nil {
+		t.Fatalf("cipher: %v", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		t.Fatalf("gcm: %v", err)
+	}
+	if len(sealed) > gcm.NonceSize() {
+		if _, err := gcm.Open(nil, sealed[:gcm.NonceSize()], sealed[gcm.NonceSize():], nil); err == nil {
+			t.Fatal("the sealed pair opened under sha256(token) — the key derivation has lost its domain separation")
+		}
+	}
+}
+
+// TestSealedRefreshReplayIsNonDeterministic guards the nonce: sealing the
+// same pair under the same token twice must not produce the same bytes, or
+// an observer of the store could tell that two rotations carried identical
+// contents.
+func TestSealedRefreshReplayIsNonDeterministic(t *testing.T) {
+	pair := &RefreshReplayPair{
+		AccessToken:         "access",
+		RefreshToken:        "art_successor",
+		Scope:               "inference:invoke",
+		AccessExpiresAtUnix: 1700000000,
+	}
+	token := "art_" + strings.Repeat("a", 64)
+
+	first, err := sealRefreshReplay(token, pair)
+	if err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	second, err := sealRefreshReplay(token, pair)
+	if err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	if bytes.Equal(first, second) {
+		t.Fatal("two seals of the same pair must differ — the nonce must be fresh each time")
+	}
+
+	// Both still open to the same plaintext.
+	for _, sealed := range [][]byte{first, second} {
+		opened, err := openRefreshReplay(token, sealed)
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		if opened.RefreshToken != pair.RefreshToken || opened.Scope != pair.Scope {
+			t.Fatal("round trip changed the pair")
+		}
+	}
+
+	// A truncated blob is rejected rather than panicking on the slice.
+	if _, err := openRefreshReplay(token, first[:4]); err == nil {
+		t.Fatal("a truncated blob must not open")
+	}
+	// A flipped bit in the ciphertext is caught by the GCM tag.
+	tampered := append([]byte(nil), first...)
+	tampered[len(tampered)-1] ^= 0x01
+	if _, err := openRefreshReplay(token, tampered); err == nil {
+		t.Fatal("a tampered blob must not open — the auth tag must be checked")
+	}
+}
+
+// TestSupersededAncestorIsNotForgiven is the regression test for the review
+// finding that rejected the first cut of this task (F1).
+//
+// It is the reviewer's exact probe. The grace forgives the IMMEDIATELY
+// previous token. Anchoring the window only to each record's own rotation
+// instant satisfied that for a chain of length one, but not for a family
+// that rotates twice inside 60 seconds — and that is precisely the
+// population the grace was written for (a chatty desktop agent, several
+// windows of one session). The observed behaviour was:
+//
+//	rotate N0 -> N1 at t0
+//	rotate N1 -> N2 at t0+10s
+//	replay N0 at t0+30s  ->  SUCCEEDED, returned N1
+//	present N1           ->  yielded the live N2
+//
+// A thief holding a two-generations-stale token walked the chain to the live
+// credential, reuse never fired, and nothing was logged. That is the exact
+// attack rotation exists to catch.
+//
+// Now: rotating N1 closes N0's window in the same EVAL, so the replay of N0
+// is reuse and the whole family dies — which is the pre-Task-5 behaviour,
+// and the safe direction.
+func TestSupersededAncestorIsNotForgiven(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode := newDeviceFlowFixture(t)
+	n0 := grantedTokens(t, ctx, tokens, devices, clientID, deviceCode)
+
+	clock := freezeClock(tokens)
+	n1, err := tokens.ExchangeRefreshToken(ctx, clientID, n0.RefreshToken)
+	if err != nil {
+		t.Fatalf("rotate N0 -> N1: %v", err)
+	}
+
+	clock.advance(10 * time.Second)
+	n2, err := tokens.ExchangeRefreshToken(ctx, clientID, n1.RefreshToken)
+	if err != nil {
+		t.Fatalf("rotate N1 -> N2: %v", err)
+	}
+
+	// t+30s: inside N0's OWN 60-second window, but N0 has not been the
+	// immediately previous token since t+10s.
+	clock.advance(20 * time.Second)
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, n0.RefreshToken); !errors.Is(err, ErrRefreshTokenReused) {
+		t.Fatalf("a two-generations-stale token must be reuse, not forgiven; got %v", err)
+	}
+
+	// And the revocation was real: the live credential is dead too, so the
+	// chain-walk that made this a finding is closed at both ends.
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, n2.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("the family must be revoked, so the live token must be dead; got %v", err)
+	}
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, n1.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("the intermediate token must be dead too; got %v", err)
+	}
+}
+
+// TestImmediatelyPreviousTokenIsStillForgivenAfterSupersessionOfAnother
+// pins the other side of F1: closing an ancestor's window must not close the
+// window of the token that IS immediately previous. Without this, the fix
+// could pass TestSupersededAncestorIsNotForgiven by simply disabling the
+// grace after the second rotation.
+func TestImmediatelyPreviousTokenIsStillForgivenAfterSupersessionOfAnother(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode := newDeviceFlowFixture(t)
+	n0 := grantedTokens(t, ctx, tokens, devices, clientID, deviceCode)
+
+	clock := freezeClock(tokens)
+	n1, err := tokens.ExchangeRefreshToken(ctx, clientID, n0.RefreshToken)
+	if err != nil {
+		t.Fatalf("rotate N0 -> N1: %v", err)
+	}
+	clock.advance(10 * time.Second)
+	n2, err := tokens.ExchangeRefreshToken(ctx, clientID, n1.RefreshToken)
+	if err != nil {
+		t.Fatalf("rotate N1 -> N2: %v", err)
+	}
+
+	// N1 is now the immediately previous token, and its own window is open.
+	clock.advance(20 * time.Second)
+	replayed, err := tokens.ExchangeRefreshToken(ctx, clientID, n1.RefreshToken)
+	if err != nil {
+		t.Fatalf("the immediately previous token must still be forgiven: %v", err)
+	}
+	if replayed.RefreshToken != n2.RefreshToken {
+		t.Fatal("the forgiven replay must return the current pair")
+	}
+}
+
+// TestGraceToleratesSmallNegativeClockSkew covers the multi-replica case:
+// rotated_at_unix is stamped by whichever instance won the rotation, `now`
+// comes from whichever instance handles the replay, and with ordinary NTP
+// skew the replay can appear to arrive slightly BEFORE the rotation.
+// Without a tolerance that lands on the reuse arm and kills a healthy
+// session — the very failure this grace exists to remove.
+func TestGraceToleratesSmallNegativeClockSkew(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode := newDeviceFlowFixture(t)
+	original := grantedTokens(t, ctx, tokens, devices, clientID, deviceCode)
+
+	clock := freezeClock(tokens)
+	rotated, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err != nil {
+		t.Fatalf("legitimate rotation: %v", err)
+	}
+
+	// The replaying instance's clock is 2s behind the rotating instance's.
+	clock.advance(-2 * time.Second)
+	replayed, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err != nil {
+		t.Fatalf("a replay 2s of clock skew before the rotation must still be forgiven, got %v", err)
+	}
+	if replayed.RefreshToken != rotated.RefreshToken {
+		t.Fatal("expected the current pair")
+	}
+
+	// Far enough back to be nonsense rather than skew: reuse.
+	clock.advance(-10 * time.Minute)
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); !errors.Is(err, ErrRefreshTokenReused) {
+		t.Fatalf("a wildly backwards clock must not open the window; got %v", err)
+	}
+}
+
+// TestGraceWithEvictedPairIsNotTreatedAsTheft covers the other fail-toward-
+// benign case. The replay slot's TTL is strictly longer than the window, so
+// a missing pair inside the window is never natural expiry — it means Redis
+// evicted it. Everything else about the presentation says benign, so it must
+// surface as an infrastructure fault, NOT as reuse: killing a family because
+// a cache entry disappeared would be the same healthy-session kill in a new
+// costume.
+func TestGraceWithEvictedPairIsNotTreatedAsTheft(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, cache, _ := newDeviceFlowFixtureWithDeps(t)
+	original := grantedTokens(t, ctx, tokens, devices, clientID, deviceCode)
+
+	clock := freezeClock(tokens)
+	rotated, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err != nil {
+		t.Fatalf("legitimate rotation: %v", err)
+	}
+
+	// Simulate maxmemory eviction of the replay slot only.
+	cache.mu.Lock()
+	delete(cache.replays, hashToken(original.RefreshToken))
+	cache.mu.Unlock()
+
+	clock.advance(30 * time.Second)
+	_, err = tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err == nil {
+		t.Fatal("expected an error when the sealed pair is gone")
+	}
+	if errors.Is(err, ErrRefreshTokenReused) || errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("an evicted pair must be an infrastructure fault (500), not an OAuth rejection; got %v", err)
+	}
+
+	// The family must still be alive: that is the whole point.
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, rotated.RefreshToken); err != nil {
+		t.Fatalf("the family must survive an evicted replay slot, got %v", err)
+	}
+}
+
+// TestReplayOfRotatedTokenDoesNotTouchTheSigningKey is the regression test
+// for F6.
+//
+// Minting moved ahead of the atomic claim so the sealed pair could be
+// written by the same EVAL. That put keySvc.Active on the path of EVERY
+// presentation — including a stolen, already-rotated token. A signing-key
+// outage would then mean genuine theft returned 500 with the family
+// unrevoked and no slog.Warn, and the attacker could simply retry later.
+// Theft response must not depend on the minting path being healthy.
+func TestReplayOfRotatedTokenDoesNotTouchTheSigningKey(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode := newDeviceFlowFixture(t)
+	original := grantedTokens(t, ctx, tokens, devices, clientID, deviceCode)
+
+	clock := freezeClock(tokens)
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); err != nil {
+		t.Fatalf("legitimate rotation: %v", err)
+	}
+	clock.advance(90 * time.Second)
+
+	// Break the signing path the way a DB blip or an empty key table would,
+	// via a SEPARATE closed client so only minting fails — the shared client
+	// still has to serve assertClientUsable, which runs earlier.
+	broken := newPaymentConfigServiceTestClient(t)
+	if err := broken.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	tokens.keySvc = NewOAuthKeyService(broken)
+
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); !errors.Is(err, ErrRefreshTokenReused) {
+		t.Fatalf("reuse must be detected and the family revoked even with the signing key unavailable; got %v", err)
+	}
+}
+
+// TestRefreshReplayOutsideGraceRevokesFamily is the other half: past
+// RefreshReuseGracePeriod, a replay is indistinguishable from a stolen token
+// and reuse detection must fire exactly as it did before the grace existed —
+// revoking the whole family, not just the replayed token.
+//
+// Assertion (b) is the one that matters: an implementation that failed only
+// the replayer would still pass (a).
+func TestRefreshReplayOutsideGraceRevokesFamily(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode := newDeviceFlowFixture(t)
+	original := grantedTokens(t, ctx, tokens, devices, clientID, deviceCode)
+
+	clock := freezeClock(tokens)
+	rotated, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err != nil {
+		t.Fatalf("legitimate rotation: %v", err)
+	}
+
+	clock.advance(90 * time.Second)
+
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); !errors.Is(err, ErrRefreshTokenReused) {
+		t.Fatalf("(a) expected ErrRefreshTokenReused 90s after rotation, got %v", err)
+	}
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, rotated.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("(b) expected the whole family to be revoked (ErrInvalidGrant for the current token), got %v", err)
+	}
+}
+
+// TestRefreshGraceIsNotExtendedByReplay pins the narrowness of the window:
+// the grace is anchored to the one rotation that opened it and is measured
+// from that instant, so replaying inside it must not push the deadline out.
+// A "reset the timer on every replay" implementation would let a stolen
+// token be replayed forever, one minute at a time, and never trip reuse
+// detection — which is the whole property rotation exists to provide.
+func TestRefreshGraceIsNotExtendedByReplay(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode := newDeviceFlowFixture(t)
+	original := grantedTokens(t, ctx, tokens, devices, clientID, deviceCode)
+
+	clock := freezeClock(tokens)
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); err != nil {
+		t.Fatalf("legitimate rotation: %v", err)
+	}
+
+	clock.advance(30 * time.Second)
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); err != nil {
+		t.Fatalf("replay at t+30s must be forgiven, got %v", err)
+	}
+
+	// t+60s from the REPLAY, but t+90s from the rotation: outside.
+	clock.advance(60 * time.Second)
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); !errors.Is(err, ErrRefreshTokenReused) {
+		t.Fatalf("the grace must be measured from the rotation, not restarted by a replay: got %v", err)
+	}
+}
+
+// TestRefreshFailsAfterPasswordChange is the regression test for the
+// credential-revocation gap between the panel and the OAuth path.
+//
+// UserService.ChangePassword writes the new password hash and returns; it does
+// NOT call RevokeAllUserSessions. Panel sessions still die because
+// AuthService.RefreshTokenPair compares the stored TokenVersion against
+// resolvedTokenVersion(user) — a fingerprint of email+password_hash. The OAuth
+// path used to have NEITHER half: issueRefreshToken never stamped TokenVersion
+// (it stayed 0) and ExchangeRefreshToken never read it, so an exfiltrated
+// ~/.hermes/auth.json kept self-rotating for its full 30 days after the victim
+// changed their password — and there is no UI listing OAuth grants to tell
+// them.
+//
+// The assertion is deliberately on the whole FAMILY, not just the presented
+// token: killing one token would leave any concurrently-rotated sibling alive.
+func TestRefreshFailsAfterPasswordChange(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, _, users := newDeviceFlowFixtureWithDeps(t)
+
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+
+	original, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+
+	// Sanity: the credential works before the password changes. Without this,
+	// a test that broke the fixture would still "pass" the assertion below for
+	// entirely the wrong reason.
+	rotated, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err != nil {
+		t.Fatalf("pre-change rotation should succeed: %v", err)
+	}
+
+	// The victim changes their password in the panel. Nothing else happens —
+	// no explicit revocation call, exactly as in production.
+	users.setPasswordHash(42, "new-bcrypt-hash-after-the-user-changed-it")
+
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, rotated.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected ErrInvalidGrant after password change, got %v — "+
+			"a stolen agent credential would keep rotating for 30 more days", err)
+	}
+
+	// And the family is gone, not just the one token: re-presenting the
+	// already-rotated original must now read as "unknown", proving the whole
+	// rotation chain was revoked rather than a single entry invalidated.
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected the whole family to be revoked, got %v", err)
+	}
+}
+
+// TestRefreshFailsAfterEmailChange covers the other half of what
+// resolvedTokenVersion fingerprints. It is a separate test rather than a
+// subtest of the password case because the two are different revocation
+// triggers that happen to share one mechanism — if that mechanism is ever
+// narrowed to password_hash only, this is the test that notices.
+func TestRefreshFailsAfterEmailChange(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, _, users := newDeviceFlowFixtureWithDeps(t)
+
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+
+	original, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+
+	users.setEmail(42, "attacker-cannot-follow-this@example.com")
+
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected ErrInvalidGrant after email change, got %v", err)
+	}
+}
+
+func TestRefreshPreservesScope(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode := newDeviceFlowFixture(t)
+
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+
+	original, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+	if original.Scope != "inference:invoke" {
+		t.Fatalf("expected initial scope %q, got %q", "inference:invoke", original.Scope)
+	}
+
+	rotated, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+	if err != nil {
+		t.Fatalf("ExchangeRefreshToken: %v", err)
+	}
+	if rotated.Scope != original.Scope {
+		t.Fatalf("scope must be preserved across refresh: got %q, want %q", rotated.Scope, original.Scope)
+	}
+
+	parsed, _, err := jwt.NewParser().ParseUnverified(rotated.AccessToken, jwt.MapClaims{})
+	if err != nil {
+		t.Fatalf("parse rotated access token: %v", err)
+	}
+	claims, ok := parsed.Claims.(jwt.MapClaims)
+	if !ok {
+		t.Fatal("expected MapClaims")
+	}
+	if claims["scope"] != "inference:invoke" {
+		t.Fatalf("access token scope claim = %v, want %q", claims["scope"], "inference:invoke")
+	}
+}
+
+func TestRefreshRejectsMismatchedClient(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode := newDeviceFlowFixture(t)
+
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+
+	original, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+
+	if _, err := tokens.ExchangeRefreshToken(ctx, "agent:someone-else", original.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected ErrInvalidGrant for a refresh_token presented by the wrong client, got %v", err)
+	}
+}
+
+func TestRefreshRejectsUnknownToken(t *testing.T) {
+	ctx, tokens, _, clientID, _ := newDeviceFlowFixture(t)
+
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, "art_does-not-exist"); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected ErrInvalidGrant for an unknown refresh token, got %v", err)
+	}
+}
+
+func TestRefreshTokenRawValueIsNeverStored(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode := newDeviceFlowFixture(t)
+
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+
+	got, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+
+	cache, ok := tokens.refreshCache.(*fakeRefreshTokenCache)
+	if !ok {
+		t.Fatal("expected fakeRefreshTokenCache")
+	}
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	for hash := range cache.tokens {
+		if hash == got.RefreshToken {
+			t.Fatal("the raw refresh token must never be used as its own storage key — only its SHA256 hash")
+		}
+	}
+	if len(cache.tokens) != 1 {
+		t.Fatalf("expected exactly one stored refresh token record, got %d", len(cache.tokens))
+	}
+}
+
+// TestRefreshRejectsInactiveUser proves a banned/disabled user's already-
+// issued refresh token stops minting new access tokens immediately, not
+// just at its natural 30-day expiry. UserService.UpdateStatus invalidates an
+// auth cache but never calls RevokeAllUserSessions, so this re-validation on
+// every refresh is the only thing that closes that gap for OAuth sessions.
+func TestRefreshRejectsInactiveUser(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, _, users := newDeviceFlowFixtureWithDeps(t)
+
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	original, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+
+	users.setInactive(42)
+
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected ErrInvalidGrant for a refresh token belonging to an inactive user, got %v", err)
+	}
+}
+
+// TestRefreshRejectsMissingUser covers the deleted-user case separately from
+// inactive: GetByID returns ErrUserNotFound, not an active-but-banned User.
+func TestRefreshRejectsMissingUser(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, _, users := newDeviceFlowFixtureWithDeps(t)
+
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	original, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+
+	users.setMissing(42)
+
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected ErrInvalidGrant for a refresh token belonging to a deleted user, got %v", err)
+	}
+}
+
+// TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins is C1's
+// verification: N goroutines present the SAME refresh token at once.
+//
+// The failure it guards against is a FORK. Without an atomic claim
+// (RefreshTokenCache.MarkRotated), a read-then-write ExchangeRefreshToken
+// lets several goroutines all observe "not yet rotated" before any of them
+// writes, so several mint — leaving the family with multiple live,
+// independently-rotating branches that never again present an
+// already-rotated token to each other, i.e. reuse detection silently dead
+// for the rest of the family's 30 days.
+//
+// Since the 60-second reuse grace landed, the losers no longer see an error:
+// simultaneous presentations are by definition inside the grace, so each
+// loser is handed the pair the winner already minted. That is the intended
+// outcome — it is the two-windows-at-once case the grace exists for — and it
+// does NOT weaken this test, because the invariant being checked was never
+// "the losers get an error". It is that exactly ONE token pair exists
+// afterwards. Hence the assertions below: every caller that succeeded got
+// the byte-identical refresh token, and exactly one new record was stored. A
+// forking implementation fails both.
+//
+// Run with -race; see task-5-report.md for the mutation evidence.
+func TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, cache, _ := newDeviceFlowFixtureWithDeps(t)
+
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	original, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+
+	originalHash := hashToken(original.RefreshToken)
+	cache.mu.Lock()
+	familyID := cache.tokens[originalHash].FamilyID
+	recordsBefore := len(cache.tokens)
+	cache.mu.Unlock()
+	if familyID == "" {
+		t.Fatal("expected the original token's cache record to carry a family id")
+	}
+
+	const n = 20
+	var (
+		wg          sync.WaitGroup
+		mu          sync.Mutex
+		issued      = map[string]int{}
+		otherErrors []error
+	)
+	start := make(chan struct{})
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
+			<-start
+			got, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case err == nil && got != nil:
+				issued[got.RefreshToken]++
+			default:
+				otherErrors = append(otherErrors, err)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	if len(otherErrors) != 0 {
+		t.Fatalf("every concurrent presentation is inside the reuse grace and must succeed, got errors: %v", otherErrors)
+	}
+	// THE anti-fork assertion: one token, handed to everyone.
+	if len(issued) != 1 {
+		t.Fatalf("expected all %d concurrent presentations to receive the SAME refresh token (a fork would produce several), got %d distinct tokens", n, len(issued))
+	}
+	for token := range issued {
+		if token == original.RefreshToken {
+			t.Fatal("rotation must issue a NEW refresh token, not return the presented one")
+		}
+	}
+
+	// Exactly one record was added — the single successor. A fork would have
+	// stored one per winning goroutine, which is the state that kills reuse
+	// detection for good.
+	cache.mu.Lock()
+	recordsAfter := len(cache.tokens)
+	familySize := len(cache.families[familyID])
+	cache.mu.Unlock()
+	if recordsAfter != recordsBefore+1 {
+		t.Fatalf("expected exactly one new token record after %d concurrent presentations, had %d before and %d after", n, recordsBefore, recordsAfter)
+	}
+	if familySize != 2 {
+		t.Fatalf("expected the family to hold exactly 2 tokens (the rotated original and its single successor), got %d", familySize)
+	}
+	// The family was NOT revoked: a simultaneous double-presentation is the
+	// benign case, and killing the session for it is the behavior the grace
+	// replaced.
+	cache.mu.Lock()
+	_, originalStillPresent := cache.tokens[originalHash]
+	cache.mu.Unlock()
+	if !originalStillPresent {
+		t.Fatal("a concurrent double-presentation must not revoke the family; the rotated original should still be tombstoned in cache")
+	}
+}
+
+// TestConcurrentReuseRevocationAndRotationErrorClasses exists to replace
+// coverage that the rewrite of
+// TestExchangeRefreshTokenConcurrentPresentationsOnlyOneWins removed.
+//
+// Before the grace, that test's losers all took the reuse branch, so
+// DeleteTokenFamily ran concurrently with another goroutine's rotation
+// (StoreRefreshToken + AddToUserTokenSet + AddToFamilyTokenSet) on every
+// run. Under the grace, simultaneous presentations are all forgiven, so
+// nothing in that test revokes anything any more and that interleaving
+// stopped being exercised at all — including under -race.
+//
+// This restores it: N goroutines replay a token from OUTSIDE the grace (so
+// they revoke) while one goroutine legitimately rotates the family's current
+// token (so it writes).
+//
+// It asserts ERROR CLASSES ONLY, deliberately. Whether the concurrently
+// rotated successor survives the revocation depends on whether
+// AddToFamilyTokenSet lands before or after DeleteTokenFamily reads the
+// family set — a known, pre-existing ordering hazard that Task 5 did not fix
+// and that this test must not pretend to have fixed. Asserting "nothing in
+// the family survives" here would be asserting a property the code does not
+// have, which is how a flaky test gets born.
+func TestConcurrentReuseRevocationAndRotationErrorClasses(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode := newDeviceFlowFixture(t)
+	otherClientID, otherDeviceCode := secondDeviceFlow(t, ctx, tokens, devices)
+	original := grantedTokens(t, ctx, tokens, devices, clientID, deviceCode)
+
+	clock := freezeClock(tokens)
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken); err != nil {
+		t.Fatalf("legitimate rotation: %v", err)
+	}
+	clock.advance(90 * time.Second)
+
+	const replayers = 8
+	var (
+		wg          sync.WaitGroup
+		mu          sync.Mutex
+		reuseSeen   int
+		otherErrors []error
+	)
+	start := make(chan struct{})
+
+	wg.Add(replayers)
+	for i := 0; i < replayers; i++ {
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := tokens.ExchangeRefreshToken(ctx, clientID, original.RefreshToken)
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case errors.Is(err, ErrRefreshTokenReused):
+				reuseSeen++
+			case errors.Is(err, ErrInvalidGrant):
+				// An earlier replayer's DeleteTokenFamily already removed the
+				// tombstone, so this one never reaches the reuse branch.
+			default:
+				otherErrors = append(otherErrors, fmt.Errorf("replayer: %w", err))
+			}
+		}()
+	}
+
+	// A rotation running concurrently with the tear-down, in a SEPARATE
+	// family so that its writes are guaranteed to happen on every run.
+	//
+	// The first version of this test rotated a token in the family being
+	// revoked, and accepted success OR rejection — which meant a run where
+	// the rotator was rejected at its initial lookup, before it ever reached
+	// StoreRefreshToken/AddToFamilyTokenSet, exercised no interleaving at
+	// all. The coverage was probabilistic where the test it replaced was
+	// per-run. Using an unrelated family makes the rotator's success
+	// deterministic (asserted below), so DeleteTokenFamily and the write
+	// path genuinely overlap on every run, under -race.
+	other := grantedTokens(t, ctx, tokens, devices, otherClientID, otherDeviceCode)
+	var rotatorErr error
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		_, err := tokens.ExchangeRefreshToken(ctx, otherClientID, other.RefreshToken)
+		mu.Lock()
+		defer mu.Unlock()
+		rotatorErr = err
+	}()
+
+	close(start)
+	wg.Wait()
+
+	if len(otherErrors) != 0 {
+		t.Fatalf("unexpected error classes during concurrent revocation: %v", otherErrors)
+	}
+	// The revocation path must genuinely have run — otherwise this test would
+	// pass while exercising nothing, which is exactly the coverage it exists
+	// to restore.
+	if reuseSeen == 0 {
+		t.Fatal("expected at least one replayer to take the reuse branch and revoke the family")
+	}
+	// Per-run, not probabilistic: the concurrent writer is in an unrelated
+	// family, so nothing the replayers revoke can touch it.
+	if rotatorErr != nil {
+		t.Fatalf("the concurrent rotation of an unrelated family must succeed, got %v", rotatorErr)
+	}
+}
+
+// TestRevokedClientCannotRedeemOrRefresh proves oauth_client.status is a real
+// kill switch on BOTH grants, not just at flow start.
+//
+// Checking status only at RequestCode would leave every already-issued refresh
+// family rotating for up to 30 more days after a client is revoked — i.e. a
+// switch that stops new logins and nothing that matters. Sub-project #1's
+// reconcile job is being designed against this column, so it has to mean
+// something before that lands.
+func TestRevokedClientCannotRedeemOrRefresh(t *testing.T) {
+	ctx := context.Background()
+	entClient := newPaymentConfigServiceTestClient(t)
+	clients := NewOAuthClientService(entClient)
+	keys := NewOAuthKeyService(entClient)
+	devices := NewOAuthDeviceService(entClient, "https://portal.example.com")
+	cache := newFakeRefreshTokenCache()
+	tokens := NewOAuthTokenService(entClient, keys, devices, cache, newUserLookupStub(), "https://portal.example.com")
+
+	oc, err := clients.RegisterSelfHosted(ctx, 1, 42, "https://agent.example.com", "")
+	if err != nil {
+		t.Fatalf("RegisterSelfHosted: %v", err)
+	}
+
+	// Flow 1: approved, then the client is revoked BEFORE redemption.
+	grant, err := devices.RequestCode(ctx, oc.ClientID, ScopeInferenceInvoke)
+	if err != nil {
+		t.Fatalf("RequestCode: %v", err)
+	}
+	if err := devices.Approve(ctx, grant.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+
+	// Flow 2: fully redeemed while still usable, so we hold a live refresh
+	// token whose family must also die on revocation.
+	grant2, err := devices.RequestCode(ctx, oc.ClientID, ScopeInferenceInvoke)
+	if err != nil {
+		t.Fatalf("RequestCode (2): %v", err)
+	}
+	if err := devices.Approve(ctx, grant2.UserCode, 42); err != nil {
+		t.Fatalf("Approve (2): %v", err)
+	}
+	live, err := tokens.ExchangeDeviceCode(ctx, oc.ClientID, deviceCodeFor(t, devices, ctx, grant2.UserCode))
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode (2): %v", err)
+	}
+	if _, err := tokens.ExchangeRefreshToken(ctx, oc.ClientID, live.RefreshToken); err != nil {
+		t.Fatalf("refresh must work while the client is usable: %v", err)
+	}
+
+	if _, err := entClient.OAuthClient.UpdateOneID(oc.ID).SetStatus(ClientRevoked).Save(ctx); err != nil {
+		t.Fatalf("revoke client: %v", err)
+	}
+
+	// device_code grant: an approved-but-unredeemed code is now worthless.
+	if _, err := tokens.ExchangeDeviceCode(ctx, oc.ClientID, deviceCodeFor(t, devices, ctx, grant.UserCode)); !errors.Is(err, ErrAccessDenied) {
+		t.Fatalf("expected ErrAccessDenied redeeming for a revoked client, got %v", err)
+	}
+
+	// refresh_token grant: the already-issued family stops rotating.
+	if _, err := tokens.ExchangeRefreshToken(ctx, oc.ClientID, live.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected ErrInvalidGrant refreshing for a revoked client, got %v", err)
+	}
+}
+
+// deviceCodeFor resolves a user_code back to its device_code, which the CLI
+// would be holding.
+func deviceCodeFor(t *testing.T, devices *OAuthDeviceService, ctx context.Context, userCode string) string {
+	t.Helper()
+	row, err := devices.byUserCodeForTest(ctx, userCode)
+	if err != nil {
+		t.Fatalf("byUserCodeForTest: %v", err)
+	}
+	return row.DeviceCode
+}
+
+// TestDeviceGrantRejectsBannedApprover: an approval is not a session. A user
+// banned between clicking Approve in the browser and the CLI's next poll must
+// not receive a 30-day credential.
+func TestDeviceGrantRejectsBannedApprover(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, _, users := newDeviceFlowFixtureWithDeps(t)
+
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+
+	users.setInactive(42)
+
+	if _, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode); !errors.Is(err, ErrAccessDenied) {
+		t.Fatalf("expected ErrAccessDenied for a banned approver, got %v", err)
+	}
+
+	// The approval must NOT have been burned: the user-status check runs
+	// before the consuming update, so an unban leaves the code redeemable.
+	reloaded, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if reloaded.Status != DeviceStatusApproved {
+		t.Fatalf("a rejected redemption must not consume the approval, status is %q", reloaded.Status)
+	}
+}
+
+// newDeviceFlowFixtureWithIssuer is newDeviceFlowFixtureWithDeps with the
+// issuer left to the caller. Every other fixture in this file hardcodes an
+// already-canonical "https://portal.example.com", which is exactly why the
+// two defects below survived until Task 6 drove the real gateway plugin
+// against a live server: no test had ever constructed this service the way
+// a real deployment's config can.
+func newDeviceFlowFixtureWithIssuer(t *testing.T, issuer string) (context.Context, *OAuthTokenService, *OAuthDeviceService, string, string) {
+	t.Helper()
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	clients := NewOAuthClientService(client)
+	keys := NewOAuthKeyService(client)
+	// The device service keeps its own already-canonical portal URL: this
+	// fixture is varying the TOKEN service's issuer, and a device service
+	// that refused to issue a code would mask the very mint this asserts.
+	devices := NewOAuthDeviceService(client, "https://portal.example.com")
+	tokens := NewOAuthTokenService(client, keys, devices, newFakeRefreshTokenCache(), newUserLookupStub(), issuer)
+
+	oc, err := clients.RegisterSelfHosted(ctx, 1, 42, "https://agent.example.com", "")
+	if err != nil {
+		t.Fatalf("RegisterSelfHosted: %v", err)
+	}
+	grant, err := devices.RequestCode(ctx, oc.ClientID, "inference:invoke")
+	if err != nil {
+		t.Fatalf("RequestCode: %v", err)
+	}
+	row, err := devices.byDeviceCode(ctx, grant.DeviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	return ctx, tokens, devices, oc.ClientID, grant.DeviceCode
+}
+
+// TestIssuerTrailingSlashIsNormalisedIntoTheIssClaim pins Task 6 defect 1.
+//
+// `SERVER_FRONTEND_URL=https://portal.example.com/` passes config
+// validation and is the shape a browser address bar yields on copy/paste,
+// but the real gateway plugin verifies with PyJWT's `issuer=` against a
+// portal_url it has already rstrip("/")-ed
+// (plugins/dashboard_auth/nous/__init__.py, read-only client repo), so the
+// un-normalised claim was rejected on EVERY token: complete_login,
+// verify_session and refresh_session all raised "Invalid issuer". Asserted
+// on the CLAIM, not on the struct field, because the claim is what the
+// client reads -- a test that only checked s.issuer would still pass if a
+// future edit re-introduced the raw value at the stamping site.
+func TestIssuerTrailingSlashIsNormalisedIntoTheIssClaim(t *testing.T) {
+	for _, raw := range []string{
+		"https://portal.example.com/",
+		"https://portal.example.com//",
+		"  https://portal.example.com/  ",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			ctx, tokens, _, clientID, deviceCode := newDeviceFlowFixtureWithIssuer(t, raw)
+
+			got, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+			if err != nil {
+				t.Fatalf("ExchangeDeviceCode: %v", err)
+			}
+			claims := jwt.MapClaims{}
+			if _, _, err := jwt.NewParser().ParseUnverified(got.AccessToken, claims); err != nil {
+				t.Fatalf("parse access token: %v", err)
+			}
+			if iss, _ := claims["iss"].(string); iss != "https://portal.example.com" {
+				t.Fatalf("expected canonical iss %q, got %q", "https://portal.example.com", iss)
+			}
+		})
+	}
+}
+
+// TestMintRefusesWhenIssuerIsNotConfigured pins Task 6 defect 2.
+//
+// With cfg.Server.FrontendURL unset, OAuthDeviceService.RequestCode already
+// refused loudly (ErrPortalNotConfigured -> a logged 500), but this service
+// happily minted tokens carrying `iss: ""` -- unverifiable by the real
+// client, and diagnosed on the CLIENT as "Invalid issuer" with nothing at
+// all in our own logs.
+//
+// There are THREE token-issuing grants, and this test asserts the guard
+// fires on the two that can actually reach the mint from a cold fixture:
+// device_code and authorization_code. The refresh_token case below is a
+// NEGATIVE CONTROL, not a third assertion of the guard — it proves an
+// unknown refresh token is rejected BEFORE the mint, so it says nothing
+// about whether the guard would fire on that path.
+//
+// (An earlier version of this comment claimed "both token-issuing grants
+// are asserted", which was wrong twice over: there are three grants, and
+// the second assertion asserts the opposite of what the sentence says.
+// Recorded because an overstated coverage claim on a regression guard is
+// exactly how a defect gets re-introduced under a green test.)
+func TestMintRefusesWhenIssuerIsNotConfigured(t *testing.T) {
+	ctx, tokens, _, clientID, deviceCode := newDeviceFlowFixtureWithIssuer(t, "   ")
+
+	if _, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode); !errors.Is(err, ErrIssuerNotConfigured) {
+		t.Fatalf("device_code grant: expected ErrIssuerNotConfigured, got %v", err)
+	}
+
+	// Not ErrInvalidGrant: an operator misconfiguration must not be
+	// reported to the client as a dead credential -- that is the exact
+	// "turn a blip into a fleet-wide forced re-auth" failure the handler's
+	// error switch is built to avoid.
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, "art_deadbeef"); errors.Is(err, ErrIssuerNotConfigured) {
+		t.Fatal("refresh grant should reject an unknown token before it ever reaches the mint")
+	}
+}
+
+// TestMintRefusesWhenIssuerIsNotConfiguredOnAuthorizationCodeGrant is the
+// third grant, which the test above could not reach from its device-flow
+// fixture.
+//
+// It also pins the composition the Task 6 review called out: the guard
+// fires inside a rollbackConsumedCode branch, so an unconfigured issuer
+// must NOT burn the authorization code. Asserted by re-reading the row's
+// status, not merely by the error -- a rollback that silently stopped
+// working would leave the error identical.
+func TestMintRefusesWhenIssuerIsNotConfiguredOnAuthorizationCodeGrant(t *testing.T) {
+	ctx := context.Background()
+	entClient := newPaymentConfigServiceTestClient(t)
+	clients := NewOAuthClientService(entClient)
+	keys := NewOAuthKeyService(entClient)
+	devices := NewOAuthDeviceService(entClient, "https://portal.example.com")
+	authorize := NewOAuthAuthorizeService(entClient)
+	tokens := NewOAuthTokenService(entClient, keys, devices, newFakeRefreshTokenCache(), newUserLookupStub(), "   ")
+
+	oc, err := clients.RegisterSelfHosted(ctx, 1, 42, "https://agent.example.com", "")
+	if err != nil {
+		t.Fatalf("RegisterSelfHosted: %v", err)
+	}
+	redirectURI := "https://agent.example.com/auth/callback"
+	verifier, challenge := pkcePair()
+	code, err := authorize.IssueCode(ctx, IssueCodeInput{
+		ClientID:            oc.ClientID,
+		RedirectURI:         redirectURI,
+		Scope:               ScopeInferenceInvoke,
+		CodeChallenge:       challenge,
+		CodeChallengeMethod: "S256",
+		UserID:              42,
+	})
+	if err != nil {
+		t.Fatalf("IssueCode: %v", err)
+	}
+
+	if _, err := tokens.ExchangeAuthorizationCode(ctx, oc.ClientID, code, redirectURI, verifier); !errors.Is(err, ErrIssuerNotConfigured) {
+		t.Fatalf("authorization_code grant: expected ErrIssuerNotConfigured, got %v", err)
+	}
+
+	row, err := entClient.OAuthAuthorizationCode.Query().
+		Where(oauthauthorizationcode.Code(code)).
+		Only(ctx)
+	if err != nil {
+		t.Fatalf("query authorization code: %v", err)
+	}
+	if row.Status != authCodeStatusPending {
+		t.Fatalf("an operator misconfiguration must not burn the code: status = %q, want %q", row.Status, authCodeStatusPending)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Final fix wave: C-1, I-2, I-5, I-3.
+// ---------------------------------------------------------------------------
+
+// newDeviceFlowFixtureWithEnt is newDeviceFlowFixtureWithDeps plus the ent
+// client itself, which the tests below need in order to produce a genuine
+// database fault (closing it) or to remove a row out from under a grant.
+func newDeviceFlowFixtureWithEnt(t *testing.T) (context.Context, *OAuthTokenService, *OAuthDeviceService, string, string, *fakeRefreshTokenCache, *dbent.Client) {
+	t.Helper()
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	clients := NewOAuthClientService(client)
+	keys := NewOAuthKeyService(client)
+	devices := NewOAuthDeviceService(client, "https://portal.example.com")
+	cache := newFakeRefreshTokenCache()
+	users := newUserLookupStub()
+	tokens := NewOAuthTokenService(client, keys, devices, cache, users, "https://portal.example.com")
+
+	oc, err := clients.RegisterSelfHosted(ctx, 1, 42, "https://agent.example.com", "")
+	if err != nil {
+		t.Fatalf("RegisterSelfHosted: %v", err)
+	}
+	grant, err := devices.RequestCode(ctx, oc.ClientID, "inference:invoke")
+	if err != nil {
+		t.Fatalf("RequestCode: %v", err)
+	}
+	return ctx, tokens, devices, oc.ClientID, grant.DeviceCode, cache, client
+}
+
+// approveDeviceCode approves the pending device authorization behind
+// deviceCode, so the grant reaches its consuming CAS.
+func approveDeviceCode(t *testing.T, ctx context.Context, devices *OAuthDeviceService, deviceCode string) {
+	t.Helper()
+	row, err := devices.byDeviceCode(ctx, deviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode: %v", err)
+	}
+	if err := devices.Approve(ctx, row.UserCode, 42); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+}
+
+// TestDeviceGrantDoesNotReportAnInfrastructureFaultAsAccessDenied is C-1 for
+// the device_code grant.
+//
+// assertClientUsable bottoms out in entClient.OAuthClient.Query().Only(ctx),
+// which returns a RAW ent error on any database fault and ErrClientNotUsable
+// only for a genuinely revoked client. Collapsing both into access_denied
+// tells the CLI its login was refused when in fact nothing was decided.
+//
+// The fault is produced by deleting the oauth_client row rather than by
+// stubbing: it makes the client lookup — and nothing before it in this grant
+// — return an ent error, which is the exact shape a Postgres fault produces
+// at that call site.
+func TestDeviceGrantDoesNotReportAnInfrastructureFaultAsAccessDenied(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, _, entClient := newDeviceFlowFixtureWithEnt(t)
+	approveDeviceCode(t, ctx, devices, deviceCode)
+
+	if _, err := entClient.OAuthClient.Delete().Where(oauthclient.ClientID(clientID)).Exec(ctx); err != nil {
+		t.Fatalf("delete oauth client: %v", err)
+	}
+
+	_, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err == nil {
+		t.Fatal("expected the client lookup fault to surface as an error")
+	}
+	if errors.Is(err, ErrAccessDenied) {
+		t.Fatalf("an infrastructure fault must NOT be folded into access_denied, got %v", err)
+	}
+}
+
+// TestDeviceGrantStillReportsARevokedClientAsAccessDenied is the other half
+// of C-1: the split must not turn a genuine policy decision into a 500.
+func TestDeviceGrantStillReportsARevokedClientAsAccessDenied(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, _, entClient := newDeviceFlowFixtureWithEnt(t)
+	approveDeviceCode(t, ctx, devices, deviceCode)
+
+	if _, err := entClient.OAuthClient.Update().
+		Where(oauthclient.ClientID(clientID)).
+		SetStatus(ClientRevoked).
+		Save(ctx); err != nil {
+		t.Fatalf("revoke oauth client: %v", err)
+	}
+
+	if _, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode); !errors.Is(err, ErrAccessDenied) {
+		t.Fatalf("a revoked client must still be access_denied, got %v", err)
+	}
+}
+
+// TestRefreshGrantDoesNotReportAnInfrastructureFaultAsInvalidGrant is C-1 on
+// the path that matters most.
+//
+// The real hermes client treats invalid_grant as TERMINAL: auth.py's
+// _quarantine_nous_oauth_state erases the stored OAuth material, silently.
+// So folding a Postgres blip into invalid_grant here makes every agent
+// refreshing during an outage destroy its own credential, with nothing in
+// our logs, and recovery is a human re-running the device flow per agent.
+//
+// The fault is a CLOSED ent client, which is what a real outage looks like
+// to this call site and is the same technique the resource-server
+// middleware's 500 test uses. It is the first database call this grant
+// makes — GetRefreshToken and the client binding check are both served from
+// the cache — so it lands exactly on assertClientUsable.
+func TestRefreshGrantDoesNotReportAnInfrastructureFaultAsInvalidGrant(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, _, entClient := newDeviceFlowFixtureWithEnt(t)
+	approveDeviceCode(t, ctx, devices, deviceCode)
+
+	issued, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+	if err := entClient.Close(); err != nil {
+		t.Fatalf("close ent client: %v", err)
+	}
+
+	_, err = tokens.ExchangeRefreshToken(ctx, clientID, issued.RefreshToken)
+	if err == nil {
+		t.Fatal("expected the client lookup fault to surface as an error")
+	}
+	if errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("an infrastructure fault must NOT be folded into invalid_grant — the real client erases its credential on that code; got %v", err)
+	}
+}
+
+// TestRefreshGrantStillReportsARevokedClientAsInvalidGrant is C-1's negative
+// control on the refresh path.
+func TestRefreshGrantStillReportsARevokedClientAsInvalidGrant(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, _, entClient := newDeviceFlowFixtureWithEnt(t)
+	approveDeviceCode(t, ctx, devices, deviceCode)
+
+	issued, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+	if _, err := entClient.OAuthClient.Update().
+		Where(oauthclient.ClientID(clientID)).
+		SetStatus(ClientRevoked).
+		Save(ctx); err != nil {
+		t.Fatalf("revoke oauth client: %v", err)
+	}
+
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, issued.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("a revoked client must still be invalid_grant, got %v", err)
+	}
+}
+
+// TestDeviceCodeInternalFailureRollsBackTheApproval is I-2.
+//
+// The device grant has the same CAS-then-mint shape as the
+// authorization_code grant and, until this wave, none of its rollback: any
+// internal failure after the consuming UPDATE left the row permanently
+// `expired`, so the CLI's next poll was answered `expired_token` for a code
+// with ten minutes left and the human had to re-run the whole browser flow.
+//
+// Asserted on the ROW, not only on the error: a rollback that stopped
+// working would leave the error identical. And asserted by RETRYING — the
+// point of the rollback is that the same code is still redeemable once the
+// transient fault clears.
+func TestDeviceCodeInternalFailureRollsBackTheApproval(t *testing.T) {
+	ctx := context.Background()
+	entClient := newPaymentConfigServiceTestClient(t)
+	clients := NewOAuthClientService(entClient)
+	keys := NewOAuthKeyService(entClient)
+	devices := NewOAuthDeviceService(entClient, "https://portal.example.com")
+	cache := &failOnceRefreshTokenCache{fakeRefreshTokenCache: newFakeRefreshTokenCache(), armed: true}
+	tokens := NewOAuthTokenService(entClient, keys, devices, cache, newUserLookupStub(), "https://portal.example.com")
+
+	oc, err := clients.RegisterSelfHosted(ctx, 1, 42, "https://agent.example.com", "")
+	if err != nil {
+		t.Fatalf("RegisterSelfHosted: %v", err)
+	}
+	grant, err := devices.RequestCode(ctx, oc.ClientID, "inference:invoke")
+	if err != nil {
+		t.Fatalf("RequestCode: %v", err)
+	}
+	approveDeviceCode(t, ctx, devices, grant.DeviceCode)
+
+	// First attempt: fully valid, but the refresh-token write fails with an
+	// injected transient error.
+	if _, err := tokens.ExchangeDeviceCode(ctx, oc.ClientID, grant.DeviceCode); err == nil {
+		t.Fatal("expected the injected store failure to surface as an error")
+	} else if errors.Is(err, ErrExpiredToken) || errors.Is(err, ErrAccessDenied) {
+		t.Fatalf("an internal infrastructure failure must NOT be folded into an RFC 8628 error code, got %v", err)
+	}
+
+	row, err := devices.byDeviceCode(ctx, grant.DeviceCode)
+	if err != nil {
+		t.Fatalf("byDeviceCode after failed exchange: %v", err)
+	}
+	if row.Status != "approved" {
+		t.Fatalf("an internal failure must not burn the human's approval: status = %q, want %q", row.Status, "approved")
+	}
+
+	// Second attempt, with the fault cleared: the same code still works.
+	got, err := tokens.ExchangeDeviceCode(ctx, oc.ClientID, grant.DeviceCode)
+	if err != nil {
+		t.Fatalf("retry after the transient fault cleared: %v", err)
+	}
+	if got.AccessToken == "" || got.RefreshToken == "" {
+		t.Fatal("retry returned an empty token pair")
+	}
+}
+
+// requireEveryStoredTokenIsIndexed is I-5's invariant, stated once:
+// a refresh-token record must never exist outside the sets every revocation
+// path enumerates. DeleteTokenFamily and DeleteUserRefreshTokens both work
+// by SMEMBERS -> DEL and there is no scan-based sweep anywhere, so a record
+// missing from those sets is a live 30-day credential that nothing can ever
+// name again.
+func requireEveryStoredTokenIsIndexed(t *testing.T, cache *fakeRefreshTokenCache) {
+	t.Helper()
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	for hash, data := range cache.tokens {
+		if _, ok := cache.families[data.FamilyID][hash]; !ok {
+			t.Fatalf("refresh token %s is stored but absent from its family set — no revocation path can ever reach it", hash[:8])
+		}
+		if _, ok := cache.users[data.UserID][hash]; !ok {
+			t.Fatalf("refresh token %s is stored but absent from its user set — logout-all-devices and password reset cannot reach it", hash[:8])
+		}
+	}
+}
+
+// TestPartialPersistLeavesNoUnindexedRefreshToken is I-5 on the issuing path.
+//
+// persistRefreshToken used to be three separate Redis writes with no
+// compensation: StoreRefreshToken committed first, and an error from
+// AddToUserTokenSet or AddToFamilyTokenSet was returned WITHOUT undoing it.
+// The in-code comment claimed returning the error was the mitigation
+// ("Fatal, not just logged"), which is precisely backwards — the record was
+// already committed with its full 30-day TTL.
+//
+// failIndexWrite models a store that accepts the record and then fails on
+// the index writes. The atomic path leaves nothing; the three-write path
+// leaves the record. That difference is the whole finding.
+func TestPartialPersistLeavesNoUnindexedRefreshToken(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, cache, _ := newDeviceFlowFixtureWithEnt(t)
+	approveDeviceCode(t, ctx, devices, deviceCode)
+
+	cache.failIndexWrite = true
+	if _, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode); err == nil {
+		t.Fatal("expected the injected index-write failure to surface as an error")
+	}
+
+	requireEveryStoredTokenIsIndexed(t, cache)
+	cache.mu.Lock()
+	stored := len(cache.tokens)
+	cache.mu.Unlock()
+	if stored != 0 {
+		t.Fatalf("a failed persist must leave NO record behind, found %d", stored)
+	}
+}
+
+// TestGraceNeverDeliversAnUnindexedSuccessor is I-5's Task-4/Task-5 seam:
+// the half that turned an inert leak into a delivered, unrevokable
+// credential.
+//
+// MarkRotated seals the successor pair BEFORE persistRefreshToken runs. So
+// with the old three-write persist: write 1 committed, write 2 failed, the
+// client got a 500, retried inside the 60s grace (a 500 is exactly what a
+// client retries), and the grace handed it back the pair that rotation
+// minted — a live 30-day refresh token in neither revocation index.
+//
+// The assertion is the invariant, not the wire response: whatever the client
+// is handed, no record may exist outside its indexes.
+func TestGraceNeverDeliversAnUnindexedSuccessor(t *testing.T) {
+	ctx, tokens, devices, clientID, deviceCode, cache, _ := newDeviceFlowFixtureWithEnt(t)
+	approveDeviceCode(t, ctx, devices, deviceCode)
+
+	issued, err := tokens.ExchangeDeviceCode(ctx, clientID, deviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+	freezeClock(tokens)
+
+	cache.failIndexWrite = true
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, issued.RefreshToken); err == nil {
+		t.Fatal("expected the injected index-write failure to surface as an error")
+	}
+	cache.failIndexWrite = false
+
+	// The client's ordinary retry of that 500, well inside the grace.
+	replayed, err := tokens.ExchangeRefreshToken(ctx, clientID, issued.RefreshToken)
+	if err != nil {
+		t.Fatalf("grace replay: %v", err)
+	}
+
+	requireEveryStoredTokenIsIndexed(t, cache)
+
+	// The successor the grace handed back was never persisted, so it is not
+	// redeemable — the client re-authenticates, exactly as it did before the
+	// grace existed. What must NOT happen is that it is redeemable and
+	// unrevokable.
+	if _, err := tokens.ExchangeRefreshToken(ctx, clientID, replayed.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("the never-persisted successor must not be redeemable, got %v", err)
+	}
+}
+
+// revokeOnClaimRefreshTokenCache revokes a token family at the exact moment
+// a rotation claims it — i.e. in the window between MarkRotated returning
+// Claimed and persistRefreshToken running. That is I-3's interleaving,
+// made deterministic:
+//
+//	rotator:  MarkRotated(N1) -> Claimed
+//	attacker: DeleteTokenFamily(F)      (reuse detected on a stale token)
+//	rotator:  persist N2
+//
+// The revocation runs OUTSIDE the fake's critical section, exactly as a
+// separate Redis connection would.
+type revokeOnClaimRefreshTokenCache struct {
+	*fakeRefreshTokenCache
+	once sync.Once
+}
+
+func (c *revokeOnClaimRefreshTokenCache) MarkRotated(ctx context.Context, tokenHash string, tombstoned *RefreshTokenData, sealedReplay []byte, now time.Time) (*RefreshRotationResult, error) {
+	res, err := c.fakeRefreshTokenCache.MarkRotated(ctx, tokenHash, tombstoned, sealedReplay, now)
+	if err == nil && res.Outcome == RefreshRotationClaimed {
+		c.once.Do(func() { _ = c.fakeRefreshTokenCache.DeleteTokenFamily(ctx, tombstoned.FamilyID) })
+	}
+	return res, err
+}
+
+// TestConcurrentRotationCannotResurrectARevokedFamily is I-3.
+//
+// A family revocation is SMEMBERS -> DEL. A rotation that is mid-flight when
+// it runs used to re-create the family key behind it, holding only the
+// surviving head — so the live token of a family that was just revoked for
+// reuse kept rotating for the rest of its 30 days, and no later revocation
+// was even wrong: it revoked a family that was already supposed to be dead.
+//
+// Closed by a revocation marker written BEFORE the enumeration and checked
+// inside the same atomic operation that persists. See
+// RefreshFamilyRevokedRetention.
+func TestConcurrentRotationCannotResurrectARevokedFamily(t *testing.T) {
+	ctx := context.Background()
+	entClient := newPaymentConfigServiceTestClient(t)
+	clients := NewOAuthClientService(entClient)
+	keys := NewOAuthKeyService(entClient)
+	devices := NewOAuthDeviceService(entClient, "https://portal.example.com")
+	inner := newFakeRefreshTokenCache()
+	cache := &revokeOnClaimRefreshTokenCache{fakeRefreshTokenCache: inner}
+	tokens := NewOAuthTokenService(entClient, keys, devices, cache, newUserLookupStub(), "https://portal.example.com")
+
+	oc, err := clients.RegisterSelfHosted(ctx, 1, 42, "https://agent.example.com", "")
+	if err != nil {
+		t.Fatalf("RegisterSelfHosted: %v", err)
+	}
+	grant, err := devices.RequestCode(ctx, oc.ClientID, "inference:invoke")
+	if err != nil {
+		t.Fatalf("RequestCode: %v", err)
+	}
+	approveDeviceCode(t, ctx, devices, grant.DeviceCode)
+
+	issued, err := tokens.ExchangeDeviceCode(ctx, oc.ClientID, grant.DeviceCode)
+	if err != nil {
+		t.Fatalf("ExchangeDeviceCode: %v", err)
+	}
+
+	// The rotation claims, the family is revoked underneath it, and the
+	// successor must not be written.
+	if _, err := tokens.ExchangeRefreshToken(ctx, oc.ClientID, issued.RefreshToken); !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("a rotation into a revoked family must be refused as invalid_grant, got %v", err)
+	}
+
+	inner.mu.Lock()
+	live := len(inner.tokens)
+	families := len(inner.families)
+	inner.mu.Unlock()
+	if live != 0 {
+		t.Fatalf("a revoked family must have no surviving token, found %d", live)
+	}
+	if families != 0 {
+		t.Fatalf("a revoked family must not be re-created by the rotation it raced, found %d family set(s)", families)
+	}
+}

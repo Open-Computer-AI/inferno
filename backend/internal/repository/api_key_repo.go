@@ -155,6 +155,7 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 				user.FieldBalance,
 				user.FieldConcurrency,
 				user.FieldBalanceNotifyEnabled,
+				user.FieldRestrictPublicGroups,
 				user.FieldBalanceNotifyThresholdType,
 				user.FieldBalanceNotifyThreshold,
 				user.FieldBalanceNotifyExtraEmails,
@@ -429,6 +430,24 @@ func (r *apiKeyRepository) deleteWithTombstone(ctx context.Context, exec *dbent.
 
 func (r *apiKeyRepository) apiKeyListByUserIDQuery(userID int64, filters service.APIKeyListFilters) *dbent.APIKeyQuery {
 	q := r.activeQuery().Where(apikey.UserIDEQ(userID))
+
+	// oauth_client_id IS NULL -- the one predicate that keeps OAuth backing rows
+	// out of every key listing built from this query (ListByUserID and
+	// ListAllByUserID, i.e. both of APIKeyService.List's paths plus the admin
+	// user-key view).
+	//
+	// It lives here, on the shared query, rather than in each service or
+	// handler: a backing row's api_keys.key is a real non-expiring credential
+	// the server promised never to return, and dto.APIKey marshals `key`
+	// verbatim, so one listing that forgot the predicate would be a credential
+	// leak. Putting it where the query is built means there is no listing that
+	// can forget it.
+	//
+	// filters.IncludeOAuthBacking is the deliberate opt-out; see its doc
+	// comment for why the zero value is the safe one.
+	if !filters.IncludeOAuthBacking {
+		q = q.Where(apikey.OauthClientIDIsNil())
+	}
 
 	if filters.Search != "" {
 		q = q.Where(apikey.Or(
@@ -863,6 +882,28 @@ func (r *apiKeyRepository) GetRateLimitData(ctx context.Context, id int64) (resu
 	return data, rows.Err()
 }
 
+// APIKeyEntityToService converts an ent api_keys row -- with its User and Group
+// edges, if eager-loaded -- into the *service.APIKey the rest of the server
+// works with.
+//
+// Exported for exactly one caller outside this package:
+// middleware.OAuthOrAPIKeyAuth. OAuthBackingKeyService.Resolve returns the ent
+// entity (it is a persistence-layer get-or-create, and the api_keys identity
+// index is what makes it correct), while the /v1 pipeline reads *service.APIKey
+// off the gin context. Something has to do that mapping, and the alternatives
+// were both worse: a second copy in the middleware would have to restate the
+// Group's ~60 pricing and routing fields and would drift from this one the
+// first time a column is added, and re-reading the row through
+// APIKeyService.GetByID would double the queries on the hottest path in the
+// server AND undo OAuthBackingKeyService's deliberate blanking of api_keys.key
+// by loading the secret back out of the database.
+//
+// It is a pure function of its argument -- no client, no context, no I/O -- so
+// exporting it exposes no repository state.
+func APIKeyEntityToService(m *dbent.APIKey) *service.APIKey {
+	return apiKeyEntityToService(m)
+}
+
 func apiKeyEntityToService(m *dbent.APIKey) *service.APIKey {
 	if m == nil {
 		return nil
@@ -879,6 +920,7 @@ func apiKeyEntityToService(m *dbent.APIKey) *service.APIKey {
 		CreatedAt:     m.CreatedAt,
 		UpdatedAt:     m.UpdatedAt,
 		GroupID:       m.GroupID,
+		OAuthClientID: m.OauthClientID,
 		Quota:         m.Quota,
 		QuotaUsed:     m.QuotaUsed,
 		ExpiresAt:     m.ExpiresAt,
@@ -932,6 +974,7 @@ func userEntityToService(u *dbent.User) *service.User {
 		TotpEnabled:                u.TotpEnabled,
 		TotpEnabledAt:              u.TotpEnabledAt,
 		BalanceNotifyEnabled:       u.BalanceNotifyEnabled,
+		RestrictPublicGroups:       u.RestrictPublicGroups,
 		BalanceNotifyThresholdType: u.BalanceNotifyThresholdType,
 		BalanceNotifyThreshold:     u.BalanceNotifyThreshold,
 		TotalRecharged:             u.TotalRecharged,

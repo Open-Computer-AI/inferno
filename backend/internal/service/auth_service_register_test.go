@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 )
 
 type settingRepoStub struct {
+	mu               sync.Mutex
 	values           map[string]string
 	err              error
 	getValueCalls    int
@@ -25,6 +27,8 @@ func (s *settingRepoStub) Get(ctx context.Context, key string) (*Setting, error)
 }
 
 func (s *settingRepoStub) GetValue(ctx context.Context, key string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.getValueCalls++
 	if s.err != nil {
 		return "", s.err
@@ -40,6 +44,8 @@ func (s *settingRepoStub) Set(ctx context.Context, key, value string) error {
 }
 
 func (s *settingRepoStub) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.getMultipleCalls++
 	if s.err != nil {
 		return nil, s.err
@@ -127,6 +133,10 @@ func (s *refreshTokenCacheStub) StoreRefreshToken(context.Context, string, *Refr
 	return nil
 }
 
+func (s *refreshTokenCacheStub) PersistRefreshToken(context.Context, string, *RefreshTokenData, time.Duration) error {
+	return nil
+}
+
 func (s *refreshTokenCacheStub) GetRefreshToken(context.Context, string) (*RefreshTokenData, error) {
 	return nil, ErrRefreshTokenNotFound
 }
@@ -161,6 +171,10 @@ func (s *refreshTokenCacheStub) GetFamilyTokenHashes(context.Context, string) ([
 
 func (s *refreshTokenCacheStub) IsTokenInFamily(context.Context, string, string) (bool, error) {
 	return false, nil
+}
+
+func (s *refreshTokenCacheStub) MarkRotated(context.Context, string, *RefreshTokenData, []byte, time.Time) (*RefreshRotationResult, error) {
+	return nil, ErrRefreshTokenNotFound
 }
 
 func (s *emailCacheStub) GetVerificationCode(ctx context.Context, email string) (*VerificationCodeData, error) {
@@ -254,6 +268,7 @@ func newAuthService(repo *userRepoStub, settings map[string]string, emailCache E
 		nil, // defaultSubAssigner
 		nil, // affiliateService
 		quotaRepo,
+		nil, // orgService
 	)
 }
 
@@ -908,7 +923,7 @@ func newAuthServiceWithDingTalkCfg(settings map[string]string, dtCfg config.Ding
 		DingTalk: dtCfg,
 	}
 	settingService := NewSettingService(&settingRepoStub{values: settings}, cfg)
-	return NewAuthService(nil, nil, nil, nil, cfg, settingService, nil, nil, nil, nil, nil, nil, nil)
+	return NewAuthService(nil, nil, nil, nil, cfg, settingService, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 // minDingTalkURLs 返回一个包含必填字段的基础 DingTalkConnectConfig（不设 Enabled/BypassRegistration/Policy）。

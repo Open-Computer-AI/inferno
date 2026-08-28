@@ -491,6 +491,11 @@ the next run; this entry advanced the mirror but did not complete the port.
 
 #### Runbook derived from this run
 
+**SUPERSEDED 2026-08-28 — see "Runbook v2 (merge model)" below.** Kept because the
+2026-08-10/11/15 log entries were written against it. Step 3 said rebase; step 7
+ended at "advance the last reviewed SHA" and never said how to land the result,
+which is why sync PRs #5-#13 piled up unmerged for two weeks.
+
 1. `git fetch upstream` and record `git rev-list --count HEAD..upstream/main`.
 2. `git tag -f pre-sync-backup HEAD` — a recovery point costs nothing.
 3. `git rebase upstream/main`. On conflict, read it: we edit almost no upstream
@@ -505,6 +510,83 @@ the next run; this entry advanced the mirror but did not complete the port.
    without touching any TS file, and a stale client does not fail loudly.
 7. Port only what converted components depend on. Record ports AND skips here,
    then advance the last reviewed SHA.
+
+#### Pending port carried over from the closed sync PRs (2026-08-28)
+
+Before closing sync PRs #5-#13 as superseded, every branch was checked for work
+that existed only there. Across all nine, exactly **one** file qualified:
+
+- `inferno-frontend/src/api/admin/cnProviders.ts` — from #6
+  (`sync/reconcile-2026-08-18-b`, commit `34857b189`). The admin API client for
+  CN provider (Kimi / Zhipu / DeepSeek) rolling-window quota and payg balance
+  probes, ported from upstream's `frontend/src/api/admin/cnProviders.ts`.
+
+**Deliberately not carried over yet.** Nothing in `inferno-frontend/` imports it,
+so landing it now adds an unreferenced module — dead code that june-lint counts
+against us. Upstream's original is in the tree at
+`frontend/src/api/admin/cnProviders.ts`, and the branch survives on origin, so
+the port is a two-minute redo whenever an admin view actually needs it.
+
+Everything else unique to those branches was either a rebase-rewritten copy of
+one of our own commits (same subject, new hash) or Razorpay lint debt that PR
+#15 re-raises against current code.
+
+#### Runbook v2 (merge model) — adopted 2026-08-28
+
+**Why it changed.** v1 chose rebase on the premise in its own step 3: *"we edit
+almost no upstream file, so a conflict is unusual."* True when Inferno was a
+restyle. False now — the fork carries 244 commits across 215 files (OAuth
+authorization server, Razorpay, billing contract adapter, avatar_seed, branding).
+Measured on the 473-commit reconcile of 2026-08-28:
+
+| | conflicts |
+|---|---|
+| `git rebase upstream/main` | hit one on commit **3 of 243**; **62** of our commits touch the ledger files, each re-litigating the D5/D6 numbering the 08-22 merge already settled |
+| `git merge upstream/main` | **4**, and they were exactly the files GOAL.md's collision map predicted |
+
+Each conflict is a chance to silently drop an upstream fix, so 62-vs-4 is a
+safety argument, not a convenience one. The cost is a non-linear history. Cheap:
+"what have we changed" is answered by `check-divergence.sh` against
+`git merge-base`, which works identically either way.
+
+**A merge also makes landing a fast-forward.** Under rebase the reconcile branch
+shared no commits with `inferno-redesign`, so GitHub reported it CONFLICTING
+across ~1400 files and it could only be landed by force-push. That is the whole
+reason PRs #1-#3 were closed unmerged and #5-#13 stranded.
+
+1. `git fetch upstream`; record `git rev-list --count HEAD..upstream/main`.
+   If the clone is shallow, `git fetch --unshallow` FIRST — pre-boundary commits
+   are grafted parentless and the count reads absurdly high (4936 vs the real 430
+   on 2026-08-27).
+2. `git tag -f pre-reconcile-<date> HEAD`, and work in a **separate worktree**
+   (`git worktree add -b sync/reconcile-<date> ../inferno-reconcile HEAD`) so
+   `inferno-redesign` is never the thing being operated on.
+3. **Regenerate the collision map** (the snippet in GOAL.md). It tells you which
+   of our files upstream also touched — the only files that can conflict — and
+   which of those are generated.
+4. `git merge upstream/main`. Resolve, in this order of preference:
+   - **Generated files** (`backend/ent/*`, `wire_gen.go`): do NOT hand-merge.
+     Take either side, then `go generate ./ent` and regenerate wire.
+   - **Everything else**: keep upstream's structure, re-apply our addition on
+     top. Never take our whole file — that resolves the conflict and silently
+     deletes whatever upstream fixed in lines we did not care about.
+5. `./inferno-frontend/scripts/check-divergence.sh` must exit 0. A file that
+   differs and is not declared stops the reconcile; do NOT add it to DECLARED to
+   make the gate pass. Prune entries the gate reports as no longer differing.
+6. **Build and test, do not trust a clean merge.** `go build ./...`,
+   `go vet ./internal/...`, `go test ./internal/...`. On 2026-08-28
+   `ent/runtime/runtime.go` merged with zero conflicts and still panicked at
+   init, because generated code indexes schema fields positionally and our
+   `avatar_seed` shifted upstream's new field by one. It compiled. It was broken.
+7. Diff the API contract since the last reviewed SHA — both the TS clients
+   (`inferno-frontend/src/api`, `src/types`) AND the Go response structs
+   (`backend/internal/handler`), because upstream can change a JSON shape in Go
+   without touching any TS file and a stale client does not fail loudly.
+8. **Land it** — the step v1 never had. `git merge --ff-only sync/reconcile-<date>`
+   on `inferno-redesign`, then push. Assert `git merge-base --is-ancestor` first:
+   a fast-forward rewrites nothing and needs no force. If it is NOT a
+   fast-forward, stop and find out why rather than forcing.
+9. Record ports, skips and resolutions here, and advance the last reviewed SHA.
 
 ### 2026-08-15 — third sync, following the derived runbook
 

@@ -387,7 +387,24 @@ func (r *usageLogRepository) loadAPIKeys(ctx context.Context, ids []int64) (map[
 		return nil, err
 	}
 	for _, m := range models {
-		out[m.ID] = apiKeyEntityToService(m)
+		key := apiKeyEntityToService(m)
+		if m.OauthClientID != nil {
+			// A usage log written by an OAuth agent points at that agent's
+			// backing api_keys row, and dto.UsageLog embeds the whole dto.APIKey
+			// -- `key` included -- so GET /api/v1/usage would hand the owner the
+			// backing row's live, non-expiring secret. The row itself must stay:
+			// it carries the attribution ("OAuth agent <client_id>") that makes
+			// the usage line readable. Only the credential goes.
+			//
+			// This cannot be filtered like the key listings are: hiding the row
+			// would hide the agent's usage from the user it is billed to. And it
+			// deliberately does NOT live in apiKeyEntityToService, which is also
+			// the auth and key-creation mapper -- blanking there would be a
+			// second, invisible guard over the key-management endpoints, and
+			// would make the listing filter untestable by masking its removal.
+			key.Key = ""
+		}
+		out[m.ID] = key
 	}
 	return out, nil
 }
