@@ -1737,3 +1737,104 @@ re-litigated.
 
 **Last reviewed upstream SHA: `baeac1f3de21d37b129405f092ef86c24b3f203d`**
 (2026-08-15 13:40:21 UTC, "chore: sync VERSION to 0.1.177 [skip ci]").
+
+### 2026-08-28 — still blocked, rebase-only, nothing new to port
+
+**444 commits behind** at the start of this run (`HEAD..upstream/main`, after
+`git fetch --unshallow` — this container's clone was shallow, same trap PR #12
+flagged). This branch's own `INFERNO-BUILD.md` still names `baeac1f3d`
+(2026-08-16) as the last reviewed SHA because none of the intervening sync PRs
+(#5 through #12, 2026-08-17 through 2026-08-27) were ever merged — each ran
+against the same unmoved base and hit the same wall documented below.
+
+**Rebase: clean**, 3 conflicts, all resolved the known way:
+- Root `.gitignore`, twice (once for `/plugins/`, once for
+  `!docs/superpowers/`) — kept both sides each time, matching D3/D4.
+- `Dockerfile`'s `GOLANG_IMAGE` — our `d08220563` (1.26.5→1.26.6) is now a
+  no-op; upstream's own `cbe258fd1` already moved it to 1.27.0. Took
+  upstream's side.
+
+`go generate ./ent` re-run because upstream touched `channel_monitor.go`,
+`channel_monitor_history.go`, `channel_monitor_request_template.go`, and
+`user_platform_quota.go` schemas since the last regen: **zero diff** in
+generated output, confirming D1's `avatar_seed` merge stayed correct.
+
+## Still blocked — same undeclared divergence as PRs #9, #10, #11, #12
+
+`check-divergence.sh` fails identically to every cycle since 2026-08-22: 12
+undeclared files under `backend/internal/{config,service}/`
+(`config.go`, `auth_email_binding.go`, `auth_oauth_email_flow.go`,
+`auth_service.go`, `balance_notify_service.go`, `content_moderation.go`,
+`domain_constants.go`, `payment_order_result_test.go`, `setting_features.go`,
+`setting_parse.go`, `setting_service_update_test.go`, `totp_service.go`), all
+traced to the same commit that is now `inferno-redesign`'s own tip —
+`401416cfa` here (`4817289c4` before this rebase), *"fix: make Inferno the
+default product branding"*. It was committed straight to `inferno-redesign`,
+not through a reconcile PR, and still has no ledger entry in GOAL.md or the
+script's `DECLARED` array six days after it first tripped this gate
+(first caught in PR #9, 2026-08-22).
+
+`siteLogoSanitization.spec.ts` still fails the same 2 assertions for the same
+reason PR #12 diagnosed: `AppSidebar.vue` dropped the site logo entirely in
+`0e60b2e48` ("fix(ui): remove sidebar brand mark"), so the test's
+`allowRelative`/`allowDataUrl` source-string assertions find nothing to match
+against. Not caused by this sync.
+
+**Neither is this session's to fix** — Gate 5's backend divergence needs a
+ledger decision (fold into D2, add a new D-entry, or revert the commit) and
+the sidebar logo needs an owner call on whether its removal was intentional.
+Both are unchanged from PR #12's report yesterday.
+
+## Diffed for portable work — found none, confirmed nothing missed
+
+Per the runbook, diffed everything the port policy cares about between
+`efb46db0a` (PR #12's reviewed endpoint) and today's `upstream/main`
+(`eca8d6b9a`): 14 new upstream commits, all in
+`backend/internal/service/openai_*` and `ratelimit_service.go` — gateway/proxy
+request-path logic (OpenAI reasoning replay normalization, API-key namespace
+round-tripping, image-tool cooldown fixes), not admin/user SPA-facing
+endpoints. Confirmed by diffing the actual file list, not just skimming commit
+subjects.
+
+- `frontend/src/{api,stores,composables,utils,types}` — zero files changed.
+- `frontend/src/{App.vue,main.ts,router,style.css,styles,index.html,tailwind.config.js}`
+  — zero files changed.
+- `backend/internal/handler` (dto, admin, and the package as a whole) — zero
+  files changed. No response-shape drift for any converted component to catch.
+
+Nothing to port this cycle. All prior skips (`backup.ts`, `admin/groups.ts`
+`getUsageSummary`, `channelMonitorV2.ts`, the CN-provider/plugin-management UI
+layer, `admin/settings.ts` locale, `admin/overview.ts`'s
+`concurrencyMin`→`concurrencyNonNegative` rename, `admin/ops.ts`'s
+`errorDetail.*` keys) are untouched since PR #12 — not re-litigated.
+
+## Gate output (real)
+
+- `june-lint`: 899 violations across 282 converted files (899/283 was PR
+  #12's post-rebase baseline yesterday; the file-count drop is the same three
+  wholesale-port files going byte-identical to the mirror again — already
+  investigated and cleared in the 2026-08-16 entry above, not a new instance).
+- `npx vue-tsc --noEmit`: 0 errors.
+- `npx vitest run`: 229/230 files, 1618/1620 tests — the 2 failures are the
+  pre-existing `siteLogoSanitization.spec.ts` ones above, unchanged from
+  yesterday.
+- `npx vite build`: succeeded, same pre-existing >500kB chunk warnings.
+- Backend: `go build ./...` clean. `go test -tags unit ./internal/... ./ent/...`
+  — every package `ok` (including `internal/server`, which carries D2's golden
+  fixture).
+
+## Unsure about / flagging for review
+
+- **This is the fifth consecutive BLOCKED cycle for the identical reason**
+  (PRs #9 2026-08-22, #10 2026-08-24, #11 2026-08-26, #12 2026-08-27, this one
+  2026-08-28), all open and unreviewed. Recommend a human close #9-#11 as
+  superseded once a decision lands, since their analysis is identical to
+  #12's and this one's.
+- Same diff-size caveat as every rebase cycle: this branch reports hundreds of
+  changed commits against `origin/inferno-redesign` purely from rebase
+  reauthoring; the only real new content is this log entry plus the 3 conflict
+  resolutions above. Recommend fast-forwarding rather than merging.
+
+**Last reviewed upstream SHA: `eca8d6b9abb08dfc0b6df240ce68a8c685760a9a`**
+(2026-08-28 03:37:33 UTC, "Merge pull request #6200 from
+xuhaihan/fix/openai-reasoning-replay").
