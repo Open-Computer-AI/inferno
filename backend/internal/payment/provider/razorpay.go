@@ -620,7 +620,7 @@ func (r *Razorpay) doJSON(ctx context.Context, method, path string, body any, ou
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, razorpayMaxResponseSize))
 	if err != nil {
 		return err
