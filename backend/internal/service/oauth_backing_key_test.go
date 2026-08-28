@@ -606,12 +606,17 @@ func TestCreatePathErrorNeverCarriesTheCredential_ConstraintError(t *testing.T) 
 		// Wrapping a real *dbent.ConstraintError keeps dbent.IsConstraintError
 		// true, so this takes the adopt-the-winner branch — which then finds no
 		// live row and must report without leaking.
+		// dbent.IsConstraintError matches *ConstraintError via errors.As, so the
+		// pointer is required here. Held in an error-typed variable because vet's
+		// printf check reads the concrete pointer type as an errors.Is hazard;
+		// errors.As is what this exercises, and the runtime behaviour is identical.
+		var constraintErr error = &dbent.ConstraintError{}
 		return fmt.Errorf("ent: constraint failed: %w: %w",
 			&backingKeyDriverError{
 				Message: `pq: duplicate key value violates unique constraint "api_keys_key_key"`,
 				Detail:  fmt.Sprintf("Key (key)=(%s) already exists.", key),
 			},
-			&dbent.ConstraintError{})
+			constraintErr)
 	})
 
 	row, err := svc.Resolve(ctx, userID, "agent:constraint-error")
