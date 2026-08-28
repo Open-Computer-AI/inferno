@@ -465,6 +465,20 @@ backend/internal/handler/billing_contract_handler.go
 backend/internal/handler/billing_contract_handler_test.go
 backend/internal/server/routes/billing_contract.go
 backend/internal/server/routes/billing_contract_route_test.go
+# D8 -- Inferno product identity: replaces upstream's hardcoded "Sub2API"
+# fallbacks with DefaultSiteName. Recurring: upstream adds new literals as it
+# adds features, so re-grep '"Sub2API"' in backend/ on every reconcile.
+backend/internal/service/domain_constants.go
+backend/internal/service/totp_service.go
+backend/internal/service/balance_notify_service.go
+backend/internal/service/content_moderation.go
+backend/internal/service/auth_email_binding.go
+backend/internal/service/auth_oauth_email_flow.go
+backend/internal/service/setting_features.go
+backend/internal/service/payment_order_result_test.go
+backend/internal/service/setting_service_update_test.go
+# D9 -- agent registry / Chronos design spec (docs only, same as D4)
+docs/superpowers/specs/2026-08-22-agent-registry-and-chronos-design.md
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }
