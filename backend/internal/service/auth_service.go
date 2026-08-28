@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/mail"
 	"strconv"
 	"strings"
@@ -86,6 +87,7 @@ type AuthService struct {
 	affiliateService      *AffiliateService
 	defaultSubAssigner    DefaultSubscriptionAssigner
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	orgService            *OrgService
 }
 
 type CaptchaProof struct {
@@ -121,6 +123,7 @@ func NewAuthService(
 	defaultSubAssigner DefaultSubscriptionAssigner,
 	affiliateService *AffiliateService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	orgService *OrgService,
 ) *AuthService {
 	return &AuthService{
 		entClient:             entClient,
@@ -136,6 +139,7 @@ func NewAuthService(
 		affiliateService:      affiliateService,
 		defaultSubAssigner:    defaultSubAssigner,
 		userPlatformQuotaRepo: userPlatformQuotaRepo,
+		orgService:            orgService,
 	}
 }
 
@@ -245,16 +249,24 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		Status:       StatusActive,
 	}
 
-	if err := s.createUserWithRegistrationEmailGuard(ctx, user); err != nil {
+	if err := s.createUserAndClaimInvitation(ctx, user, invitationRedeemCode); err != nil {
 		// 优先检查邮箱冲突错误（竞态条件下可能发生）
 		switch {
 		case errors.Is(err, ErrEmailExists):
 			return "", nil, ErrEmailExists
 		case errors.Is(err, ErrEmailDomainRegistrationLimit):
 			return "", nil, ErrEmailDomainRegistrationLimit
+		case errors.Is(err, ErrInvitationCodeInvalid):
+			return "", nil, ErrInvitationCodeInvalid
 		default:
 			logger.LegacyPrintf("service.auth", "[Auth] Database error creating user: %v", err)
 			return "", nil, ErrServiceUnavailable
+		}
+	}
+	if s.orgService != nil {
+		if _, err := s.orgService.EnsurePersonalOrg(ctx, user.ID, user.Username); err != nil {
+			slog.Warn("auth: personal org creation failed, will retry on next login",
+				"user_id", user.ID, "error", err)
 		}
 	}
 	s.postAuthUserBootstrap(ctx, user, "email", true)
@@ -273,13 +285,8 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		}
 	}
 
-	// 标记邀请码为已使用（如果使用了邀请码）
-	if invitationRedeemCode != nil {
-		if err := s.redeemRepo.Use(ctx, invitationRedeemCode.ID, user.ID); err != nil {
-			// 邀请码标记失败不影响注册，只记录日志
-			logger.LegacyPrintf("service.auth", "[Auth] Failed to mark invitation code as used for user %d: %v", user.ID, err)
-		}
-	}
+	// 邀请码占用已由 createUserAndClaimInvitation 在“用户创建 + 邀请码占用”的
+	// 同一个数据库事务内原子完成（一次性约束，见函数注释），此处不再单独标记。
 	// 应用优惠码（如果提供且功能已启用）
 	if promoCode != "" && s.promoService != nil && s.settingService != nil && s.settingService.IsPromoCodeEnabled(ctx) {
 		if err := s.promoService.ApplyPromoCode(ctx, user.ID, promoCode); err != nil {
@@ -802,6 +809,12 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 					}
 					user = newUser
 					created = true
+					if s.orgService != nil {
+						if _, err := s.orgService.EnsurePersonalOrg(ctx, user.ID, user.Username); err != nil {
+							slog.Warn("oauth: personal org creation failed, will retry on next login",
+								"user_id", user.ID, "error", err)
+						}
+					}
 					s.postAuthUserBootstrap(ctx, user, signupSource, false)
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 					// snapshot user × platform quota（fail-open）
@@ -823,6 +836,12 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 				} else {
 					user = newUser
 					created = true
+					if s.orgService != nil {
+						if _, err := s.orgService.EnsurePersonalOrg(ctx, user.ID, user.Username); err != nil {
+							slog.Warn("oauth: personal org creation failed, will retry on next login",
+								"user_id", user.ID, "error", err)
+						}
+					}
 					s.postAuthUserBootstrap(ctx, user, signupSource, false)
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 					// snapshot user × platform quota（fail-open）
@@ -1274,6 +1293,64 @@ func (s *AuthService) createUserWithRegistrationEmailGuard(ctx context.Context, 
 	return quotaRepo.CreateWithEmailAliasGuardAndDomainLimit(ctx, user, domain)
 }
 
+// createUserAndClaimInvitation 原子化完成“用户创建 + 邀请码占用”。
+//
+// 背景：邀请码属于一次性凭证，必须保证“一个邀请码最多注册一个账号”。旧实现先检查
+// CanUse()、再创建用户、最后才 redeemRepo.Use()（且失败仅记日志），检查与消耗分离且
+// 不在同一事务，并发注册可在同一邀请码上同时通过检查并各自创建账号（TOCTOU 竞态）。
+//
+// 本实现把两者放入同一个数据库事务：
+//   - 占用走 redeemRepo.Use 的条件更新（WHERE status='unused'，乐观锁）；
+//   - 并发下只有一个事务能占用成功，其余事务回滚——既不产生多余账号，也不让码被烧掉；
+//   - 事务回滚同时撤销用户创建，避免“账号已建、码被占用”的中间态。
+//
+// 无邀请码时保持原单次创建路径（不开事务）；entClient 缺失的异常配置下退化为顺序执行，
+// 并发正确性仍由 Use 的条件更新兜底（可能产生孤儿用户，但不会放行第二个注册）。
+func (s *AuthService) createUserAndClaimInvitation(ctx context.Context, user *User, invitation *RedeemCode) error {
+	commitUser := func(execCtx context.Context) error {
+		if err := s.createUserWithRegistrationEmailGuard(execCtx, user); err != nil {
+			return err
+		}
+		if invitation == nil {
+			return nil
+		}
+		// createUserWithRegistrationEmailGuard 会回填 user.ID（applyUserEntityToService），
+		// 直接以其原子占用邀请码；占用失败即整体回滚（含用户创建，见 user_repo.create
+		// 对外部事务的复用）。
+		if err := s.redeemRepo.Use(execCtx, invitation.ID, user.ID); err != nil {
+			// 并发下唯一的合法失败路径：另一个注册已占用该码
+			logger.LegacyPrintf("service.auth",
+				"[Auth] Rejected registration: invitation code %s already claimed (user_id=%d err=%v)",
+				invitation.Code, user.ID, err)
+			return ErrInvitationCodeInvalid
+		}
+		return nil
+	}
+
+	if invitation == nil {
+		return commitUser(ctx)
+	}
+	if s.entClient == nil {
+		return commitUser(ctx)
+	}
+
+	tx, err := s.entClient.Tx(ctx)
+	if err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to start registration transaction: %v", err)
+		return ErrServiceUnavailable
+	}
+	defer func() { _ = tx.Rollback() }()
+	execCtx := dbent.NewTxContext(ctx, tx)
+	if err := commitUser(execCtx); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to commit registration transaction: %v", err)
+		return ErrServiceUnavailable
+	}
+	return nil
+}
+
 func buildEmailSuffixNotAllowedError(whitelist []string) error {
 	if len(whitelist) == 0 {
 		return ErrEmailSuffixNotAllowed
@@ -1629,6 +1706,50 @@ type TokenPairWithUser struct {
 	UserRole string
 }
 
+// ensurePersonalOrgForSession provisions the caller's personal org if it does
+// not exist yet, and never fails the caller.
+//
+// WHY THIS HANGS OFF GenerateTokenPair rather than each login handler:
+// EnsurePersonalOrg used to be called on the three REGISTRATION paths only
+// (SignUp and the two OAuth create branches above). That left two holes that a
+// per-task view could not see:
+//
+//  1. Every user who signed up before the org tables existed has zero
+//     org_members rows, and migration 904 added orgs.personal_user_id with no
+//     backfill. For them POST /api/oauth/self-hosted-client takes its
+//     len(orgs)==0 branch and 500s (so `oc dashboard register` cannot work at
+//     all) and GET /api/oauth/account reports no org.
+//  2. The registration-time call is deliberately fail-open, so a transient DB
+//     fault at signup left even a brand-new user permanently org-less — the
+//     "will retry on next login" in that warning was aspirational: no login
+//     path ever retried.
+//
+// GenerateTokenPair is the single funnel every authenticated session in this
+// codebase passes through (password login, every OAuth provider callback, the
+// pending-OAuth bind/adopt flows, and 2FA completion all reach it, directly or
+// via handler.respondWithTokenPair), so hooking it here fixes both holes at
+// once and cannot be missed by a login path added later. That is worth more
+// than the alternative of editing each of the eight call sites, which is
+// exactly the shape of omission that produced this bug.
+//
+// It also runs on the refresh-token rotation path (RefreshTokenPair), which is
+// deliberate and cheap: EnsurePersonalOrg is idempotent and, once the org
+// exists, costs two indexed reads. A long-lived session therefore self-heals
+// too, instead of having to be logged out and back in.
+//
+// Failures are warned and swallowed: org provisioning is not an authentication
+// decision, and a tenancy hiccup must never lock a user out of their own
+// panel. This preserves the posture of the registration-path calls.
+func (s *AuthService) ensurePersonalOrgForSession(ctx context.Context, user *User) {
+	if s.orgService == nil || user == nil || user.ID <= 0 {
+		return
+	}
+	if _, err := s.orgService.EnsurePersonalOrg(ctx, user.ID, user.Username); err != nil {
+		slog.Warn("auth: personal org provisioning failed during session issuance",
+			"user_id", user.ID, "error", err)
+	}
+}
+
 // GenerateTokenPair 生成Access Token和Refresh Token对
 // familyID: 可选的Token家族ID，用于Token轮转时保持家族关系
 func (s *AuthService) GenerateTokenPair(ctx context.Context, user *User, familyID string) (*TokenPair, error) {
@@ -1636,6 +1757,9 @@ func (s *AuthService) GenerateTokenPair(ctx context.Context, user *User, familyI
 	if s.refreshTokenCache == nil {
 		return nil, errors.New("refresh token cache not configured")
 	}
+
+	// 每次签发会话都补齐个人组织（幂等，失败不阻塞登录）。
+	s.ensurePersonalOrgForSession(ctx, user)
 
 	// 提前确定家族ID：作为 access token 的会话ID（sid），保证同一会话的
 	// access/refresh token 可以互相关联（单会话撤销、step-up 授权绑定）。

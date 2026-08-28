@@ -499,3 +499,45 @@ func TestApiKeyService_Delete_DeleteFails(t *testing.T) {
 	require.Empty(t, cache.invalidated)           // 验证删除失败时缓存未被清除（新顺序：先删后清）
 	require.Empty(t, cache.deleteAuthKeys)        // 验证删除失败时 auth 缓存未被清除
 }
+
+// TestApiKeyService_Delete_RefusesOAuthBackingRow proves the guard added in
+// response to the Task 3 review's Finding 1.
+//
+// Ownership alone used to authorize this delete, and an OAuth backing row IS
+// owned by the OAuth user — so a user who learned their backing row's id could
+// tombstone it. That is not a harmless deletion: the row is that agent's quota
+// and rate-limit ledger, usage_logs_api_key_id_fkey (ON DELETE CASCADE) hangs
+// the agent's whole usage history off it, and until migration 910 the tombstone
+// also held the (user_id, oauth_client_id) identity slot forever, so the agent
+// could never resolve again.
+//
+// The refusal must happen even though the caller IS the owner — that is the
+// whole point — and must leave the repository untouched.
+func TestApiKeyService_Delete_RefusesOAuthBackingRow(t *testing.T) {
+	clientID := "agent:owned-by-this-user"
+	repo := &apiKeyRepoStub{
+		apiKey: &APIKey{ID: 42, UserID: 7, Key: "k", OAuthClientID: &clientID},
+	}
+	cache := &apiKeyCacheStub{}
+	svc := &APIKeyService{apiKeyRepo: repo, cache: cache}
+
+	err := svc.Delete(context.Background(), 42, 7) // the OWNER asks to delete it
+	require.ErrorIs(t, err, ErrOAuthBackingKeyUndeletable)
+	require.Empty(t, repo.deletedIDs, "no tombstone may be written for a backing row")
+	require.Empty(t, cache.invalidated)
+	require.Empty(t, cache.deleteAuthKeys)
+}
+
+// TestApiKeyService_Delete_AllowsOrdinaryKeyWithNilOAuthClientID is the other
+// half: the guard keys on oauth_client_id being non-NULL, so it must not touch
+// the ordinary keys that make up every other row in the table.
+func TestApiKeyService_Delete_AllowsOrdinaryKeyWithNilOAuthClientID(t *testing.T) {
+	repo := &apiKeyRepoStub{
+		apiKey: &APIKey{ID: 43, UserID: 7, Key: "k", OAuthClientID: nil},
+	}
+	cache := &apiKeyCacheStub{}
+	svc := &APIKeyService{apiKeyRepo: repo, cache: cache}
+
+	require.NoError(t, svc.Delete(context.Background(), 43, 7))
+	require.Equal(t, []int64{43}, repo.deletedIDs)
+}

@@ -105,7 +105,35 @@ func (p *PanelRateLimiter) userScoped(scope string, limitOf func(service.PanelRa
 // 使用与审计日志/会话绑定一致的安全客户端 IP 解析；解析结果为回环/内网/
 // 链路本地地址时跳过计数（这类地址通常是反代内部转发地址，按它计数会把
 // 整条反代链路的所有真实用户合并进同一个桶造成大面积误拦截）。
+//
+// Bucket key carries NO route/group identity -- every caller of PublicIP()
+// shares one "panel:public:ip:<ip>" bucket per IP, split only by settings
+// (Enabled/PublicIPRPM), not by which public group is calling it. That was
+// fine when RegisterModelPlazaRoutes was the only caller; Task 4 fix round 2
+// (review NEW-4) found that RegisterOAuthAuthorizeRoute calling this SAME
+// method meant a burst of Model Plaza traffic from one IP could exhaust the
+// budget /oauth/authorize needed, and vice versa -- two unrelated public
+// surfaces silently sharing one counter. Kept unchanged (same key, so no
+// behavior change for its existing caller) -- new callers that need their
+// own budget should use PublicIPScoped instead.
 func (p *PanelRateLimiter) PublicIP() gin.HandlerFunc {
+	return p.publicIPScoped("")
+}
+
+// PublicIPScoped is PublicIP with an additional scope segment folded into
+// the rate-limit key ("panel:public:ip:<scope>:<ip>"), so a public group
+// that needs its own budget -- distinct from PublicIP()'s shared one, or
+// from any other scope -- doesn't silently share a counter with whichever
+// other public route group happens to call PublicIP(). Still governed by
+// the same settings.PublicIPRPM threshold; only the key changes, not the
+// limit -- a genuinely separate threshold per surface is not needed here,
+// only a separate BUCKET so one surface's burst cannot consume another's
+// budget.
+func (p *PanelRateLimiter) PublicIPScoped(scope string) gin.HandlerFunc {
+	return p.publicIPScoped(scope)
+}
+
+func (p *PanelRateLimiter) publicIPScoped(scope string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if p == nil || p.limiter == nil || p.settingService == nil {
 			c.Next()
@@ -122,9 +150,13 @@ func (p *PanelRateLimiter) PublicIP() gin.HandlerFunc {
 			return
 		}
 
-		result, err := p.limiter.Allow(c.Request.Context(), "panel:public:ip:"+clientIP, settings.PublicIPRPM, panelRateLimitWindow)
+		key := "panel:public:ip:" + clientIP
+		if scope != "" {
+			key = "panel:public:ip:" + scope + ":" + clientIP
+		}
+		result, err := p.limiter.Allow(c.Request.Context(), key, settings.PublicIPRPM, panelRateLimitWindow)
 		if err != nil {
-			slog.Warn("panel public rate limit check failed, allowing request", "error", err)
+			slog.Warn("panel public rate limit check failed, allowing request", "scope", scope, "error", err)
 			c.Next()
 			return
 		}

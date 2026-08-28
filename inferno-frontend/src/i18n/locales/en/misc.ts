@@ -637,4 +637,79 @@ export default {
     },
   },
 
+  // Device flow approval screen (/device) -- the browser step of the RFC
+  // 8628 device authorization flow, opened from a link a headless CLI prints.
+  device: {
+    title: 'Authorize device',
+    description: 'Check that this code matches what your terminal is showing, then approve or deny.',
+    codeLabel: 'Device code',
+    codePlaceholder: 'XXXX-XXXX',
+    codeHint: 'Enter the code shown in your terminal.',
+    approve: 'Approve',
+    approving: 'Approving...',
+    deny: 'Deny',
+    denying: 'Denying...',
+    checking: 'Checking that code...',
+    check: 'Continue',
+    requestedBy: 'Requesting application',
+    requestedAccess: 'Access requested',
+    grantWarning:
+      'Approving signs this application in to your account. It receives a credential that keeps working in the background until you revoke it, not just for this browser session.',
+    unknownScope: 'An unrecognised permission. Deny this request.',
+    scopes: {
+      inferenceInvoke: 'Send model requests and spend your credits',
+      billingRead: 'Read your billing and credit balance',
+      billingManage: 'Charge you, change your plan and top up automatically',
+      agentsRead: 'List the agents on your account',
+      agentsManage: 'Register and revoke agents on your account',
+    },
+    approvedTitle: 'Device approved',
+    approvedBody: 'You can return to your terminal. It will continue automatically.',
+    deniedTitle: 'Device request denied',
+    deniedBody: 'The device was not signed in. You can close this page.',
+    expiredTitle: 'Code expired',
+    expiredBody: 'This code is no longer valid. Run the command again to get a new one.',
+    decidedTitle: 'That code was already used',
+    decidedBody:
+      'A decision has already been recorded for this code, so it cannot be approved again. If you did not expect this, run the command again to get a new code.',
+    errors: {
+      notFound: "That code wasn't found. Check it and try again.",
+      generic: 'Something went wrong. Please try again.',
+    },
+  },
+
+  // Authorization-code + PKCE consent screen (/oauth/authorize) -- the
+  // browser step of RFC 6749 4.1's authorization_code grant, opened by the
+  // hermes desktop client's system browser. Distinct from device above
+  // (RFC 8628): this flow is usually invisible, redirecting straight back
+  // without ever showing this screen, and only renders it when the
+  // requested scope needs a human decision.
+  authorize: {
+    title: 'Authorize application',
+    description: 'Review what this application is requesting before you approve it.',
+    loading: 'Checking this request...',
+    requestedBy: 'Requesting application',
+    requestedAccess: 'Access requested',
+    grantWarning:
+      'Approving signs this application in to your account. It receives a credential that keeps working in the background until you revoke it, not just for this browser session.',
+    unknownScope: 'An unrecognised permission. Deny this request.',
+    scopes: {
+      agentDashboardAccess: 'View your agent dashboard',
+      inferenceInvoke: 'Send model requests and spend your credits',
+      toolInvoke: 'Use tools on your behalf',
+      billingRead: 'Read your billing and credit balance',
+      billingManage: 'Charge you, change your plan and top up automatically',
+      agentsRead: 'List the agents on your account',
+      agentsManage: 'Register and revoke agents on your account',
+    },
+    approve: 'Approve',
+    approving: 'Approving...',
+    deny: 'Deny',
+    denying: 'Denying...',
+    redirecting: 'Redirecting you back...',
+    errors: {
+      generic: 'This request could not be authorized. Please try again from the application.',
+    },
+  },
+
 }

@@ -455,6 +455,60 @@ describe('API Client', () => {
     })
   })
 
+  // --- M-10: the login bounce must not discard the OAuth request ---
+
+  describe('failed-refresh login redirect (M-10)', () => {
+    // /oauth/authorize carries the ENTIRE authorization request in its query
+    // string. A session that expires while the consent screen is open used to
+    // send the browser to a bare /login, discarding client_id, redirect_uri,
+    // state and code_challenge -- so the user landed on the dashboard after
+    // re-login and the desktop client that opened the browser hung on a
+    // callback that never arrived. The router guard already honours
+    // ?redirect= (resolveAuthenticatedLoginRedirect); the interceptor simply
+    // never supplied one.
+    function withLocation(pathname: string, search: string, run: () => Promise<void>) {
+      const originalLocation = window.location
+      const stub = { ...originalLocation, pathname, search, href: pathname + search }
+      Object.defineProperty(window, 'location', { value: stub, writable: true })
+      return run().finally(() => {
+        Object.defineProperty(window, 'location', { value: originalLocation, writable: true })
+      })
+    }
+
+    function reject401() {
+      return vi.fn().mockRejectedValue({
+        response: { status: 401, data: { code: 'TOKEN_EXPIRED', message: 'Token expired' } },
+        config: { url: '/test', headers: { Authorization: 'Bearer expired-token' } },
+        code: 'ERR_BAD_REQUEST',
+      })
+    }
+
+    it('preserves the OAuth query string when bouncing to /login', async () => {
+      localStorage.setItem('auth_token', 'expired-token')
+      const search = '?response_type=code&client_id=agent%3Aabc123&state=csrf-state'
+
+      await withLocation('/oauth/authorize', search, async () => {
+        apiClient.defaults.adapter = reject401()
+        await expect(apiClient.get('/test')).rejects.toBeDefined()
+
+        expect(window.location.href).toBe(
+          '/login?redirect=' + encodeURIComponent('/oauth/authorize' + search)
+        )
+      })
+    })
+
+    it('does not redirect when already on the login page', async () => {
+      localStorage.setItem('auth_token', 'expired-token')
+
+      await withLocation('/login', '', async () => {
+        apiClient.defaults.adapter = reject401()
+        await expect(apiClient.get('/test')).rejects.toBeDefined()
+
+        expect(window.location.href).toBe('/login')
+      })
+    })
+  })
+
   // --- 请求取消 ---
 
   describe('请求取消', () => {

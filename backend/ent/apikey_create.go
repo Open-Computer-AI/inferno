@@ -99,6 +99,20 @@ func (_c *APIKeyCreate) SetNillableGroupID(v *int64) *APIKeyCreate {
 	return _c
 }
 
+// SetOauthClientID sets the "oauth_client_id" field.
+func (_c *APIKeyCreate) SetOauthClientID(v string) *APIKeyCreate {
+	_c.mutation.SetOauthClientID(v)
+	return _c
+}
+
+// SetNillableOauthClientID sets the "oauth_client_id" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableOauthClientID(v *string) *APIKeyCreate {
+	if v != nil {
+		_c.SetOauthClientID(*v)
+	}
+	return _c
+}
+
 // SetStatus sets the "status" field.
 func (_c *APIKeyCreate) SetStatus(v string) *APIKeyCreate {
 	_c.mutation.SetStatus(v)
@@ -531,6 +545,10 @@ func (_c *APIKeyCreate) createSpec() (*APIKey, *sqlgraph.CreateSpec) {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)
 		_node.Name = value
 	}
+	if value, ok := _c.mutation.OauthClientID(); ok {
+		_spec.SetField(apikey.FieldOauthClientID, field.TypeString, value)
+		_node.OauthClientID = &value
+	}
 	if value, ok := _c.mutation.Status(); ok {
 		_spec.SetField(apikey.FieldStatus, field.TypeString, value)
 		_node.Status = value
@@ -778,6 +796,24 @@ func (u *APIKeyUpsert) UpdateGroupID() *APIKeyUpsert {
 // ClearGroupID clears the value of the "group_id" field.
 func (u *APIKeyUpsert) ClearGroupID() *APIKeyUpsert {
 	u.SetNull(apikey.FieldGroupID)
+	return u
+}
+
+// SetOauthClientID sets the "oauth_client_id" field.
+func (u *APIKeyUpsert) SetOauthClientID(v string) *APIKeyUpsert {
+	u.Set(apikey.FieldOauthClientID, v)
+	return u
+}
+
+// UpdateOauthClientID sets the "oauth_client_id" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateOauthClientID() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldOauthClientID)
+	return u
+}
+
+// ClearOauthClientID clears the value of the "oauth_client_id" field.
+func (u *APIKeyUpsert) ClearOauthClientID() *APIKeyUpsert {
+	u.SetNull(apikey.FieldOauthClientID)
 	return u
 }
 
@@ -1203,6 +1239,27 @@ func (u *APIKeyUpsertOne) UpdateGroupID() *APIKeyUpsertOne {
 func (u *APIKeyUpsertOne) ClearGroupID() *APIKeyUpsertOne {
 	return u.Update(func(s *APIKeyUpsert) {
 		s.ClearGroupID()
+	})
+}
+
+// SetOauthClientID sets the "oauth_client_id" field.
+func (u *APIKeyUpsertOne) SetOauthClientID(v string) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetOauthClientID(v)
+	})
+}
+
+// UpdateOauthClientID sets the "oauth_client_id" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateOauthClientID() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateOauthClientID()
+	})
+}
+
+// ClearOauthClientID clears the value of the "oauth_client_id" field.
+func (u *APIKeyUpsertOne) ClearOauthClientID() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearOauthClientID()
 	})
 }
 
@@ -1841,6 +1898,27 @@ func (u *APIKeyUpsertBulk) UpdateGroupID() *APIKeyUpsertBulk {
 func (u *APIKeyUpsertBulk) ClearGroupID() *APIKeyUpsertBulk {
 	return u.Update(func(s *APIKeyUpsert) {
 		s.ClearGroupID()
+	})
+}
+
+// SetOauthClientID sets the "oauth_client_id" field.
+func (u *APIKeyUpsertBulk) SetOauthClientID(v string) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetOauthClientID(v)
+	})
+}
+
+// UpdateOauthClientID sets the "oauth_client_id" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateOauthClientID() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateOauthClientID()
+	})
+}
+
+// ClearOauthClientID clears the value of the "oauth_client_id" field.
+func (u *APIKeyUpsertBulk) ClearOauthClientID() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearOauthClientID()
 	})
 }
 

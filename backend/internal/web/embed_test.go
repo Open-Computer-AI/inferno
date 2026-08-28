@@ -530,6 +530,8 @@ func TestFrontendServer_Middleware(t *testing.T) {
 			"/health",
 			"/responses",
 			"/responses/compact",
+			"/oauth/authorize",
+			"/.well-known/jwks.json",
 		}
 
 		for _, path := range apiPaths {
@@ -678,16 +680,12 @@ func TestFrontendServer_Middleware(t *testing.T) {
 	})
 }
 
-func TestEmbeddedFrontendBypassesBareVideoAPIRoutes(t *testing.T) {
-	for _, path := range []string{
-		"/videos/generations",
-		"/videos/edits",
-		"/videos/extensions",
-		"/videos/request-123",
-	} {
-		require.True(t, shouldBypassEmbeddedFrontend(path), "path=%s", path)
-	}
-}
+// shouldBypassEmbeddedFrontend's own tests moved to bypass_test.go
+// (untagged -- see that file and bypass.go for why: Task 4 fix round 1,
+// F4). This file keeps only the tests that need a REAL embed build --
+// FrontendServer, its Middleware(), and a real dist/ -- and Middleware()
+// itself still calls the moved function, so its behavior stays covered
+// here indirectly (TestFrontendServer_Middleware below).
 
 func TestNewFrontendServer(t *testing.T) {
 	t.Run("creates_server_successfully", func(t *testing.T) {

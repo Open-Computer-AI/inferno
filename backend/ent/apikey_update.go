@@ -120,6 +120,26 @@ func (_u *APIKeyUpdate) ClearGroupID() *APIKeyUpdate {
 	return _u
 }
 
+// SetOauthClientID sets the "oauth_client_id" field.
+func (_u *APIKeyUpdate) SetOauthClientID(v string) *APIKeyUpdate {
+	_u.mutation.SetOauthClientID(v)
+	return _u
+}
+
+// SetNillableOauthClientID sets the "oauth_client_id" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableOauthClientID(v *string) *APIKeyUpdate {
+	if v != nil {
+		_u.SetOauthClientID(*v)
+	}
+	return _u
+}
+
+// ClearOauthClientID clears the value of the "oauth_client_id" field.
+func (_u *APIKeyUpdate) ClearOauthClientID() *APIKeyUpdate {
+	_u.mutation.ClearOauthClientID()
+	return _u
+}
+
 // SetStatus sets the "status" field.
 func (_u *APIKeyUpdate) SetStatus(v string) *APIKeyUpdate {
 	_u.mutation.SetStatus(v)
@@ -593,6 +613,12 @@ func (_u *APIKeyUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.OauthClientID(); ok {
+		_spec.SetField(apikey.FieldOauthClientID, field.TypeString, value)
+	}
+	if _u.mutation.OauthClientIDCleared() {
+		_spec.ClearField(apikey.FieldOauthClientID, field.TypeString)
+	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(apikey.FieldStatus, field.TypeString, value)
 	}
@@ -904,6 +930,26 @@ func (_u *APIKeyUpdateOne) SetNillableGroupID(v *int64) *APIKeyUpdateOne {
 // ClearGroupID clears the value of the "group_id" field.
 func (_u *APIKeyUpdateOne) ClearGroupID() *APIKeyUpdateOne {
 	_u.mutation.ClearGroupID()
+	return _u
+}
+
+// SetOauthClientID sets the "oauth_client_id" field.
+func (_u *APIKeyUpdateOne) SetOauthClientID(v string) *APIKeyUpdateOne {
+	_u.mutation.SetOauthClientID(v)
+	return _u
+}
+
+// SetNillableOauthClientID sets the "oauth_client_id" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableOauthClientID(v *string) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetOauthClientID(*v)
+	}
+	return _u
+}
+
+// ClearOauthClientID clears the value of the "oauth_client_id" field.
+func (_u *APIKeyUpdateOne) ClearOauthClientID() *APIKeyUpdateOne {
+	_u.mutation.ClearOauthClientID()
 	return _u
 }
 
@@ -1409,6 +1455,12 @@ func (_u *APIKeyUpdateOne) sqlSave(ctx context.Context) (_node *APIKey, err erro
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.OauthClientID(); ok {
+		_spec.SetField(apikey.FieldOauthClientID, field.TypeString, value)
+	}
+	if _u.mutation.OauthClientIDCleared() {
+		_spec.ClearField(apikey.FieldOauthClientID, field.TypeString)
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(apikey.FieldStatus, field.TypeString, value)

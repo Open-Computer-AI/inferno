@@ -90,6 +90,11 @@ func GroupID(v int64) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldGroupID, v))
 }
 
+// OauthClientID applies equality check predicate on the "oauth_client_id" field. It's identical to OauthClientIDEQ.
+func OauthClientID(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldOauthClientID, v))
+}
+
 // Status applies equality check predicate on the "status" field. It's identical to StatusEQ.
 func Status(v string) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldStatus, v))
@@ -468,6 +473,81 @@ func GroupIDIsNil() predicate.APIKey {
 // GroupIDNotNil applies the NotNil predicate on the "group_id" field.
 func GroupIDNotNil() predicate.APIKey {
 	return predicate.APIKey(sql.FieldNotNull(FieldGroupID))
+}
+
+// OauthClientIDEQ applies the EQ predicate on the "oauth_client_id" field.
+func OauthClientIDEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldOauthClientID, v))
+}
+
+// OauthClientIDNEQ applies the NEQ predicate on the "oauth_client_id" field.
+func OauthClientIDNEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldOauthClientID, v))
+}
+
+// OauthClientIDIn applies the In predicate on the "oauth_client_id" field.
+func OauthClientIDIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldOauthClientID, vs...))
+}
+
+// OauthClientIDNotIn applies the NotIn predicate on the "oauth_client_id" field.
+func OauthClientIDNotIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldOauthClientID, vs...))
+}
+
+// OauthClientIDGT applies the GT predicate on the "oauth_client_id" field.
+func OauthClientIDGT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldOauthClientID, v))
+}
+
+// OauthClientIDGTE applies the GTE predicate on the "oauth_client_id" field.
+func OauthClientIDGTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldOauthClientID, v))
+}
+
+// OauthClientIDLT applies the LT predicate on the "oauth_client_id" field.
+func OauthClientIDLT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldOauthClientID, v))
+}
+
+// OauthClientIDLTE applies the LTE predicate on the "oauth_client_id" field.
+func OauthClientIDLTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldOauthClientID, v))
+}
+
+// OauthClientIDContains applies the Contains predicate on the "oauth_client_id" field.
+func OauthClientIDContains(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContains(FieldOauthClientID, v))
+}
+
+// OauthClientIDHasPrefix applies the HasPrefix predicate on the "oauth_client_id" field.
+func OauthClientIDHasPrefix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasPrefix(FieldOauthClientID, v))
+}
+
+// OauthClientIDHasSuffix applies the HasSuffix predicate on the "oauth_client_id" field.
+func OauthClientIDHasSuffix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasSuffix(FieldOauthClientID, v))
+}
+
+// OauthClientIDIsNil applies the IsNil predicate on the "oauth_client_id" field.
+func OauthClientIDIsNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldIsNull(FieldOauthClientID))
+}
+
+// OauthClientIDNotNil applies the NotNil predicate on the "oauth_client_id" field.
+func OauthClientIDNotNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotNull(FieldOauthClientID))
+}
+
+// OauthClientIDEqualFold applies the EqualFold predicate on the "oauth_client_id" field.
+func OauthClientIDEqualFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEqualFold(FieldOauthClientID, v))
+}
+
+// OauthClientIDContainsFold applies the ContainsFold predicate on the "oauth_client_id" field.
+func OauthClientIDContainsFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContainsFold(FieldOauthClientID, v))
 }
 
 // StatusEQ applies the EQ predicate on the "status" field.

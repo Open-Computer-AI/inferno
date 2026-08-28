@@ -52,6 +52,16 @@ type Tx struct {
 	IdempotencyRecord *IdempotencyRecordClient
 	// IdentityAdoptionDecision is the client for interacting with the IdentityAdoptionDecision builders.
 	IdentityAdoptionDecision *IdentityAdoptionDecisionClient
+	// OAuthAuthorizationCode is the client for interacting with the OAuthAuthorizationCode builders.
+	OAuthAuthorizationCode *OAuthAuthorizationCodeClient
+	// OAuthClient is the client for interacting with the OAuthClient builders.
+	OAuthClient *OAuthClientClient
+	// OAuthDeviceAuthorization is the client for interacting with the OAuthDeviceAuthorization builders.
+	OAuthDeviceAuthorization *OAuthDeviceAuthorizationClient
+	// Org is the client for interacting with the Org builders.
+	Org *OrgClient
+	// OrgMember is the client for interacting with the OrgMember builders.
+	OrgMember *OrgMemberClient
 	// PaymentAuditLog is the client for interacting with the PaymentAuditLog builders.
 	PaymentAuditLog *PaymentAuditLogClient
 	// PaymentOrder is the client for interacting with the PaymentOrder builders.
@@ -242,6 +252,11 @@ func (tx *Tx) init() {
 	tx.Group = NewGroupClient(tx.config)
 	tx.IdempotencyRecord = NewIdempotencyRecordClient(tx.config)
 	tx.IdentityAdoptionDecision = NewIdentityAdoptionDecisionClient(tx.config)
+	tx.OAuthAuthorizationCode = NewOAuthAuthorizationCodeClient(tx.config)
+	tx.OAuthClient = NewOAuthClientClient(tx.config)
+	tx.OAuthDeviceAuthorization = NewOAuthDeviceAuthorizationClient(tx.config)
+	tx.Org = NewOrgClient(tx.config)
+	tx.OrgMember = NewOrgMemberClient(tx.config)
 	tx.PaymentAuditLog = NewPaymentAuditLogClient(tx.config)
 	tx.PaymentOrder = NewPaymentOrderClient(tx.config)
 	tx.PaymentProviderInstance = NewPaymentProviderInstanceClient(tx.config)

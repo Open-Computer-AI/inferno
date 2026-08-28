@@ -86,6 +86,12 @@ type APIKeyRepository interface {
 	Create(ctx context.Context, key *APIKey) error
 	GetByID(ctx context.Context, id int64) (*APIKey, error)
 	// GetKeyAndOwnerID 仅获取 API Key 的 key 与所有者 ID，用于删除等轻量场景
+	//
+	// NOTE: Delete was its last caller and now uses GetByID, because the
+	// backing-row refusal needs oauth_client_id too. The method is kept rather
+	// than removed: it is upstream API with a real implementation (a Select()
+	// projection), and deleting upstream surface to tidy a fork costs more at
+	// the next reconcile than an unused method does. It is not dead by accident.
 	GetKeyAndOwnerID(ctx context.Context, id int64) (string, int64, error)
 	GetByKey(ctx context.Context, key string) (*APIKey, error)
 	// GetByKeyForAuth 认证专用查询，返回最小字段集
@@ -377,8 +383,15 @@ func (s *APIKeyService) compileAPIKeyIPRules(apiKey *APIKey) {
 	apiKey.CompiledIPBlacklist = ip.CompileIPRules(apiKey.IPBlacklist)
 }
 
-// GenerateKey 生成随机API Key
-func (s *APIKeyService) GenerateKey() (string, error) {
+// GenerateAPIKeySecret 生成 api_keys.key 的凭据材料：32 字节随机数 + 前缀。
+//
+// This is the single generator for every api_keys row in the system. It is a
+// package-level function, not a method, so OAuthBackingKeyService can create an
+// OAuth backing row with the *same* credential material an ordinary key gets --
+// a hypothetical leak of a backing key is then no worse than a leak of an
+// ordinary key. Do not add a second generator; "same generator" is the property
+// that bounds the blast radius.
+func GenerateAPIKeySecret(prefix string) (string, error) {
 	// 生成32字节随机数据
 	bytes := make([]byte, 32)
 	if _, err := rand.Read(bytes); err != nil {
@@ -386,13 +399,16 @@ func (s *APIKeyService) GenerateKey() (string, error) {
 	}
 
 	// 转换为十六进制字符串并添加前缀
-	prefix := s.cfg.Default.APIKeyPrefix
 	if prefix == "" {
 		prefix = "sk-"
 	}
 
-	key := prefix + hex.EncodeToString(bytes)
-	return key, nil
+	return prefix + hex.EncodeToString(bytes), nil
+}
+
+// GenerateKey 生成随机API Key
+func (s *APIKeyService) GenerateKey() (string, error) {
+	return GenerateAPIKeySecret(s.cfg.Default.APIKeyPrefix)
 }
 
 // ValidateCustomKey 验证自定义API Key格式
@@ -687,16 +703,71 @@ func (s *APIKeyService) VerifyOwnership(ctx context.Context, userID int64, apiKe
 	return validIDs, nil
 }
 
-// GetByID 根据ID获取API Key
-func (s *APIKeyService) GetByID(ctx context.Context, id int64) (*APIKey, error) {
+// managedAPIKey reads one api_keys row on behalf of a user-facing key-management
+// endpoint. It is the ONLY by-id read those endpoints do, which is the point:
+// the OAuth backing-row refusal below is a single line that a new endpoint
+// cannot forget, because a new endpoint has nowhere else to get the row.
+//
+// ownerID > 0 also enforces ownership; pass 0 to skip it (APIKeyService.GetByID
+// has never checked ownership -- its callers do, and they answer 404 rather
+// than 403 for someone else's key).
+//
+// backingErr is what the caller wants back when the row turns out to be an
+// OAuth backing row. Read paths pass ErrAPIKeyNotFound, because the row is
+// invisible on every user-facing surface and a read that answered 403 would
+// turn id enumeration into a discovery channel for nothing gained. Write paths
+// pass ErrOAuthBackingKey{Undeletable,Unmodifiable}, because someone trying to
+// mutate server-managed state is owed an answer that says so.
+//
+// NOTE this deliberately does NOT push oauth_client_id IS NULL down into
+// apiKeyRepository.GetByID. That method is also the billing hot path's
+// (UpdateQuotaUsed re-reads the row to decide quota exhaustion) and the OAuth
+// backing row is precisely the row that path must still find. The predicate
+// belongs on the user-facing side of the repository call, not inside it.
+func (s *APIKeyService) managedAPIKey(ctx context.Context, id, ownerID int64, backingErr error) (*APIKey, error) {
 	apiKey, err := s.apiKeyRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get api key: %w", err)
 	}
-	s.compileAPIKeyIPRules(apiKey)
-	if apiKey != nil {
-		apiKey.CurrentConcurrency = s.currentConcurrencyForAPIKey(ctx, apiKey.ID)
+	if apiKey == nil {
+		return nil, ErrAPIKeyNotFound
 	}
+	if ownerID > 0 && apiKey.UserID != ownerID {
+		return nil, ErrInsufficientPerms
+	}
+	if apiKey.OAuthClientID != nil {
+		if backingErr == nil {
+			return nil, ErrAPIKeyNotFound
+		}
+		return nil, backingErr
+	}
+	return apiKey, nil
+}
+
+// GetByID 根据ID获取API Key
+//
+// An OAuth backing row is reported as not found: it is filtered out of every
+// listing, so a user can only arrive here by guessing an id, and the row is not
+// theirs to read -- its api_keys.key is a live credential the server promised
+// never to return.
+//
+// CONTRACT CHANGE, recorded because it happened silently (m-14). Before Task 5
+// this returned (nil, nil) for a row that does not exist; via managedAPIKey it
+// now returns (nil, ErrAPIKeyNotFound). That is a deliberate improvement and it
+// fixed three latent nil-pointer dereferences rather than causing any: all
+// three callers -- APIKeyHandler.GetByID and the two in UsageHandler -- read
+// `key.UserID` immediately after checking err, so under the old contract a
+// missing row PANICKED, and under the new one they answer 404 through
+// response.ErrorFrom. No caller inspects the row for nil. It is written down
+// here because a (nil, nil) contract is the kind of thing a reader assumes is
+// still true.
+func (s *APIKeyService) GetByID(ctx context.Context, id int64) (*APIKey, error) {
+	apiKey, err := s.managedAPIKey(ctx, id, 0, ErrAPIKeyNotFound)
+	if err != nil {
+		return nil, err
+	}
+	s.compileAPIKeyIPRules(apiKey)
+	apiKey.CurrentConcurrency = s.currentConcurrencyForAPIKey(ctx, apiKey.ID)
 	return apiKey, nil
 }
 
@@ -756,18 +827,18 @@ func (s *APIKeyService) GetByKey(ctx context.Context, key string) (*APIKey, erro
 }
 
 // Update 更新API Key
+//
+// An OAuth backing row is refused outright (ErrOAuthBackingKeyUnmodifiable);
+// that error's doc comment carries the reasoning, the short version being that
+// group_id is a permanent silent re-route of an agent's inference and the rest
+// are user-reachable bricks.
 func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req UpdateAPIKeyRequest) (*APIKey, error) {
 	if err := validateUpdateAPIKeyRequest(req); err != nil {
 		return nil, err
 	}
-	apiKey, err := s.apiKeyRepo.GetByID(ctx, id)
+	apiKey, err := s.managedAPIKey(ctx, id, userID, ErrOAuthBackingKeyUnmodifiable)
 	if err != nil {
-		return nil, fmt.Errorf("get api key: %w", err)
-	}
-
-	// 验证所有权
-	if apiKey.UserID != userID {
-		return nil, ErrInsufficientPerms
+		return nil, err
 	}
 
 	// 验证 IP 白名单格式
@@ -914,16 +985,27 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 }
 
 // Delete 删除API Key
+//
+// managedAPIKey (i.e. the repository's GetByID) rather than the lighter
+// GetKeyAndOwnerID: the decision needs oauth_client_id as well as the owner,
+// because an OAuth backing row is not the user's to delete (see
+// ErrOAuthBackingKeyUndeletable). Delete is a rare, user-initiated operation,
+// so the extra columns cost nothing that matters.
 func (s *APIKeyService) Delete(ctx context.Context, id int64, userID int64) error {
-	key, ownerID, err := s.apiKeyRepo.GetKeyAndOwnerID(ctx, id)
+	// managedAPIKey applies the ownership check and, with
+	// ErrOAuthBackingKeyUndeletable, the backing-row refusal that closed the
+	// Task 3 review's Finding 1: an OAuth backing row is owned by the user but
+	// is not theirs to delete. Ownership alone used to authorize this, which
+	// meant a user who learned their backing row's id could tombstone it -- and
+	// a tombstone is not harmless here: the row IS that agent's quota and
+	// rate-limit ledger, and usage_logs_api_key_id_fkey (ON DELETE CASCADE)
+	// hangs the agent's whole usage history off it. The refusal happens before
+	// anything reaches the repository.
+	apiKey, err := s.managedAPIKey(ctx, id, userID, ErrOAuthBackingKeyUndeletable)
 	if err != nil {
-		return fmt.Errorf("get api key: %w", err)
+		return err
 	}
-
-	// 验证当前用户是否为该 API Key 的所有者
-	if ownerID != userID {
-		return ErrInsufficientPerms
-	}
+	key := apiKey.Key
 
 	// 事务内:写审计 + 软删除(tombstone)。
 	if err := s.apiKeyRepo.DeleteWithAudit(ctx, id); err != nil {
@@ -1071,20 +1153,21 @@ func (s *APIKeyService) SearchAPIKeys(ctx context.Context, userID int64, keyword
 	return keys, nil
 }
 
-// GetUserAllowedGroupIDSet 返回 user_allowed_groups 授权给该用户的专属分组 ID 集合。
+// GetUserGroupVisibility 返回 user_allowed_groups 授权给该用户的分组 ID 集合，
+// 以及该用户是否开启了公开分组限制。开启时公开分组的可见性也要落在该集合内。
 //
 // 与 GetAvailableGroups 的区别：这里是「橱窗」语义（模型广场用），不检查订阅有效性，
 // 也不关心分组是否活跃——仅回答"哪些专属分组对该用户可见"。返回值恒非 nil。
-func (s *APIKeyService) GetUserAllowedGroupIDSet(ctx context.Context, userID int64) (map[int64]struct{}, error) {
+func (s *APIKeyService) GetUserGroupVisibility(ctx context.Context, userID int64) (map[int64]struct{}, bool, error) {
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("get user: %w", err)
+		return nil, false, fmt.Errorf("get user: %w", err)
 	}
 	allowed := make(map[int64]struct{}, len(user.AllowedGroups))
 	for _, id := range user.AllowedGroups {
 		allowed[id] = struct{}{}
 	}
-	return allowed, nil
+	return allowed, user.RestrictPublicGroups, nil
 }
 
 // GetUserGroupRates 获取用户的专属分组倍率配置

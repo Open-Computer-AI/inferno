@@ -1,0 +1,49 @@
+-- Seeds the first-party `hermes-cli` OAuth client.
+--
+-- hermes_cli/auth.py (the real hermes client, DEFAULT_NOUS_CLIENT_ID at
+-- auth.py:77) hardcodes client_id="hermes-cli" for every install — it is a
+-- fixed, well-known, first-party public client baked into the CLI binary,
+-- not a per-agent identity minted through RegisterSelfHosted
+-- (oauth_client_service.go), which server-generates "agent:{hex}" ids for
+-- SELF_HOSTED clients. Without this row, `oc setup`'s very first call
+-- (POST /api/oauth/device/code, client_id=hermes-cli) 400s with
+-- invalid_client from OAuthClientService.ByClientID (Task 4) because no
+-- oauth_clients row with that client_id exists.
+--
+-- kind: neither SELF_HOSTED nor HOSTED describes this row. Both existing
+-- values denote a *gateway instance* — ent/schema/oauth_client.go's own
+-- doc comment says "one per gateway instance" — provisioned per-org
+-- (SELF_HOSTED, RegisterSelfHosted) or per-VM (HOSTED, oc-platform, not yet
+-- wired). hermes-cli is not a gateway instance at all: it is the CLI
+-- application binary itself, one client_id shared by every install on
+-- every machine. Forcing it into either label would be misleading to the
+-- next reader of the oauth_clients table. `kind` has no CHECK constraint
+-- (migrations/902_oauth_client.sql) and nothing in Go switches on its
+-- value (grep confirms only ent-generated boilerplate reads/writes it), so
+-- introducing a third value, FIRST_PARTY, is safe and costs nothing.
+--
+-- owner_user_id / org_id: both columns are NOT NULL with no FK constraint
+-- (migrations/902_oauth_client.sql defines no REFERENCES clause on either
+-- column, unlike a real per-user/per-org client). hermes-cli is not owned
+-- by any one user or org — it ships with the CLI, before any account
+-- exists. Since there is no genuinely ownerless option (the columns are
+-- NOT NULL and there is no platform/system user or org row to reference),
+-- the smallest correct fix is a sentinel that can never collide with a
+-- real row: both `users` and `orgs` are BIGSERIAL PRIMARY KEY starting at
+-- 1 (migrations/001_init.sql, 901_org_and_members.sql), so 0 is not a real
+-- user or org and unambiguously reads as "no owner" rather than a
+-- fabricated user. If a real per-user/per-org linkage is ever needed here,
+-- that requires a schema change (a nullable owner column), not a fake row.
+--
+-- status: 'active', not 'pending' — hermes-cli must be usable on its very
+-- first request; there is no approval step for a first-party client baked
+-- into the CLI binary itself.
+--
+-- redirect_uri_origin: NOT NULL / NotEmpty(), but hermes-cli only drives
+-- the device-authorization grant (RFC 8628) — it has no redirect URI.
+-- 'urn:ietf:wg:oauth:2.0:oob' is the standard OAuth placeholder for
+-- redirect-less ("out of band") clients, so the column stays honest about
+-- why it's non-empty rather than holding an arbitrary string.
+INSERT INTO oauth_clients (client_id, kind, name, owner_user_id, org_id, status, redirect_uri_origin)
+VALUES ('hermes-cli', 'FIRST_PARTY', 'hermes-cli', 0, 0, 'active', 'urn:ietf:wg:oauth:2.0:oob')
+ON CONFLICT (client_id) DO NOTHING;

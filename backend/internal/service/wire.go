@@ -70,6 +70,7 @@ func ProvideAuthService(
 	defaultSubAssigner DefaultSubscriptionAssigner,
 	affiliateService *AffiliateService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	orgService *OrgService,
 ) *AuthService {
 	svc := NewAuthService(
 		entClient,
@@ -85,10 +86,84 @@ func ProvideAuthService(
 		defaultSubAssigner,
 		affiliateService,
 		userPlatformQuotaRepo,
+		orgService,
 	)
 	svc.SetTencentCaptchaService(tencentCaptchaService)
 	svc.SetAliyunCaptchaService(aliyunCaptchaService)
 	return svc
+}
+
+// ProvideOAuthDeviceService wires OAuthDeviceService's portalBaseURL from
+// cfg.Server.FrontendURL — the browser-facing base URL already validated at
+// config load (rejects query strings and userinfo, warns on insecure
+// schemes), which is exactly the "human opens this in a browser" semantics
+// verification_uri needs. It defaults to "" for deployments that never set
+// it; RequestCode refuses to run in that case (service.ErrPortalNotConfigured)
+// rather than silently emitting a relative, unusable verification_uri.
+func ProvideOAuthDeviceService(entClient *dbent.Client, cfg *config.Config) *OAuthDeviceService {
+	return NewOAuthDeviceService(entClient, cfg.Server.FrontendURL)
+}
+
+// ProvideOAuthTokenService wires OAuthTokenService's issuer from
+// cfg.Server.FrontendURL — the same publicly reachable base URL used for
+// the device flow's verification_uri, and the origin JWKS is served from
+// ({issuer}/.well-known/jwks.json), so agent-side ES256 verification can
+// resolve the signing key from the "iss" claim alone. refreshTokenCache is
+// the SAME Redis-backed store panel sessions use (repository.NewRefreshTokenCache)
+// — OAuth refresh tokens are extra rows in that store, not a parallel one.
+// userRepo is the same UserRepository AuthService uses; it satisfies
+// OAuthUserLookup structurally, no adapter needed.
+func ProvideOAuthTokenService(entClient *dbent.Client, keySvc *OAuthKeyService, deviceSvc *OAuthDeviceService, refreshTokenCache RefreshTokenCache, userRepo UserRepository, cfg *config.Config) *OAuthTokenService {
+	return NewOAuthTokenService(entClient, keySvc, deviceSvc, refreshTokenCache, userRepo, cfg.Server.FrontendURL)
+}
+
+// ProvideBillingContractService wires the /api/billing/* contract adapter over
+// the services that already hold the data.
+//
+// The BALANCE comes from BillingCacheService, not UserRepository: this
+// endpoint is polled by every running agent, the balance is its hottest field,
+// and BillingCacheService is where the Redis layer, the async write workers
+// and the singleflight on the miss path live. Every deploy is DB+Redis, so
+// that cache is never absent -- and when Redis is down it falls back to the
+// database itself, which is why reaching past it buys nothing and costs a
+// query storm.
+//
+// portalBaseURL is cfg.Server.FrontendURL, the same browser-facing base URL
+// ProvideOAuthDeviceService and ProvideOAuthTokenService already use. "" is a
+// supported value: BillingStateView.PortalURL is then omitted rather than
+// emitted as a relative path.
+//
+// SubscriptionService IS now a dependency, added by GET /api/billing/subscription
+// (Task 3): task-1-report.md F4 deferred it because nothing in
+// BillingStateView is subscription-derived, but BillingSubscriptionView is
+// entirely subscription-derived.
+//
+// paymentCfgSvc is threaded in TWICE, once per narrow interface it satisfies:
+// BillingPaymentSource (top-up bounds) and BillingPlanSource (the plan
+// catalog). Same concrete service, two call sites in Go's eyes -- kept
+// separate so a test can break one without the other, per this file's
+// one-interface-per-concern convention.
+//
+// paymentSvc is Task 5's addition, backing the ONE implemented write,
+// GET /charge/{id}: it satisfies BillingChargeOrderSource, which since ruling
+// D-2 is GetOrder ONLY (payment_order.go:918). *PaymentService still has
+// CreateOrder; the adapter deliberately cannot see it, because POST
+// /api/billing/charge must not be able to create an order nobody can pay --
+// see BillingChargeOrderSource and BillingContractService.Charge.
+//
+// The *IdempotencyCoordinator this used to take is gone with it: the only
+// caller was the order-creating Charge, and a refusal has no side effect to
+// deduplicate.
+func ProvideBillingContractService(
+	billingCache *BillingCacheService,
+	orgSvc *OrgService,
+	usageSvc *UsageService,
+	paymentCfgSvc *PaymentConfigService,
+	subSvc *SubscriptionService,
+	paymentSvc *PaymentService,
+	cfg *config.Config,
+) *BillingContractService {
+	return NewBillingContractService(billingCache, orgSvc, usageSvc, paymentCfgSvc, paymentCfgSvc, subSvc, paymentSvc, cfg.Server.FrontendURL)
 }
 
 // ProvideOAuthRefreshAPI creates OAuthRefreshAPI with the default lock TTL.
@@ -189,6 +264,29 @@ func ProvideOpenAIQuotaService(
 	return service
 }
 
+// ProvideOpenAIQuotaAutoResetService 启动账号级自动用卡队列与补偿扫描。
+func ProvideOpenAIQuotaAutoResetService(
+	accountRepo AccountRepository,
+	quotaService *OpenAIQuotaService,
+	rateLimitService *RateLimitService,
+	idempotency *IdempotencyCoordinator,
+	audit *AuditLogService,
+	settingService *SettingService,
+	leaderLock LeaderLockCache,
+) *OpenAIQuotaAutoResetService {
+	service := NewOpenAIQuotaAutoResetService(
+		accountRepo,
+		quotaService,
+		rateLimitService,
+		idempotency,
+		audit,
+		settingService,
+		leaderLock,
+	)
+	service.Start()
+	return service
+}
+
 func ProvideAccountUsageService(
 	accountRepo AccountRepository,
 	usageLogRepo UsageLogRepository,
@@ -231,6 +329,7 @@ func ProvideAccountTestService(
 	tlsFPProfileService *TLSFingerprintProfileService,
 	openAIGatewayService *OpenAIGatewayService,
 	settingService *SettingService,
+	pluginManager *PluginManager,
 ) *AccountTestService {
 	service := NewAccountTestService(
 		accountRepo,
@@ -244,6 +343,7 @@ func ProvideAccountTestService(
 	)
 	service.agentIdentityWS = openAIGatewayService
 	service.SetSettingService(settingService)
+	service.SetPluginManager(pluginManager)
 	return service
 }
 
@@ -259,6 +359,45 @@ func ProvideGrokQuotaService(
 	service := NewGrokQuotaService(accountRepo, proxyRepo, tokenProvider, httpUpstream, cfg, usageLogRepo)
 	service.SetSettingService(settingService)
 	return service
+}
+
+// ProvideCNProviderQuotaService 构造国产供应商 Coding Plan 额度探测服务。
+func ProvideCNProviderQuotaService(
+	accountRepo AccountRepository,
+	proxyRepo ProxyRepository,
+	httpUpstream HTTPUpstream,
+	cfg *config.Config,
+) *CNProviderQuotaService {
+	return NewCNProviderQuotaService(accountRepo, proxyRepo, httpUpstream, cfg)
+}
+
+// ProvideCNProviderBalanceService 构造国产供应商余额探测服务。
+func ProvideCNProviderBalanceService(
+	accountRepo AccountRepository,
+	proxyRepo ProxyRepository,
+	httpUpstream HTTPUpstream,
+	cfg *config.Config,
+) *CNProviderBalanceService {
+	return NewCNProviderBalanceService(accountRepo, proxyRepo, httpUpstream, cfg)
+}
+
+// ProvideCNProviderBalanceCheckService 构造并启动周期余额/额度检测任务。
+// payg 账号探余额（低余额停调）；coding plan 账号探 5h/weekly 滚动窗口
+// （落 extra 快照供调度阈值评估自动停调）。
+// 间隔取自 gateway.cn_providers.balance_check_interval_minutes；<=0 或关闭时不启动。
+func ProvideCNProviderBalanceCheckService(
+	accountRepo AccountRepository,
+	balanceService *CNProviderBalanceService,
+	quotaService *CNProviderQuotaService,
+	cfg *config.Config,
+) *CNProviderBalanceCheckService {
+	minutes := 10
+	if cfg != nil && cfg.Gateway.CNProviders.BalanceCheckIntervalMinutes > 0 {
+		minutes = cfg.Gateway.CNProviders.BalanceCheckIntervalMinutes
+	}
+	svc := NewCNProviderBalanceCheckService(accountRepo, balanceService, quotaService, cfg, time.Duration(minutes)*time.Minute)
+	svc.Start()
+	return svc
 }
 
 // ProvideGeminiTokenProvider creates GeminiTokenProvider with OAuthRefreshAPI injection
@@ -423,6 +562,9 @@ func ProvideRateLimitService(
 	tokenCacheInvalidator TokenCacheInvalidator,
 ) *RateLimitService {
 	svc := NewRateLimitService(accountRepo, usageRepo, cfg, geminiQuotaService, tempUnschedCache)
+	if healthCache, ok := tempUnschedCache.(OpenAIAPIKeyHealthCache); ok {
+		svc.SetOpenAIAPIKeyHealthCache(healthCache)
+	}
 	svc.SetTimeoutCounterCache(timeoutCounterCache)
 	svc.SetOpenAI403CounterCache(openAI403CounterCache)
 	svc.SetSettingService(settingService)
@@ -706,6 +848,9 @@ func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupReposit
 	if err := svc.MigrateCodexBodyFingerprintToSignals(context.Background()); err != nil {
 		logger.LegacyPrintf("service.setting", "Warning: migrate codex body fingerprint to signals failed: %v", err)
 	}
+	if err := svc.MigrateGrokDefaultTextModel(context.Background()); err != nil {
+		logger.LegacyPrintf("service.setting", "Warning: migrate Grok default text model failed: %v", err)
+	}
 	antigravity.SetUserAgentVersionResolver(svc.GetAntigravityUserAgentVersion)
 	// enforceCodexIdentityHeaders 是所有 Codex 出站路径共用的纯函数收口点，拿不到 ctx，
 	// 故注入无参解析器；解析器内部自带 60s TTL 缓存，热路径不触库。
@@ -751,6 +896,20 @@ func ProvideAPIKeyService(
 var ProviderSet = wire.NewSet(
 	// Core services
 	ProvideAuthService,
+	NewOrgService,
+	NewOAuthKeyService,
+	NewOAuthClientService,
+	NewOAuthAuthorizeService,
+	// OAuthBackingKeyService resolves a verified OAuth access token to the
+	// api_keys row the gateway pipeline meters against. Both of its inputs
+	// (*dbent.Client, *config.Config) are already in the graph.
+	NewOAuthBackingKeyService,
+	ProvideOAuthDeviceService,
+	ProvideOAuthTokenService,
+	// The /api/billing/* contract adapter. All five inputs already exist in
+	// the graph; see ProvideBillingContractService for why the balance comes
+	// from BillingCacheService and not from a repository.
+	ProvideBillingContractService,
 	NewPasskeyService,
 	NewUserService,
 	ProvideAPIKeyService,
@@ -795,7 +954,11 @@ var ProviderSet = wire.NewSet(
 	ProvideGrokTokenProvider,
 	ProvideOpenAITokenProvider,
 	ProvideOpenAIQuotaService,
+	ProvideOpenAIQuotaAutoResetService,
 	ProvideGrokQuotaService,
+	ProvideCNProviderQuotaService,
+	ProvideCNProviderBalanceService,
+	ProvideCNProviderBalanceCheckService,
 	ProvideClaudeTokenProvider,
 	NewAntigravityGatewayService,
 	ProvideRateLimitService,
@@ -847,6 +1010,7 @@ var ProviderSet = wire.NewSet(
 	NewTotpService,
 	NewErrorPassthroughService,
 	NewTLSFingerprintProfileService,
+	NewPluginManager,
 	NewDigestSessionStore,
 	ProvideIdempotencyCoordinator,
 	ProvideSystemOperationLockService,
@@ -857,6 +1021,7 @@ var ProviderSet = wire.NewSet(
 	NewChannelService,
 	wire.Bind(new(ChannelCacheInvalidator), new(*ChannelService)),
 	NewModelPricingResolver,
+	NewModelPlazaService,
 	NewContentModerationService,
 	NewAffiliateService,
 	ProvidePaymentConfigService,
@@ -865,6 +1030,7 @@ var ProviderSet = wire.NewSet(
 	ProvideBalanceNotifyService,
 	ProvideChannelMonitorService,
 	ProvideChannelMonitorRunner,
+	NewChannelMonitorQuotaFetcher,
 	ProvideChannelMonitorV2Service,
 	ProvideChannelMonitorV2Aggregator,
 	NewChannelMonitorRequestTemplateService,
@@ -923,13 +1089,20 @@ func ProvideChannelMonitorService(
 // 通过 SetScheduler 注入回 service 后再 Start，确保启动时加载所有 enabled monitor，
 // 后续 CRUD 也能即时同步任务表。Runner.Stop 由 cleanup function 调用。
 // settingService 用于 runner 每次 fire 读取功能开关。
-func ProvideChannelMonitorRunner(svc *ChannelMonitorService, settingService *SettingService) *ChannelMonitorRunner {
+// quotaFetcher（账号侧用量聚合）也在此注入：accountUsage/CN 服务在 wire 图中
+// 晚于 channelMonitorService 构造，走 setter 注入避免调整既有构造顺序。
+func ProvideChannelMonitorRunner(
+	svc *ChannelMonitorService,
+	settingService *SettingService,
+	quotaFetcher *ChannelMonitorQuotaFetcher,
+) *ChannelMonitorRunner {
 	r := NewChannelMonitorRunner(svc, settingService)
 	if svc != nil {
 		// Ensure runtime reader is set even if ProvideChannelMonitorService
 		// was constructed without settings (tests / alternate providers).
 		svc.SetRuntimeReader(settingService)
 		svc.SetScheduler(r)
+		svc.SetQuotaFetcher(quotaFetcher)
 	}
 	r.Start()
 	return r

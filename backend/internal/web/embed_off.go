@@ -1,6 +1,8 @@
 //go:build !embed
 
-// Package web provides embedded web assets for the application.
+// (Task 4 fix round 2, NEW-8): the canonical doc comment for this package
+// lives in bypass.go, the one file with no build tag and therefore present
+// in every build -- not duplicated here.
 package web
 
 import (
