@@ -53,9 +53,9 @@ jobs:
         with:
           node-version: '20'
           cache: 'pnpm'
-          cache-dependency-path: frontend/pnpm-lock.yaml
+          cache-dependency-path: inferno-frontend/pnpm-lock.yaml
       - name: Install frontend dependencies
-        working-directory: frontend
+        working-directory: inferno-frontend
         run: pnpm install --frozen-lockfile
       - name: Frontend typecheck and critical vitest
         run: make test-frontend
