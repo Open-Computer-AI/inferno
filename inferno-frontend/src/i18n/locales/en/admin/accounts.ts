@@ -714,6 +714,7 @@ export default {
       syncUpstreamModels: 'Sync upstream supported models',
       syncUpstreamModelsLoading: 'Syncing upstream...',
       syncUpstreamModelsSuccess: 'Synced {count} new model(s) from upstream ({total} upstream total)',
+      syncUpstreamModelsMetadataIncomplete: 'Model IDs were synced, but capability metadata is incomplete and was not updated.',
       syncUpstreamModelsNoChanges: 'All {count} upstream model(s) are already in the whitelist',
       syncUpstreamModelsEmpty: 'Upstream returned no models to sync',
       syncUpstreamModelsFailed: 'Failed to sync upstream models',

@@ -792,6 +792,7 @@ export default {
       syncUpstreamModels: '同步上游支持的模型',
       syncUpstreamModelsLoading: '同步上游中...',
       syncUpstreamModelsSuccess: '已从上游同步 {count} 个新模型（上游共 {total} 个）',
+      syncUpstreamModelsMetadataIncomplete: '模型 ID 已同步，但能力元数据不完整，未更新。',
       syncUpstreamModelsNoChanges: '上游 {count} 个模型均已在白名单中',
       syncUpstreamModelsEmpty: '上游没有返回可同步的模型',
       syncUpstreamModelsFailed: '同步上游模型失败',

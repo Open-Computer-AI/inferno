@@ -19,9 +19,13 @@
  */
 import { readFileSync } from 'node:fs'
 import { execSync } from 'node:child_process'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 // Flatten our locale files into a key set
-const localeRoot = 'inferno-frontend/src/i18n/locales/en'
+// Resolve relative to THIS file, not the cwd, so it works from the repo root
+// or from inside inferno-frontend. It broke the first time for exactly that.
+const localeRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../src/i18n/locales/en')
 const files = execSync(`find ${localeRoot} -name '*.ts'`).toString().trim().split('\n')
 const keys = new Set()
 for (const f of files) {

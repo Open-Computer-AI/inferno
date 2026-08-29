@@ -3753,11 +3753,22 @@ const upstreamBillingAutoProbeEnabled = ref(true)
 
 const syncPreviewCredentials = computed(() => {
   if (!apiKeyValue.value) return undefined
+  // Send the operator's mappings so the backend resolves capability metadata
+  // for the MAPPED target, not the requested name. Without this the preview
+  // quietly describes the wrong model.
+  const modelMapping = buildModelMappingObject(
+    modelRestrictionMode.value,
+    allowedModels.value,
+    modelMappings.value
+  )
   return {
     platform: form.platform,
     type: form.type,
+    // NB: upstream also resolves an adaptive CN base URL here. We have no CN
+    // account support yet, so ours stays plain until that feature is ported.
     base_url: apiKeyBaseUrl.value || undefined,
-    api_key: apiKeyValue.value
+    api_key: apiKeyValue.value,
+    ...(modelMapping ? { model_mapping: modelMapping } : {})
   }
 })
 
