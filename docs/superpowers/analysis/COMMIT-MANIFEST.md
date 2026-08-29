@@ -79,15 +79,15 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 15 | `c38c5beef` | 08-17 | T2 | fix(i18n): CN 余额单元格误引 grokBalance 键致渲染原始 key | ? | TODO |
 | 16 | `9f24a5530` | 08-17 | T1 | 功能：支持渠道模型分时倍率定价 | ? | TODO |
 | 17 | `7e45634df` | 08-18 | T2 | chore: remove leftover Sora references after platform re | ? | TODO |
-| 18 | `a20e1c00c` | 08-18 | T1 | feat(monitor-ui): 配额模式表单、用量快照视图与 8 平台支持 | ? | TODO |
-| 19 | `302a10b88` | 08-18 | T2 | test(monitor-ui): 配额视图渲染与开关门控用例 | ? | TODO |
+| 18 | `a20e1c00c` | 08-18 | T1 | feat(monitor-ui): 配额模式表单、用量快照视图与 8 平台支持 | chain base: quota check-mode, MonitorQuotaView (new, verbatim), 8 providers, showQuota setting | **PORTED** |
+| 19 | `302a10b88` | 08-18 | T2 | test(monitor-ui): 配额视图渲染与开关门控用例 | the chain's own tests, taken whole | **PORTED** |
 | 20 | `269fbcac0` | 08-18 | T2 | feat: Grok 用量条补齐本站 24h/7d/30d 聚合 | ? | TODO |
 | 21 | `fd42d3722` | 08-18 | T2 | fix: hide Grok prepaid and used/limit when they are empt | ? | TODO |
 | 22 | `8f6f45983` | 08-18 | T2 | fix(channels): support kimi/zhipu/deepseek platforms in  | ? | TODO |
-| 23 | `03c3f3b6f` | 08-18 | T2 | feat(ui): Select 组件支持可选远程搜索（remote/loading props + searc | ? | TODO |
-| 24 | `5cbd0c96a` | 08-18 | T2 | fix(monitor-ui): 关联账号选择器改服务端搜索+回填，OpenAI 配额模式加消耗提示 | ? | TODO |
-| 25 | `c9effc456` | 08-18 | T1 | fix(frontend): monitor form check-mode restore, account  | ? | TODO |
-| 26 | `2c250bfd7` | 08-18 | T1 | fix(monitor-ui): localize the "quota" placeholder model  | ? | TODO |
+| 23 | `03c3f3b6f` | 08-18 | T2 | feat(ui): Select 组件支持可选远程搜索（remote/loading props + searc | Select remote-search — script-only; spec selectors retargeted to our June BEM names | **PORTED** |
+| 24 | `5cbd0c96a` | 08-18 | T2 | fix(monitor-ui): 关联账号选择器改服务端搜索+回填，OpenAI 配额模式加消耗提示 | server-side account search + backfill; **the manifest under-scoped the chain — c9effc456's specs require this** | **PORTED** |
+| 25 | `c9effc456` | 08-18 | T1 | fix(frontend): monitor form check-mode restore, account  | check-mode restore, account_id=0 unbind, mode badge | **PORTED** |
+| 26 | `2c250bfd7` | 08-18 | T1 | fix(monitor-ui): localize the "quota" placeholder model  | formatMonitorModel across 4 views | **PORTED** |
 | 27 | `58e147fba` | 08-19 | T2 | feat(composite): support Codex endpoints | ? | TODO |
 | 28 | `b171bb0e4` | 08-19 | T2 | fix(composite): support CN providers | ? | TODO |
 | 29 | `f917d19d3` | 08-19 | T2 | test(frontend): align Grok API key placeholder assertion | ? | TODO |

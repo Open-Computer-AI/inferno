@@ -30,7 +30,7 @@
             :key="m.model"
             class="border-b border-[var(--brand-line)] border-[var(--brand-line)]"
           >
-            <td class="py-2 pr-3 font-[var(--fw-medium)] text-[var(--foreground)] text-[var(--muted-foreground)]">{{ m.model }}</td>
+            <td class="py-2 pr-3 font-[var(--fw-medium)] text-[var(--foreground)] text-[var(--muted-foreground)]">{{ formatMonitorModel(m.model) }}</td>
             <td class="py-2 pr-3">
               <span
                 class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px]"
@@ -84,7 +84,7 @@ defineEmits<{
 
 const { t } = useI18n()
 const appStore = useAppStore()
-const { statusLabel, statusBadgeClass, formatLatency, formatPercent } = useChannelMonitorFormat()
+const { statusLabel, statusBadgeClass, formatLatency, formatPercent, formatMonitorModel } = useChannelMonitorFormat()
 
 const detail = ref<UserMonitorDetail | null>(null)
 const loading = ref(false)
