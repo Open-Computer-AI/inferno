@@ -20,13 +20,6 @@ export interface PlazaOfficialPricing {
   intervals?: UserPricingInterval[]
 }
 
-/**
- * 多档时的计价基准：
- * - whole_request：整单按所在档单价计价（目录阶梯、渠道区间）；
- * - marginal：仅超出阈值的部分按该档单价计价（平台旧规则）。
- */
-export type PlazaLongContextBasis = 'whole_request' | 'marginal'
-
 /** 分时倍率时段：配置时区当天 [start_time, end_time) 内整单实付乘 multiplier。 */
 export interface PlazaTimePricingPeriod {
   start_time: string
@@ -42,6 +35,13 @@ export interface PlazaTimePricing {
   weekdays_only?: boolean
   periods: PlazaTimePricingPeriod[]
 }
+
+/**
+ * 多档时的计价基准：
+ * - whole_request：整单按所在档单价计价（目录阶梯、渠道区间）；
+ * - marginal：仅超出阈值的部分按该档单价计价（平台旧规则）。
+ */
+export type PlazaLongContextBasis = 'whole_request' | 'marginal'
 
 export interface PlazaModel {
   name: string

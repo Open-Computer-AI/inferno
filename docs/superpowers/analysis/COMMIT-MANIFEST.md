@@ -119,10 +119,10 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 55 | `40ea3aeba` | 08-24 | T1 | feat: add OAuth outbound transport plugin system | ? | TODO |
 | 56 | `684d9efb1` | 08-24 | T2 | fix: harden plugin runtime and UI bridge | ? | TODO |
 | 57 | `391d69e08` | 08-24 | T2 | fix: preserve initial plugin bridge requests | ? | TODO |
-| 58 | `377d1230f` | 08-24 | T1 | 模型广场：按计费阶梯单价表展示长上下文档位 | ? | TODO |
+| 58 | `377d1230f` | 08-24 | T1 | 模型广场：按计费阶梯单价表展示长上下文档位 | long-context tier table; **3-way landed sortByContext without its 2 call sites — fixed + test added** | **PORTED** |
 | 59 | `ecce0769c` | 08-24 | T2 | 模型广场：上下文档位统一标签形态并保证升序 | ? | TODO |
-| 60 | `83d4eb6a4` | 08-24 | T1 | 模型广场：增加渠道分时段计价展示 | ? | TODO |
-| 61 | `b07d85c49` | 08-24 | T1 | 模型广场：分时计价同步渠道仅工作日规则 | ? | TODO |
+| 60 | `83d4eb6a4` | 08-24 | T1 | 模型广场：增加渠道分时段计价展示 | time-window pricing display (verbatim; API types were already present) | **PORTED** |
+| 61 | `b07d85c49` | 08-24 | T1 | 模型广场：分时计价同步渠道仅工作日规则 | weekdays-only rule in the plaza display | **PORTED** |
 | 62 | `f19095f96` | 08-24 | T2 | 模型广场：分时时段行明确不含高峰倍率口径并披露叠加 | ? | TODO |
 | 63 | `cfecc8d11` | 08-24 | T2 | feat: 运维监控错误详情支持返回列表并保留筛选状态 | ? | TODO |
 | 64 | `6f972145b` | 08-24 | T1 | feat: 支持 OpenAI 重置卡按用量阈值自动使用 | types + EditAccountModal (verbatim, not June) + OpenAIQuotaResetCell chip (rebuilt in June) + en/zh keys, en dash removed | **PORTED** |
