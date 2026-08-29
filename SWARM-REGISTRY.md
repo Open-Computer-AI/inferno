@@ -282,3 +282,47 @@ Agents are read-only and produce plans, not edits. If this session dies before
 they are applied, their final messages are in the transcripts above; extract the
 last assistant message only (the files are large). The manifest survives in git
 and shows exactly which commits still say TODO.
+
+# Swarm registry — set B catch-up (2026-08-29)
+
+Set A is closed (22/22, validated end to end). Set B is the 81 non-merge
+upstream commits touching `frontend/` since the vendor point, 08-16 to 08-29.
+
+| field | value |
+|---|---|
+| manifest | `docs/superpowers/analysis/COMMIT-MANIFEST.md`, Set B table |
+| baselines | vue-tsc 0 · vitest 1665/1665 across 234 files · june-lint 984 across **288** converted · divergence all-declared |
+| status | 5 agents RUNNING on tier 1 (27 commits); tier 2 (54) not yet started |
+
+## Triage
+
+Tier 1 (27) touches api/types/stores/utils/composables -- contract and logic,
+where a wrong value renders confidently rather than failing. Tier 2 (54) touches
+only components/views/i18n. Tier 2 is NOT skippable: in set A, 15 of 40 changed
+component files carried bug fixes, and the standing "ignore components" rule is
+what let them accumulate.
+
+## Agent batches (tier 1, chronological, sequences kept whole)
+
+| batch | commits | note |
+|---|---|---|
+| 1 | 901a0439f 8d82bb069 9f24a5530 a20e1c00c c9effc456 2c250bfd7 | CN providers, monitor quota mode |
+| 2 | 26be82cc8 1f2a87adb 39485f2e2 6c3edc095 e62ec2c42 3445485eb | contains a FEATURE AND ITS REVERT (429 cooldown) |
+| 3 | 22e1b8144 e39fce270 77e0409f7 40ea3aeba 377d1230f 83d4eb6a4 b07d85c49 | two sequences; plugin iframe security must ship WITH the feature |
+| 4 | 6f972145b 3f1581b2d 11ada80d5 5705f4a4a 195b21970 2abce6503 | contains a PAIR pulling opposite ways (expose then hide reasoning effort) |
+| 5 | b56c61ecc b5827cfd5 | restrict_public_groups -- shipping the toggle may MAKE the refuted save-filter bug reachable; and DeepSeek peak/off-peak billing |
+
+## The guardrail that matters
+
+june-lint's CONVERTED FILE COUNT (288) must not DROP. Violations rising is
+expected and fine -- it means Tailwind added to files that are not June yet,
+which the standing rule asks for. A falling converted count means a copy
+overwrote converted work, which is the failure this whole process exists to
+prevent.
+
+## Recover
+
+Agents are read-only and produce plans, not edits. Their final messages are in
+`~/.claude/projects/-Users-saksham/3555e339-*/subagents/`; extract the last
+assistant message only, the transcripts are large. The manifest survives in git
+and shows which rows still say TODO.
