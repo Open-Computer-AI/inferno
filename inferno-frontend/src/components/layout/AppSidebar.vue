@@ -437,7 +437,21 @@ const adminFlatSimple = computed((): NavRow[] => {
   rows.push(
     { path: '/admin/accounts', label: t('nav.accounts'), icon: 'hgi-globe-02', id: 'sidebar-channel-manage' },
     { path: '/admin/announcements', label: t('nav.announcements'), icon: 'hgi-notification-01' },
-    { path: '/admin/proxies', label: t('nav.proxies'), icon: 'hgi-internet' },
+    { path: '/admin/proxies', label: t('nav.proxies'), icon: 'hgi-internet' }
+  )
+  // Security audit was reachable in simple mode all along -- the router's
+  // simple-mode restrictedPaths never covered these two, and SettingsView links
+  // straight to /admin/risk-control on a page that stays visible. Only the nav
+  // entry was missing, so simple mode hid a feature it could not actually
+  // prevent (upstream 0d7b6ae64 fixed the same gap by dropping hideInSimpleMode).
+  // Gating mirrors our own full-mode `trust` group rather than upstream's, which
+  // puts both rows behind flagRiskControl -- matching ourselves keeps the two
+  // modes agreeing with each other.
+  if (isFeatureFlagEnabled(FeatureFlags.riskControl)) {
+    rows.push({ path: '/admin/risk-control', label: t('shell.riskControl'), icon: 'hgi-shield-01' })
+  }
+  rows.push(
+    { path: '/admin/prompt-audit', label: t('shell.promptAudit'), icon: 'hgi-message-programming' },
     { path: '/admin/usage', label: t('nav.usage'), icon: 'hgi-dashboard-speed-01' },
     { path: '/keys', label: t('shell.apiKeys'), icon: 'hgi-key-01', dataTour: 'sidebar-my-keys' },
     { path: '/admin/settings', label: t('nav.settings'), icon: 'hgi-settings-01' }
