@@ -96,23 +96,23 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 32 | `1b30a2d74` | 08-19 | T2 | feat(accounts): support header overrides for CN provider | ? | TODO |
 | 33 | `26be82cc8` | 08-19 | T1 | 前端：配置渠道倍率并精简长上下文开关 | ? | TODO |
 | 34 | `d4d2c746c` | 08-19 | T2 | 前端：修正账号长上下文开关门控 | ? | TODO |
-| 35 | `1f2a87adb` | 08-20 | T1 | fix(admin): 补全平台筛选选项 | ? | TODO |
+| 35 | `1f2a87adb` | 08-20 | T1 | fix(admin): 补全平台筛选选项 | LOGIC | PORTED |
 | 36 | `85051616f` | 08-20 | T2 | feat(accounts): add adaptive API protocol routing | ? | TODO |
 | 37 | `b3092145d` | 08-20 | T2 | fix(accounts): harden adaptive protocol compatibility | ? | TODO |
 | 38 | `e4f869e0c` | 08-19 | T2 | 完善运维错误详情兼容展示 | ? | TODO |
-| 39 | `39485f2e2` | 08-20 | T1 | 更新 Grok 默认模型与官方计费目录 | ? | TODO |
-| 40 | `6c3edc095` | 08-20 | T1 | feat(429): add configurable cooldown and retry strategie | ? | TODO |
-| 41 | `e62ec2c42` | 08-20 | T1 | Revert "feat(429): add configurable cooldown and retry s | ? | TODO |
+| 39 | `39485f2e2` | 08-20 | T1 | 更新 Grok 默认模型与官方计费目录 | LOGIC | PORTED |
+| 40 | `6c3edc095` | 08-20 | T1 | feat(429): add configurable cooldown and retry strategie | - | SKIPPED — reverted by e62ec2c42, net no-op |
+| 41 | `e62ec2c42` | 08-20 | T1 | Revert "feat(429): add configurable cooldown and retry s | - | SKIPPED — the revert; verified total |
 | 42 | `2e279c81d` | 08-21 | T2 | fix(frontend): make CN provider quota/balance refresh af | ? | TODO |
 | 43 | `68653fb2c` | 08-21 | T2 | fix: allow messages dispatch for composite groups | ? | TODO |
-| 44 | `3445485eb` | 08-21 | T1 | fix(frontend): prevent token refresh lock loop | ? | TODO |
+| 44 | `3445485eb` | 08-21 | T1 | fix(frontend): prevent token refresh lock loop | LOGIC | PORTED — fix was present, test added |
 | 45 | `d9d2854d2` | 08-21 | T2 | Make enabled model plaza discoverable from /home | ? | TODO |
 | 46 | `22e1b8144` | 08-22 | T1 | feat(gateway): expose routed Codex model catalogs | ? | TODO |
 | 47 | `e471be730` | 08-22 | T2 | feat(codex): complete routed model catalogs | ? | TODO |
 | 48 | `b16ed03ca` | 08-22 | T2 | fix(codex): align routed catalogs with actual routes | ? | TODO |
 | 49 | `ee62dfbaf` | 08-22 | T2 | fix(proxy): support bracketed IPv6 hosts in batch proxy  | ? | TODO |
 | 50 | `5dfad32b8` | 08-22 | T2 | fix(frontend): accept unlimited (0) user concurrency in  | ? | TODO |
-| 51 | `e39fce270` | 08-22 | T1 | fix(codex): sync routed capabilities from upstream | ? | TODO |
+| 51 | `e39fce270` | 08-22 | T1 | fix(codex): sync routed capabilities from upstream | BOTH | PORTED |
 | 52 | `77e0409f7` | 08-23 | T1 | 新增渠道时间段定价工作日规则 | ? | TODO |
 | 53 | `616df479e` | 08-23 | T2 | fix(admin): show account priority by default | ? | TODO |
 | 54 | `4a1da2950` | 08-23 | T2 | fix(deps): bump dompurify to patch multiple sanitizer-by | ? | TODO |
@@ -133,7 +133,7 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 69 | `a8cfe746b` | 08-25 | T2 | test(usage): cover user and admin reasoning effort page  | ? | TODO |
 | 70 | `d522aed65` | 08-26 | T2 | fix: preserve promo codes for OAuth signup | ? | TODO |
 | 71 | `195b21970` | 08-26 | T1 | fix(codex): isolate API-key catalog cache and DeepSeek C | ? | TODO |
-| 72 | `2abce6503` | 08-26 | T1 | fix(codex): harden routed catalog capability sync | ? | TODO |
+| 72 | `2abce6503` | 08-26 | T1 | fix(codex): harden routed catalog capability sync | BOTH | PARTIAL — preview hunk ported, UseKeyModal blocked |
 | 73 | `5f09442fc` | 08-27 | T2 | fix(openai): refresh usage after quota reset | ? | TODO |
 | 74 | `b56c61ecc` | 08-28 | T1 | feat(admin): let admins restrict which public groups a u | ? | TODO |
 | 75 | `0756c9810` | 08-28 | T2 | fix(frontend): 批量编辑显式提交 codex_fingerprint_mode=off，修复无法关 | ? | TODO |
@@ -142,4 +142,4 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 78 | `c03776604` | 08-28 | T2 | fix(keys): preserve Claude attribution headers | ? | TODO |
 | 79 | `706b5676a` | 08-29 | T2 | fix(groups): show API error messages on create and updat | ? | TODO |
 | 80 | `ed12ea716` | 08-29 | T2 | fix(frontend): authenticate Codex API key mode inline | ? | TODO |
-| 81 | `b5827cfd5` | 08-29 | T1 | fix(pricing): align DeepSeek billing with official peak/ | ? | TODO |
+| 81 | `b5827cfd5` | 08-29 | T1 | fix(pricing): align DeepSeek billing with official peak/ | BOTH | PORTED — merged, DeepSeek under-billing |
