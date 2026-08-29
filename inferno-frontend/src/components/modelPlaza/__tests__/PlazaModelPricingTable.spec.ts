@@ -521,8 +521,8 @@ describe('PlazaModelPricingTable 长上下文阶梯', () => {
     })
     const text = mountTable([model], 1).findAll('tbody td')[1].text()
     expect(text).toContain('≤100K')
-    expect(text).toContain('100–200K')
-    expect(text).toContain('200K–1M')
+    expect(text).toContain('100-200K')
+    expect(text).toContain('200K-1M')
     expect(text).toContain('>1M')
   })
 
@@ -593,7 +593,7 @@ describe('PlazaModelPricingTable 分时计价', () => {
     // 夜间时段行:输入 3 × 0.8 × 0.5,倍率 0.4x,标注时段不含时区
     const nightCells = trs[1].findAll('td')
     expect(nightCells[0].text()).toContain('deepseek-chat')
-    expect(nightCells[0].text()).toContain('00:30–08:30')
+    expect(nightCells[0].text()).toContain('00:30-08:30')
     expect(nightCells[0].text()).not.toContain('Asia/Shanghai')
     // 时区只放在 tooltip 里(i18n mock 不做插值,这里只断言挂了说明)
     expect(nightCells[0].find('[title="modelPlaza.table.timePricingRowHint"]').exists()).toBe(true)
@@ -604,7 +604,7 @@ describe('PlazaModelPricingTable 分时计价', () => {
 
     // 晚高峰行:3 × 0.8 × 1.2 = 2.88,倍率 0.96x
     const peakCells = trs[2].findAll('td')
-    expect(peakCells[0].text()).toContain('18:00–22:00')
+    expect(peakCells[0].text()).toContain('18:00-22:00')
     expect(peakCells[1].text()).toContain('$2.88')
     expect(peakCells[7].text()).toContain('0.96x')
 
@@ -621,7 +621,7 @@ describe('PlazaModelPricingTable 分时计价', () => {
 
     const nightCells = trs[1].findAll('td')
     expect(nightCells[0].text()).toContain('modelPlaza.table.timePricingWeekdays')
-    expect(nightCells[0].text()).toContain('00:30–08:30')
+    expect(nightCells[0].text()).toContain('00:30-08:30')
     expect(nightCells[0].find('[title="modelPlaza.table.timePricingRowHintWeekdays"]').exists()).toBe(true)
     expect(nightCells[0].find('[title="modelPlaza.table.timePricingRowHint"]').exists()).toBe(false)
   })

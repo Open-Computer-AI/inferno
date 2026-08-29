@@ -74,7 +74,7 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 10 | `22fc0cdbf` | 08-16 | T2 | fix(frontend): clarify OpenAI Fast/Flex policy rules | ? | TODO |
 | 11 | `1977810cf` | 08-17 | T2 | fix(frontend): isolate account helper data loading | ? | TODO |
 | 12 | `9aac3b73f` | 08-16 | T2 | add Ollama usage query action | ? | TODO |
-| 13 | `8d82bb069` | 08-17 | T1 | fix(openai): expose bulk account settings | ? | TODO |
+| 13 | `8d82bb069` | 08-17 | T1 | fix(openai): expose bulk account settings | bulk OpenAI account settings (verbatim, 0 tokens/650 Tailwind); kept our dash-free copy, fixed its punctuation | **PORTED** |
 | 14 | `7cdca9e49` | 08-17 | T2 | feat(groups): 放行 kimi/zhipu/deepseek 平台分组创建入口 | ? | TODO |
 | 15 | `c38c5beef` | 08-17 | T2 | fix(i18n): CN 余额单元格误引 grokBalance 键致渲染原始 key | ? | TODO |
 | 16 | `9f24a5530` | 08-17 | T1 | 功能：支持渠道模型分时倍率定价 | TimePricingSection.vue new (verbatim); types layer was already partly ported, kept ours as the superset | **PORTED** |

@@ -439,7 +439,7 @@ function timePricingRowHint(m: PlazaModel): string {
 /** “00:30–08:30”;整分钟的 HH:mm:ss 省略秒。 */
 function formatTimeWindow(p: PlazaTimePricingPeriod): string {
   const clock = (v: string) => v.replace(/^(\d{2}:\d{2}):00$/, '$1')
-  return `${clock(p.start_time)}–${clock(p.end_time)}`
+  return `${clock(p.start_time)}-${clock(p.end_time)}`
 }
 
 /** 上下文档位按下限升序展示(后端已升序,此处兜底)。 */
@@ -485,8 +485,8 @@ function tierLabel(iv: UserPricingInterval): string {
   const hi = formatTokenCount(max)
   // 同单位时省略前一个单位(100–200K),节省列宽
   const unit = hi.slice(-1)
-  if (/[KM]/.test(unit) && lo.endsWith(unit)) return `${lo.slice(0, -1)}–${hi}`
-  return `${lo}–${hi}`
+  if (/[KM]/.test(unit) && lo.endsWith(unit)) return `${lo.slice(0, -1)}-${hi}`
+  return `${lo}-${hi}`
 }
 
 function formatTokenCount(n: number): string {
