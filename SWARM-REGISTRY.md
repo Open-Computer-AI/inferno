@@ -247,3 +247,38 @@ Zero security regressions found — both classifiers grepped for them specifical
 Both classifier agents independently proposed the same replacement rule: ignore
 `<template>` and `<style>` diffs, always review `<script setup>` and `.ts` hunks.
 On this window that catches all 15 bug fixes for the cost of 4 extra files.
+
+# Swarm registry — commit-by-commit catch-up, set A (2026-08-29)
+
+Replaces file-diffing with commit-walking. Four rounds of diffing each found a
+category the last missed, because a diff cannot separate "we redesigned this"
+from "we never had this". A commit can: it carries the intent.
+
+| field | value |
+|---|---|
+| manifest | `docs/superpowers/analysis/COMMIT-MANIFEST.md` — one row per commit, the completion record |
+| scope | set A: 21 commits with content, 2026-08-07 → 08-15, missed at vendor time |
+| remaining | set B: 78 non-merge commits since vendoring |
+| transcripts | `~/.claude/projects/-Users-saksham/3555e339-*/subagents/` |
+| status | 4 agents RUNNING (read-only analysis); nothing applied yet |
+
+## Agents
+
+| batch | commits | period |
+|---|---|---|
+| 1 | 9b54b46b0, 4999231d6, 563a72ca7, bbc8b6e90 | 08-07 → 08-09 |
+| 2 | 33351c7bc, 5350b3d98, 9096492b5, b689e5b40, 0d7b6ae64, 943f09d35 | 08-10 → 08-11 |
+| 3 | 670b03f7e, c0ab3a00e, 0ae151a23, 363cc4994, 69648476d, a04ce4901 | 08-12 → 08-13 |
+| 4 | b830bc14d, e215c98c2, f3d949107, cb7b03795, fce41e318 | 08-13 → 08-15 |
+
+Each agent reads the full commit (message + diff, translating Chinese), maps
+every touched file to our equivalent, judges whether the SPECIFIC change is
+present in our rewritten copy, and classifies it LOGIC / UI / BOTH. UI changes
+cannot be pasted — they get described so they can be rebuilt in June.
+
+## Recover
+
+Agents are read-only and produce plans, not edits. If this session dies before
+they are applied, their final messages are in the transcripts above; extract the
+last assistant message only (the files are large). The manifest survives in git
+and shows exactly which commits still say TODO.
