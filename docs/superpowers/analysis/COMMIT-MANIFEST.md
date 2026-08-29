@@ -77,7 +77,7 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 13 | `8d82bb069` | 08-17 | T1 | fix(openai): expose bulk account settings | ? | TODO |
 | 14 | `7cdca9e49` | 08-17 | T2 | feat(groups): 放行 kimi/zhipu/deepseek 平台分组创建入口 | ? | TODO |
 | 15 | `c38c5beef` | 08-17 | T2 | fix(i18n): CN 余额单元格误引 grokBalance 键致渲染原始 key | ? | TODO |
-| 16 | `9f24a5530` | 08-17 | T1 | 功能：支持渠道模型分时倍率定价 | ? | TODO |
+| 16 | `9f24a5530` | 08-17 | T1 | 功能：支持渠道模型分时倍率定价 | TimePricingSection.vue new (verbatim); types layer was already partly ported, kept ours as the superset | **PORTED** |
 | 17 | `7e45634df` | 08-18 | T2 | chore: remove leftover Sora references after platform re | ? | TODO |
 | 18 | `a20e1c00c` | 08-18 | T1 | feat(monitor-ui): 配额模式表单、用量快照视图与 8 平台支持 | chain base: quota check-mode, MonitorQuotaView (new, verbatim), 8 providers, showQuota setting | **PORTED** |
 | 19 | `302a10b88` | 08-18 | T2 | test(monitor-ui): 配额视图渲染与开关门控用例 | the chain's own tests, taken whole | **PORTED** |
@@ -113,7 +113,7 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 49 | `ee62dfbaf` | 08-22 | T2 | fix(proxy): support bracketed IPv6 hosts in batch proxy  | ? | TODO |
 | 50 | `5dfad32b8` | 08-22 | T2 | fix(frontend): accept unlimited (0) user concurrency in  | ? | TODO |
 | 51 | `e39fce270` | 08-22 | T1 | fix(codex): sync routed capabilities from upstream | BOTH | PORTED |
-| 52 | `77e0409f7` | 08-23 | T1 | 新增渠道时间段定价工作日规则 | ? | TODO |
+| 52 | `77e0409f7` | 08-23 | T1 | 新增渠道时间段定价工作日规则 | weekdays_only; the types half was already in HEAD, this adds the UI + tests | **PORTED** |
 | 53 | `616df479e` | 08-23 | T2 | fix(admin): show account priority by default | ? | TODO |
 | 54 | `4a1da2950` | 08-23 | T2 | fix(deps): bump dompurify to patch multiple sanitizer-by | ? | TODO |
 | 55 | `40ea3aeba` | 08-24 | T1 | feat: add OAuth outbound transport plugin system | ? | TODO |
@@ -135,7 +135,7 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 71 | `195b21970` | 08-26 | T1 | fix(codex): isolate API-key catalog cache and DeepSeek C | ? | TODO |
 | 72 | `2abce6503` | 08-26 | T1 | fix(codex): harden routed catalog capability sync | BOTH | PARTIAL — preview hunk ported, UseKeyModal blocked |
 | 73 | `5f09442fc` | 08-27 | T2 | fix(openai): refresh usage after quota reset | ? | TODO |
-| 74 | `b56c61ecc` | 08-28 | T1 | feat(admin): let admins restrict which public groups a u | ? | TODO |
+| 74 | `b56c61ecc` | 08-28 | T1 | feat(admin): let admins restrict which public groups a u | ported in 6e04b06ee (toggle + load-init + save-filter, applied atomically); row was left stale | **PORTED** |
 | 75 | `0756c9810` | 08-28 | T2 | fix(frontend): 批量编辑显式提交 codex_fingerprint_mode=off，修复无法关 | ? | TODO |
 | 76 | `c4e46c3be` | 08-28 | T2 | feat(zhipu): support team GLM Coding Plan usage query | ? | TODO |
 | 77 | `02eee39dd` | 08-28 | T2 | fix(payment): show selected currency in recharge rate | ? | TODO |

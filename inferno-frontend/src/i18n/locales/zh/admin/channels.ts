@@ -82,6 +82,13 @@ export default {
           perRequestPrice: '单次价格'
         }
       },
+      timePricingValidation: {
+        timezone: '请选择有效的 IANA 时区',
+        format: '开始时间和结束时间必须使用 HH:mm:ss 格式',
+        range: '开始时间必须早于结束时间；跨午夜请拆分为两个时间段',
+        overlap: '时间段不能重叠',
+        multiplier: '倍率必须大于 0，且最多保留两位小数'
+      },
       deleteConfirm: '确定要删除渠道「{name}」吗？此操作不可撤销。',
       columns: {
         name: '名称',
@@ -131,6 +138,16 @@ export default {
         cacheWriteMultiplier: '缓存写倍率',
         cacheReadMultiplier: '缓存读倍率',
         intervals: '上下文区间定价（可选）',
+        timePricing: '时间段定价（可选）',
+        timezone: '时区',
+        timePricingDayScope: '生效日',
+        timePricingEveryDay: '每日生效（周一至周日，含周末）',
+        timePricingWeekdaysOnly: '仅工作日生效（周一至周五）',
+        addTimePeriod: '添加时间段',
+        startTime: '开始时间',
+        endTime: '结束时间',
+        multiplier: '倍率',
+        removeTimePeriod: '删除时间段',
         minTokens: '最小',
         maxTokens: '最大',
         inclusive: '（含）',
