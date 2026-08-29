@@ -94,7 +94,7 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 30 | `994fbfedd` | 08-19 | T2 | fix(frontend): prevent CN quota labels overlapping bars | ? | TODO |
 | 31 | `63839f193` | 08-19 | T2 | fix(frontend): align admin role selector styling | ? | TODO |
 | 32 | `1b30a2d74` | 08-19 | T2 | feat(accounts): support header overrides for CN provider | ? | TODO |
-| 33 | `26be82cc8` | 08-19 | T1 | 前端：配置渠道倍率并精简长上下文开关 | ? | TODO |
+| 33 | `26be82cc8` | 08-19 | T1 | 前端：配置渠道倍率并精简长上下文开关 | per-tier multipliers folded into a responsive grid; deduplicated against our earlier hand-added block (+3 tests proving the controls survive) | **PORTED** |
 | 34 | `d4d2c746c` | 08-19 | T2 | 前端：修正账号长上下文开关门控 | ? | TODO |
 | 35 | `1f2a87adb` | 08-20 | T1 | fix(admin): 补全平台筛选选项 | LOGIC | PORTED |
 | 36 | `85051616f` | 08-20 | T2 | feat(accounts): add adaptive API protocol routing | ? | TODO |
