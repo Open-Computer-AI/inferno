@@ -2916,7 +2916,7 @@
 
       <!-- OpenAI OAuth Codex 官方客户端限制开关 -->
       <div
-        v-if="form.platform === 'openai' && (accountCategory === 'oauth-based' || accountCategory === 'apikey')"
+        v-if="form.platform === 'openai' && !hideAccountLongContextBilling && (accountCategory === 'oauth-based' || accountCategory === 'apikey')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between gap-4">
@@ -3563,6 +3563,7 @@
 import { ref, reactive, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
+import { allSelectedGroupsEnableLongContextPricing } from '@/components/account/longContextBilling'
 import {
   claudeModels,
   getPresetMappingsByPlatform,
@@ -3685,6 +3686,14 @@ const emit = defineEmits<{
 }>()
 
 const appStore = useAppStore()
+
+
+// Hide the per-account long-context toggle when every selected group already
+// enables long-context tier pricing -- the account switch would be redundant
+// and reads as if it could override the group, which it cannot.
+const hideAccountLongContextBilling = computed(() => {
+  return allSelectedGroupsEnableLongContextPricing(form.group_ids, props.groups)
+})
 
 // OAuth composables
 const oauth = useAccountOAuth() // For Anthropic OAuth

@@ -134,6 +134,21 @@
             </div>
           </div>
 
+          <!-- Service-tier multipliers, channel pricing only. Applied on top of
+               the base price when a request selects the fast or flex tier. -->
+          <div v-if="enableTierMultipliers" class="mt-3 grid max-w-md grid-cols-2 gap-2">
+            <div>
+              <label class="text-xs text-[var(--muted-foreground)]">{{ t('admin.channels.form.fastMultiplier') }}</label>
+              <input :value="entry.fast_multiplier" @input="emitField('fast_multiplier', ($event.target as HTMLInputElement).value)"
+                type="number" step="any" min="0.000001" class="field-control mt-0.5 text-sm" :placeholder="t('admin.channels.form.multiplierPlaceholder')" />
+            </div>
+            <div>
+              <label class="text-xs text-[var(--muted-foreground)]">{{ t('admin.channels.form.flexMultiplier') }}</label>
+              <input :value="entry.flex_multiplier" @input="emitField('flex_multiplier', ($event.target as HTMLInputElement).value)"
+                type="number" step="any" min="0.000001" class="field-control mt-0.5 text-sm" :placeholder="t('admin.channels.form.multiplierPlaceholder')" />
+            </div>
+          </div>
+
           <!-- Token intervals. Hidden for GROUP price cards: there the
                long-context checkbox governs tiering via official presets, so a
                hand-typed interval set would contradict it. Not disabled -- the
@@ -155,6 +170,7 @@
                 :key="idx"
                 :interval="iv"
                 :mode="entry.billing_mode"
+                :enable-multipliers="enableTierMultipliers"
                 @update="updateInterval(idx, $event)"
                 @remove="removeInterval(idx)"
               />
@@ -254,8 +270,9 @@ const props = withDefaults(
     entry: PricingFormEntry
     platform?: string
     hideTokenIntervals?: boolean
+    enableTierMultipliers?: boolean
   }>(),
-  { hideTokenIntervals: false }
+  { hideTokenIntervals: false, enableTierMultipliers: false }
 )
 
 const emit = defineEmits<{
