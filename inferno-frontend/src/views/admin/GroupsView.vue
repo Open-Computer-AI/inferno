@@ -4914,6 +4914,14 @@ const createForm = reactive({
   daily_limit_usd: null as number | null,
   weekly_limit_usd: null as number | null,
   monthly_limit_usd: null as number | null,
+  // Sent explicitly on purpose. The CREATE handler declares this as a plain
+  // bool (handler/admin/group_handler.go:108), unlike the update path which
+  // uses *bool. An absent JSON key therefore decodes to false and is written
+  // unconditionally by repository/group_repo.go:96, overriding ent's
+  // Default(true). Omitting it creates every group with long-context tier
+  // pricing OFF, silently undercharging >=200k-context requests. Upstream
+  // b830bc14d exists to keep this default true; do not flip it.
+  long_context_pricing_enabled: true,
   // 图片生成计费配置
   allow_image_generation: false,
   allow_batch_image_generation: false,
