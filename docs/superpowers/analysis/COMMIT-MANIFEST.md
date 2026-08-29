@@ -128,8 +128,8 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 64 | `6f972145b` | 08-24 | T1 | feat: 支持 OpenAI 重置卡按用量阈值自动使用 | types + EditAccountModal (verbatim, not June) + OpenAIQuotaResetCell chip (rebuilt in June) + en/zh keys, en dash removed | **PORTED** |
 | 65 | `eb594eefc` | 08-24 | T2 | fix(payment): refresh balance after fulfillment | ? | TODO |
 | 66 | `3f1581b2d` | 08-25 | T1 | 修复上游倍率探测导致账号列表整页刷新的问题 | backend endpoint was already merged; ported the frontend half — types, `getUpstreamBillingRatesWithEtag`, AccountsView in-place snapshot patching. Script-only, so no June question. +2 tests upstream lacks | **PORTED** |
-| 67 | `11ada80d5` | 08-25 | T1 | feat(usage): 使用记录展示映射前的推理强度 | ? | TODO |
-| 68 | `5705f4a4a` | 08-25 | T1 | fix(usage): hide mapped reasoning effort from users | ? | TODO |
+| 67 | `11ada80d5` | 08-25 | T1 | feat(usage): 使用记录展示映射前的推理强度 | pre-mapping reasoning effort in usage records (verbatim; formatReasoningEffort was already partly present) | **PORTED** |
+| 68 | `5705f4a4a` | 08-25 | T1 | fix(usage): hide mapped reasoning effort from users | privacy split — admin sees both values, user only their own; backend half already enforced | **PORTED** |
 | 69 | `a8cfe746b` | 08-25 | T2 | test(usage): cover user and admin reasoning effort page  | ? | TODO |
 | 70 | `d522aed65` | 08-26 | T2 | fix: preserve promo codes for OAuth signup | ? | TODO |
 | 71 | `195b21970` | 08-26 | T1 | fix(codex): isolate API-key catalog cache and DeepSeek C | ? | TODO |
