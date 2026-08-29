@@ -125,7 +125,7 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 61 | `b07d85c49` | 08-24 | T1 | 模型广场：分时计价同步渠道仅工作日规则 | ? | TODO |
 | 62 | `f19095f96` | 08-24 | T2 | 模型广场：分时时段行明确不含高峰倍率口径并披露叠加 | ? | TODO |
 | 63 | `cfecc8d11` | 08-24 | T2 | feat: 运维监控错误详情支持返回列表并保留筛选状态 | ? | TODO |
-| 64 | `6f972145b` | 08-24 | T1 | feat: 支持 OpenAI 重置卡按用量阈值自动使用 | ? | TODO |
+| 64 | `6f972145b` | 08-24 | T1 | feat: 支持 OpenAI 重置卡按用量阈值自动使用 | types + EditAccountModal (verbatim, not June) + OpenAIQuotaResetCell chip (rebuilt in June) + en/zh keys, en dash removed | **PORTED** |
 | 65 | `eb594eefc` | 08-24 | T2 | fix(payment): refresh balance after fulfillment | ? | TODO |
 | 66 | `3f1581b2d` | 08-25 | T1 | 修复上游倍率探测导致账号列表整页刷新的问题 | ? | TODO |
 | 67 | `11ada80d5` | 08-25 | T1 | feat(usage): 使用记录展示映射前的推理强度 | ? | TODO |

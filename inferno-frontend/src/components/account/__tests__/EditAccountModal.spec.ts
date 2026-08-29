@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 
 const { updateAccountMock, checkMixedChannelRiskMock, authIsSimpleMode } = vi.hoisted(() => ({
   updateAccountMock: vi.fn(),
@@ -1177,5 +1177,90 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty(
       'antigravity_project_id'
     )
+  })
+
+  // Port of upstream 6f972145b -- auto-use reset credits at a usage threshold.
+  describe('auto reset credit', () => {
+    function buildAutoResetAccount(extra: Record<string, unknown> = {}) {
+      return {
+        ...buildAccount(),
+        type: 'oauth',
+        extra: {
+          auto_reset_credit_enabled: true,
+          auto_reset_credit_5h_threshold: 0.85,
+          auto_reset_credit_7d_threshold: 0.9,
+          ...extra
+        }
+      } as any
+    }
+
+    async function submit(wrapper: ReturnType<typeof mountModal>) {
+      await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+      await flushPromises()
+    }
+
+    it('loads stored fractions as percentages', () => {
+      const wrapper = mountModal(buildAutoResetAccount())
+      expect(
+        (wrapper.get('[data-testid="auto-reset-credit-5h-threshold"]').element as HTMLInputElement).value
+      ).toBe('85')
+      expect(
+        (wrapper.get('[data-testid="auto-reset-credit-7d-threshold"]').element as HTMLInputElement).value
+      ).toBe('90')
+    })
+
+    it('defaults both thresholds to 100 when the account has none', () => {
+      const wrapper = mountModal({ ...buildAccount(), type: 'oauth', extra: {} } as any)
+      expect(
+        (wrapper.get('[data-testid="auto-reset-credit-5h-threshold"]').element as HTMLInputElement).value
+      ).toBe('100')
+    })
+
+    it('persists percentages back as fractions', async () => {
+      const account = buildAutoResetAccount()
+      updateAccountMock.mockReset()
+      checkMixedChannelRiskMock.mockReset()
+      checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+      updateAccountMock.mockResolvedValue(account)
+
+      const wrapper = mountModal(account)
+      await submit(wrapper)
+
+      const extra = updateAccountMock.mock.calls[0]?.[1]?.extra as Record<string, unknown>
+      expect(extra.auto_reset_credit_enabled).toBe(true)
+      expect(extra.auto_reset_credit_5h_threshold).toBeCloseTo(0.85, 10)
+      expect(extra.auto_reset_credit_7d_threshold).toBeCloseTo(0.9, 10)
+    })
+
+    // Load-bearing: the scheduler owns this key. Replaying a stale value from an
+    // admin edit can make the backend spend a reset credit that is not due.
+    it('never writes the runtime state back, even when the account carries one', async () => {
+      const account = buildAutoResetAccount({
+        codex_auto_reset_credit_state: { status: 'available', trigger_window: '5h' }
+      })
+      updateAccountMock.mockReset()
+      checkMixedChannelRiskMock.mockReset()
+      checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+      updateAccountMock.mockResolvedValue(account)
+
+      const wrapper = mountModal(account)
+      await submit(wrapper)
+
+      const extra = updateAccountMock.mock.calls[0]?.[1]?.extra as Record<string, unknown>
+      expect('codex_auto_reset_credit_state' in extra).toBe(false)
+    })
+
+    it('refuses to submit a threshold outside 0.1 to 100', async () => {
+      const account = buildAutoResetAccount()
+      updateAccountMock.mockReset()
+      checkMixedChannelRiskMock.mockReset()
+      checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+
+      const wrapper = mountModal(account)
+      await wrapper.get('[data-testid="auto-reset-credit-5h-threshold"]').setValue('120')
+      await submit(wrapper)
+
+      expect(updateAccountMock).not.toHaveBeenCalled()
+    })
   })
 })
