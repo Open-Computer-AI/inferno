@@ -134,8 +134,12 @@
             </div>
           </div>
 
-          <!-- Token intervals -->
-          <div class="mt-3">
+          <!-- Token intervals. Hidden for GROUP price cards: there the
+               long-context checkbox governs tiering via official presets, so a
+               hand-typed interval set would contradict it. Not disabled -- the
+               control simply is not rendered, and the section description
+               explains that presets decide. -->
+          <div v-if="!hideTokenIntervals" class="mt-3">
             <div class="flex items-center justify-between">
               <label class="text-xs font-[var(--fw-medium)] text-[var(--muted-foreground)] text-[var(--muted-foreground)]">
                 {{ t('admin.channels.form.intervals') }}
@@ -245,10 +249,14 @@ import channelsAPI from '@/api/admin/channels'
 
 const { t } = useI18n()
 
-const props = defineProps<{
-  entry: PricingFormEntry
-  platform?: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    entry: PricingFormEntry
+    platform?: string
+    hideTokenIntervals?: boolean
+  }>(),
+  { hideTokenIntervals: false }
+)
 
 const emit = defineEmits<{
   update: [entry: PricingFormEntry]
