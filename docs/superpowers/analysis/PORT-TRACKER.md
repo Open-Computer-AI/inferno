@@ -215,3 +215,68 @@ find frontend/src -name '*.vue' ! -path '*__tests__*' | while read f; do
   r="${f#frontend/}"; [ -f "inferno-frontend/$r" ] && cmp -s "$f" "inferno-frontend/$r" && echo "$r"
 done
 ```
+
+---
+
+# Gap D — born stale (measured 2026-08-29)
+
+**The vendor point is not a clean baseline.** At commit `47b1130cb`, `frontend/`
+and `inferno-frontend/` were NOT identical: **68 files already differed**. We
+copied the mirror from an earlier upstream state than the mirror itself held.
+
+```sh
+VB=$(git log --format=%H -1 --grep='vendor upstream frontend as the redesign target')
+git diff --name-only "${VB}:frontend/src" "${VB}:inferno-frontend/src"
+```
+
+(Quote `${VB}` with braces. Bare `$VB:frontend` is eaten by zsh's `:f` history
+modifier and the command fails silently, reporting zero.)
+
+## Why every prior count missed it
+
+**51 of the 68 are invisible to the stale detector.** That detector asks: *differs
+from the mirror AND not in our changed set?* These files ARE in our changed set —
+we converted them to June — so they were classified as "ours, deliberately
+changed" and assumed current.
+
+**A converted file can also be missing upstream work from before its conversion.**
+Converting it made it look like ours. Nobody asked whether it was current at the
+moment we converted it. Conversion masks staleness permanently, because from then
+on the file differs from the mirror for a legitimate reason.
+
+## Confirmed on a real file, not inferred
+
+`components/account/AccountUsageCell.vue` was born missing Grok plan-detection
+(`grokPlanLabelIsFree`/`IsPaid`, the `showPrepaid` guard). It never arrived:
+`showPrepaid` appears 5 times in the mirror and **0** times in ours. That is the
+same Grok `$0` chip defect the component audit found — its real origin is the
+vendoring moment, not a later upstream change.
+
+## What is in the 68
+
+Major converted files, which is the worrying part: `AppSidebar.vue`,
+`ChannelsView.vue`, `GroupsView.vue`, `SettingsView.vue`, `AccountsView.vue`,
+`EditAccountModal.vue`, `CreateAccountModal.vue`, `BulkEditAccountModal.vue`,
+`AccountUsageCell.vue`, `UsageTable.vue`, `PricingEntryCard.vue`, 12 locale
+files, `types/index.ts`, `router/index.ts`, `main.ts`, and most of
+`components/common/` (Input, Select, Toggle, TextArea, BaseDialog,
+ConfirmDialog, GroupSelector, ProxySelector, SearchInput, DateRangePicker).
+
+3 no longer exist on either side. 9 have since caught up.
+
+## How to work it
+
+`cmp` is useless here — a converted file always differs, so "differs today"
+proves nothing. For each of the 68, diff **our current version** against the
+**mirror's version at the vendor commit** to isolate what we were born missing,
+then check whether that specific content ever arrived:
+
+```sh
+git diff "${VB}:inferno-frontend/src/<path>" "${VB}:frontend/src/<path>"
+```
+
+Everything that diff adds is content we never had. Grep our current file for it.
+
+Treat D as part of Phase 1: it is sync work, not conversion work, and it is the
+category most likely to be carrying live defects, because these are the files we
+use most.
