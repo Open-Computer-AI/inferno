@@ -26,6 +26,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { OpsSystemMetricsSnapshot } from '@/api/admin/ops'
+import { formatMemorySizeMB } from '../utils/opsFormatters'
 
 const props = defineProps<{
   metrics: OpsSystemMetricsSnapshot | null
@@ -91,11 +92,12 @@ const meters = computed<Meter[]>(() => {
       icon: 'hard-drive',
       label: t('admin.ops.resources.memory'),
       pct: Math.min(100, pct),
-      /* Megabytes, not just the percent: "54%" of an unknown total is not
-         actionable, and the pair is what the old card showed. */
+      /* The used/total pair, not just the percent: "54%" of an unknown total
+         is not actionable. formatMemorySizeMB carries its own unit, so a 64GB
+         host reads "32 GB / 64 GB" rather than "32768 / 65536 MB". */
       display:
         memUsed != null && memTotal
-          ? `${Math.round(memUsed)} / ${Math.round(memTotal)} MB`
+          ? `${formatMemorySizeMB(memUsed)} / ${formatMemorySizeMB(memTotal)}`
           : `${pct.toFixed(1)}%`,
       status: statusFor(pct)
     })

@@ -33,6 +33,30 @@
         <input :value="interval.cache_read_price" @input="emitField('cache_read_price', ($event.target as HTMLInputElement).value)"
           type="number" step="any" min="0" class="field-control mt-0.5 text-xs" />
       </div>
+      <!-- Per-tier billing multipliers. Channel pricing only: a group price
+           card defers to official presets, so it passes enableMultipliers=false. -->
+      <template v-if="enableMultipliers">
+        <div class="flex-1">
+          <label class="text-xs text-[var(--muted-foreground)]">{{ t('admin.channels.form.inputMultiplier') }}</label>
+          <input :value="interval.input_multiplier" @input="emitField('input_multiplier', ($event.target as HTMLInputElement).value)"
+            type="number" step="any" min="0.000001" class="field-control mt-0.5 text-xs" />
+        </div>
+        <div class="flex-1">
+          <label class="text-xs text-[var(--muted-foreground)]">{{ t('admin.channels.form.outputMultiplier') }}</label>
+          <input :value="interval.output_multiplier" @input="emitField('output_multiplier', ($event.target as HTMLInputElement).value)"
+            type="number" step="any" min="0.000001" class="field-control mt-0.5 text-xs" />
+        </div>
+        <div class="flex-1">
+          <label class="text-xs text-[var(--muted-foreground)]">{{ t('admin.channels.form.cacheWriteMultiplier') }}</label>
+          <input :value="interval.cache_write_multiplier" @input="emitField('cache_write_multiplier', ($event.target as HTMLInputElement).value)"
+            type="number" step="any" min="0.000001" class="field-control mt-0.5 text-xs" />
+        </div>
+        <div class="flex-1">
+          <label class="text-xs text-[var(--muted-foreground)]">{{ t('admin.channels.form.cacheReadMultiplier') }}</label>
+          <input :value="interval.cache_read_multiplier" @input="emitField('cache_read_multiplier', ($event.target as HTMLInputElement).value)"
+            type="number" step="any" min="0.000001" class="field-control mt-0.5 text-xs" />
+        </div>
+      </template>
     </template>
 
     <!-- Per-request / Image mode: tier label + context range + price -->
@@ -79,6 +103,7 @@ const { t } = useI18n()
 const props = defineProps<{
   interval: IntervalFormEntry
   mode: BillingMode
+  enableMultipliers?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -93,7 +118,11 @@ const isEmpty = computed(() => {
     (iv.output_price == null || iv.output_price === '') &&
     (iv.cache_write_price == null || iv.cache_write_price === '') &&
     (iv.cache_read_price == null || iv.cache_read_price === '') &&
-    (iv.per_request_price == null || iv.per_request_price === '')
+    (iv.per_request_price == null || iv.per_request_price === '') &&
+    (iv.input_multiplier == null || iv.input_multiplier === '') &&
+    (iv.output_multiplier == null || iv.output_multiplier === '') &&
+    (iv.cache_write_multiplier == null || iv.cache_write_multiplier === '') &&
+    (iv.cache_read_multiplier == null || iv.cache_read_multiplier === '')
 })
 
 function emitField(field: keyof IntervalFormEntry, value: string | number | null) {

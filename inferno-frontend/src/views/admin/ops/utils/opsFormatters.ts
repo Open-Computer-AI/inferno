@@ -62,3 +62,16 @@ export function formatByteRate(bytes: number, windowMinutes: number): string {
   const seconds = Math.max(1, (windowMinutes || 1) * 60)
   return `${formatBytes(bytes / seconds, 1)}/s`
 }
+
+/**
+ * 后端的 *_mb 字段按 1024^2 字节解释后交给 formatBytes，
+ * 于是 >=1GiB 显示为 GB 而不是五位数的 MB。
+ *
+ * value === 0 需要单独处理：formatBytes(0) 返回 "0 Bytes"，单位是错的。
+ */
+export function formatMemorySizeMB(value: number | null | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return '-'
+  if (value === 0) return '0 MB'
+
+  return formatBytes(value * 1024 * 1024, 1)
+}

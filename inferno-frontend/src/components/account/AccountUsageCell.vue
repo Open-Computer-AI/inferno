@@ -1045,19 +1045,25 @@ const grokPlanLabelIsPaid = (value: string) => {
 const grokIsFree = computed(() => {
   if (props.account.platform !== 'grok' || props.account.type !== 'oauth') return false
   const billing = grokBilling.value
+  const plan = (billing?.plan || '').trim().toLowerCase()
+  const tier = (usageInfo.value?.subscription_tier || '').trim().toLowerCase()
+  const entitlement = (usageInfo.value?.grok_entitlement_status || '').toLowerCase()
+  // The live credential tier decides FIRST. When a subscription lapses the
+  // credential refreshes to free immediately, but the leftover
+  // monthly_limit_cents / usage_percent from the last billing probe linger in
+  // extra -- so checking billing metrics first kept paid 7d/30d money bars on
+  // an account that is already free. supergrok_lite still resolves paid, so
+  // Lite keeps its 7d bar.
+  if (grokPlanLabelIsFree(tier)) return true
+  if (grokPlanLabelIsPaid(tier)) return false
   if (
     billing?.usage_percent != null ||
     billing?.used_percent != null ||
     (billing?.monthly_limit_cents != null && billing.monthly_limit_cents > 0)
   ) return false
-
-  const plan = (billing?.plan || '').trim().toLowerCase()
-  const tier = (usageInfo.value?.subscription_tier || '').trim().toLowerCase()
-  const entitlement = (usageInfo.value?.grok_entitlement_status || '').toLowerCase()
-  if (grokPlanLabelIsPaid(plan) || grokPlanLabelIsPaid(tier)) return false
+  if (grokPlanLabelIsPaid(plan)) return false
   if (
     grokPlanLabelIsFree(plan) ||
-    grokPlanLabelIsFree(tier) ||
     grokPlanLabelIsFree(entitlement)
   ) return true
   return billing != null

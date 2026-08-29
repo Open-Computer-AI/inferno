@@ -313,6 +313,13 @@ const syncUpstreamModels = async () => {
     }
 
     emit('update:modelValue', newModels)
+    // Model IDs synced but capability metadata did not: the backend kept the
+    // old snapshot. Warn instead of reporting success, or the operator believes
+    // reasoning levels / image support / context limits were refreshed.
+    if (result.warnings?.some(warning => warning.code === 'upstream_model_metadata_incomplete')) {
+      appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataIncomplete'))
+      return
+    }
     if (addedCount > 0) {
       appStore.showSuccess(t('admin.accounts.syncUpstreamModelsSuccess', { count: addedCount, total: upstreamModels.length }))
     } else {

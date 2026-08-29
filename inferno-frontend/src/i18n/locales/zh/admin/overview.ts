@@ -662,6 +662,9 @@ export default {
       groupConfigHint: '为用户 {email} 配置专属分组倍率（覆盖分组默认倍率）',
       exclusiveGroups: '专属分组',
       publicGroups: '公开分组（默认可用）',
+      restrictPublicGroups: '限制可访问的公开分组',
+      restrictPublicGroupsHint: '开启后，该用户仅能使用下方勾选的公开分组；关闭则可使用全部公开分组。',
+      publicGroupsRestricted: '公开分组（已限制）',
       defaultRate: '默认倍率',
       customRate: '专属倍率',
       useDefaultRate: '使用默认',
@@ -860,6 +863,7 @@ export default {
         userStatus: '状态'
       },
       usageToday: '今日',
+      usageYesterday: '昨日',
       usageTotal: '累计',
       accountsAvailable: '可用:',
       accountsRateLimited: '限流:',
@@ -1047,6 +1051,13 @@ export default {
         description: '分组级 web_search（每千次）与 Voice realtime / TTS / STT 单价（USD）。留空表示未配置。',
         searchPricePer1k: '搜索每千次价格（USD）',
         pricePlaceholder: '可选'
+      },
+      modelPricing: {
+        title: '分组逐模型定价',
+        description: '匹配模型后覆盖渠道和内置价格。长上下文阶梯沿用官方/预设价卡，无需再手填区间。音频可用按次层级配置 realtime、tts、stt。',
+        longContext: '启用长上下文阶梯定价',
+        longContextHint: '勾选后按渠道区间或官方预设阶梯计费；关闭后默认按第一档，账号显式开启时除外。',
+        add: '添加模型价格'
       },
       voicePricing: {
         title: 'Grok Voice 定价',
