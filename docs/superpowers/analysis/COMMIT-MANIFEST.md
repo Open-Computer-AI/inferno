@@ -127,7 +127,7 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 63 | `cfecc8d11` | 08-24 | T2 | feat: 运维监控错误详情支持返回列表并保留筛选状态 | ? | TODO |
 | 64 | `6f972145b` | 08-24 | T1 | feat: 支持 OpenAI 重置卡按用量阈值自动使用 | types + EditAccountModal (verbatim, not June) + OpenAIQuotaResetCell chip (rebuilt in June) + en/zh keys, en dash removed | **PORTED** |
 | 65 | `eb594eefc` | 08-24 | T2 | fix(payment): refresh balance after fulfillment | ? | TODO |
-| 66 | `3f1581b2d` | 08-25 | T1 | 修复上游倍率探测导致账号列表整页刷新的问题 | ? | TODO |
+| 66 | `3f1581b2d` | 08-25 | T1 | 修复上游倍率探测导致账号列表整页刷新的问题 | backend endpoint was already merged; ported the frontend half — types, `getUpstreamBillingRatesWithEtag`, AccountsView in-place snapshot patching. Script-only, so no June question. +2 tests upstream lacks | **PORTED** |
 | 67 | `11ada80d5` | 08-25 | T1 | feat(usage): 使用记录展示映射前的推理强度 | ? | TODO |
 | 68 | `5705f4a4a` | 08-25 | T1 | fix(usage): hide mapped reasoning effort from users | ? | TODO |
 | 69 | `a8cfe746b` | 08-25 | T2 | test(usage): cover user and admin reasoning effort page  | ? | TODO |
