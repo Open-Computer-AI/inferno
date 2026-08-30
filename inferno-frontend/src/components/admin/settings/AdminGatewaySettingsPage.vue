@@ -769,11 +769,9 @@
                     </div>
                   </div>
 
-                  <!-- Fallback Action (only when model_whitelist is non-empty) -->
+                  <!-- Other Models Action (only when target models are non-empty) -->
                   <div
-                    v-if="
-                      rule.model_whitelist && rule.model_whitelist.length > 0
-                    "
+                    v-if="hasOpenAIFastPolicyTargetModels(rule)"
                     class="mt-3"
                   >
                     <label
@@ -905,6 +903,38 @@
                   </AppButton>
                 </div>
 
+                <!-- A one-line reading of the rule, so an operator does not have
+                     to infer it from three separate controls. -->
+                <div
+                  class="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--muted-foreground)]"
+                  :data-testid="`openai-fast-policy-summary-${ruleIndex}`"
+                >
+                  <span class="font-[var(--fw-medium)] text-[var(--body-copy)]">
+                    {{
+                      t(
+                        hasOpenAIFastPolicyTargetModels(rule)
+                          ? 'admin.settings.openaiFastPolicy.summaryTargetModels'
+                          : 'admin.settings.openaiFastPolicy.summaryAllModels'
+                      )
+                    }}
+                  </span>
+                  <span aria-hidden="true">-&gt;</span>
+                  <span
+                    class="inline-flex items-center rounded-[var(--r-sm)] bg-[var(--brand-tint)] px-2 py-0.5 font-[var(--fw-medium)] text-[var(--brand)]"
+                  >
+                    {{ openaiFastPolicyActionSummary(rule.action) }}
+                  </span>
+                  <template v-if="hasOpenAIFastPolicyTargetModels(rule)">
+                    <span aria-hidden="true">·</span>
+                    <span>{{ t('admin.settings.openaiFastPolicy.summaryOtherModels') }}</span>
+                    <span
+                      class="inline-flex items-center rounded-[var(--r-sm)] bg-[var(--muted)] px-2 py-0.5 font-[var(--fw-medium)] text-[var(--muted-foreground)]"
+                    >
+                      {{ openaiFastPolicyActionSummary(rule.fallback_action || 'pass') }}
+                    </span>
+                  </template>
+                </div>
+
                 <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
                   <!-- Service Tier -->
                   <div>
@@ -1004,14 +1034,23 @@
                   </p>
                 </div>
 
-                <!-- Model Whitelist -->
-                <div class="mt-3">
+                <!-- Target Models -->
+                <div
+                  class="mt-3"
+                  role="group"
+                  :aria-labelledby="`openai-fast-policy-models-label-${ruleIndex}`"
+                  :aria-describedby="`openai-fast-policy-models-hint-${ruleIndex}`"
+                >
                   <label
+                    :id="`openai-fast-policy-models-label-${ruleIndex}`"
                     class="mb-1 block text-xs font-[var(--fw-medium)] text-[var(--body-copy)] text-[var(--muted-foreground)]"
                   >
                     {{ t("admin.settings.openaiFastPolicy.modelWhitelist") }}
                   </label>
-                  <p class="mb-2 text-xs text-[var(--muted-foreground)] ">
+                  <p
+                    :id="`openai-fast-policy-models-hint-${ruleIndex}`"
+                    class="mb-2 text-xs text-[var(--muted-foreground)]"
+                  >
                     {{
                       t("admin.settings.openaiFastPolicy.modelWhitelistHint")
                     }}

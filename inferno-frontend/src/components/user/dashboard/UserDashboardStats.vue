@@ -8,8 +8,8 @@
     </div>
 
     <div class="dashboard-tiles">
-      <StatTile :label="t('dashboard.todayTokens')" :value="formatTokens(stats.today_tokens)" :context="`${t('dashboard.input')}: ${formatTokens(stats.today_input_tokens)} · ${t('dashboard.output')}: ${formatTokens(stats.today_output_tokens)}`" to="/usage" />
-      <StatTile :label="t('dashboard.totalTokens')" :value="formatTokens(stats.total_tokens)" :context="`${t('dashboard.input')}: ${formatTokens(stats.total_input_tokens)} · ${t('dashboard.output')}: ${formatTokens(stats.total_output_tokens)}`" to="/usage" />
+      <StatTile :label="t('dashboard.todayTokens')" :value="formatTokens(stats.today_tokens)" :context="`${t('dashboard.input')}: ${formatTokens(stats.today_input_tokens)} · ${t('dashboard.output')}: ${formatTokens(stats.today_output_tokens)} · ${t('dashboard.cache')}: ${formatTokens((stats.today_cache_creation_tokens || 0) + (stats.today_cache_read_tokens || 0))}`" to="/usage" />
+      <StatTile :label="t('dashboard.totalTokens')" :value="formatTokens(stats.total_tokens)" :context="`${t('dashboard.input')}: ${formatTokens(stats.total_input_tokens)} · ${t('dashboard.output')}: ${formatTokens(stats.total_output_tokens)} · ${t('dashboard.cache')}: ${formatTokens((stats.total_cache_creation_tokens || 0) + (stats.total_cache_read_tokens || 0))}`" to="/usage" />
       <StatTile :label="t('dashboard.performance')" :value="`${formatTokens(stats.rpm)} RPM`" :context="`${formatTokens(stats.tpm)} TPM`" />
       <StatTile :label="t('dashboard.avgResponse')" :value="formatDuration(stats.average_duration_ms)" :context="t('dashboard.averageTime')" />
     </div>

@@ -27,7 +27,7 @@ Kind: `LOGIC` (port as-is) · `UI` (rebuild in June) · `BOTH`
 | 2 | `4999231d6` | 2026-08-08 | 修复邮箱域名注册额度策略 | BOTH | PRESENT |
 | 3 | `563a72ca7` | 2026-08-09 | feat: add default-off switch for email domain regist | BOTH | PRESENT |
 | 4 | `bbc8b6e90` | 2026-08-09 | 完善大文件备份分卷上传与恢复 | BOTH | PORTED |
-| 5 | `f2da30bcd` | 2026-08-09 | Merge pull request #5423 from lyen1688/feat/email-do | - | merge, no content |
+| 5 | `f2da30bcd` | 2026-08-09 | Merge pull request #5423 from lyen1688/feat/email-do | empty merge commit, no content to port | **SKIPPED** |
 | 6 | `33351c7bc` | 2026-08-10 | fix(billing): gofmt channel.go and drop the redundan | BOTH | PRESENT |
 | 7 | `5350b3d98` | 2026-08-10 | fix(usage): restore request ID column visibility | BOTH | PORTED |
 | 8 | `9096492b5` | 2026-08-10 | feat(billing): support safe upstream response model  | BOTH | PORTED |
@@ -62,84 +62,84 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 
 | # | sha | date | tier | what they did | kind | status |
 |---|-----|------|------|---------------|------|--------|
-| 1 | `5e72deb7d` | 05-01 | T2 | feat: ops 错误详情弹窗支持自定义时间区间 | ? | TODO |
-| 2 | `3bff4b64b` | 07-10 | T2 | fix(ui): localize user role label in app header | ? | TODO |
-| 3 | `7d796f111` | 07-11 | T2 | fix(ui): adapt native form controls to dark mode via col | ? | TODO |
-| 4 | `a6d868f27` | 07-11 | T2 | fix(dashboard): include cache tokens in token card break | ? | TODO |
-| 5 | `35e8ba2a3` | 07-11 | T2 | fix(announcements): use proper empty-state copy instead  | ? | TODO |
-| 6 | `0d5e3ca9b` | 07-11 | T2 | fix(ops): show neutral SLA card when window has no reque | ? | TODO |
-| 7 | `901a0439f` | 08-15 | T1 | feat: 国产供应商一等支持（Kimi/Zhipu/DeepSeek 多协议 + 配额/余额监控） | ? | TODO |
-| 8 | `e8ff2017c` | 08-16 | T2 | fix(admin): show category labels in ops error distributi | ? | TODO |
-| 9 | `cb7841d85` | 08-16 | T2 | fix(i18n): add missing expired key to account status blo | ? | TODO |
-| 10 | `22fc0cdbf` | 08-16 | T2 | fix(frontend): clarify OpenAI Fast/Flex policy rules | ? | TODO |
-| 11 | `1977810cf` | 08-17 | T2 | fix(frontend): isolate account helper data loading | ? | TODO |
-| 12 | `9aac3b73f` | 08-16 | T2 | add Ollama usage query action | ? | TODO |
-| 13 | `8d82bb069` | 08-17 | T1 | fix(openai): expose bulk account settings | ? | TODO |
-| 14 | `7cdca9e49` | 08-17 | T2 | feat(groups): 放行 kimi/zhipu/deepseek 平台分组创建入口 | ? | TODO |
-| 15 | `c38c5beef` | 08-17 | T2 | fix(i18n): CN 余额单元格误引 grokBalance 键致渲染原始 key | ? | TODO |
-| 16 | `9f24a5530` | 08-17 | T1 | 功能：支持渠道模型分时倍率定价 | ? | TODO |
-| 17 | `7e45634df` | 08-18 | T2 | chore: remove leftover Sora references after platform re | ? | TODO |
-| 18 | `a20e1c00c` | 08-18 | T1 | feat(monitor-ui): 配额模式表单、用量快照视图与 8 平台支持 | ? | TODO |
-| 19 | `302a10b88` | 08-18 | T2 | test(monitor-ui): 配额视图渲染与开关门控用例 | ? | TODO |
-| 20 | `269fbcac0` | 08-18 | T2 | feat: Grok 用量条补齐本站 24h/7d/30d 聚合 | ? | TODO |
-| 21 | `fd42d3722` | 08-18 | T2 | fix: hide Grok prepaid and used/limit when they are empt | ? | TODO |
-| 22 | `8f6f45983` | 08-18 | T2 | fix(channels): support kimi/zhipu/deepseek platforms in  | ? | TODO |
-| 23 | `03c3f3b6f` | 08-18 | T2 | feat(ui): Select 组件支持可选远程搜索（remote/loading props + searc | ? | TODO |
-| 24 | `5cbd0c96a` | 08-18 | T2 | fix(monitor-ui): 关联账号选择器改服务端搜索+回填，OpenAI 配额模式加消耗提示 | ? | TODO |
-| 25 | `c9effc456` | 08-18 | T1 | fix(frontend): monitor form check-mode restore, account  | ? | TODO |
-| 26 | `2c250bfd7` | 08-18 | T1 | fix(monitor-ui): localize the "quota" placeholder model  | ? | TODO |
-| 27 | `58e147fba` | 08-19 | T2 | feat(composite): support Codex endpoints | ? | TODO |
-| 28 | `b171bb0e4` | 08-19 | T2 | fix(composite): support CN providers | ? | TODO |
-| 29 | `f917d19d3` | 08-19 | T2 | test(frontend): align Grok API key placeholder assertion | ? | TODO |
-| 30 | `994fbfedd` | 08-19 | T2 | fix(frontend): prevent CN quota labels overlapping bars | ? | TODO |
-| 31 | `63839f193` | 08-19 | T2 | fix(frontend): align admin role selector styling | ? | TODO |
-| 32 | `1b30a2d74` | 08-19 | T2 | feat(accounts): support header overrides for CN provider | ? | TODO |
-| 33 | `26be82cc8` | 08-19 | T1 | 前端：配置渠道倍率并精简长上下文开关 | ? | TODO |
-| 34 | `d4d2c746c` | 08-19 | T2 | 前端：修正账号长上下文开关门控 | ? | TODO |
+| 1 | `5e72deb7d` | 05-01 | T2 | feat: ops 错误详情弹窗支持自定义时间区间 | ops error detail custom time range | **PORTED** |
+| 2 | `3bff4b64b` | 07-10 | T2 | fix(ui): localize user role label in app header | already satisfied — our June shell removed AppHeader and localises the role via shell.roleAdministrator/roleMember | **PRESENT** |
+| 3 | `7d796f111` | 07-11 | T2 | fix(ui): adapt native form controls to dark mode via col | already satisfied — our style.css declares color-scheme light/dark and the June DateRangePicker dropped the invert(0.7) filter | **PRESENT** |
+| 4 | `a6d868f27` | 07-11 | T2 | fix(dashboard): include cache tokens in token card break | cache tokens in both dashboard token tiles | **PORTED** |
+| 5 | `35e8ba2a3` | 07-11 | T2 | fix(announcements): use proper empty-state copy instead  | announcements empty-state copy | **PORTED** |
+| 6 | `0d5e3ca9b` | 07-11 | T2 | fix(ops): show neutral SLA card when window has no reque | a zero-request window no longer reports as a critical SLA failure; ported into our diagnostics rather than upstream's card | **PORTED** |
+| 7 | `901a0439f` | 08-15 | T1 | feat: 国产供应商一等支持（Kimi/Zhipu/DeepSeek 多协议 + 配额/余额监控） | CN providers base: 3 new cells verbatim; AccountUsageCell IS June so its CN block was rebuilt (uc-body/uc-muted); PlatformTypeBadge kept our tokens + upstream 3 new branches | **PORTED** |
+| 8 | `e8ff2017c` | 08-16 | T2 | fix(admin): show category labels in ops error distributi | category labels — our DitherDonut legend already renders them; ours kept | **PORTED** |
+| 9 | `cb7841d85` | 08-16 | T2 | fix(i18n): add missing expired key to account status blo | missing expired key in the account status block | **PORTED** |
+| 10 | `22fc0cdbf` | 08-16 | T2 | fix(frontend): clarify OpenAI Fast/Flex policy rules | Fast/Flex rule summary line; helpers added to SettingsView and provided to our extracted gateway page | **PORTED** |
+| 11 | `1977810cf` | 08-17 | T2 | fix(frontend): isolate account helper data loading | isolate account helper data loading | **PORTED** |
+| 12 | `9aac3b73f` | 08-16 | T2 | add Ollama usage query action | on-demand Ollama usage query, rebuilt in June (ocu__ BEM + tokens); our spec asserted zero buttons, now one | **PORTED** |
+| 13 | `8d82bb069` | 08-17 | T1 | fix(openai): expose bulk account settings | bulk OpenAI account settings (verbatim, 0 tokens/650 Tailwind); kept our dash-free copy, fixed its punctuation | **PORTED** |
+| 14 | `7cdca9e49` | 08-17 | T2 | feat(groups): 放行 kimi/zhipu/deepseek 平台分组创建入口 | kept our derived GROUP_PLATFORM_OPTIONS over upstream literal; GroupBadge stays platform-agnostic (June rule 5) | **PORTED** |
+| 15 | `c38c5beef` | 08-17 | T2 | fix(i18n): CN 余额单元格误引 grokBalance 键致渲染原始 key | grokBalance key misuse in the CN balance cell | **PORTED** |
+| 16 | `9f24a5530` | 08-17 | T1 | 功能：支持渠道模型分时倍率定价 | TimePricingSection.vue new (verbatim); types layer was already partly ported, kept ours as the superset | **PORTED** |
+| 17 | `7e45634df` | 08-18 | T2 | chore: remove leftover Sora references after platform re | leftover Sora references | **PORTED** |
+| 18 | `a20e1c00c` | 08-18 | T1 | feat(monitor-ui): 配额模式表单、用量快照视图与 8 平台支持 | chain base: quota check-mode, MonitorQuotaView (new, verbatim), 8 providers, showQuota setting | **PORTED** |
+| 19 | `302a10b88` | 08-18 | T2 | test(monitor-ui): 配额视图渲染与开关门控用例 | the chain's own tests, taken whole | **PORTED** |
+| 20 | `269fbcac0` | 08-18 | T2 | feat: Grok 用量条补齐本站 24h/7d/30d 聚合 | Grok 24h/7d/30d local aggregation; **also surfaced stats on Grok's primary bar, which never showed them** | **PORTED** |
+| 21 | `fd42d3722` | 08-18 | T2 | fix: hide Grok prepaid and used/limit when they are empt | hide zero prepaid and used/limit when monthly limit is 0 (was rendering "3.5/0") | **PORTED** |
+| 22 | `8f6f45983` | 08-18 | T2 | fix(channels): support kimi/zhipu/deepseek platforms in  | kimi/zhipu/deepseek in channel pricing | **PORTED** |
+| 23 | `03c3f3b6f` | 08-18 | T2 | feat(ui): Select 组件支持可选远程搜索（remote/loading props + searc | Select remote-search — script-only; spec selectors retargeted to our June BEM names | **PORTED** |
+| 24 | `5cbd0c96a` | 08-18 | T2 | fix(monitor-ui): 关联账号选择器改服务端搜索+回填，OpenAI 配额模式加消耗提示 | server-side account search + backfill; **the manifest under-scoped the chain — c9effc456's specs require this** | **PORTED** |
+| 25 | `c9effc456` | 08-18 | T1 | fix(frontend): monitor form check-mode restore, account  | check-mode restore, account_id=0 unbind, mode badge | **PORTED** |
+| 26 | `2c250bfd7` | 08-18 | T1 | fix(monitor-ui): localize the "quota" placeholder model  | formatMonitorModel across 4 views | **PORTED** |
+| 27 | `58e147fba` | 08-19 | T2 | feat(composite): support Codex endpoints | Codex Live for composite groups; hand-ported (3-way misplaced the hunk) | **PORTED** |
+| 28 | `b171bb0e4` | 08-19 | T2 | fix(composite): support CN providers | composite routes to CN providers; kept our derived CONCRETE_PLATFORM_OPTIONS, test rewritten to assert the catalog not the source text | **PORTED** |
+| 29 | `f917d19d3` | 08-19 | T2 | test(frontend): align Grok API key placeholder assertion | assertion follows 901a0439f refactoring the placeholder into a computed | **PORTED** |
+| 30 | `994fbfedd` | 08-19 | T2 | fix(frontend): prevent CN quota labels overlapping bars | CN quota label overlap | **PORTED** |
+| 31 | `63839f193` | 08-19 | T2 | fix(frontend): align admin role selector styling | admin role selector styling | **PORTED** |
+| 32 | `1b30a2d74` | 08-19 | T2 | feat(accounts): support header overrides for CN provider | header overrides for CN providers | **PORTED** |
+| 33 | `26be82cc8` | 08-19 | T1 | 前端：配置渠道倍率并精简长上下文开关 | **DOUBLE-PORTED** — landed 2026-08-29 in `7afe8e832`, which did not update this row, so it still read TODO and was ported again 2026-08-30 in `0827bb22d`. End state is correct (the duplicated multiplier controls were removed, +3 tests, browser-verified 10 inputs once each), but the second commit misattributes the duplication to a 3-way merge artifact | **PORTED** |
+| 34 | `d4d2c746c` | 08-19 | T2 | 前端：修正账号长上下文开关门控 | our tree already gates the long-context block, not the WS block; its spec assertions added | **PRESENT** |
 | 35 | `1f2a87adb` | 08-20 | T1 | fix(admin): 补全平台筛选选项 | LOGIC | PORTED |
-| 36 | `85051616f` | 08-20 | T2 | feat(accounts): add adaptive API protocol routing | ? | TODO |
-| 37 | `b3092145d` | 08-20 | T2 | fix(accounts): harden adaptive protocol compatibility | ? | TODO |
-| 38 | `e4f869e0c` | 08-19 | T2 | 完善运维错误详情兼容展示 | ? | TODO |
+| 36 | `85051616f` | 08-20 | T2 | feat(accounts): add adaptive API protocol routing | adaptive API protocol routing; unblocks c4e46c3be | **PORTED** |
+| 37 | `b3092145d` | 08-20 | T2 | fix(accounts): harden adaptive protocol compatibility | adaptive protocol compatibility hardening; spec gains interactive Group/ModelWhitelist stubs | **PORTED** |
+| 38 | `e4f869e0c` | 08-19 | T2 | 完善运维错误详情兼容展示 | root cause + de-duplicated diagnostic payloads; hand-ported (our modal has diverged 728 lines) | **PORTED** |
 | 39 | `39485f2e2` | 08-20 | T1 | 更新 Grok 默认模型与官方计费目录 | LOGIC | PORTED |
 | 40 | `6c3edc095` | 08-20 | T1 | feat(429): add configurable cooldown and retry strategie | - | SKIPPED — reverted by e62ec2c42, net no-op |
 | 41 | `e62ec2c42` | 08-20 | T1 | Revert "feat(429): add configurable cooldown and retry s | - | SKIPPED — the revert; verified total |
-| 42 | `2e279c81d` | 08-21 | T2 | fix(frontend): make CN provider quota/balance refresh af | ? | TODO |
-| 43 | `68653fb2c` | 08-21 | T2 | fix: allow messages dispatch for composite groups | ? | TODO |
+| 42 | `2e279c81d` | 08-21 | T2 | fix(frontend): make CN provider quota/balance refresh af | CN quota/balance refresh | **PORTED** |
+| 43 | `68653fb2c` | 08-21 | T2 | fix: allow messages dispatch for composite groups | messages dispatch for composite groups | **PORTED** |
 | 44 | `3445485eb` | 08-21 | T1 | fix(frontend): prevent token refresh lock loop | LOGIC | PORTED — fix was present, test added |
-| 45 | `d9d2854d2` | 08-21 | T2 | Make enabled model plaza discoverable from /home | ? | TODO |
-| 46 | `22e1b8144` | 08-22 | T1 | feat(gateway): expose routed Codex model catalogs | ? | TODO |
-| 47 | `e471be730` | 08-22 | T2 | feat(codex): complete routed model catalogs | ? | TODO |
-| 48 | `b16ed03ca` | 08-22 | T2 | fix(codex): align routed catalogs with actual routes | ? | TODO |
-| 49 | `ee62dfbaf` | 08-22 | T2 | fix(proxy): support bracketed IPv6 hosts in batch proxy  | ? | TODO |
-| 50 | `5dfad32b8` | 08-22 | T2 | fix(frontend): accept unlimited (0) user concurrency in  | ? | TODO |
-| 51 | `e39fce270` | 08-22 | T1 | fix(codex): sync routed capabilities from upstream | BOTH | PORTED |
-| 52 | `77e0409f7` | 08-23 | T1 | 新增渠道时间段定价工作日规则 | ? | TODO |
-| 53 | `616df479e` | 08-23 | T2 | fix(admin): show account priority by default | ? | TODO |
-| 54 | `4a1da2950` | 08-23 | T2 | fix(deps): bump dompurify to patch multiple sanitizer-by | ? | TODO |
-| 55 | `40ea3aeba` | 08-24 | T1 | feat: add OAuth outbound transport plugin system | ? | TODO |
-| 56 | `684d9efb1` | 08-24 | T2 | fix: harden plugin runtime and UI bridge | ? | TODO |
-| 57 | `391d69e08` | 08-24 | T2 | fix: preserve initial plugin bridge requests | ? | TODO |
-| 58 | `377d1230f` | 08-24 | T1 | 模型广场：按计费阶梯单价表展示长上下文档位 | ? | TODO |
-| 59 | `ecce0769c` | 08-24 | T2 | 模型广场：上下文档位统一标签形态并保证升序 | ? | TODO |
-| 60 | `83d4eb6a4` | 08-24 | T1 | 模型广场：增加渠道分时段计价展示 | ? | TODO |
-| 61 | `b07d85c49` | 08-24 | T1 | 模型广场：分时计价同步渠道仅工作日规则 | ? | TODO |
-| 62 | `f19095f96` | 08-24 | T2 | 模型广场：分时时段行明确不含高峰倍率口径并披露叠加 | ? | TODO |
-| 63 | `cfecc8d11` | 08-24 | T2 | feat: 运维监控错误详情支持返回列表并保留筛选状态 | ? | TODO |
-| 64 | `6f972145b` | 08-24 | T1 | feat: 支持 OpenAI 重置卡按用量阈值自动使用 | ? | TODO |
-| 65 | `eb594eefc` | 08-24 | T2 | fix(payment): refresh balance after fulfillment | ? | TODO |
-| 66 | `3f1581b2d` | 08-25 | T1 | 修复上游倍率探测导致账号列表整页刷新的问题 | ? | TODO |
-| 67 | `11ada80d5` | 08-25 | T1 | feat(usage): 使用记录展示映射前的推理强度 | ? | TODO |
-| 68 | `5705f4a4a` | 08-25 | T1 | fix(usage): hide mapped reasoning effort from users | ? | TODO |
-| 69 | `a8cfe746b` | 08-25 | T2 | test(usage): cover user and admin reasoning effort page  | ? | TODO |
-| 70 | `d522aed65` | 08-26 | T2 | fix: preserve promo codes for OAuth signup | ? | TODO |
-| 71 | `195b21970` | 08-26 | T1 | fix(codex): isolate API-key catalog cache and DeepSeek C | ? | TODO |
-| 72 | `2abce6503` | 08-26 | T1 | fix(codex): harden routed catalog capability sync | BOTH | PARTIAL — preview hunk ported, UseKeyModal blocked |
-| 73 | `5f09442fc` | 08-27 | T2 | fix(openai): refresh usage after quota reset | ? | TODO |
-| 74 | `b56c61ecc` | 08-28 | T1 | feat(admin): let admins restrict which public groups a u | ? | TODO |
-| 75 | `0756c9810` | 08-28 | T2 | fix(frontend): 批量编辑显式提交 codex_fingerprint_mode=off，修复无法关 | ? | TODO |
-| 76 | `c4e46c3be` | 08-28 | T2 | feat(zhipu): support team GLM Coding Plan usage query | ? | TODO |
-| 77 | `02eee39dd` | 08-28 | T2 | fix(payment): show selected currency in recharge rate | ? | TODO |
-| 78 | `c03776604` | 08-28 | T2 | fix(keys): preserve Claude attribution headers | ? | TODO |
-| 79 | `706b5676a` | 08-29 | T2 | fix(groups): show API error messages on create and updat | ? | TODO |
-| 80 | `ed12ea716` | 08-29 | T2 | fix(frontend): authenticate Codex API key mode inline | ? | TODO |
-| 81 | `b5827cfd5` | 08-29 | T1 | fix(pricing): align DeepSeek billing with official peak/ | BOTH | PORTED — merged, DeepSeek under-billing |
+| 45 | `d9d2854d2` | 08-21 | T2 | Make enabled model plaza discoverable from /home | model plaza link in both home headers (verbatim; HomeView is 0 tokens/703 Tailwind) | **PORTED** |
+| 46 | `22e1b8144` | 08-22 | T1 | feat(gateway): expose routed Codex model catalogs | routed Codex model catalogs; UseKeyModal patched not copied (ours had diverged, contrary to an earlier note) | **PORTED** |
+| 47 | `e471be730` | 08-22 | T2 | feat(codex): complete routed model catalogs | complete routed catalogs | **PORTED** |
+| 48 | `b16ed03ca` | 08-22 | T2 | fix(codex): align routed catalogs with actual routes | align catalogs with actual routes | **PORTED** |
+| 49 | `ee62dfbaf` | 08-22 | T2 | fix(proxy): support bracketed IPv6 hosts in batch proxy  | bracketed IPv6 hosts in batch proxy | **PORTED** |
+| 50 | `5dfad32b8` | 08-22 | T2 | fix(frontend): accept unlimited (0) user concurrency in  | accept unlimited (0) user concurrency | **PORTED** |
+| 51 | `e39fce270` | 08-22 | T1 | fix(codex): sync routed capabilities from upstream | BOTH | **PORTED** (was mismarked: 2b15d41f7 took only 12 of its 31 CreateAccountModal lines and skipped the spec; completed here) |
+| 52 | `77e0409f7` | 08-23 | T1 | 新增渠道时间段定价工作日规则 | weekdays_only; the types half was already in HEAD, this adds the UI + tests | **PORTED** |
+| 53 | `616df479e` | 08-23 | T2 | fix(admin): show account priority by default | show account priority by default | **PORTED** |
+| 54 | `4a1da2950` | 08-23 | T2 | fix(deps): bump dompurify to patch multiple sanitizer-by | dompurify 3.3.1 -> 3.4.14 + pnpm override; guards 7 HTML-rendering surfaces, several public. +6 tests pinning the floor | **PORTED** |
+| 55 | `40ea3aeba` | 08-24 | T1 | feat: add OAuth outbound transport plugin system | plugin admin UI; api/plugins.ts was already present from a partial port, view/router/sidebar/i18n were not. Sidebar row + settings card rebuilt in our idiom | **PORTED** |
+| 56 | `684d9efb1` | 08-24 | T2 | fix: harden plugin runtime and UI bridge | plugin runtime + UI bridge hardening (ships WITH the system, never after) | **PORTED** |
+| 57 | `391d69e08` | 08-24 | T2 | fix: preserve initial plugin bridge requests | preserve initial plugin bridge requests | **PORTED** |
+| 58 | `377d1230f` | 08-24 | T1 | 模型广场：按计费阶梯单价表展示长上下文档位 | long-context tier table; **3-way landed sortByContext without its 2 call sites — fixed + test added** | **PORTED** |
+| 59 | `ecce0769c` | 08-24 | T2 | 模型广场：上下文档位统一标签形态并保证升序 | unified tier labels to upper bounds, ascending | **PORTED** |
+| 60 | `83d4eb6a4` | 08-24 | T1 | 模型广场：增加渠道分时段计价展示 | time-window pricing display (verbatim; API types were already present) | **PORTED** |
+| 61 | `b07d85c49` | 08-24 | T1 | 模型广场：分时计价同步渠道仅工作日规则 | weekdays-only rule in the plaza display | **PORTED** |
+| 62 | `f19095f96` | 08-24 | T2 | 模型广场：分时时段行明确不含高峰倍率口径并披露叠加 | time-window rows disclose that peak multipliers stack | **PORTED** |
+| 63 | `cfecc8d11` | 08-24 | T2 | feat: 运维监控错误详情支持返回列表并保留筛选状态 | back-to-list preserving filter state; footer hand-ported | **PORTED** |
+| 64 | `6f972145b` | 08-24 | T1 | feat: 支持 OpenAI 重置卡按用量阈值自动使用 | types + EditAccountModal (verbatim, not June) + OpenAIQuotaResetCell chip (rebuilt in June) + en/zh keys, en dash removed | **PORTED** |
+| 65 | `eb594eefc` | 08-24 | T2 | fix(payment): refresh balance after fulfillment | refresh balance after fulfillment | **PORTED** |
+| 66 | `3f1581b2d` | 08-25 | T1 | 修复上游倍率探测导致账号列表整页刷新的问题 | backend endpoint was already merged; ported the frontend half — types, `getUpstreamBillingRatesWithEtag`, AccountsView in-place snapshot patching. Script-only, so no June question. +2 tests upstream lacks | **PORTED** |
+| 67 | `11ada80d5` | 08-25 | T1 | feat(usage): 使用记录展示映射前的推理强度 | pre-mapping reasoning effort in usage records (verbatim; formatReasoningEffort was already partly present) | **PORTED** |
+| 68 | `5705f4a4a` | 08-25 | T1 | fix(usage): hide mapped reasoning effort from users | privacy split — admin sees both values, user only their own; backend half already enforced | **PORTED** |
+| 69 | `a8cfe746b` | 08-25 | T2 | test(usage): cover user and admin reasoning effort page  | reasoning-effort page coverage (the tests for what this session ported) | **PORTED** |
+| 70 | `d522aed65` | 08-26 | T2 | fix: preserve promo codes for OAuth signup | preserve promo codes through OAuth signup | **PORTED** |
+| 71 | `195b21970` | 08-26 | T1 | fix(codex): isolate API-key catalog cache and DeepSeek C | isolate API-key catalog cache + DeepSeek Codex defaults | **PORTED** |
+| 72 | `2abce6503` | 08-26 | T1 | fix(codex): harden routed catalog capability sync | was PARTIAL; the UseKeyModal half landed once 22e1b8144 was in | **PORTED** |
+| 73 | `5f09442fc` | 08-27 | T2 | fix(openai): refresh usage after quota reset | refresh usage after quota reset | **PORTED** |
+| 74 | `b56c61ecc` | 08-28 | T1 | feat(admin): let admins restrict which public groups a u | ported in 6e04b06ee (toggle + load-init + save-filter, applied atomically); row was left stale | **PORTED** |
+| 75 | `0756c9810` | 08-28 | T2 | fix(frontend): 批量编辑显式提交 codex_fingerprint_mode=off，修复无法关 | explicit codex_fingerprint_mode=off; ours already wrote a sentinel, upstream's literal is better; control id aligned | **PORTED** |
+| 76 | `c4e46c3be` | 08-28 | T2 | feat(zhipu): support team GLM Coding Plan usage query | Zhipu team GLM Coding Plan — applied cleanly once adaptive routing was in; was the reason the CN unit stopped at 9 | **PORTED** |
+| 77 | `02eee39dd` | 08-28 | T2 | fix(payment): show selected currency in recharge rate | recharge rate shows the selected currency | **PORTED** |
+| 78 | `c03776604` | 08-28 | T2 | fix(keys): preserve Claude attribution headers | preserve Claude attribution headers | **PORTED** |
+| 79 | `706b5676a` | 08-29 | T2 | fix(groups): show API error messages on create and updat | surface API error messages on group create/update | **PORTED** |
+| 80 | `ed12ea716` | 08-29 | T2 | fix(frontend): authenticate Codex API key mode inline | authenticate Codex API key mode inline | **PORTED** |
+| 81 | `b5827cfd5` | 08-29 | T1 | fix(pricing): align DeepSeek billing with official peak/ | BOTH | PORTED — backend arrived by merge; its frontend half (deepseekModels v4 list) was NOT, and I wrongly assumed the merge covered it. Ported 2026-08-30 |

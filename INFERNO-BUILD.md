@@ -531,7 +531,110 @@ Everything else unique to those branches was either a rebase-rewritten copy of
 one of our own commits (same subject, new hash) or Razorpay lint debt that PR
 #15 re-raises against current code.
 
-#### Frontend port policy (moved out of the routine prompt, 2026-08-28)
+# Upstream port status (2026-08-30)
+
+**Both port sets are closed.** The commit manifest has 103 rows: 90 PORTED,
+10 PRESENT (already satisfied by our rewrite), 3 SKIPPED (empty merges or
+backend-only). Zero open.
+
+`git fetch upstream main` on 2026-08-30 put our merge-base at `b5827cfd5`,
+which IS `upstream/main`'s tip -- 0 commits beyond it. There is nothing left to
+take. The next drift starts whenever upstream moves again; re-run the routine
+and add rows for whatever appears.
+
+Gates at close: tsc 0 · 1915/1915 tests across 260 files · i18n keycheck clean ·
+june-lint 1183 violations / 296 converted files · divergence all-declared ·
+production build clean.
+
+## Running-stack validation (2026-08-30)
+
+Every unit passed the gates. These were additionally exercised against the
+live stack (backend on :8080, Vite on :3000, per `skills/inferno-local-stack`):
+
+| Unit | What was observed |
+|---|---|
+| monitor quota chain | three-state Check Mode, 8 platforms; Quota hides endpoint/api_key and reveals the linked-account selector |
+| time pricing + per-tier multipliers | seeded through the real API, read back: 10 inputs per interval row, once each; Time zone / Effective days / Start / End / Multiplier |
+| auto-reset credit | thresholds render 85/90 from stored 0.85/0.9; captured PUT proves `codex_auto_reset_credit_state` is never written back |
+| June status chip | `oqr__auto-chip--bad` with the localized label, from state the real scheduler wrote |
+| CN providers | Kimi/Zhipu/DeepSeek in the create flow; API Protocol, Base URL, Header Override |
+| adaptive routing | Zhipu exposes API Protocol with `adaptive` |
+| plugin system | flag flipped via the real settings API: sidebar entry appears, /admin/plugins renders |
+| account list refresh | `/upstream-billing-rates` returns `{items,page,page_size,total}`; `If-None-Match` -> **304** |
+| reasoning effort | admin offers the column (matching upstream); user page never shows the upstream/requested variant |
+| bulk OpenAI settings | fingerprint control renders under the `allOpenAIOAuth` gate |
+| model plaza + home link | plaza renders; `/model-plaza` link present on home once enabled |
+| group platforms | all 9 options incl. Kimi/Zhipu GLM/DeepSeek/Composite -- proves the derived catalog we kept over upstream's literal |
+| composite Codex Live | the Live toggle now renders for a Composite group |
+| ops SLA | a zero-request window shows no critical SLA (0d5e3ca9b) |
+
+Not exercised live, and why: the ops error-detail modal, Grok usage bars, and
+the payment fixes all need request/usage/order history that a fresh local
+database has none of. They rest on the gates plus upstream's own specs.
+
+**Note for whoever runs this next:** vite-plugin-checker caches type errors
+across a merge. Twice an overlay showed conflict markers that were not on disk
+and `vue-tsc` reported 0. Restart the dev server before believing an overlay.
+
+# How to verify a port (learned the hard way, 2026-08-30)
+
+A six-agent audit of all 94 ported commits found **7 real gaps that every
+cheaper check had passed**. Each had green tsc, green tests, and a matching
+identifier grep. Do not trust any of the following as evidence a port landed:
+
+| Signal | Why it lies |
+|---|---|
+| `git apply` leaves no conflict markers | No conflict is also what *nothing applied* looks like. Check the exit code. |
+| exit code 0 | A partial apply can still return 0. `c4e46c3be` returned 0 and landed 10 of 38 lines. |
+| tsc passes | Missing code does not type-error. Nothing references what was never ported. |
+| the test suite passes | Upstream's tests for the missing feature were not ported either. |
+| grep finds the identifier | Proves a NAME exists, not that it is read, wired, or equivalent. |
+| the COMMIT-MANIFEST row says PORTED | We write those rows from the same broken signal. Circular. |
+
+**What actually works — read both sides, per file, per commit:**
+
+1. `git show <hash>:frontend/src/<path>` for upstream at that commit.
+2. Read our whole corresponding function/block.
+3. Ask explicitly:
+   - Is every new ref/computed/field READ somewhere load-bearing (request body,
+     template, condition)? A declaration nobody reads is a gap.
+   - Are predicates identical — operators, boundaries, null/zero/empty-string
+     handling? `??` vs `||` matters: `??` passes `''` through, `||` coerces it.
+   - Does each new field reach the API request body AND the DOM? Trace it.
+   - Are new watchers/resets/cleanup present?
+   - Did upstream REMOVE something we still carry?
+4. **Also diff against `frontend/src/<path>` (upstream HEAD).** A later upstream
+   commit may supersede the snapshot. Comparing only to the snapshot produced
+   two false positives in this audit, both retracted once HEAD was checked.
+5. For a fix, prove the test discriminates: reintroduce the bug and watch it go
+   red. Target the exact line -- an identifier can appear several times in a
+   file and a blind `replace(..., 1)` will hit the wrong one.
+
+**The gaps this found, as a calibration set:** a `windowStats` key missing from
+a returned object; `?? 'passthrough'` where upstream had `|| 'pass'`, printing a
+raw i18n key in the admin UI; a computed flattened to a bare property read,
+dropping three guards; an SLA guard ported into the diagnostics path but not the
+display path after a component was extracted; a commit whose i18n landed 16/16
+while its feature landed 10/38; a billing mode whose constant existed but whose
+entire UI did not; and two hardening commits that landed 5/39 and 0/6.
+
+# Manifest discipline (non-negotiable)
+
+**A port and its COMMIT-MANIFEST.md row change land in the SAME commit.**
+
+On 2026-08-30 `26be82cc8` was ported twice. The first port (`7afe8e832`,
+08-29) did not touch the manifest, so the row still read TODO. The next
+session took the row at face value, re-applied the same upstream commit, and
+spent the merge fighting its own earlier work -- the four per-tier multiplier
+inputs ended up in the file twice and had to be deduplicated.
+
+The manifest is the only record of what has been taken. A port that does not
+update it is not finished, however good the code is. Before starting any row,
+confirm no commit in `upstream/main..HEAD` already claims that hash:
+
+    git log --format='%h %s' upstream/main..HEAD | grep <hash>
+
+# Frontend port policy (moved out of the routine prompt, 2026-08-28)
 
 These rules were load-bearing and lived ONLY in the daily routine's cloud prompt,
 where nothing could review them and they drifted out of date. They belong here.

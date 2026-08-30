@@ -48,6 +48,29 @@
       </button>
     </div>
 
+    <div
+      v-if="autoResetState"
+      class="oqr__auto"
+      data-testid="auto-reset-credit-state"
+    >
+      <span class="oqr__auto-chip" :class="autoResetStateModifier">
+        {{ autoResetStateLabel }}
+        <span v-if="autoResetState.trigger_window" class="oqr__auto-window">
+          {{ autoResetState.trigger_window }}
+        </span>
+      </span>
+      <span v-if="autoResetState.checked_at" class="oqr__auto-time">
+        {{ formatResetCreditExpiry(autoResetState.checked_at, 'short') }}
+      </span>
+      <span
+        v-if="autoResetState.error_code"
+        class="oqr__auto-error"
+        :title="autoResetState.error_code"
+      >
+        {{ autoResetState.error_code }}
+      </span>
+    </div>
+
     <div v-if="primaryResetCreditExpiry" class="oqr__expiry">
       <div class="oqr__expiry-row">
         <span
@@ -207,6 +230,37 @@ const resetCreditExpirations = computed(() =>
     .sort(compareResetCreditExpiry)
 )
 const primaryResetCreditExpiry = computed(() => resetCreditExpirations.value[0] ?? '')
+
+// Auto-reset-credit runtime state, written by the scheduler. Read-only here.
+type AutoResetCreditState = NonNullable<NonNullable<Account['extra']>['codex_auto_reset_credit_state']>
+const validAutoResetStatuses = new Set(['checking', 'available', 'resetting', 'success', 'no_credit', 'failed'])
+/* Three guards, all load-bearing: an operator who turned auto-reset off must
+   not keep seeing a chip driven by a stale state left in extra, and an unknown
+   status must render nothing rather than fall through to a missing i18n key. */
+const autoResetState = computed<AutoResetCreditState | null>(() => {
+  if (props.account.extra?.auto_reset_credit_enabled !== true) return null
+  const state = props.account.extra?.codex_auto_reset_credit_state
+  if (!state || typeof state !== 'object' || !validAutoResetStatuses.has(String(state.status))) return null
+  return state
+})
+
+const autoResetStateLabel = computed(() => {
+  const status = autoResetState.value?.status
+  return status ? t(`admin.accounts.openaiQuotaReset.autoStatus.${status === 'no_credit' ? 'noCredit' : status}`) : ''
+})
+
+/* Colour is STATE here, not category, so it is earned (ground rule 5). One
+   modifier per status; the palette lives in the scoped block below. */
+const autoResetStateModifier = computed(() => {
+  switch (autoResetState.value?.status) {
+    case 'available': return 'oqr__auto-chip--info'
+    case 'success': return 'oqr__auto-chip--ok'
+    case 'no_credit':
+    case 'failed': return 'oqr__auto-chip--bad'
+    case 'resetting': return 'oqr__auto-chip--busy'
+    default: return ''
+  }
+})
 const hiddenResetCreditCount = computed(() => Math.max(resetCreditExpirations.value.length - 1, 0))
 const canReset = computed(() => availableResetCount.value > 0 && !isShadow.value)
 
@@ -404,6 +458,45 @@ watch(
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+}
+
+.oqr__auto {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-2xs);
+  min-width: 0;
+}
+
+.oqr__auto-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--r-sm);
+  padding: 1px 6px;
+  font-weight: var(--fw-medium);
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.oqr__auto-chip--info { background: var(--brand-tint); color: var(--brand); }
+.oqr__auto-chip--ok { background: color-mix(in oklch, var(--success) 14%, var(--card)); color: var(--success); }
+.oqr__auto-chip--bad { background: var(--destructive-soft); color: var(--destructive); }
+.oqr__auto-chip--busy { background: var(--s2a-attn-soft); color: var(--s2a-attn); }
+
+.oqr__auto-window {
+  margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.oqr__auto-time { color: var(--muted-foreground); }
+
+.oqr__auto-error {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--destructive);
 }
 
 .oqr__actions {

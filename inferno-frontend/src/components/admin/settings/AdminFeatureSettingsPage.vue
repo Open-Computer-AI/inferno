@@ -93,6 +93,42 @@
                 </div>
                 <Toggle v-model="form.channel_monitor_hide_throughput" />
               </div>
+
+              <div v-if="form.channel_monitor_mode === 'v1'" class="flex items-start justify-between gap-4">
+                <div class="min-w-0">
+                  <p class="text-sm font-[var(--fw-medium)] text-[var(--foreground)]">
+                    {{ t('admin.settings.features.channelMonitor.showQuota') }}
+                  </p>
+                  <p class="mt-1 text-xs text-[var(--muted-foreground)]">
+                    {{ t('admin.settings.features.channelMonitor.showQuotaHint') }}
+                  </p>
+                </div>
+                <Toggle v-model="form.channel_monitor_show_quota" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-surface">
+          <div class="border-b border-[var(--border-subtle)] px-6 py-4">
+            <h2 class="text-lg font-[var(--fw-medium)] text-[var(--foreground)]">
+              {{ t('admin.settings.features.pluginManagement.title') }}
+            </h2>
+            <p class="mt-1 text-sm text-[var(--muted-foreground)]">
+              {{ t('admin.settings.features.pluginManagement.description') }}
+            </p>
+          </div>
+          <div class="space-y-5 p-6">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="text-sm font-[var(--fw-medium)] text-[var(--foreground)]">
+                  {{ t('admin.settings.features.pluginManagement.enabled') }}
+                </label>
+                <p class="mt-0.5 text-xs text-[var(--muted-foreground)]">
+                  {{ t('admin.settings.features.pluginManagement.enabledHint') }}
+                </p>
+              </div>
+              <Toggle v-model="form.plugin_management_enabled" />
             </div>
           </div>
         </div>

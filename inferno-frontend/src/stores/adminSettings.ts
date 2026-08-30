@@ -49,6 +49,9 @@ export const useAdminSettingsStore = defineStore('adminSettings', () => {
   const opsRealtimeMonitoringEnabled = ref(readCachedBool('ops_realtime_monitoring_enabled_cached', true))
   const opsQueryModeDefault = ref(readCachedString('ops_query_mode_default_cached', 'auto'))
   const paymentEnabled = ref(readCachedBool('payment_enabled_cached', false))
+  // Gates the admin Plugins menu entry only. The plugin runtime and its
+  // /admin/plugins endpoints are live regardless of this switch.
+  const pluginManagementEnabled = ref(readCachedBool('plugin_management_enabled_cached', false))
   const customMenuItems = ref<CustomMenuItem[]>([])
 
   async function fetch(force = false): Promise<void> {
@@ -71,6 +74,9 @@ export const useAdminSettingsStore = defineStore('adminSettings', () => {
       writeCachedString('ops_query_mode_default_cached', opsQueryModeDefault.value)
 
       customMenuItems.value = Array.isArray(settings.custom_menu_items) ? settings.custom_menu_items : []
+
+      pluginManagementEnabled.value = settings.plugin_management_enabled ?? false
+      writeCachedBool('plugin_management_enabled_cached', pluginManagementEnabled.value)
 
       paymentEnabled.value = paymentConfigResp.data?.enabled ?? false
       writeCachedBool('payment_enabled_cached', paymentEnabled.value)
@@ -140,6 +146,7 @@ export const useAdminSettingsStore = defineStore('adminSettings', () => {
     opsRealtimeMonitoringEnabled,
     opsQueryModeDefault,
     paymentEnabled,
+    pluginManagementEnabled,
     customMenuItems,
     fetch,
     setOpsMonitoringEnabledLocal,

@@ -282,7 +282,13 @@
             :percent="primaryWindow.percent"
             :label="primaryWindow.label"
             :trailing="barTrailing(primaryWindow)"
-          />
+          >
+            <!-- Grok's primary bar carries its own window stats. Without this
+                 a Grok Free row (whose 24h bar is the only window) would show
+                 none at all: there is nothing to expand, so the usual
+                 "one click away" footer never appears. -->
+            <template v-if="primaryWindow.windowStats">{{ formatWindowStats(primaryWindow.windowStats) }}</template>
+          </CapacityBar>
           <button
             v-if="otherWindows.length"
             type="button"
@@ -315,10 +321,18 @@
         <div v-else class="uc-muted">-</div>
 
         <div v-if="grokPrepaidMoneyLine" class="uc-moneyrow">
-          <span class="uc-chip uc-chip--brand" :title="t('admin.accounts.usageWindow.grokPrepaid')">
+          <span
+            v-if="grokPrepaidMoneyLine.showPrepaid"
+            class="uc-chip uc-chip--brand"
+            :title="t('admin.accounts.usageWindow.grokPrepaid')"
+          >
             {{ t('admin.accounts.usageWindow.grokPrepaid') }} ${{ grokPrepaidMoneyLine.prepaid }}
           </span>
-          <span class="uc-hint" :title="t('admin.accounts.usageWindow.grokMonthlyLimit')">
+          <span
+            v-if="grokPrepaidMoneyLine.showUsedLimit"
+            class="uc-hint"
+            :title="t('admin.accounts.usageWindow.grokMonthlyLimit')"
+          >
             {{ t('admin.accounts.usageWindow.grokUsed') }}
             {{ grokPrepaidMoneyLine.used }}/{{ grokPrepaidMoneyLine.limit }}
           </span>
@@ -329,6 +343,21 @@
         </div>
       </div>
       <div v-else class="uc-muted">-</div>
+    </template>
+
+    <!-- CN providers (Kimi / Zhipu / DeepSeek): coding-plan quota or payg balance -->
+    <template v-else-if="account.platform === 'kimi' || account.platform === 'zhipu' || account.platform === 'deepseek'">
+      <div class="uc-body">
+        <!-- 子单元格各自按 模式×平台 判定可见；两者都不可见时（智谱 payg 无公开
+             余额端点、coding 探测也不适用）才回落到占位符。 -->
+        <div
+          v-if="!cnQuotaCellVisible && !cnBalanceCellVisible"
+          class="uc-muted"
+          :title="t('admin.accounts.cnProviders.noBalanceEndpoint')"
+        >-</div>
+        <CNProviderQuotaCell :account="account" />
+        <CNProviderBalanceCell :account="account" />
+      </div>
     </template>
 
     <!-- Gemini platform: show quota + local usage window -->
@@ -431,6 +460,7 @@
       <OllamaCloudUsageCell
         v-if="account.ollama_cloud_usage?.eligible"
         :account="account"
+        @updated="handleOllamaCloudUsageUpdated"
       />
       <!-- Today stats row (requests, tokens, cost, user_cost) -->
       <div v-if="todayStats" class="uc-chips">
@@ -538,13 +568,14 @@ import { formatCompactNumber } from '@/utils/format'
 import CapacityBar from '@/components/common/CapacityBar.vue'
 import AccountQuotaInfo from './AccountQuotaInfo.vue'
 import OpenAIQuotaResetCell from './OpenAIQuotaResetCell.vue'
+import CNProviderQuotaCell from './CNProviderQuotaCell.vue'
+import CNProviderBalanceCell from './CNProviderBalanceCell.vue'
 import OllamaCloudUsageCell from './OllamaCloudUsageCell.vue'
+import { cnQuotaCellVisible as cnQuotaCellVisibleFn, cnBalanceCellVisible as cnBalanceCellVisibleFn } from './credentialsBuilder'
 
 // Module-level cache shared across all AccountUsageCell instances
 const _usageCache = new Map<number, { data: AccountUsageInfo; ts: number }>()
 const USAGE_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
-// How long a quota-reset response may suppress the row-patch usage refetch.
-const SUPPRESS_USAGE_REFRESH_WINDOW_MS = 5 * 1000
 
 const props = withDefaults(
   defineProps<{
@@ -598,7 +629,6 @@ const usageInfo = ref<AccountUsageInfo | null>(null)
 watch(usageInfo, (usage) => {
   if (usage) emit('usage-loaded', usage)
 })
-const suppressOpenAIUsageRefreshUntil = ref(0)
 const rootRef = ref<HTMLElement | null>(null)
 const isDesktopViewport = ref(
   typeof window === 'undefined' ? true : window.matchMedia(desktopViewportQuery).matches
@@ -615,6 +645,15 @@ let visibilityObserver: IntersectionObserver | null = null
 const showUsageWindows = computed(() => {
   // Gemini: we can always compute local usage windows from DB logs (simulated quotas).
   if (props.account.platform === 'gemini') return true
+  // CN providers: apikey 账号也有滚动用量窗口（coding plan）或余额（payg），
+  // 由 CNProviderQuotaCell / CNProviderBalanceCell 自行探测与展示。
+  if (
+    props.account.platform === 'kimi' ||
+    props.account.platform === 'zhipu' ||
+    props.account.platform === 'deepseek'
+  ) {
+    return true
+  }
   return props.account.type === 'oauth' || props.account.type === 'setup-token'
 })
 
@@ -636,6 +675,15 @@ const shouldFetchUsage = computed(() => {
   }
   return false
 })
+
+// CN 供应商子单元格可见性（与 CNProviderQuotaCell / CNProviderBalanceCell 共用
+// credentialsBuilder 的单一实现）：都不可见时显示 `-` 占位符。
+const cnAccountMode = computed(() => {
+  const mode = props.account.credentials?.account_mode
+  return typeof mode === 'string' ? mode : ''
+})
+const cnQuotaCellVisible = computed(() => cnQuotaCellVisibleFn(props.account.platform, cnAccountMode.value))
+const cnBalanceCellVisible = computed(() => cnBalanceCellVisibleFn(props.account.platform, cnAccountMode.value))
 
 const isBatchManaged = computed(() => typeof props.requestBatchedUsage === 'function')
 
@@ -968,9 +1016,17 @@ const geminiUsageBars = computed(() => {
 interface GrokQuotaBarInfo {
   utilization: number
   resetsAt: string | null
+  windowStats?: WindowStats | null
 }
 
 const grokBilling = computed(() => usageInfo.value?.grok_billing || null)
+const grokLocalUsage7d = computed(() => (
+  usageInfo.value?.grok_local_usage_7d || usageInfo.value?.seven_day?.window_stats || null
+))
+const grokLocalUsageMonthly = computed(() => (
+  usageInfo.value?.grok_local_usage_monthly || usageInfo.value?.thirty_day?.window_stats || null
+))
+
 const grokWeeklyBillingBar = computed((): GrokQuotaBarInfo | null => {
   const billing = grokBilling.value
   if (billing?.period_type?.toLowerCase() !== 'weekly' || billing.usage_percent == null) {
@@ -978,7 +1034,8 @@ const grokWeeklyBillingBar = computed((): GrokQuotaBarInfo | null => {
   }
   return {
     utilization: Math.min(100, Math.max(0, billing.usage_percent)),
-    resetsAt: billing.period_end || null
+    resetsAt: billing.period_end || null,
+    windowStats: grokLocalUsage7d.value
   }
 })
 // Monthly used/limit % from billing probe (used_percent or derived from cents).
@@ -1002,7 +1059,8 @@ const grokMonthlyBillingBar = computed((): GrokQuotaBarInfo | null => {
   }
   return {
     utilization: Math.min(100, Math.max(0, utilization)),
-    resetsAt: billing.billing_period_end || billing.period_end || null
+    resetsAt: billing.billing_period_end || billing.period_end || null,
+    windowStats: grokLocalUsageMonthly.value
   }
 })
 const formatGrokMoney = (value?: number | null) => {
@@ -1018,24 +1076,30 @@ const grokPrepaidMoneyLine = computed(() => {
   const billing = grokBilling.value
   if (!billing) return null
   const prepaid = billing.prepaid_balance
-  // "只针对预付": only render when prepaid field exists (including $0.00).
-  if (prepaid == null || !Number.isFinite(prepaid)) return null
+  // Prepaid chip only for a positive balance, and used/limit only when the
+  // monthly limit is a positive number -- 0 means unlimited or unset, and
+  // rendering it produced a meaningless "3.5/0".
+  const showPrepaid = prepaid != null && Number.isFinite(prepaid) && prepaid > 0
+  const limitRaw =
+    billing.monthly_limit != null
+      ? billing.monthly_limit
+      : billing.monthly_limit_cents != null
+        ? billing.monthly_limit_cents / 100
+        : null
+  const showUsedLimit = limitRaw != null && Number.isFinite(limitRaw) && limitRaw > 0
+  if (!showPrepaid && !showUsedLimit) return null
   const used =
     billing.monthly_used != null
       ? billing.monthly_used
       : billing.used_cents != null
         ? billing.used_cents / 100
         : 0
-  const limit =
-    billing.monthly_limit != null
-      ? billing.monthly_limit
-      : billing.monthly_limit_cents != null
-        ? billing.monthly_limit_cents / 100
-        : 0
   return {
-    prepaid: formatGrokMoney(prepaid),
-    used: formatGrokMoney(used),
-    limit: formatGrokMoney(limit)
+    showPrepaid,
+    showUsedLimit,
+    prepaid: showPrepaid ? formatGrokMoney(prepaid) : null,
+    used: showUsedLimit ? formatGrokMoney(used) : null,
+    limit: showUsedLimit ? formatGrokMoney(limitRaw) : null
   }
 })
 const grokPlanLabelIsFree = (value: string) => value.includes('free') || value.includes('basic')
@@ -1069,6 +1133,10 @@ const grokIsFree = computed(() => {
   return billing != null
 })
 const grokFreeQuotaUsage = computed(() => usageInfo.value?.grok_local_usage_24h || null)
+
+/* xAI's billing probe gives money and a percent but no request/token counts.
+   These are this site's own 7d/30d aggregation, so the billing bars can carry
+   a windowStats tooltip like every other window does. */
 const grokFreeTokenBar = computed(() => {
   if (!grokIsFree.value || !grokFreeQuotaUsage.value) return null
   const limit = usageInfo.value?.grok_free_token_limit
@@ -1257,13 +1325,14 @@ const grokWindows = computed<UsageWindowBar[]>(() => {
     return windows
   }
   // grokWeeklyBillingBar / grokMonthlyBillingBar come from GrokBillingSummary
-  // (xAI's billing probe): money and a percent, no request/token count --
-  // there is no windowStats to attach here either.
+  // (xAI's billing probe): money and a percent, no request/token count. Since
+  // 269fbcac0 this site's own aggregation supplies those counts, so the bars
+  // now carry windowStats after all.
   if (grokWeeklyBillingBar.value) {
-    windows.push({ key: 'grok_7d', label: t('admin.accounts.usageWindow.sevenDay'), percent: grokWeeklyBillingBar.value.utilization, resetsAt: grokWeeklyBillingBar.value.resetsAt })
+    windows.push({ key: 'grok_7d', label: t('admin.accounts.usageWindow.sevenDay'), percent: grokWeeklyBillingBar.value.utilization, resetsAt: grokWeeklyBillingBar.value.resetsAt, windowStats: grokLocalUsage7d.value })
   }
   if (grokMonthlyBillingBar.value) {
-    windows.push({ key: 'grok_30d', label: t('admin.accounts.usageWindow.thirtyDay'), percent: grokMonthlyBillingBar.value.utilization, resetsAt: grokMonthlyBillingBar.value.resetsAt })
+    windows.push({ key: 'grok_30d', label: t('admin.accounts.usageWindow.thirtyDay'), percent: grokMonthlyBillingBar.value.utilization, resetsAt: grokMonthlyBillingBar.value.resetsAt, windowStats: grokLocalUsageMonthly.value })
   }
   return windows
 })
@@ -1577,12 +1646,11 @@ const quotaTotalBar = computed((): QuotaBarInfo | null => {
 })
 
 const handleQuotaResetAccountUpdated = (account: Account) => {
-  // The reset response already carries authoritative quota and account data.
-  // Avoid turning the parent patch into a second automatic /usage request.
-  // The suppression is time-boxed so an unhandled emit (parent that ignores
-  // account-updated) cannot latch it and swallow a later, unrelated refresh.
-  suppressOpenAIUsageRefreshUntil.value = Date.now() + SUPPRESS_USAGE_REFRESH_WINDOW_MS
   emit('account-updated', account)
+}
+
+const handleOllamaCloudUsageUpdated = (state: NonNullable<Account['ollama_cloud_usage']>) => {
+  emit('account-updated', { ...props.account, ollama_cloud_usage: state })
 }
 
 // ===== Key account today stats formatters =====
@@ -1667,10 +1735,6 @@ watch(
 watch(openAIUsageRefreshKey, (nextKey, prevKey) => {
   if (!prevKey || nextKey === prevKey) return
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return
-  if (Date.now() < suppressOpenAIUsageRefreshUntil.value) {
-    suppressOpenAIUsageRefreshUntil.value = 0
-    return
-  }
 
   if (isBatchManaged.value) {
     requestParentBatchUsage({ force: true })

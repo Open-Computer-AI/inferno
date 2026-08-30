@@ -823,6 +823,7 @@ type SettingsForm = Omit<
 > & {
   /** Form always binds a concrete boolean (SystemSettings marks this optional). */
   channel_monitor_hide_throughput: boolean;
+  channel_monitor_show_quota: boolean;
   smtp_password: string;
   turnstile_secret_key: string;
   tencent_captcha_app_secret_key: string;
@@ -1135,11 +1136,14 @@ const form = reactive<SettingsForm>({
   channel_monitor_mode: 'v1' as 'v1' | 'v2',
   channel_monitor_default_interval_seconds: 60,
   channel_monitor_hide_throughput: false,
+  channel_monitor_show_quota: false,
   // Available Channels feature switch
   available_channels_enabled: false,
   // Model Plaza feature switches + description
   model_plaza_enabled: false,
   model_plaza_require_auth: false,
+  // Plugin management menu visibility; plugin runtime is unaffected.
+  plugin_management_enabled: false,
   model_plaza_description: '',
   // Affiliate (邀请返利) feature switch
   affiliate_enabled: false,
@@ -2136,6 +2140,9 @@ async function loadSettings() {
     form.channel_monitor_hide_throughput = Boolean(
       settings.channel_monitor_hide_throughput
     );
+    form.channel_monitor_show_quota = Boolean(
+      settings.channel_monitor_show_quota
+    );
     form.login_agreement_updated_at =
       settings.login_agreement_updated_at || "2026-03-31";
     form.login_agreement_documents =
@@ -2787,11 +2794,13 @@ async function saveSettings() {
       channel_monitor_default_interval_seconds:
         Number(form.channel_monitor_default_interval_seconds) || 60,
       channel_monitor_hide_throughput: Boolean(form.channel_monitor_hide_throughput),
+      channel_monitor_show_quota: Boolean(form.channel_monitor_show_quota),
       // Available Channels feature switch
       available_channels_enabled: form.available_channels_enabled,
       // Model Plaza feature switches + description
       model_plaza_enabled: form.model_plaza_enabled,
       model_plaza_require_auth: form.model_plaza_require_auth,
+      plugin_management_enabled: form.plugin_management_enabled,
       model_plaza_description: form.model_plaza_description,
       // Affiliate (邀请返利) feature switch
       affiliate_enabled: form.affiliate_enabled,
@@ -3435,6 +3444,16 @@ const openaiFastPolicyScopeOptions = computed(() => [
     label: t("admin.settings.openaiFastPolicy.scopeBedrock"),
   },
 ]);
+
+// The rule card exposes tier, action and target models as three separate
+// controls; this renders the sentence they add up to.
+function openaiFastPolicyActionSummary(action: OpenAIFastPolicyRule["action"]) {
+  return t(`admin.settings.openaiFastPolicy.summaryAction.${action}`);
+}
+
+function hasOpenAIFastPolicyTargetModels(rule: OpenAIFastPolicyRule) {
+  return Boolean(rule.model_whitelist?.some((pattern) => pattern.trim() !== ""));
+}
 
 function addOpenAIFastPolicyRule() {
   openaiFastPolicyForm.rules.push({
@@ -4420,10 +4439,12 @@ DEFAULT_WEB_SEARCH_QUOTA_LIMIT,
   openEditProvider,
   openTestDialog,
   openaiFastPolicyActionOptions,
+  openaiFastPolicyActionSummary,
   openaiFastPolicyForm,
   openaiFastPolicyLoaded,
   openaiFastPolicyScopeOptions,
   openaiFastPolicyTierOptions,
+  hasOpenAIFastPolicyTargetModels,
   overloadCooldownForm,
   overloadCooldownLoading,
   overloadCooldownSaving,
