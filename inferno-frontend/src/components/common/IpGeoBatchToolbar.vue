@@ -8,7 +8,7 @@
     </span>
     <button
       type="button"
-      class="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-[var(--fw-medium)] text-[var(--brand)] transition-colors hover:bg-[var(--brand-tint)] disabled:cursor-not-allowed disabled:opacity-50 text-[var(--brand)] dark:hover:bg-[var(--brand-tint)/30]"
+      class="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-[var(--fw-medium)] text-[var(--brand)] transition-colors hover:bg-[var(--brand-tint)] disabled:cursor-not-allowed disabled:opacity-50 text-[var(--brand)] dark:hover:bg-[color-mix(in_srgb,var(--brand-tint)_30%,transparent)]"
       :disabled="loading || pendingCount === 0"
       @click="run"
     >

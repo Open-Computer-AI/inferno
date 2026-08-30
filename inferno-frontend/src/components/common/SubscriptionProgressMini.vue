@@ -3,7 +3,7 @@
     <!-- Mini Progress Display -->
     <button
       @click="toggleTooltip"
-      class="flex cursor-pointer items-center gap-2 rounded-xl bg-[var(--brand-tint)] px-3 py-1.5 transition-colors hover:bg-[var(--brand-tint)] bg-[var(--brand-tint)/20] dark:hover:bg-[var(--brand-tint)/30]"
+      class="flex cursor-pointer items-center gap-2 rounded-xl bg-[var(--brand-tint)] px-3 py-1.5 transition-colors hover:bg-[var(--brand-tint)] bg-[color-mix(in_srgb,var(--brand-tint)_20%,transparent)] dark:hover:bg-[color-mix(in_srgb,var(--brand-tint)_30%,transparent)]"
       :title="t('subscriptionProgress.viewDetails')"
     >
       <Icon name="creditCard" size="sm" class="text-[var(--brand)] text-[var(--brand)]" />
@@ -42,7 +42,7 @@
           <div
             v-for="subscription in displaySubscriptions"
             :key="subscription.id"
-            class="border-b border-[var(--brand-line)] p-3 last:border-b-0 border-[var(--brand-line)/50]"
+            class="border-b border-[var(--brand-line)] p-3 last:border-b-0 border-[color-mix(in_srgb,var(--brand-line)_50%,transparent)]"
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-sm font-[var(--fw-medium)] text-[var(--foreground)] dark:text-white">

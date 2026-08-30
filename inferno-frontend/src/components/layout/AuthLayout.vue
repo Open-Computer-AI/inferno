@@ -15,7 +15,9 @@
                  that is their brand and not ours to override. -->
             <img v-if="settingsLoaded && siteLogo" :src="siteLogo" alt="" class="auth__logo" />
             <h1 v-else class="auth__wordmark">{{ siteName }}</h1>
-            <p v-if="$slots.subtitle" class="auth__subtitle"><slot name="subtitle" /></p>
+            <p v-if="$slots.subtitle || siteSubtitle" class="auth__subtitle">
+              <slot name="subtitle">{{ siteSubtitle }}</slot>
+            </p>
           </header>
 
           <div class="auth__body">
@@ -51,6 +53,9 @@ import { PRODUCT_NAME } from '@/config/brand'
 const appStore = useAppStore()
 
 const siteName = computed(() => appStore.siteName || PRODUCT_NAME)
+// Operator-configured, and still edited in Admin -> General settings. Losing it
+// here left it visible on the landing page but not on login/register/reset.
+const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || '')
 const siteLogo = computed(() =>
   sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true })
 )

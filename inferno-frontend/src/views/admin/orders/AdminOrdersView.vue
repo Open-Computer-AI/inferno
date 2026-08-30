@@ -68,7 +68,7 @@
                 {{ t('payment.admin.retry') }}
               </Button>
               <template v-if="row.status === 'REFUND_REQUESTED'">
-                <span v-if="row.refund_amount" class="rounded-full bg-[var(--brand-tint)] px-1.5 py-0.5 text-xs font-[var(--fw-medium)] text-[var(--brand)] bg-[var(--brand-tint)/30] text-[var(--brand)]">{{ creditedAmountSymbol }}{{ row.refund_amount.toFixed(2) }}</span>
+                <span v-if="row.refund_amount" class="rounded-full bg-[var(--brand-tint)] px-1.5 py-0.5 text-xs font-[var(--fw-medium)] text-[var(--brand)] bg-[color-mix(in_srgb,var(--brand-tint)_30%,transparent)] text-[var(--brand)]">{{ creditedAmountSymbol }}{{ row.refund_amount.toFixed(2) }}</span>
                 <Button variant="ghost" size="xs" icon="hgi-checkmark-circle-02" @click="openRefundDialog(row)">
                   {{ t('payment.admin.approveRefund') }}
                 </Button>

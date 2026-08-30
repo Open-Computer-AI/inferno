@@ -7,7 +7,7 @@
       class="!hidden w-full table-fixed border-collapse text-sm lg:!table"
     >
       <thead>
-        <tr class="border-b border-[var(--brand-line)] bg-[var(--brand-tint)/50] text-xs font-[var(--fw-medium)]  tracking-wide text-[var(--muted-foreground)] border-[var(--brand-line)] bg-[var(--brand-tint)/50] text-[var(--muted-foreground)]">
+        <tr class="border-b border-[var(--brand-line)] bg-[color-mix(in_srgb,var(--brand-tint)_50%,transparent)] text-xs font-[var(--fw-medium)]  tracking-wide text-[var(--muted-foreground)] border-[var(--brand-line)] bg-[color-mix(in_srgb,var(--brand-tint)_50%,transparent)] text-[var(--muted-foreground)]">
           <th class="w-[180px] px-4 py-3 text-center">{{ columns.name }}</th>
           <th class="w-[200px] px-4 py-3 text-left">{{ columns.description }}</th>
           <th class="w-[140px] px-4 py-3 text-left">{{ columns.platform }}</th>
@@ -41,8 +41,8 @@
         <tr
           v-for="(section, secIdx) in channel.platforms"
           :key="`${channel.name}-${section.platform}`"
-          class="transition-colors hover:bg-[var(--brand-tint)/40] dark:hover:bg-[var(--card)/40]"
-          :class="{ 'border-t border-[var(--brand-line)/70] border-[var(--brand-line)/50]': secIdx > 0 }"
+          class="transition-colors hover:bg-[color-mix(in_srgb,var(--brand-tint)_40%,transparent)] dark:hover:bg-[color-mix(in_srgb,var(--card)_40%,transparent)]"
+          :class="{ 'border-t border-[color-mix(in_srgb,var(--brand-line)_70%,transparent)] border-[color-mix(in_srgb,var(--brand-line)_50%,transparent)]': secIdx > 0 }"
         >
           <!-- 渠道名：只在第一行渲染并用 rowspan 纵向合并 -->
           <td
@@ -105,7 +105,7 @@
                   />
                   <span
                     v-if="hasPeakRate(g)"
-                    class="inline-flex items-center gap-1 rounded-md bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] px-1.5 py-0.5 text-[10px] font-[var(--fw-medium)] text-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/20] text-[var(--warning)]"
+                    class="inline-flex items-center gap-1 rounded-md bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] px-1.5 py-0.5 text-[10px] font-[var(--fw-medium)] text-[var(--warning)] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--warning)_14%,var(--card))_20%,transparent)] text-[var(--warning)]"
                     :title="peakRateTitle(g)"
                   >
                     <Icon name="clock" size="xs" class="h-3 w-3" />
@@ -139,7 +139,7 @@
                   />
                   <span
                     v-if="hasPeakRate(g)"
-                    class="inline-flex items-center gap-1 rounded-md bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] px-1.5 py-0.5 text-[10px] font-[var(--fw-medium)] text-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/20] text-[var(--warning)]"
+                    class="inline-flex items-center gap-1 rounded-md bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] px-1.5 py-0.5 text-[10px] font-[var(--fw-medium)] text-[var(--warning)] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--warning)_14%,var(--card))_20%,transparent)] text-[var(--warning)]"
                     :title="peakRateTitle(g)"
                   >
                     <Icon name="clock" size="xs" class="h-3 w-3" />
@@ -195,7 +195,7 @@
           </p>
         </header>
 
-        <div class="divide-y divide-[var(--brand-line)] divide-[var(--brand-line)/60]">
+        <div class="divide-y divide-[var(--brand-line)] divide-[color-mix(in_srgb,var(--brand-line)_60%,transparent)]">
           <div
             v-for="section in channel.platforms"
             :key="`mobile-${channel.name}-${section.platform}`"
@@ -244,7 +244,7 @@
                       />
                       <span
                         v-if="hasPeakRate(g)"
-                        class="inline-flex items-center gap-1 rounded-md bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] px-1.5 py-0.5 text-[10px] font-[var(--fw-medium)] text-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/20] text-[var(--warning)]"
+                        class="inline-flex items-center gap-1 rounded-md bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] px-1.5 py-0.5 text-[10px] font-[var(--fw-medium)] text-[var(--warning)] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--warning)_14%,var(--card))_20%,transparent)] text-[var(--warning)]"
                         :title="peakRateTitle(g)"
                       >
                         <Icon name="clock" size="xs" class="h-3 w-3" />
@@ -279,7 +279,7 @@
                       />
                       <span
                         v-if="hasPeakRate(g)"
-                        class="inline-flex items-center gap-1 rounded-md bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] px-1.5 py-0.5 text-[10px] font-[var(--fw-medium)] text-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/20] text-[var(--warning)]"
+                        class="inline-flex items-center gap-1 rounded-md bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] px-1.5 py-0.5 text-[10px] font-[var(--fw-medium)] text-[var(--warning)] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--warning)_14%,var(--card))_20%,transparent)] text-[var(--warning)]"
                         :title="peakRateTitle(g)"
                       >
                         <Icon name="clock" size="xs" class="h-3 w-3" />

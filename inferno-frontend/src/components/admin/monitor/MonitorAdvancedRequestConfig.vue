@@ -27,7 +27,7 @@
           />
           <button
             type="button"
-            class="flex-none rounded p-1 text-[var(--muted-foreground)] hover:bg-[var(--destructive-soft)] hover:text-[var(--destructive)] dark:hover:bg-[var(--destructive-soft)/10] dark:hover:text-[var(--destructive)]"
+            class="flex-none rounded p-1 text-[var(--muted-foreground)] hover:bg-[var(--destructive-soft)] hover:text-[var(--destructive)] dark:hover:bg-[color-mix(in_srgb,var(--destructive-soft)_10%,transparent)] dark:hover:text-[var(--destructive)]"
             :title="t('common.delete')"
             @click="removeRow(i)"
           >
@@ -284,7 +284,7 @@ const bodyModeOptions = computed<{ value: BodyOverrideMode; label: string }[]>((
 function bodyModeButtonClass(mode: BodyOverrideMode): string {
   const active = props.bodyOverrideMode === mode
   if (active) {
-    return 'border-[var(--brand-line)] bg-[var(--brand-tint)] text-[var(--brand)] bg-[var(--brand-tint)/15] text-[var(--brand)] border-[var(--brand-line)]'
+    return 'border-[var(--brand-line)] bg-[var(--brand-tint)] text-[var(--brand)] bg-[color-mix(in_srgb,var(--brand-tint)_15%,transparent)] text-[var(--brand)] border-[var(--brand-line)]'
   }
   return 'border-[var(--brand-line)] bg-white text-[var(--muted-foreground)] hover:border-[var(--brand-line)] border-[var(--brand-line)] bg-[var(--brand-tint)] text-[var(--muted-foreground)]'
 }

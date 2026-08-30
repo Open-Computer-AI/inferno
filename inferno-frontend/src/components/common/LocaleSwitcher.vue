@@ -30,7 +30,7 @@
           @click="selectLocale(locale.code)"
           class="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--body-copy)] transition-colors hover:bg-[var(--brand-tint)] text-[var(--muted-foreground)] dark:hover:bg-[var(--card)]"
           :class="{
-            'bg-[var(--brand-tint)] text-[var(--brand)] bg-[var(--brand-tint)/20] text-[var(--brand)]':
+            'bg-[var(--brand-tint)] text-[var(--brand)] bg-[color-mix(in_srgb,var(--brand-tint)_20%,transparent)] text-[var(--brand)]':
               locale.code === currentLocaleCode
           }"
         >

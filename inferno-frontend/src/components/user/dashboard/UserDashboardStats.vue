@@ -207,14 +207,23 @@ const formatBalance = (b: number) =>
     maximumFractionDigits: 2
   }).format(b)
 
-const formatNumber = (n: number) => n.toLocaleString()
-const formatCost = (c: number) => c.toFixed(4)
-const formatTokens = (t: number) => {
+// Every formatter coerces. The prop is typed non-nullable and the parent guards
+// on `stats`, but the API decides which numeric fields it sends: upstream
+// guarded each read with `|| 0` for exactly that reason, and without it one
+// absent field throws inside a template expression and blanks the dashboard.
+const num = (v: number | null | undefined) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+const formatNumber = (n: number | null | undefined) => num(n).toLocaleString()
+const formatCost = (c: number | null | undefined) => num(c).toFixed(4)
+const formatTokens = (value: number | null | undefined) => {
+  const t = num(value)
   if (t >= 1_000_000) return `${(t / 1_000_000).toFixed(1)}M`
   if (t >= 1000) return `${(t / 1000).toFixed(1)}K`
   return t.toString()
 }
-const formatDuration = (ms: number) => ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${ms.toFixed(0)}ms`
+const formatDuration = (value: number | null | undefined) => {
+  const ms = num(value)
+  return ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${ms.toFixed(0)}ms`
+}
 </script>
 
 <style scoped>

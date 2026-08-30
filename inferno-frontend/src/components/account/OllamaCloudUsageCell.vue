@@ -62,7 +62,7 @@ const thresholdInk = (percent: number) => {
 
 const resetLabel = (resetsAt: string | null | undefined) => {
   const countdown = formatCountdown(resetsAt)
-  return countdown ? t('misc.resetIn', { time: countdown }) : ''
+  return countdown ? t('userSubscriptions.resetIn', { time: countdown }) : ''
 }
 </script>
 

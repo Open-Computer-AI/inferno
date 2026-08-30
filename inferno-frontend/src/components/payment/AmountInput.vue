@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { formatPaymentAmount, paymentCurrencySymbol } from './currency'
 
 /**
  * AmountInput — part 02, section 12.
@@ -39,6 +40,10 @@ interface Props {
   amounts?: number[]
   min?: number
   max?: number
+  // The install's currency. Upstream rendered bare numbers precisely because
+  // this is provider-dependent -- the default is CNY, and the Razorpay flow is
+  // INR, so a hardcoded '$' is wrong for most installs.
+  currency?: string | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -51,7 +56,7 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: number | null): void
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const customText = ref('')
 
@@ -77,12 +82,17 @@ const overMax = computed(() => props.max > 0 && hasCustomNum.value && customNum.
 const underMin = computed(() => props.min > 0 && hasCustomNum.value && customNum.value < props.min)
 const outOfRange = computed(() => overMax.value || underMin.value)
 
+const money = (value: number) => formatPaymentAmount(value, props.currency, locale.value)
+const currencySymbol = computed(() => paymentCurrencySymbol(props.currency, locale.value))
+
 const rangeHint = computed(() => {
-  if (overMax.value) return `The maximum amount is $${props.max.toLocaleString()}.`
-  if (underMin.value) return `The minimum amount is $${props.min.toLocaleString()}.`
-  if (props.min > 0 && props.max > 0) return `Between $${props.min.toLocaleString()} and $${props.max.toLocaleString()}.`
-  if (props.min > 0) return `At least $${props.min.toLocaleString()}.`
-  if (props.max > 0) return `At most $${props.max.toLocaleString()}.`
+  if (overMax.value) return t('payment.amountRange.atMost', { amount: money(props.max) })
+  if (underMin.value) return t('payment.amountRange.atLeast', { amount: money(props.min) })
+  if (props.min > 0 && props.max > 0) {
+    return t('payment.amountRange.between', { min: money(props.min), max: money(props.max) })
+  }
+  if (props.min > 0) return t('payment.amountRange.atLeast', { amount: money(props.min) })
+  if (props.max > 0) return t('payment.amountRange.atMost', { amount: money(props.max) })
   return ''
 })
 
@@ -137,14 +147,14 @@ watch(
         :data-selected="isSelected(a) ? '' : undefined"
         @click="pickPreset(a)"
       >
-        {{ '$' + a.toLocaleString() }}
+        {{ money(a) }}
       </button>
     </div>
 
     <label class="amt__field">
-      <span class="amt__label">Or a custom amount</span>
+      <span class="amt__label">{{ t('payment.customAmount') }}</span>
       <span class="amt__field-wrap">
-        <span class="amt__prefix" aria-hidden="true">$</span>
+        <span class="amt__prefix" aria-hidden="true">{{ currencySymbol }}</span>
         <input
           type="text"
           inputmode="decimal"

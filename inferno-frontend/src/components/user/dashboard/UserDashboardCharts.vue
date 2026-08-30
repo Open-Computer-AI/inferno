@@ -117,7 +117,9 @@ const slices = computed<DonutSlice[]>(() => {
     ...head,
     {
       key: '__other',
-      label: t('dashboard.noGroup'),
+      // Not 'No Group' -- that means a key with no group assigned. This row is
+      // the rolled-up tail of the model ranking.
+      label: t('charts.distribution.othersCount', { count: tail.length }),
       value: tail.reduce((sum, m) => sum + (Number(m.total_tokens) || 0), 0),
       color: tokens.mutedForeground
     }

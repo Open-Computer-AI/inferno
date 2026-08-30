@@ -147,14 +147,21 @@ const handleClose = () => {
 }
 
 const handleKeydown = (event: KeyboardEvent) => {
-  if (!props.show || !dialogRef.value?.contains(document.activeElement)) return
+  if (!props.show) return
 
-  if (props.closeOnEscape && event.key === 'Escape') {
+  // Escape is not gated on focus containment. Clicking the scrim of a dialog
+  // with closeOnOverlay=false moves activeElement to <body>, and requiring
+  // containment there would leave Escape dead across every call site. It is
+  // gated on being the topmost dialog instead, so a stack closes one at a
+  // time rather than all at once.
+  const isTopmost = Array.from(openDialogTokens).pop() === instanceToken
+  if (props.closeOnEscape && event.key === 'Escape' && isTopmost) {
     emit('close')
     return
   }
 
-  if (event.key !== 'Tab') return
+  // The focus trap below only makes sense while focus is inside the panel.
+  if (event.key !== 'Tab' || !dialogRef.value?.contains(document.activeElement)) return
   const focusable = Array.from(dialogRef.value.querySelectorAll<HTMLElement>(focusableSelector))
   if (focusable.length === 0) {
     event.preventDefault()

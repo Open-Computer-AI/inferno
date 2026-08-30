@@ -1512,7 +1512,12 @@ const overviewItems = computed<OverviewItem[]>(() => [
     label: t('admin.riskControl.overview.status'),
     value: configForm.enabled ? t('admin.riskControl.overview.enabled') : t('admin.riskControl.overview.disabled'),
     context: `${modeLabel(configForm.mode)} · ${runtimeBadgeText.value}`,
-    contextTone: configForm.enabled && status.value?.risk_control_enabled ? 'good' : 'attention',
+    // Must match runtimeBadgeText, which also treats mode 'off' as disabled --
+    // otherwise the tile reads "Disabled" beside a green all-good mark.
+    contextTone:
+      configForm.enabled && status.value?.risk_control_enabled && configForm.mode !== 'off'
+        ? 'good'
+        : 'attention',
     icon: 'shield-01',
     tone: 'brand',
   },

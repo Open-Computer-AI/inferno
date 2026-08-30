@@ -1,6 +1,6 @@
 <template>
   <section
-    class="surface-card flex min-h-[360px] flex-col overflow-visible !rounded-3xl !border-0 !p-6 shadow-sm ring-1 ring-[var(--brand-line)/5] dark:!bg-[var(--card)] dark:ring-[var(--ring-focus)]"
+    class="surface-card flex min-h-[360px] flex-col overflow-visible !rounded-3xl !border-0 !p-6 shadow-sm ring-1 ring-[color-mix(in_srgb,var(--brand-line)_5%,transparent)] dark:!bg-[var(--card)] dark:ring-[var(--ring-focus)]"
   >
     <div class="surface-card-header mb-4 flex shrink-0 flex-wrap items-start justify-between gap-3 !border-0 !p-0">
       <div class="min-w-0">
@@ -32,7 +32,7 @@
       <div
         v-if="rows.length"
         ref="scrollRef"
-        class="matrix-scroll max-h-[min(42vh,420px)] max-w-full overflow-auto rounded-2xl bg-[var(--brand-tint)/60] p-2 dark:bg-[var(--card)]"
+        class="matrix-scroll max-h-[min(42vh,420px)] max-w-full overflow-auto rounded-2xl bg-[color-mix(in_srgb,var(--brand-tint)_60%,transparent)] p-2 dark:bg-[var(--card)]"
         @wheel="onMatrixWheel"
       >
         <div class="matrix-table w-full" :style="tableStyle">
@@ -53,7 +53,7 @@
           <div
             v-for="entry in alignedRows"
             :key="rowKey(entry.row)"
-            class="matrix-row border-b border-[var(--brand-line)/80] dark:border-[var(--border-subtle)]"
+            class="matrix-row border-b border-[color-mix(in_srgb,var(--brand-line)_80%,transparent)] dark:border-[var(--border-subtle)]"
             :class="showThroughput ? 'matrix-row--with-tps' : ''"
           >
             <div class="dimension-cell flex min-w-0 items-center gap-2 bg-white dark:bg-[var(--card)]" :title="rowLabel(entry.row)">

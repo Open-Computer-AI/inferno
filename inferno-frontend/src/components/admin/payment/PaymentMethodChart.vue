@@ -69,7 +69,7 @@ function barWidth(currency: string, amount: number): number {
 }
 
 function formatMoney(currency: string, amount: number): string {
-  return new Intl.NumberFormat(undefined, { style: 'currency', currency, currencyDisplay: 'code' }).format(amount)
+  return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount)
 }
 </script>
 

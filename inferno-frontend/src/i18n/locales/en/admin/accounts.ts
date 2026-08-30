@@ -1,6 +1,8 @@
 export default {
     accounts: {
       title: 'Account Management',
+      fromModel: 'From model',
+      toModel: 'To model',
       description: 'Manage AI platform accounts and credentials',
       createAccount: 'Create Account',
       autoRefresh: 'Auto Refresh',
@@ -1472,6 +1474,11 @@ export default {
       viewStats: 'View Stats',
       usageStatistics: 'Usage Statistics',
       last30DaysUsage: 'Last 30 days usage statistics (based on actual usage days)',
+      todayStatsCell: {
+        loadFailed: 'Failed to load',
+        requests: '{count} req',
+        costToday: '{amount} today'
+      },
       stats: {
         totalCost: '30-Day Total Cost',
         accumulatedCost: 'Accumulated cost',

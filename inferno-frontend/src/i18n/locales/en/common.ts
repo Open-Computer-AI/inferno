@@ -2,6 +2,12 @@ export default {
   common: {
     loading: 'Loading...',
     submitting: 'Submitting...',
+    sending: 'Sending...',
+    creating: 'Creating...',
+    clear: 'Clear',
+    required: 'Required',
+    tryAgain: 'Please try again',
+    personalRateTooltip: 'Personal rate override',
     justNow: 'just now',
     peakRateTooltip: 'Peak rate: {window}',
     peakRateImageNote: '; image tokens billed as tokens are also affected, per-image billing is unaffected',

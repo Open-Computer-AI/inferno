@@ -310,10 +310,26 @@ function buildSelfGroups(): NavGroup[] {
   const usage: NavRow[] = isSimpleMode.value
     ? []
     : [{ path: '/usage', label: t('nav.usage'), icon: 'hgi-dashboard-speed-01' }]
+  // The reduction above planned to fold channel status into the channels table
+  // and orders into Billing's lower half. Neither fold was ever built, so these
+  // three routes had no entry point anywhere in the app -- /monitor was linked
+  // from nowhere at all, /purchase only from a WeChat callback fallback, and
+  // /orders only from the post-checkout result page. Same gating as the shell
+  // this replaced. Remove a row here only when its destination is genuinely
+  // reachable somewhere else.
+  if (isFeatureFlagEnabled(FeatureFlags.channelMonitor)) {
+    usage.push({ path: '/monitor', label: t('nav.channelStatus'), icon: 'hgi-activity-01' })
+  }
 
   const billing: NavRow[] = []
   if (!isSimpleMode.value) {
     billing.push({ path: '/subscriptions', label: t('shell.billing'), icon: 'hgi-invoice-01' })
+    if (isFeatureFlagEnabled(FeatureFlags.payment)) {
+      billing.push(
+        { path: '/purchase', label: t('nav.buySubscription'), icon: 'hgi-credit-card' },
+        { path: '/orders', label: t('nav.myOrders'), icon: 'hgi-receipt-text' }
+      )
+    }
     if (isFeatureFlagEnabled(FeatureFlags.affiliate)) {
       billing.push({ path: '/affiliate', label: t('shell.referrals'), icon: 'hgi-share-08' })
     }
@@ -399,13 +415,16 @@ function buildAdminGroups(): NavGroup[] {
   }
 
   const trust: NavRow[] = []
+  // Both rows sit behind riskControl: /admin/prompt-audit carries
+  // `requiresRiskControl` in the router, so with the flag off the row is a dead
+  // link that bounces the admin to /admin/settings.
   if (isFeatureFlagEnabled(FeatureFlags.riskControl)) {
-    trust.push({ path: '/admin/risk-control', label: t('shell.riskControl'), icon: 'hgi-shield-01' })
+    trust.push(
+      { path: '/admin/risk-control', label: t('shell.riskControl'), icon: 'hgi-shield-01' },
+      { path: '/admin/prompt-audit', label: t('shell.promptAudit'), icon: 'hgi-message-programming' }
+    )
   }
-  trust.push(
-    { path: '/admin/audit-logs', label: t('shell.auditLogs'), icon: 'hgi-audit-01' },
-    { path: '/admin/prompt-audit', label: t('shell.promptAudit'), icon: 'hgi-message-programming' }
-  )
+  trust.push({ path: '/admin/audit-logs', label: t('shell.auditLogs'), icon: 'hgi-audit-01' })
 
   const system: NavRow[] = [
     { path: '/admin/announcements', label: t('nav.announcements'), icon: 'hgi-notification-01' },
@@ -454,10 +473,12 @@ const adminFlatSimple = computed((): NavRow[] => {
   // puts both rows behind flagRiskControl -- matching ourselves keeps the two
   // modes agreeing with each other.
   if (isFeatureFlagEnabled(FeatureFlags.riskControl)) {
-    rows.push({ path: '/admin/risk-control', label: t('shell.riskControl'), icon: 'hgi-shield-01' })
+    rows.push(
+      { path: '/admin/risk-control', label: t('shell.riskControl'), icon: 'hgi-shield-01' },
+      { path: '/admin/prompt-audit', label: t('shell.promptAudit'), icon: 'hgi-message-programming' }
+    )
   }
   rows.push(
-    { path: '/admin/prompt-audit', label: t('shell.promptAudit'), icon: 'hgi-message-programming' },
     { path: '/admin/usage', label: t('nav.usage'), icon: 'hgi-dashboard-speed-01' },
     { path: '/keys', label: t('shell.apiKeys'), icon: 'hgi-key-01', dataTour: 'sidebar-my-keys' },
     { path: '/admin/settings', label: t('nav.settings'), icon: 'hgi-settings-01' }
