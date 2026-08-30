@@ -1016,9 +1016,17 @@ const geminiUsageBars = computed(() => {
 interface GrokQuotaBarInfo {
   utilization: number
   resetsAt: string | null
+  windowStats?: WindowStats | null
 }
 
 const grokBilling = computed(() => usageInfo.value?.grok_billing || null)
+const grokLocalUsage7d = computed(() => (
+  usageInfo.value?.grok_local_usage_7d || usageInfo.value?.seven_day?.window_stats || null
+))
+const grokLocalUsageMonthly = computed(() => (
+  usageInfo.value?.grok_local_usage_monthly || usageInfo.value?.thirty_day?.window_stats || null
+))
+
 const grokWeeklyBillingBar = computed((): GrokQuotaBarInfo | null => {
   const billing = grokBilling.value
   if (billing?.period_type?.toLowerCase() !== 'weekly' || billing.usage_percent == null) {
@@ -1026,7 +1034,8 @@ const grokWeeklyBillingBar = computed((): GrokQuotaBarInfo | null => {
   }
   return {
     utilization: Math.min(100, Math.max(0, billing.usage_percent)),
-    resetsAt: billing.period_end || null
+    resetsAt: billing.period_end || null,
+    windowStats: grokLocalUsage7d.value
   }
 })
 // Monthly used/limit % from billing probe (used_percent or derived from cents).
@@ -1050,7 +1059,8 @@ const grokMonthlyBillingBar = computed((): GrokQuotaBarInfo | null => {
   }
   return {
     utilization: Math.min(100, Math.max(0, utilization)),
-    resetsAt: billing.billing_period_end || billing.period_end || null
+    resetsAt: billing.billing_period_end || billing.period_end || null,
+    windowStats: grokLocalUsageMonthly.value
   }
 })
 const formatGrokMoney = (value?: number | null) => {
@@ -1070,12 +1080,6 @@ const grokPrepaidMoneyLine = computed(() => {
   // monthly limit is a positive number -- 0 means unlimited or unset, and
   // rendering it produced a meaningless "3.5/0".
   const showPrepaid = prepaid != null && Number.isFinite(prepaid) && prepaid > 0
-  const used =
-    billing.monthly_used != null
-      ? billing.monthly_used
-      : billing.used_cents != null
-        ? billing.used_cents / 100
-        : 0
   const limitRaw =
     billing.monthly_limit != null
       ? billing.monthly_limit
@@ -1084,6 +1088,12 @@ const grokPrepaidMoneyLine = computed(() => {
         : null
   const showUsedLimit = limitRaw != null && Number.isFinite(limitRaw) && limitRaw > 0
   if (!showPrepaid && !showUsedLimit) return null
+  const used =
+    billing.monthly_used != null
+      ? billing.monthly_used
+      : billing.used_cents != null
+        ? billing.used_cents / 100
+        : 0
   return {
     showPrepaid,
     showUsedLimit,
@@ -1127,12 +1137,6 @@ const grokFreeQuotaUsage = computed(() => usageInfo.value?.grok_local_usage_24h 
 /* xAI's billing probe gives money and a percent but no request/token counts.
    These are this site's own 7d/30d aggregation, so the billing bars can carry
    a windowStats tooltip like every other window does. */
-const grokLocalUsage7d = computed(() => (
-  usageInfo.value?.grok_local_usage_7d || usageInfo.value?.seven_day?.window_stats || null
-))
-const grokLocalUsageMonthly = computed(() => (
-  usageInfo.value?.grok_local_usage_monthly || usageInfo.value?.thirty_day?.window_stats || null
-))
 const grokFreeTokenBar = computed(() => {
   if (!grokIsFree.value || !grokFreeQuotaUsage.value) return null
   const limit = usageInfo.value?.grok_free_token_limit
