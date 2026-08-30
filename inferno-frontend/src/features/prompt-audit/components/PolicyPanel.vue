@@ -27,13 +27,12 @@
             <input v-model="groupSearch" type="search" class="input mt-1.5 w-full" :aria-label="t('admin.promptAudit.policy.searchGroups')" />
           </label>
           <div class="mt-3 max-h-52 overflow-y-auto rounded-lg border border-gray-200 p-2 dark:border-dark-700">
-            <label v-for="group in filteredGroups" :key="group.id" class="flex cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-2 text-sm hover:bg-gray-50 dark:hover:bg-dark-800">
-              <span class="flex items-center gap-2 text-gray-800 dark:text-dark-100">
-                <input type="checkbox" :checked="draft.group_ids.includes(group.id)" @change="toggleGroup(group.id)" />
-                {{ group.name }}
-              </span>
+            <div v-for="group in filteredGroups" :key="group.id" class="flex items-center justify-between gap-3 rounded-md px-2 py-2 text-sm hover:bg-gray-50 dark:hover:bg-dark-800">
+              <Checkbox :model-value="draft.group_ids.includes(group.id)" @update:model-value="toggleGroup(group.id)">
+                <span class="text-gray-800 dark:text-dark-100">{{ group.name }}</span>
+              </Checkbox>
               <span class="text-xs text-gray-500 dark:text-dark-400">{{ group.platform }} · {{ group.status }}</span>
-            </label>
+            </div>
             <p v-if="filteredGroups.length === 0" class="px-2 py-4 text-center text-sm text-gray-500">{{ t('admin.promptAudit.policy.noGroups') }}</p>
           </div>
           <div v-if="missingGroupIds.length" class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
@@ -45,10 +44,11 @@
         <fieldset class="mt-5 border-t border-gray-100 pt-5 dark:border-dark-800">
           <legend class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.promptAudit.policy.scanners') }}</legend>
           <div class="mt-3 grid gap-2 sm:grid-cols-2">
-            <label v-for="scanner in SCANNER_CATALOG" :key="scanner.id" class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:text-dark-200 dark:hover:bg-dark-800">
-              <input type="checkbox" :checked="draft.scanners.includes(scanner.id)" :aria-label="scannerLabel(scanner.id)" @change="toggleScanner(scanner.id)" />
-              <span>{{ scannerLabel(scanner.id) }}</span>
-            </label>
+            <div v-for="scanner in SCANNER_CATALOG" :key="scanner.id" class="rounded-md px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:text-dark-200 dark:hover:bg-dark-800">
+              <Checkbox :model-value="draft.scanners.includes(scanner.id)" :aria-label="scannerLabel(scanner.id)" @update:model-value="toggleScanner(scanner.id)">
+                <span>{{ scannerLabel(scanner.id) }}</span>
+              </Checkbox>
+            </div>
           </div>
         </fieldset>
       </div>
@@ -74,6 +74,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Checkbox from '@/components/common/Checkbox.vue'
 import type { PromptAuditDraft, PromptAuditGroup } from '../types'
 import { cloneData, SCANNER_CATALOG } from '../viewModel'
 

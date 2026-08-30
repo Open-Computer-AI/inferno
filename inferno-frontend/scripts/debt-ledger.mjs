@@ -92,10 +92,10 @@ const LEDGER = [
     probe: `test "$(grep -c "proxy\\.name" ${SRC}/components/common/ProxySelector.vue)" = "1" && echo "proxy.name appears only in the search predicate, never rendered"`
   },
   {
-    id: 'raw-checkboxes',
-    what: 'Raw <input type="checkbox"> still in use instead of Checkbox.vue / Radio.vue',
-    origin: 'INFERNO-BUILD.md owed cross-file work (~40 originally)',
-    expect: 'open',
+    id: 'june-checkbox',
+    what: 'Every checkbox is the design system Checkbox, not the browser native control',
+    origin: 'INFERNO-BUILD.md owed cross-file work -- 23 files, 111 instances, converted 2026-08-30',
+    expect: 'closed',
     probe: `n=$(grep -rl 'type="checkbox"' ${SRC} | grep -v "__tests__\\|Checkbox.vue\\|Toggle.vue" | wc -l | tr -d " "); [ "$n" != "0" ] && echo "$n files still use a raw checkbox"`
   },
   {

@@ -58,14 +58,9 @@
           </div>
         </div>
 
-        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-dark-300">
-          <input
-            v-model="form.sync_proxies"
-            type="checkbox"
-            class="rounded border-gray-300 dark:border-dark-600"
-          />
+        <Checkbox v-model="form.sync_proxies">
           {{ t('admin.accounts.syncProxies') }}
-        </label>
+        </Checkbox>
       </div>
     </form>
 
@@ -117,22 +112,23 @@
         <div
           class="max-h-48 overflow-auto rounded-lg border border-gray-200 p-2 dark:border-dark-600"
         >
-          <label
+          <div
             v-for="acc in previewResult.new_accounts"
             :key="acc.crs_account_id"
-            class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-gray-50 dark:hover:bg-dark-700/40"
+            class="rounded px-2 py-1.5 hover:bg-gray-50 dark:hover:bg-dark-700/40"
           >
-            <input
-              type="checkbox"
-              :checked="selectedIds.has(acc.crs_account_id)"
-              class="rounded border-gray-300 dark:border-dark-600"
-              @change="toggleSelect(acc.crs_account_id)"
-            />
-            <span
-              class="inline-block rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400"
-            >{{ acc.platform }} / {{ acc.type }}</span>
-            <span class="truncate text-sm text-gray-700 dark:text-dark-300">{{ acc.name }}</span>
-          </label>
+            <Checkbox
+              :model-value="selectedIds.has(acc.crs_account_id)"
+              @update:model-value="toggleSelect(acc.crs_account_id)"
+            >
+              <span class="flex items-center gap-2">
+                <span
+                  class="inline-block rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                >{{ acc.platform }} / {{ acc.type }}</span>
+                <span class="truncate text-sm text-gray-700 dark:text-dark-300">{{ acc.name }}</span>
+              </span>
+            </Checkbox>
+          </div>
         </div>
         <div class="mt-1 text-xs text-gray-400">
           {{ t('admin.accounts.crsSelectedCount', { count: selectedIds.size }) }}
@@ -244,6 +240,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import Checkbox from '@/components/common/Checkbox.vue'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
 import type { PreviewFromCRSResult } from '@/api/admin/accounts'

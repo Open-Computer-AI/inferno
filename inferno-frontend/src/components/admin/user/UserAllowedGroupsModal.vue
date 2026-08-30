@@ -40,19 +40,10 @@
               <div class="flex items-center gap-4">
                 <!-- 复选框 -->
                 <div class="flex-shrink-0">
-                  <label class="relative flex h-6 w-6 cursor-pointer items-center justify-center">
-                    <input
-                      type="checkbox"
-                      :checked="config.isSelected"
-                      @change="toggleExclusiveGroup(config.groupId)"
-                      class="peer sr-only"
-                    />
-                    <div class="h-5 w-5 rounded-md border-2 border-gray-300 transition-all peer-checked:border-primary-500 peer-checked:bg-primary-500 dark:border-dark-500 peer-checked:dark:border-primary-500">
-                      <svg v-if="config.isSelected" class="h-full w-full text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    </div>
-                  </label>
+                  <Checkbox
+                    :model-value="config.isSelected"
+                    @update:model-value="toggleExclusiveGroup(config.groupId)"
+                  />
                 </div>
 
                 <!-- 分组信息 -->
@@ -101,15 +92,11 @@
               {{ restrictPublicGroups ? t('admin.users.publicGroupsRestricted') : t('admin.users.publicGroups') }}
             </h4>
             <span class="text-xs text-gray-400">({{ publicGroupConfigs.length }})</span>
-            <label class="ml-auto flex cursor-pointer items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-              <input
-                type="checkbox"
-                :checked="restrictPublicGroups"
-                @change="toggleRestrictPublicGroups"
-                class="h-4 w-4 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500"
-              />
-              {{ t('admin.users.restrictPublicGroups') }}
-            </label>
+            <div class="ml-auto text-sm text-gray-600 dark:text-gray-400">
+              <Checkbox :model-value="restrictPublicGroups" @update:model-value="toggleRestrictPublicGroups">
+                {{ t('admin.users.restrictPublicGroups') }}
+              </Checkbox>
+            </div>
           </div>
           <p class="mb-3 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.users.restrictPublicGroupsHint') }}</p>
           <div class="grid gap-3">
@@ -121,12 +108,10 @@
               <div class="flex items-center gap-4">
                 <!-- 未开启限制时公开分组恒可用，此处仅作展示；开启后才是真实开关 -->
                 <div class="flex-shrink-0">
-                  <input
+                  <Checkbox
                     v-if="restrictPublicGroups"
-                    type="checkbox"
-                    :checked="config.isSelected"
-                    @change="togglePublicGroup(config.groupId)"
-                    class="h-5 w-5 cursor-pointer rounded-md border-2 border-green-400 text-green-600 focus:ring-green-500 dark:border-green-600"
+                    :model-value="config.isSelected"
+                    @update:model-value="togglePublicGroup(config.groupId)"
                   />
                   <div
                     v-else
@@ -208,6 +193,7 @@ import { adminAPI } from '@/api/admin'
 import type { AdminUser, Group, GroupPlatform } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
+import Checkbox from '@/components/common/Checkbox.vue'
 
 interface GroupRateConfig {
   groupId: number

@@ -849,11 +849,7 @@
                 :key="item.id"
                 class="flex items-center gap-2 rounded border border-gray-200 bg-white px-3 py-2 dark:border-dark-600 dark:bg-dark-800"
               >
-                <input
-                  v-model="item.selected"
-                  type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
+                <Checkbox v-model="item.selected" />
                 <span class="min-w-0 flex-1 break-all text-sm text-gray-700 dark:text-gray-300">
                   {{ item.id }}
                 </span>
@@ -892,22 +888,12 @@
             {{ t(imagePricingI18nKey(createForm.platform, "description")) }}
           </p>
           <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-              <input
-                v-model="createForm.allow_image_generation"
-                type="checkbox"
-                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
+            <Checkbox v-model="createForm.allow_image_generation">
               {{ t(imagePricingI18nKey(createForm.platform, "allowImageGeneration")) }}
-            </label>
-            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-              <input
-                v-model="createForm.image_rate_independent"
-                type="checkbox"
-                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
+            </Checkbox>
+            <Checkbox v-model="createForm.image_rate_independent">
               {{ t(imagePricingI18nKey(createForm.platform, "independentMultiplier")) }}
-            </label>
+            </Checkbox>
           </div>
           <div
             v-if="createForm.image_rate_independent"
@@ -977,16 +963,11 @@
             </div>
           </div>
           <div v-if="createForm.platform === 'gemini' && createForm.allow_image_generation" class="mt-4 border-t border-dashed border-gray-200 pt-4 dark:border-dark-700">
-            <label
-              class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300"
-            >
-              <input
-                v-model="createForm.allow_batch_image_generation"
-                type="checkbox"
-                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              {{ t("admin.groups.imagePricing.allowBatchImageGeneration") }}
-            </label>
+            <Checkbox v-model="createForm.allow_batch_image_generation">
+              <span class="font-medium">{{
+                t("admin.groups.imagePricing.allowBatchImageGeneration")
+              }}</span>
+            </Checkbox>
             <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
               {{ t("admin.groups.imagePricing.batchSectionHint") }}
             </p>
@@ -1044,14 +1025,9 @@
             {{ t(videoPricingI18nKey("description")) }}
           </p>
           <div class="mb-4">
-            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-              <input
-                v-model="createForm.video_rate_independent"
-                type="checkbox"
-                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
+            <Checkbox v-model="createForm.video_rate_independent">
               {{ t(videoPricingI18nKey("independentMultiplier")) }}
-            </label>
+            </Checkbox>
           </div>
           <div
             v-if="createForm.video_rate_independent"
@@ -1164,14 +1140,9 @@
         <!-- 高峰时段倍率配置（仅订阅类型分组） -->
         <div v-if="createForm.subscription_type === 'subscription'" class="border-t pt-4">
           <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-              <input
-                v-model="createForm.peak_rate_enabled"
-                type="checkbox"
-                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              <span>{{ t("admin.groups.peakRate.enable") }}</span>
-            </label>
+            <Checkbox v-model="createForm.peak_rate_enabled">
+              {{ t("admin.groups.peakRate.enable") }}
+            </Checkbox>
           </div>
           <div
             v-if="createForm.peak_rate_enabled"
@@ -1210,14 +1181,9 @@
 
         <!-- 分组利润控制（五个平台 token 请求） -->
         <div v-if="isProfitControlPlatform(createForm.platform)" class="border-t pt-4">
-          <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-            <input
-              v-model="createForm.profit_control_enabled"
-              type="checkbox"
-              class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <span>{{ t("admin.groups.profitControl.enable") }}</span>
-          </label>
+          <Checkbox v-model="createForm.profit_control_enabled">
+            {{ t("admin.groups.profitControl.enable") }}
+          </Checkbox>
           <p class="mb-3 mt-1.5 text-xs text-gray-500 dark:text-gray-400">
             {{
               createForm.profit_control_enabled
@@ -1289,43 +1255,24 @@
             </div>
           </div>
           <div class="space-y-2">
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                :checked="createForm.supported_model_scopes.includes('claude')"
-                @change="toggleCreateScope('claude')"
-                class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-700"
-              />
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{
-                t("admin.groups.supportedScopes.claude")
-              }}</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                :checked="
-                  createForm.supported_model_scopes.includes('gemini_text')
-                "
-                @change="toggleCreateScope('gemini_text')"
-                class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-700"
-              />
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{
-                t("admin.groups.supportedScopes.geminiText")
-              }}</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                :checked="
-                  createForm.supported_model_scopes.includes('gemini_image')
-                "
-                @change="toggleCreateScope('gemini_image')"
-                class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-700"
-              />
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{
-                t("admin.groups.supportedScopes.geminiImage")
-              }}</span>
-            </label>
+            <Checkbox
+              :model-value="createForm.supported_model_scopes.includes('claude')"
+              @update:model-value="toggleCreateScope('claude')"
+            >
+              {{ t("admin.groups.supportedScopes.claude") }}
+            </Checkbox>
+            <Checkbox
+              :model-value="createForm.supported_model_scopes.includes('gemini_text')"
+              @update:model-value="toggleCreateScope('gemini_text')"
+            >
+              {{ t("admin.groups.supportedScopes.geminiText") }}
+            </Checkbox>
+            <Checkbox
+              :model-value="createForm.supported_model_scopes.includes('gemini_image')"
+              @update:model-value="toggleCreateScope('gemini_image')"
+            >
+              {{ t("admin.groups.supportedScopes.geminiImage") }}
+            </Checkbox>
           </div>
           <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
             {{ t("admin.groups.supportedScopes.hint") }}
@@ -1511,10 +1458,12 @@
               <Icon name="plus" size="sm" class="mr-1" />{{ t("admin.groups.modelPricing.add") }}
             </button>
           </div>
-          <label class="mt-3 flex items-start gap-2">
-            <input v-model="createForm.long_context_pricing_enabled" type="checkbox" class="mt-0.5" />
-            <span><span class="block text-sm text-gray-700 dark:text-gray-300">{{ t("admin.groups.modelPricing.longContext") }}</span><span class="block text-xs text-gray-500">{{ t("admin.groups.modelPricing.longContextHint") }}</span></span>
-          </label>
+          <div class="mt-3">
+            <Checkbox v-model="createForm.long_context_pricing_enabled">
+              <span class="block">{{ t("admin.groups.modelPricing.longContext") }}</span>
+              <span class="block text-xs text-gray-500">{{ t("admin.groups.modelPricing.longContextHint") }}</span>
+            </Checkbox>
+          </div>
           <div class="mt-3 space-y-2">
             <PricingEntryCard v-for="(entry, index) in createForm.model_pricing" :key="index" :entry="entry" :platform="createForm.platform" hide-token-intervals @update="createForm.model_pricing[index] = $event" @remove="createForm.model_pricing.splice(index, 1)" />
           </div>
@@ -2582,11 +2531,7 @@
                 :key="item.id"
                 class="flex items-center gap-2 rounded border border-gray-200 bg-white px-3 py-2 dark:border-dark-600 dark:bg-dark-800"
               >
-                <input
-                  v-model="item.selected"
-                  type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
+                <Checkbox v-model="item.selected" />
                 <span class="min-w-0 flex-1 break-all text-sm text-gray-700 dark:text-gray-300">
                   {{ item.id }}
                 </span>
@@ -2625,22 +2570,12 @@
             {{ t(imagePricingI18nKey(editForm.platform, "description")) }}
           </p>
           <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-              <input
-                v-model="editForm.allow_image_generation"
-                type="checkbox"
-                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
+            <Checkbox v-model="editForm.allow_image_generation">
               {{ t(imagePricingI18nKey(editForm.platform, "allowImageGeneration")) }}
-            </label>
-            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-              <input
-                v-model="editForm.image_rate_independent"
-                type="checkbox"
-                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
+            </Checkbox>
+            <Checkbox v-model="editForm.image_rate_independent">
               {{ t(imagePricingI18nKey(editForm.platform, "independentMultiplier")) }}
-            </label>
+            </Checkbox>
           </div>
           <div
             v-if="editForm.image_rate_independent"
@@ -2710,16 +2645,11 @@
             </div>
           </div>
           <div v-if="editForm.platform === 'gemini' && editForm.allow_image_generation" class="mt-4 border-t border-dashed border-gray-200 pt-4 dark:border-dark-700">
-            <label
-              class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300"
-            >
-              <input
-                v-model="editForm.allow_batch_image_generation"
-                type="checkbox"
-                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              {{ t("admin.groups.imagePricing.allowBatchImageGeneration") }}
-            </label>
+            <Checkbox v-model="editForm.allow_batch_image_generation">
+              <span class="font-medium">{{
+                t("admin.groups.imagePricing.allowBatchImageGeneration")
+              }}</span>
+            </Checkbox>
             <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
               {{ t("admin.groups.imagePricing.batchSectionHint") }}
             </p>
@@ -2777,14 +2707,9 @@
             {{ t(videoPricingI18nKey("description")) }}
           </p>
           <div class="mb-4">
-            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-              <input
-                v-model="editForm.video_rate_independent"
-                type="checkbox"
-                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
+            <Checkbox v-model="editForm.video_rate_independent">
               {{ t(videoPricingI18nKey("independentMultiplier")) }}
-            </label>
+            </Checkbox>
           </div>
           <div
             v-if="editForm.video_rate_independent"
@@ -2897,14 +2822,9 @@
         <!-- 高峰时段倍率配置（仅订阅类型分组） -->
         <div v-if="editForm.subscription_type === 'subscription'" class="border-t pt-4">
           <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-              <input
-                v-model="editForm.peak_rate_enabled"
-                type="checkbox"
-                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              <span>{{ t("admin.groups.peakRate.enable") }}</span>
-            </label>
+            <Checkbox v-model="editForm.peak_rate_enabled">
+              {{ t("admin.groups.peakRate.enable") }}
+            </Checkbox>
           </div>
           <div
             v-if="editForm.peak_rate_enabled"
@@ -2943,14 +2863,9 @@
 
         <!-- 分组利润控制（五个平台 token 请求） -->
         <div v-if="isProfitControlPlatform(editForm.platform)" class="border-t pt-4">
-          <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-            <input
-              v-model="editForm.profit_control_enabled"
-              type="checkbox"
-              class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <span>{{ t("admin.groups.profitControl.enable") }}</span>
-          </label>
+          <Checkbox v-model="editForm.profit_control_enabled">
+            {{ t("admin.groups.profitControl.enable") }}
+          </Checkbox>
           <p class="mb-3 mt-1.5 text-xs text-gray-500 dark:text-gray-400">
             {{
               editForm.profit_control_enabled
@@ -3022,43 +2937,24 @@
             </div>
           </div>
           <div class="space-y-2">
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                :checked="editForm.supported_model_scopes.includes('claude')"
-                @change="toggleEditScope('claude')"
-                class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-700"
-              />
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{
-                t("admin.groups.supportedScopes.claude")
-              }}</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                :checked="
-                  editForm.supported_model_scopes.includes('gemini_text')
-                "
-                @change="toggleEditScope('gemini_text')"
-                class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-700"
-              />
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{
-                t("admin.groups.supportedScopes.geminiText")
-              }}</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                :checked="
-                  editForm.supported_model_scopes.includes('gemini_image')
-                "
-                @change="toggleEditScope('gemini_image')"
-                class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-700"
-              />
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{
-                t("admin.groups.supportedScopes.geminiImage")
-              }}</span>
-            </label>
+            <Checkbox
+              :model-value="editForm.supported_model_scopes.includes('claude')"
+              @update:model-value="toggleEditScope('claude')"
+            >
+              {{ t("admin.groups.supportedScopes.claude") }}
+            </Checkbox>
+            <Checkbox
+              :model-value="editForm.supported_model_scopes.includes('gemini_text')"
+              @update:model-value="toggleEditScope('gemini_text')"
+            >
+              {{ t("admin.groups.supportedScopes.geminiText") }}
+            </Checkbox>
+            <Checkbox
+              :model-value="editForm.supported_model_scopes.includes('gemini_image')"
+              @update:model-value="toggleEditScope('gemini_image')"
+            >
+              {{ t("admin.groups.supportedScopes.geminiImage") }}
+            </Checkbox>
           </div>
           <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
             {{ t("admin.groups.supportedScopes.hint") }}
@@ -3240,10 +3136,12 @@
               <Icon name="plus" size="sm" class="mr-1" />{{ t("admin.groups.modelPricing.add") }}
             </button>
           </div>
-          <label class="mt-3 flex items-start gap-2">
-            <input v-model="editForm.long_context_pricing_enabled" type="checkbox" class="mt-0.5" />
-            <span><span class="block text-sm text-gray-700 dark:text-gray-300">{{ t("admin.groups.modelPricing.longContext") }}</span><span class="block text-xs text-gray-500">{{ t("admin.groups.modelPricing.longContextHint") }}</span></span>
-          </label>
+          <div class="mt-3">
+            <Checkbox v-model="editForm.long_context_pricing_enabled">
+              <span class="block">{{ t("admin.groups.modelPricing.longContext") }}</span>
+              <span class="block text-xs text-gray-500">{{ t("admin.groups.modelPricing.longContextHint") }}</span>
+            </Checkbox>
+          </div>
           <div class="mt-3 space-y-2">
             <PricingEntryCard v-for="(entry, index) in editForm.model_pricing" :key="index" :entry="entry" :platform="editForm.platform" hide-token-intervals @update="editForm.model_pricing[index] = $event" @remove="editForm.model_pricing.splice(index, 1)" />
           </div>
@@ -4281,14 +4179,9 @@
             </div>
 
             <div class="flex items-center justify-between gap-3">
-              <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                <input
-                  v-model="compositeRouteForm.enabled"
-                  type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-700"
-                />
+              <Checkbox v-model="compositeRouteForm.enabled">
                 {{ t("admin.groups.compositeRoutes.enabled") }}
-              </label>
+              </Checkbox>
               <button
                 type="submit"
                 class="btn btn-primary"
@@ -4449,6 +4342,7 @@ import BaseDialog from "@/components/common/BaseDialog.vue";
 import ConfirmDialog from "@/components/common/ConfirmDialog.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import Select from "@/components/common/Select.vue";
+import Checkbox from "@/components/common/Checkbox.vue";
 import PlatformIcon from "@/components/common/PlatformIcon.vue";
 import Icon from "@/components/icons/Icon.vue";
 import GroupRateMultipliersModal from "@/components/admin/group/GroupRateMultipliersModal.vue";

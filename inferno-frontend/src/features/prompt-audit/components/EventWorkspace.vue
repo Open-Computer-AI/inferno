@@ -60,7 +60,7 @@
       <table class="min-w-[1120px] w-full text-left text-sm">
         <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 dark:bg-dark-900/70 dark:text-dark-400">
           <tr>
-            <th class="w-10 px-3 py-3"><input type="checkbox" :checked="allSelected" :aria-label="t('admin.promptAudit.events.selectAll')" @change="toggleAll" /></th>
+            <th class="w-10 px-3 py-3"><Checkbox :model-value="allSelected" :indeterminate="someSelected" :aria-label="t('admin.promptAudit.events.selectAll')" @update:model-value="toggleAll" /></th>
             <th class="px-3 py-3 font-medium">{{ t('admin.promptAudit.events.time') }}</th>
             <th class="px-3 py-3 font-medium">{{ t('admin.promptAudit.events.identity') }}</th>
             <th class="px-3 py-3 font-medium">{{ t('admin.promptAudit.events.group') }}</th>
@@ -74,7 +74,7 @@
           <tr v-if="loading"><td colspan="8" class="px-4 py-12 text-center text-gray-500" aria-busy="true">{{ t('common.loading') }}</td></tr>
           <tr v-else-if="events.length === 0"><td colspan="8" class="px-4 py-12 text-center text-gray-500">{{ t('admin.promptAudit.events.empty') }}</td></tr>
           <tr v-for="event in events" v-else :key="event.id" :data-test="`event-${event.id}`" class="align-top hover:bg-gray-50/70 dark:hover:bg-dark-800/70">
-            <td class="px-3 py-3"><input type="checkbox" :checked="selectedIds.includes(event.id)" :aria-label="t('admin.promptAudit.events.selectEvent', { id: event.id })" @change="toggleOne(event.id)" /></td>
+            <td class="px-3 py-3"><Checkbox :model-value="selectedIds.includes(event.id)" :aria-label="t('admin.promptAudit.events.selectEvent', { id: event.id })" @update:model-value="toggleOne(event.id)" /></td>
             <td class="whitespace-nowrap px-3 py-3 text-xs text-gray-600 dark:text-dark-300">{{ formatDate(event.created_at) }}</td>
             <td class="px-3 py-3">
               <CopyLine :label="t('admin.promptAudit.events.user')" :value="event.snapshot.username" />
@@ -106,6 +106,7 @@
 <script setup lang="ts">
 import { computed, defineComponent, h, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Checkbox from '@/components/common/Checkbox.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import type { PromptAuditEvent, PromptEventFilters } from '../types'
 import { cloneData, emptyEventFilters, SCANNER_CATALOG } from '../viewModel'
@@ -129,6 +130,7 @@ const { t, locale } = useI18n()
 const localFilters = reactive<PromptEventFilters>(cloneData(props.filters))
 watch(() => props.filters, (value) => Object.assign(localFilters, cloneData(value)), { deep: true })
 const allSelected = computed(() => props.events.length > 0 && props.events.every((event) => props.selectedIds.includes(event.id)))
+const someSelected = computed(() => !allSelected.value && props.events.some((event) => props.selectedIds.includes(event.id)))
 
 const FilterInput = defineComponent({
   props: { modelValue: { type: String, required: true }, label: { type: String, required: true }, type: { type: String, default: 'text' } },

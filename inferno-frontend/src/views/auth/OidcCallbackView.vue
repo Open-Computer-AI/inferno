@@ -40,11 +40,12 @@
                 </p>
               </div>
 
-              <label
+              <div
                 v-if="suggestedDisplayName"
-                class="auth-panel"
+                class="auth-panel auth-panel--clickable"
+                @click="togglePanel($event, () => (adoptDisplayName = !adoptDisplayName))"
               >
-                <input v-model="adoptDisplayName" type="checkbox" class="mt-1 h-4 w-4" />
+                <Checkbox v-model="adoptDisplayName" class="mt-1" />
                 <span class="space-y-1">
                   <span class="auth-title">
                     {{ t('auth.oauthFlow.useDisplayName') }}
@@ -53,13 +54,14 @@
                     {{ suggestedDisplayName }}
                   </span>
                 </span>
-              </label>
+              </div>
 
-              <label
+              <div
                 v-if="suggestedAvatarUrl"
-                class="auth-panel"
+                class="auth-panel auth-panel--clickable"
+                @click="togglePanel($event, () => (adoptAvatar = !adoptAvatar))"
               >
-                <input v-model="adoptAvatar" type="checkbox" class="mt-1 h-4 w-4" />
+                <Checkbox v-model="adoptAvatar" class="mt-1" />
                 <img
                   :src="suggestedAvatarUrl"
                   :alt="t('auth.oauthFlow.avatarAlt', { providerName })"
@@ -73,7 +75,7 @@
                     {{ suggestedAvatarUrl }}
                   </span>
                 </span>
-              </label>
+              </div>
             </div>
           </div>
 
@@ -247,6 +249,16 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { AuthLayout } from '@/components/layout'
+import Checkbox from '@/components/common/Checkbox.vue'
+
+/* The panel used to be a <label>, so clicking its text toggled the box. Checkbox
+   renders its own <label> and labels cannot nest, so the panel is a <div> now
+   and forwards the click -- skipping clicks from the checkbox itself, which
+   already toggle and would otherwise toggle twice. */
+const togglePanel = (event: MouseEvent, toggle: () => void) => {
+  if ((event.target as HTMLElement | null)?.closest('.chk')) return
+  toggle()
+}
 import PendingOAuthCreateAccountForm, {
   type PendingOAuthCreateAccountPayload
 } from '@/components/auth/PendingOAuthCreateAccountForm.vue'

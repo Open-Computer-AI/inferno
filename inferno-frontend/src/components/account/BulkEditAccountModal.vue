@@ -49,12 +49,10 @@
               {{ t('admin.accounts.openai.oauthPassthroughDesc') }}
             </p>
           </div>
-          <input
+          <Checkbox
             v-model="enableOpenAIPassthrough"
             id="bulk-edit-openai-passthrough-enabled"
-            type="checkbox"
             aria-controls="bulk-edit-openai-passthrough-body"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -100,12 +98,10 @@
               {{ t('admin.accounts.openai.flattenNamespacesDesc') }}
             </p>
           </div>
-          <input
+          <Checkbox
             v-model="enableOpenAIFlattenNamespaces"
             id="bulk-edit-openai-flatten-namespaces-enabled"
-            type="checkbox"
             aria-controls="bulk-edit-openai-flatten-namespaces-body"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -151,12 +147,10 @@
               {{ t('admin.accounts.openai.longContextBillingDesc') }}
             </p>
           </div>
-          <input
+          <Checkbox
             v-model="enableOpenAILongContextBilling"
             id="bulk-edit-openai-long-context-billing-enabled"
-            type="checkbox"
             aria-controls="bulk-edit-openai-long-context-billing-body"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -203,12 +197,10 @@
           >
             {{ t('admin.accounts.baseUrl') }}
           </label>
-          <input
+          <Checkbox
             v-model="enableBaseUrl"
             id="bulk-edit-base-url-enabled"
-            type="checkbox"
             aria-controls="bulk-edit-base-url"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <input
@@ -241,12 +233,10 @@
           >
             {{ t('admin.accounts.modelRestriction') }}
           </label>
-          <input
+          <Checkbox
             v-model="enableModelRestriction"
             id="bulk-edit-model-restriction-enabled"
-            type="checkbox"
             aria-controls="bulk-edit-model-restriction-body"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
 
@@ -477,12 +467,10 @@
               {{ t('admin.accounts.customErrorCodesHint') }}
             </p>
           </div>
-          <input
+          <Checkbox
             v-model="enableCustomErrorCodes"
             id="bulk-edit-custom-error-codes-enabled"
-            type="checkbox"
             aria-controls="bulk-edit-custom-error-codes-body"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
 
@@ -575,12 +563,10 @@
               {{ t('admin.accounts.interceptWarmupRequestsDesc') }}
             </p>
           </div>
-          <input
+          <Checkbox
             v-model="enableInterceptWarmup"
             id="bulk-edit-intercept-warmup-enabled"
-            type="checkbox"
             aria-controls="bulk-edit-intercept-warmup-body"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div v-if="enableInterceptWarmup" id="bulk-edit-intercept-warmup-body" class="mt-3">
@@ -617,12 +603,10 @@
               {{ t('admin.accounts.headerOverride.hint') }}
             </p>
           </div>
-          <input
+          <Checkbox
             v-model="enableHeaderOverride"
             id="bulk-edit-header-override-enabled"
-            type="checkbox"
             aria-controls="bulk-edit-header-override-body"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div v-if="enableHeaderOverride" id="bulk-edit-header-override-body" class="mt-3 space-y-3">
@@ -675,12 +659,10 @@
           >
             {{ t('admin.accounts.proxy') }}
           </label>
-          <input
+          <Checkbox
             v-model="enableProxy"
             id="bulk-edit-proxy-enabled"
-            type="checkbox"
             aria-controls="bulk-edit-proxy-body"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div id="bulk-edit-proxy-body" :class="!enableProxy && 'pointer-events-none opacity-50'">
@@ -703,12 +685,10 @@
             >
               {{ t('admin.accounts.concurrency') }}
             </label>
-            <input
+            <Checkbox
               v-model="enableConcurrency"
               id="bulk-edit-concurrency-enabled"
-              type="checkbox"
               aria-controls="bulk-edit-concurrency"
-              class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
             />
           </div>
           <input
@@ -732,12 +712,10 @@
             >
               {{ t('admin.accounts.loadFactor') }}
             </label>
-            <input
+            <Checkbox
               v-model="enableLoadFactor"
               id="bulk-edit-load-factor-enabled"
-              type="checkbox"
               aria-controls="bulk-edit-load-factor"
-              class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
             />
           </div>
           <input
@@ -762,12 +740,10 @@
             >
               {{ t('admin.accounts.priority') }}
             </label>
-            <input
+            <Checkbox
               v-model="enablePriority"
               id="bulk-edit-priority-enabled"
-              type="checkbox"
               aria-controls="bulk-edit-priority"
-              class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
             />
           </div>
           <input
@@ -790,12 +766,10 @@
             >
               {{ t('admin.accounts.billingRateMultiplier') }}
             </label>
-            <input
+            <Checkbox
               v-model="enableRateMultiplier"
               id="bulk-edit-rate-multiplier-enabled"
-              type="checkbox"
               aria-controls="bulk-edit-rate-multiplier"
-              class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
             />
           </div>
           <input
@@ -831,12 +805,10 @@
           >
             {{ t('common.status') }}
           </label>
-          <input
+          <Checkbox
             v-model="enableStatus"
             id="bulk-edit-status-enabled"
-            type="checkbox"
             aria-controls="bulk-edit-status"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div id="bulk-edit-status" :class="!enableStatus && 'pointer-events-none opacity-50'">
@@ -858,12 +830,10 @@
           >
             {{ t('admin.accounts.openai.wsMode') }}
           </label>
-          <input
+          <Checkbox
             v-model="enableOpenAIWSMode"
             id="bulk-edit-openai-ws-mode-enabled"
-            type="checkbox"
             aria-controls="bulk-edit-openai-ws-mode"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -895,12 +865,10 @@
           >
             {{ t('admin.accounts.openai.codexCLIOnly') }}
           </label>
-          <input
+          <Checkbox
             v-model="enableCodexCLIOnly"
             id="bulk-edit-openai-codex-cli-only-enabled"
-            type="checkbox"
             aria-controls="bulk-edit-openai-codex-cli-only"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -939,12 +907,10 @@
           >
             {{ t('admin.accounts.openai.codexCLIOnlyAppServer') }}
           </label>
-          <input
+          <Checkbox
             v-model="enableCodexCLIOnlyAppServer"
             id="bulk-edit-openai-codex-app-server-enabled"
-            type="checkbox"
             aria-controls="bulk-edit-openai-codex-app-server"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -983,12 +949,10 @@
           >
             {{ t('admin.accounts.openai.codexFingerprintMode') }}
           </label>
-          <input
+          <Checkbox
             v-model="enableCodexFingerprintMode"
             id="bulk-edit-openai-codex-fingerprint-mode-enabled"
-            type="checkbox"
             aria-controls="bulk-edit-openai-codex-fingerprint"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -1017,12 +981,10 @@
               {{ t('admin.accounts.upstreamBilling.autoProbeHint') }}
             </p>
           </div>
-          <input
+          <Checkbox
             v-model="enableUpstreamBillingAutoProbe"
             id="bulk-edit-upstream-billing-auto-probe-enabled"
-            type="checkbox"
             aria-controls="bulk-edit-upstream-billing-auto-probe"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -1056,12 +1018,10 @@
               {{ t('admin.accounts.openai.endpointCapabilitiesDesc') }}
             </p>
           </div>
-          <input
+          <Checkbox
             v-model="enableOpenAIEndpointCapabilities"
             id="bulk-edit-openai-endpoint-capabilities-enabled"
-            type="checkbox"
             aria-controls="bulk-edit-openai-endpoint-capabilities-body"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -1071,21 +1031,20 @@
           aria-labelledby="bulk-edit-openai-endpoint-capabilities-label"
         >
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <label
+            <div
               v-for="option in openAIEndpointCapabilityOptions"
               :key="option.value"
-              class="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-dark-600"
+              class="flex items-center rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-dark-600"
             >
-              <input
-                type="checkbox"
+              <Checkbox
                 :disabled="!enableOpenAIEndpointCapabilities"
-                class="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500"
                 :data-testid="`bulk-edit-openai-endpoint-capability-${option.value}`"
-                :checked="openAIEndpointCapabilities.includes(option.value)"
-                @change="toggleOpenAIEndpointCapability(option.value, $event)"
-              />
-              <span class="text-gray-700 dark:text-gray-200">{{ option.label }}</span>
-            </label>
+                :model-value="openAIEndpointCapabilities.includes(option.value)"
+                @update:model-value="toggleOpenAIEndpointCapability(option.value)"
+              >
+                <span class="text-gray-700 dark:text-gray-200">{{ option.label }}</span>
+              </Checkbox>
+            </div>
           </div>
         </div>
       </div>
@@ -1105,12 +1064,10 @@
               {{ t('admin.accounts.openai.responsesModeDesc') }}
             </p>
           </div>
-          <input
+          <Checkbox
             v-model="enableOpenAIResponsesMode"
             id="bulk-edit-openai-responses-mode-enabled"
-            type="checkbox"
             aria-controls="bulk-edit-openai-responses-mode-body"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -1146,12 +1103,10 @@
           >
             {{ t('admin.accounts.openai.wsMode') }}
           </label>
-          <input
+          <Checkbox
             v-model="enableOpenAIAPIKeyWSMode"
             id="bulk-edit-openai-apikey-ws-mode-enabled"
-            type="checkbox"
             aria-controls="bulk-edit-openai-apikey-ws-mode"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -1188,12 +1143,10 @@
               {{ t('admin.accounts.openai.compactModeDesc') }}
             </p>
           </div>
-          <input
+          <Checkbox
             v-model="enableOpenAICompactMode"
             id="bulk-edit-openai-compact-mode-enabled"
-            type="checkbox"
             aria-controls="bulk-edit-openai-compact-mode"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -1224,12 +1177,10 @@
               {{ t('admin.accounts.openai.compactModelMappingDesc') }}
             </p>
           </div>
-          <input
+          <Checkbox
             v-model="enableOpenAICompactModelMapping"
             id="bulk-edit-openai-compact-model-mapping-enabled"
-            type="checkbox"
             aria-controls="bulk-edit-openai-compact-model-mapping"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -1287,12 +1238,10 @@
           >
             {{ t('admin.accounts.quotaControl.rpmLimit.label') }}
           </label>
-          <input
+          <Checkbox
             v-model="enableRpmLimit"
             id="bulk-edit-rpm-limit-enabled"
-            type="checkbox"
             aria-controls="bulk-edit-rpm-limit-body"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
 
@@ -1413,12 +1362,10 @@
           >
             {{ t('nav.groups') }}
           </label>
-          <input
+          <Checkbox
             v-model="enableGroups"
             id="bulk-edit-groups-enabled"
-            type="checkbox"
             aria-controls="bulk-edit-groups"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div id="bulk-edit-groups" :class="!enableGroups && 'pointer-events-none opacity-50'">
@@ -1498,6 +1445,7 @@ import type {
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import Checkbox from '@/components/common/Checkbox.vue'
 import Select from '@/components/common/Select.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
@@ -1811,14 +1759,9 @@ const normalizeOpenAIEndpointCapabilities = (values: OpenAIEndpointCapability[])
   return selected.length > 0 ? selected : allowed
 }
 
-const toggleOpenAIEndpointCapability = (
-  capability: OpenAIEndpointCapability,
-  event?: Event
-) => {
+const toggleOpenAIEndpointCapability = (capability: OpenAIEndpointCapability) => {
   if (openAIEndpointCapabilities.value.includes(capability)) {
     if (openAIEndpointCapabilities.value.length <= 1) {
-      const input = event?.target as HTMLInputElement | null
-      if (input) input.checked = true
       return
     }
     openAIEndpointCapabilities.value = openAIEndpointCapabilities.value.filter(

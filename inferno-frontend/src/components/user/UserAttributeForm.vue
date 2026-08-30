@@ -61,20 +61,15 @@
 
       <!-- Multi-Select (Checkboxes) -->
       <div v-else-if="attr.type === 'multi_select'" class="space-y-2">
-        <label
+        <Checkbox
           v-for="opt in attr.options"
           :key="opt.value"
-          class="flex items-center gap-2"
+          :value="opt.value"
+          :model-value="isOptionSelected(attr.id, opt.value)"
+          @update:model-value="toggleMultiSelectOption(attr.id, opt.value)"
         >
-          <input
-            type="checkbox"
-            :value="opt.value"
-            :checked="isOptionSelected(attr.id, opt.value)"
-            @change="toggleMultiSelectOption(attr.id, opt.value)"
-            class="h-4 w-4 rounded border-gray-300 text-primary-600"
-          />
           <span class="text-sm text-gray-700 dark:text-gray-300">{{ opt.label }}</span>
-        </label>
+        </Checkbox>
       </div>
 
       <!-- Description -->
@@ -96,6 +91,7 @@ import { ref, watch, onMounted } from 'vue'
 import { adminAPI } from '@/api/admin'
 import type { UserAttributeDefinition, UserAttributeValuesMap } from '@/types'
 import Select from '@/components/common/Select.vue'
+import Checkbox from '@/components/common/Checkbox.vue'
 
 interface Props {
   userId?: number

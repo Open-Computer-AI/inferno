@@ -208,16 +208,16 @@
           :virtualize-threshold="50"
         >
           <template #header-select>
-            <input
-              type="checkbox"
-              class="h-4 w-4 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-              :checked="allVisibleSelected"
-              @click.stop
-              @change="toggleSelectAllVisible($event)"
-            />
+            <span class="inline-flex" @click.stop>
+              <Checkbox
+                :model-value="allVisibleSelected"
+                :indeterminate="someVisibleSelected"
+                @update:model-value="toggleSelectAllVisible"
+              />
+            </span>
           </template>
           <template #cell-select="{ row }">
-            <input type="checkbox" :checked="isSelected(row.id)" @change="toggleSel(row.id)" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+            <Checkbox :model-value="isSelected(row.id)" @update:model-value="toggleSel(row.id)" />
           </template>
           <template #cell-id="{ value }">
             <span class="font-mono text-xs text-gray-500 dark:text-gray-400">#{{ value }}</span>
@@ -474,10 +474,9 @@
     <ConfirmDialog :show="showDeleteDialog" :title="t('admin.accounts.deleteAccount')" :message="t('admin.accounts.deleteConfirm', { name: deletingAcc?.name })" :confirm-text="t('common.delete')" :cancel-text="t('common.cancel')" :danger="true" @confirm="confirmDelete" @cancel="showDeleteDialog = false" />
     <ConfirmDialog :show="showCreateShadowDialog" :title="t('admin.accounts.createSparkShadow')" :message="t('admin.accounts.createSparkShadowConfirm', { name: creatingShadowAcc?.name })" @confirm="confirmCreateSparkShadow" @cancel="showCreateShadowDialog = false" />
     <ConfirmDialog :show="showExportDataDialog" :title="t('admin.accounts.dataExport')" :message="t('admin.accounts.dataExportConfirmMessage')" :confirm-text="t('admin.accounts.dataExportConfirm')" :cancel-text="t('common.cancel')" @confirm="handleExportData" @cancel="showExportDataDialog = false">
-      <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-        <input type="checkbox" class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" v-model="includeProxyOnExport" />
-        <span>{{ t('admin.accounts.dataExportIncludeProxies') }}</span>
-      </label>
+      <Checkbox v-model="includeProxyOnExport">
+        {{ t('admin.accounts.dataExportIncludeProxies') }}
+      </Checkbox>
     </ConfirmDialog>
     <ErrorPassthroughRulesModal :show="showErrorPassthrough" @close="showErrorPassthrough = false" />
     <TLSFingerprintProfilesModal :show="showTLSFingerprintProfiles" @close="showTLSFingerprintProfiles = false" />
@@ -503,6 +502,7 @@ import DataTable from '@/components/common/DataTable.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import Checkbox from '@/components/common/Checkbox.vue'
 import { CreateAccountModal, EditAccountModal, BulkEditAccountModal, SyncFromCrsModal, TempUnschedStatusModal } from '@/components/account'
 import AccountTableActions from '@/components/admin/account/AccountTableActions.vue'
 import AccountTableFilters from '@/components/admin/account/AccountTableFilters.vue'
@@ -1103,6 +1103,10 @@ const {
   rows: accounts,
   getId: (account) => account.id
 })
+
+const someVisibleSelected = computed(
+  () => !allVisibleSelected.value && accounts.value.some(account => isSelected(account.id))
+)
 
 const selectingAllResults = ref(false)
 const selectedAllResultIDs = ref<Set<number> | null>(null)
@@ -1874,9 +1878,8 @@ const openMenu = (a: Account, e: MouseEvent) => {
 
   menu.show = true
 }
-const toggleSelectAllVisible = (event: Event) => {
-  const target = event.target as HTMLInputElement
-  toggleVisible(target.checked)
+const toggleSelectAllVisible = (checked: boolean) => {
+  toggleVisible(checked)
 }
 const handleBulkDelete = async () => {
   const accountIds = [...selIds.value]

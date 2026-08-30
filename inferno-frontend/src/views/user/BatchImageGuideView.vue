@@ -83,23 +83,20 @@
           row-key="id"
         >
           <template #header-select>
-            <input
-              type="checkbox"
-              class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-              :checked="allVisibleSelected"
+            <Checkbox
+              :model-value="allVisibleSelected"
               :indeterminate="someVisibleSelected"
-              @change="toggleAllVisible(($event.target as HTMLInputElement).checked)"
+              @update:model-value="toggleAllVisible"
             />
           </template>
 
           <template #cell-select="{ row }">
-            <input
-              type="checkbox"
-              class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-              :checked="selectedJobIds.has(row.id)"
-              @change="toggleJobSelection(row.id, ($event.target as HTMLInputElement).checked)"
-              @click.stop
-            />
+            <span class="inline-flex" @click.stop>
+              <Checkbox
+                :model-value="selectedJobIds.has(row.id)"
+                @update:model-value="toggleJobSelection(row.id, $event)"
+              />
+            </span>
           </template>
 
           <template #cell-id="{ row }">
@@ -757,6 +754,7 @@ import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
+import Checkbox from '@/components/common/Checkbox.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select, { type SelectOption } from '@/components/common/Select.vue'
 import SearchInput from '@/components/common/SearchInput.vue'

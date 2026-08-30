@@ -304,19 +304,15 @@
           <div class="mt-3">
             <label class="input-label text-xs">{{ t('admin.errorPassthrough.form.platforms') }}</label>
             <div class="flex flex-wrap gap-3">
-              <label
+              <Checkbox
                 v-for="platform in platformOptions"
                 :key="platform.value"
-                class="inline-flex items-center gap-1.5"
+                :value="platform.value"
+                :model-value="form.platforms.includes(platform.value)"
+                @update:model-value="togglePlatform(platform.value, $event)"
               >
-                <input
-                  type="checkbox"
-                  :value="platform.value"
-                  v-model="form.platforms"
-                  class="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
-                <span class="text-xs text-gray-700 dark:text-gray-300">{{ platform.label }}</span>
-              </label>
+                {{ platform.label }}
+              </Checkbox>
             </div>
             <p class="input-hint text-xs mt-1">{{ t('admin.errorPassthrough.form.platformsHint') }}</p>
           </div>
@@ -330,16 +326,9 @@
 
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="flex items-center gap-1.5">
-                <input
-                  type="checkbox"
-                  v-model="form.passthrough_code"
-                  class="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
-                <span class="text-xs font-medium text-gray-700 dark:text-gray-300">
-                  {{ t('admin.errorPassthrough.form.passthroughCode') }}
-                </span>
-              </label>
+              <Checkbox v-model="form.passthrough_code">
+                {{ t('admin.errorPassthrough.form.passthroughCode') }}
+              </Checkbox>
               <div v-if="!form.passthrough_code" class="mt-2">
                 <label class="input-label text-xs">{{ t('admin.errorPassthrough.form.responseCode') }}</label>
                 <input
@@ -353,16 +342,9 @@
               </div>
             </div>
             <div>
-              <label class="flex items-center gap-1.5">
-                <input
-                  type="checkbox"
-                  v-model="form.passthrough_body"
-                  class="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
-                <span class="text-xs font-medium text-gray-700 dark:text-gray-300">
-                  {{ t('admin.errorPassthrough.form.passthroughBody') }}
-                </span>
-              </label>
+              <Checkbox v-model="form.passthrough_body">
+                {{ t('admin.errorPassthrough.form.passthroughBody') }}
+              </Checkbox>
               <div v-if="!form.passthrough_body" class="mt-2">
                 <label class="input-label text-xs">{{ t('admin.errorPassthrough.form.customMessage') }}</label>
                 <input
@@ -378,27 +360,17 @@
 
         <!-- Skip Monitoring -->
         <div class="flex items-center gap-1.5">
-          <input
-            type="checkbox"
-            v-model="form.skip_monitoring"
-            class="h-3.5 w-3.5 rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
-          />
-          <span class="text-xs font-medium text-gray-700 dark:text-gray-300">
+          <Checkbox v-model="form.skip_monitoring">
             {{ t('admin.errorPassthrough.form.skipMonitoring') }}
-          </span>
+          </Checkbox>
         </div>
         <p class="input-hint text-xs -mt-3">{{ t('admin.errorPassthrough.form.skipMonitoringHint') }}</p>
 
         <!-- Enabled -->
         <div class="flex items-center gap-1.5">
-          <input
-            type="checkbox"
-            v-model="form.enabled"
-            class="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-          />
-          <span class="text-xs font-medium text-gray-700 dark:text-gray-300">
+          <Checkbox v-model="form.enabled">
             {{ t('admin.errorPassthrough.form.enabled') }}
-          </span>
+          </Checkbox>
         </div>
       </form>
 
@@ -438,6 +410,7 @@ import { adminAPI } from '@/api/admin'
 import type { ErrorPassthroughRule } from '@/api/admin/errorPassthrough'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import Checkbox from '@/components/common/Checkbox.vue'
 import Icon from '@/components/icons/Icon.vue'
 
 const props = defineProps<{
@@ -487,6 +460,19 @@ const matchModeOptions = computed(() => [
 ])
 
 const platformOptions = [...CONCRETE_PLATFORM_OPTIONS]
+
+const togglePlatform = (value: string, checked: boolean) => {
+  if (checked) {
+    if (!form.platforms.includes(value)) {
+      form.platforms.push(value)
+    }
+    return
+  }
+  const index = form.platforms.indexOf(value)
+  if (index !== -1) {
+    form.platforms.splice(index, 1)
+  }
+}
 
 // Load rules when dialog opens
 watch(() => props.show, (newVal) => {

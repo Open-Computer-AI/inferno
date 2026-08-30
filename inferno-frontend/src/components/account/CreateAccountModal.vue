@@ -1874,14 +1874,9 @@
 
         <!-- Shared: Force Global -->
         <div>
-          <label class="flex items-center gap-2 cursor-pointer">
-            <input
-              v-model="bedrockForceGlobal"
-              type="checkbox"
-              class="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500"
-            />
-            <span class="text-sm text-gray-700 dark:text-gray-300">{{ t('admin.accounts.bedrockForceGlobal') }}</span>
-          </label>
+          <Checkbox v-model="bedrockForceGlobal">
+            {{ t('admin.accounts.bedrockForceGlobal') }}
+          </Checkbox>
           <p class="input-hint mt-1">{{ t('admin.accounts.bedrockForceGlobalHint') }}</p>
         </div>
 
@@ -3284,20 +3279,19 @@
         <div>
           <label class="input-label mb-2 block">{{ t('admin.accounts.openai.endpointCapabilities') }}</label>
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <label
+            <div
               v-for="option in openAIEndpointCapabilityOptions"
               :key="option.value"
-              class="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-dark-600"
+              class="flex items-center rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-dark-600"
             >
-              <input
-                type="checkbox"
-                class="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500"
+              <Checkbox
                 :data-testid="`openai-endpoint-capability-${option.value}`"
-                :checked="openAIEndpointCapabilities.includes(option.value)"
-                @change="toggleOpenAIEndpointCapability(option.value, $event)"
-              />
-              <span class="text-gray-700 dark:text-gray-200">{{ option.label }}</span>
-            </label>
+                :model-value="openAIEndpointCapabilities.includes(option.value)"
+                @update:model-value="toggleOpenAIEndpointCapability(option.value)"
+              >
+                <span class="text-gray-700 dark:text-gray-200">{{ option.label }}</span>
+              </Checkbox>
+            </div>
           </div>
           <p class="input-hint">{{ t('admin.accounts.openai.endpointCapabilitiesDesc') }}</p>
         </div>
@@ -3334,16 +3328,9 @@
       <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <!-- Mixed Scheduling (only for antigravity accounts) -->
         <div v-if="form.platform === 'antigravity'" class="flex items-center gap-2">
-          <label class="flex cursor-pointer items-center gap-2">
-            <input
-              type="checkbox"
-              v-model="mixedScheduling"
-              class="h-4 w-4 rounded border-gray-300 text-primary-500 focus:ring-primary-500 dark:border-dark-500"
-            />
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-              {{ t('admin.accounts.mixedScheduling') }}
-            </span>
-          </label>
+          <Checkbox v-model="mixedScheduling">
+            {{ t('admin.accounts.mixedScheduling') }}
+          </Checkbox>
           <div class="group relative">
             <span
               class="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-gray-200 text-xs text-gray-500 hover:bg-gray-300 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500"
@@ -3362,16 +3349,9 @@
           </div>
         </div>
         <div v-if="form.platform === 'antigravity'" class="mt-3 flex items-center gap-2">
-          <label class="flex cursor-pointer items-center gap-2">
-            <input
-              type="checkbox"
-              v-model="allowOverages"
-              class="h-4 w-4 rounded border-gray-300 text-primary-500 focus:ring-primary-500 dark:border-dark-500"
-            />
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-              {{ t('admin.accounts.allowOverages') }}
-            </span>
-          </label>
+          <Checkbox v-model="allowOverages">
+            {{ t('admin.accounts.allowOverages') }}
+          </Checkbox>
           <div class="group relative">
             <span
               class="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-gray-200 text-xs text-gray-500 hover:bg-gray-300 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500"
@@ -3792,6 +3772,7 @@ import type {
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import Checkbox from '@/components/common/Checkbox.vue'
 import Select from '@/components/common/Select.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
@@ -4333,11 +4314,9 @@ const normalizeOpenAIEndpointCapabilities = (values: OpenAIEndpointCapability[])
   return selected.length > 0 ? selected : allowed
 }
 
-const toggleOpenAIEndpointCapability = (capability: OpenAIEndpointCapability, event?: Event) => {
+const toggleOpenAIEndpointCapability = (capability: OpenAIEndpointCapability) => {
   if (openAIEndpointCapabilities.value.includes(capability)) {
     if (openAIEndpointCapabilities.value.length <= 1) {
-      const input = event?.target as HTMLInputElement | null
-      if (input) input.checked = true
       return
     }
     openAIEndpointCapabilities.value = openAIEndpointCapabilities.value.filter(

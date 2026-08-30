@@ -66,24 +66,20 @@
           @sort="handleSort"
         >
           <template #header-select>
-            <input
+            <Checkbox
               data-test="select-all-codes"
-              type="checkbox"
-              class="h-4 w-4 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-              :checked="allVisibleSelected"
+              :model-value="allVisibleSelected"
               @click.stop
-              @change="toggleSelectAllVisible($event)"
+              @update:model-value="toggleSelectAllVisible"
             />
           </template>
 
           <template #cell-select="{ row }">
-            <input
+            <Checkbox
               data-test="select-code"
-              type="checkbox"
-              class="h-4 w-4 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-              :checked="selectedCodeIds.has(row.id)"
+              :model-value="selectedCodeIds.has(row.id)"
               @click.stop
-              @change="toggleSelectRow(row.id, $event)"
+              @update:model-value="toggleSelectRow(row.id, $event)"
             />
           </template>
 
@@ -428,15 +424,9 @@
 
           <form data-test="batch-update-form" class="space-y-4" @submit.prevent="handleBatchUpdate">
             <div class="space-y-2">
-              <label class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                <input
-                  data-test="batch-field-status"
-                  v-model="batchUpdateForm.update_status"
-                  type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
+              <Checkbox data-test="batch-field-status" v-model="batchUpdateForm.update_status">
                 {{ t('admin.redeem.batchFields.status') }}
-              </label>
+              </Checkbox>
               <Select
                 v-if="batchUpdateForm.update_status"
                 v-model="batchUpdateForm.status"
@@ -446,14 +436,9 @@
             </div>
 
             <div class="space-y-2">
-              <label class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                <input
-                  v-model="batchUpdateForm.update_expires_at"
-                  type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
+              <Checkbox v-model="batchUpdateForm.update_expires_at">
                 {{ t('admin.redeem.batchFields.expiresAt') }}
-              </label>
+              </Checkbox>
               <template v-if="batchUpdateForm.update_expires_at">
                 <Select v-model="batchUpdateForm.expires_mode" :options="batchExpiryModeOptions" />
                 <input
@@ -466,15 +451,9 @@
             </div>
 
             <div class="space-y-2">
-              <label class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                <input
-                  data-test="batch-field-notes"
-                  v-model="batchUpdateForm.update_notes"
-                  type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
+              <Checkbox data-test="batch-field-notes" v-model="batchUpdateForm.update_notes">
                 {{ t('admin.redeem.batchFields.notes') }}
-              </label>
+              </Checkbox>
               <textarea
                 v-if="batchUpdateForm.update_notes"
                 data-test="batch-notes-input"
@@ -486,14 +465,9 @@
             </div>
 
             <div class="space-y-2">
-              <label class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                <input
-                  v-model="batchUpdateForm.update_group_id"
-                  type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
+              <Checkbox v-model="batchUpdateForm.update_group_id">
                 {{ t('admin.redeem.batchFields.group') }}
-              </label>
+              </Checkbox>
               <Select
                 v-if="batchUpdateForm.update_group_id"
                 v-model="batchUpdateForm.group_id"
@@ -630,6 +604,7 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import Checkbox from '@/components/common/Checkbox.vue'
 import Select from '@/components/common/Select.vue'
 import GroupBadge from '@/components/common/GroupBadge.vue'
 import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
@@ -924,18 +899,16 @@ const handleSort = (key: string, order: 'asc' | 'desc') => {
   loadCodes()
 }
 
-const toggleSelectRow = (id: number, event: Event) => {
-  const target = event.target as HTMLInputElement
-  if (target.checked) {
+const toggleSelectRow = (id: number, checked: boolean) => {
+  if (checked) {
     select(id)
     return
   }
   deselect(id)
 }
 
-const toggleSelectAllVisible = (event: Event) => {
-  const target = event.target as HTMLInputElement
-  toggleVisible(target.checked)
+const toggleSelectAllVisible = (checked: boolean) => {
+  toggleVisible(checked)
 }
 
 const getRedeemCodeExpiresInDays = () => {

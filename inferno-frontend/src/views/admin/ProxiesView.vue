@@ -99,23 +99,22 @@
           @sort="handleSort"
         >
           <template #header-select>
-            <input
-              type="checkbox"
-              class="h-4 w-4 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-              :checked="allVisibleSelected"
-              @click.stop
-              @change="toggleSelectAllVisible($event)"
-            />
+            <span class="inline-flex" @click.stop>
+              <Checkbox
+                :model-value="allVisibleSelected"
+                :indeterminate="someVisibleSelected"
+                @update:model-value="toggleSelectAllVisible"
+              />
+            </span>
           </template>
 
           <template #cell-select="{ row }">
-            <input
-              type="checkbox"
-              class="h-4 w-4 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-              :checked="selectedProxyIds.has(row.id)"
-              @click.stop
-              @change="toggleSelectRow(row.id, $event)"
-            />
+            <span class="inline-flex" @click.stop>
+              <Checkbox
+                :model-value="selectedProxyIds.has(row.id)"
+                @update:model-value="toggleSelectRow(row.id, $event)"
+              />
+            </span>
           </template>
 
           <template #cell-name="{ value }">
@@ -971,6 +970,7 @@ import type { Proxy, ProxyAccountSummary, ProxyProtocol, ProxyQualityCheckResult
 import type { Column } from '@/components/common/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
+import Checkbox from '@/components/common/Checkbox.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -1163,19 +1163,21 @@ const isAbortError = (error: unknown) => {
   return maybeError.name === 'AbortError' || maybeError.code === 'ERR_CANCELED'
 }
 
-const toggleSelectRow = (id: number, event: Event) => {
-  const target = event.target as HTMLInputElement
-  if (target.checked) {
+const toggleSelectRow = (id: number, checked: boolean) => {
+  if (checked) {
     select(id)
     return
   }
   deselect(id)
 }
 
-const toggleSelectAllVisible = (event: Event) => {
-  const target = event.target as HTMLInputElement
-  toggleVisible(target.checked)
+const toggleSelectAllVisible = (checked: boolean) => {
+  toggleVisible(checked)
 }
+
+const someVisibleSelected = computed(
+  () => !allVisibleSelected.value && proxies.value.some(proxy => selectedProxyIds.value.has(proxy.id))
+)
 
 const buildProxyQueryFilters = () => ({
   protocol: filters.protocol || undefined,

@@ -39,10 +39,9 @@
             <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.secretAccessKey') }}</label>
             <input v-model="s3Form.secret_access_key" type="password" class="input w-full" :placeholder="s3SecretConfigured ? t('admin.backup.s3.secretConfigured') : ''" />
           </div>
-          <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
-            <input v-model="s3Form.force_path_style" type="checkbox" />
-            <span>{{ t('admin.backup.s3.forcePathStyle') }}</span>
-          </label>
+          <div class="md:col-span-2">
+            <Checkbox v-model="s3Form.force_path_style">{{ t('admin.backup.s3.forcePathStyle') }}</Checkbox>
+          </div>
         </div>
         <div class="mt-4 flex flex-wrap gap-2">
           <button type="button" class="btn btn-secondary btn-sm" :disabled="testingS3" @click="testS3">
@@ -65,16 +64,10 @@
               {{ t('admin.backup.imageStorage.description') }}
             </p>
           </div>
-          <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-            <input v-model="imageStorageForm.enabled" type="checkbox" />
-            <span>{{ t('admin.backup.imageStorage.enabled') }}</span>
-          </label>
+          <Checkbox v-model="imageStorageForm.enabled">{{ t('admin.backup.imageStorage.enabled') }}</Checkbox>
         </div>
 
-        <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-          <input v-model="imageStorageForm.reuse_backup_s3" type="checkbox" />
-          <span>{{ t('admin.backup.imageStorage.reuseBackupS3') }}</span>
-        </label>
+        <Checkbox v-model="imageStorageForm.reuse_backup_s3">{{ t('admin.backup.imageStorage.reuseBackupS3') }}</Checkbox>
 
         <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
           <div>
@@ -103,10 +96,9 @@
               <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.secretAccessKey') }}</label>
               <input v-model="imageStorageForm.secret_access_key" type="password" class="input w-full" :placeholder="imageStorageSecretConfigured ? t('admin.backup.s3.secretConfigured') : ''" />
             </div>
-            <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
-              <input v-model="imageStorageForm.force_path_style" type="checkbox" />
-              <span>{{ t('admin.backup.s3.forcePathStyle') }}</span>
-            </label>
+            <div class="md:col-span-2">
+              <Checkbox v-model="imageStorageForm.force_path_style">{{ t('admin.backup.s3.forcePathStyle') }}</Checkbox>
+            </div>
           </template>
 
           <div>
@@ -140,10 +132,9 @@
           </p>
         </div>
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
-            <input v-model="scheduleForm.enabled" type="checkbox" />
-            <span>{{ t('admin.backup.schedule.enabled') }}</span>
-          </label>
+          <div class="md:col-span-2">
+            <Checkbox v-model="scheduleForm.enabled">{{ t('admin.backup.schedule.enabled') }}</Checkbox>
+          </div>
           <div>
             <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.schedule.cronExpr') }}</label>
             <input v-model="scheduleForm.cron_expr" class="input w-full" placeholder="0 2 * * *" />
@@ -413,6 +404,7 @@ import type {
 } from '@/api/admin/backup'
 import { useStepUp, isStepUpBlocked, isStepUpCancelled, stepUpBlockReason } from '@/composables/useStepUp'
 import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
+import Checkbox from '@/components/common/Checkbox.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()

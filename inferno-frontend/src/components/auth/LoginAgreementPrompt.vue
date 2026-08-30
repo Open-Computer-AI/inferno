@@ -4,12 +4,15 @@
     class="px-0.5"
   >
     <div class="flex items-start gap-2">
-      <input
+      <!-- The consent tick is the first control a new user meets, so it uses
+           the design system's Checkbox rather than the browser's native one.
+           The id stays: the prose label below points at it with `for`, which
+           still resolves to the inner input. -->
+      <Checkbox
         id="login-agreement-consent"
-        type="checkbox"
-        :checked="accepted"
-        class="mt-[2px] h-4 w-4 flex-shrink-0 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-900"
-        @change="handleCheckboxChange"
+        class="mt-[2px] flex-shrink-0"
+        :model-value="accepted"
+        @update:model-value="handleCheckboxChange"
       />
       <div class="min-w-0 flex-1">
         <p class="text-[13px] leading-5 text-gray-600 dark:text-dark-300">
@@ -146,6 +149,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
+import Checkbox from '@/components/common/Checkbox.vue'
 import type { LoginAgreementDocument } from '@/types'
 
 const { t } = useI18n()
@@ -181,8 +185,7 @@ function documentRoute(doc: LoginAgreementDocument) {
   }
 }
 
-function handleCheckboxChange(event: Event): void {
-  const checked = (event.target as HTMLInputElement).checked
+function handleCheckboxChange(checked: boolean): void {
   if (checked) {
     emit('accept')
   } else {

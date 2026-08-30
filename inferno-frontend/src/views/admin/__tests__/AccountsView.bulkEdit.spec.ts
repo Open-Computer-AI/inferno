@@ -399,10 +399,10 @@ describe('admin AccountsView bulk edit scope', () => {
     })
 
     await flushPromises()
-    await wrapper.get('[data-test="select-row"] input').trigger('change')
+    await wrapper.get('[data-test="select-row"] input').setValue(true)
     await wrapper.get('[data-test="next-page"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-test="select-row"] input').trigger('change')
+    await wrapper.get('[data-test="select-row"] input').setValue(true)
     await wrapper.get('[data-test="probe-upstream-billing"]').trigger('click')
     await flushPromises()
 
@@ -476,7 +476,7 @@ describe('admin AccountsView bulk edit scope', () => {
     await flushPromises()
     await wrapper.get('[data-test="next-page"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-test="select-row"] input').trigger('change')
+    await wrapper.get('[data-test="select-row"] input').setValue(true)
     await wrapper.get('[data-test="probe-upstream-billing"]').trigger('click')
     await flushPromises()
 
@@ -548,7 +548,7 @@ describe('admin AccountsView bulk edit scope', () => {
     })
 
     await flushPromises()
-    await wrapper.get('[data-test="select-row"] input').trigger('change')
+    await wrapper.get('[data-test="select-row"] input').setValue(true)
     await wrapper.get('[data-test="probe-upstream-billing"]').trigger('click')
     await flushPromises()
 

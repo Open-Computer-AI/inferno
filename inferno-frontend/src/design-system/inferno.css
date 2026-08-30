@@ -283,6 +283,13 @@ html {
 }
 
 /* The read-back panels the callbacks use to show what they received. */
+/* Interactive variant: the OAuth callbacks' adopt-name / adopt-avatar panels,
+   which forward a click to the checkbox inside them. The base .auth-panel is
+   also used for static content, so the affordance is opt-in. */
+.auth-panel--clickable {
+  cursor: pointer;
+}
+
 .auth-panel {
   padding: 12px;
   border: 1px solid var(--border-subtle);
