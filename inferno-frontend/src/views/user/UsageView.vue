@@ -332,6 +332,18 @@ const granularity = ref<'day' | 'hour'>(getGranularityForRange(startDate.value, 
 const modelDistributionMetric = ref<DistributionMetric>('tokens')
 const groupDistributionMetric = ref<DistributionMetric>('tokens')
 const endpointDistributionMetric = ref<DistributionMetric>('tokens')
+/*
+ * Stays on 'inbound', and there is deliberately no picker here.
+ *
+ * The backend nils UpstreamEndpoints and EndpointPaths on the USER stats
+ * endpoint (usage_handler.go Stats), so both arrays are hardcoded []
+ * below -- upstream routing detail is admin-scope by design. A three-way
+ * selector on this page would offer two options that can never hold data,
+ * which is the same lie as the Ops threshold that saved and did nothing.
+ *
+ * The admin usage page has the real selector, on EndpointDistributionChart
+ * with show-source-toggle, where the data actually exists.
+ */
 const endpointDistributionSource = ref<EndpointSource>('inbound')
 
 const modelDistributionRows = computed<UsageDistributionRow[]>(() =>

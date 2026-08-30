@@ -85,14 +85,27 @@
               </span>
 
               <span class="pxsel-row__meta">
-                <!-- Truncate from the start: the tail (the end of a hostname)
-                     is what's meaningful, not the front. Container flips to
-                     rtl so ellipsis lands on the left; the inner span stays
-                     ltr so the host itself doesn't read backwards. -->
-                <span class="pxsel-row__host">
-                  <span class="pxsel-row__host-inner">{{ proxy.host }}</span>
+                <!-- The name is the row's identity and the thing the search
+                     box matches on. Showing only the host meant typing a name,
+                     getting the right rows back, and seeing no names in them. -->
+                <span class="pxsel-row__ident">
+                  <span class="pxsel-row__name" :title="proxy.name">{{ proxy.name }}</span>
+                  <span
+                    v-if="proxy.account_count !== undefined"
+                    class="pxsel-row__count"
+                    :title="t('admin.proxies.accounts')"
+                  >{{ proxy.account_count }}</span>
                 </span>
-                <span class="pxsel-row__sub">{{ proxyMeta(proxy) }}</span>
+                <span class="pxsel-row__sub">
+                  <!-- Truncate from the start: the tail (the end of a hostname)
+                       is what's meaningful, not the front. Container flips to
+                       rtl so ellipsis lands on the left; the inner span stays
+                       ltr so the host itself doesn't read backwards. -->
+                  <span class="pxsel-row__host">
+                    <span class="pxsel-row__host-inner">{{ proxy.host }}</span>
+                  </span>
+                  <span class="pxsel-row__submeta">{{ proxyMeta(proxy) }}</span>
+                </span>
               </span>
 
               <span class="pxsel-row__result" :style="{ color: resultColor(proxy) }">
@@ -659,16 +672,44 @@ onUnmounted(() => {
    sits on; unicode-bidi:isolate on the inner keeps the host's own characters
    left-to-right so it doesn't visually reverse. Host is a technical
    identifier: --font-mono per 01-TOKENS. */
+.pxsel-row__ident {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pxsel-row__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  color: var(--foreground);
+}
+
+/* A count, not a status: neutral fill, never a tone. */
+.pxsel-row__count {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Host demoted to the sub line under the name, keeping its start-truncation. */
 .pxsel-row__host {
-  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   direction: rtl;
   text-align: left;
   font-family: var(--font-mono);
-  font-size: var(--fs-sm);
-  color: var(--foreground);
+  font-size: var(--fs-2xs);
+  color: var(--muted-foreground);
 }
 .pxsel-row__host-inner {
   direction: ltr;
@@ -676,12 +717,19 @@ onUnmounted(() => {
 }
 
 .pxsel-row__sub {
-  display: block;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--fs-2xs);
+  color: var(--muted-foreground);
+}
+
+.pxsel-row__submeta {
+  flex-shrink: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--fs-2xs);
-  color: var(--muted-foreground);
 }
 
 .pxsel-row__result {

@@ -39,6 +39,27 @@ const SRC = resolve(ROOT, 'src')
 //         so this gates against regression without blocking on known debt.
 // DELIBERATE, NOT DEBT -- do not re-add as a row:
 //
+// The user usage page has no endpoint-source picker, and must not get one. The
+// backend nils UpstreamEndpoints and EndpointPaths on the USER stats endpoint
+// (usage_handler.go Stats) -- upstream routing detail is admin-scope by design
+// -- so a three-way selector there would offer two options that can never hold
+// data. The ADMIN usage page already has the real one, on
+// EndpointDistributionChart with show-source-toggle, where the data exists.
+//
+// This row was wrong when I wrote it: it claimed the stats were "fetched and
+// unreachable" on the user view. They are not fetched at all. I read the
+// consumer and never checked the producer -- the same one-sided mistake as
+// dashboard-stat-fields. Verified by building the selector, seeing two
+// permanently empty options in the browser, and reverting it.
+//
+// AccountUsageCell.pinnedWindowKey has no producer, and that is fine. Upstream
+// has no such prop and no column-header window picker at all -- it was a June
+// idea from part 08, and only the header UI was left unbuilt. The cell side is
+// implemented and correct (primaryWindow honours a pin, falls back to
+// closest-to-limit), so nothing is lost and nothing regressed against upstream.
+// Building the picker now would be inventing scope nobody asked for. The hook
+// stays so the work is already done if it is ever wanted.
+//
 // admin DashboardView does not show tpm, total_cost, today_account_cost or
 // total_account_cost. The file sweep flagged all four; Saksham confirmed the
 // omission is a product decision about what the dashboard puts in front of an
@@ -57,25 +78,11 @@ const LEDGER = [
     probe: `grep -rl "import.*GrokQuotaProbeCell" ${SRC} | grep -v "__tests__" | head -1 | grep -q . || echo "GrokQuotaProbeCell has no importer"`
   },
   {
-    id: 'window-picker',
-    what: 'Column-header window picker — AccountUsageCell accepts pinnedWindowKey and nothing passes it',
-    origin: 'part 08 departures, recorded as owed',
-    expect: 'open',
-    probe: `grep -rl "pinnedWindowKey" ${SRC} | grep -v "AccountUsageCell\\|__tests__" | head -1 | grep -q . || echo "no producer for pinnedWindowKey"`
-  },
-  {
     id: 'ops-thresholds-unread',
     what: 'Ops SLA and request-error-rate thresholds are configurable and saved, but nothing reads them for display',
     origin: 'file sweep 2026-08-30 — OpsDashboardHeader lost getSLAThresholdLevel and getRequestErrorRateThresholdLevel',
     expect: 'open',
     probe: `grep -rl "sla_percent_min" ${SRC} | grep -v "api/\\|OpsSettingsDialog\\|__tests__" | head -1 | grep -q . || echo "sla_percent_min is written but never read for display"`
-  },
-  {
-    id: 'usage-endpoint-source',
-    what: 'UsageView endpointDistributionSource is pinned to inbound, so upstream and path endpoint stats are fetched and unreachable',
-    origin: 'file sweep 2026-08-30 — the replacement chart exposes no source toggle',
-    expect: 'open',
-    probe: `grep -q "endpointDistributionSource.value = " ${SRC}/views/user/UsageView.vue || echo "nothing ever writes endpointDistributionSource"`
   },
   {
     id: 'proxy-selector-name',

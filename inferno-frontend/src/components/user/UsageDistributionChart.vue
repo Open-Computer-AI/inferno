@@ -50,7 +50,13 @@ const sortedRows = computed(() =>
   [...(props.rows ?? [])].sort((a, b) => metricValue(b) - metricValue(a))
 )
 
-const visibleRows = computed(() => sortedRows.value.slice(0, TOP_ROWS))
+const tailExpanded = ref(false)
+const tailCount = computed(() => Math.max(0, sortedRows.value.length - TOP_ROWS))
+// TOP_ROWS is compactness, not a limit on what exists. Capping the list with no
+// way to open it dropped every endpoint past rank 6 out of the UI entirely.
+const visibleRows = computed(() =>
+  tailExpanded.value ? sortedRows.value : sortedRows.value.slice(0, TOP_ROWS)
+)
 const total = computed(() => sortedRows.value.reduce((sum, row) => sum + metricValue(row), 0))
 const entityHeading = computed(() => props.entityLabel || t('dashboard.model'))
 
@@ -68,7 +74,9 @@ const slices = computed<DonutSlice[]>(() => {
     ...head,
     {
       key: '__other',
-      label: t('dashboard.noGroup'),
+      // Not 'No Group' -- that means a key with no group assigned. This is the
+      // rolled-up tail of the ranking.
+      label: t('charts.distribution.othersCount', { count: tail.length }),
       value: tail.reduce((sum, row) => sum + metricValue(row), 0),
       color: tokens.mutedForeground,
     },
@@ -132,6 +140,17 @@ const displayMetric = (row: UsageDistributionRow) =>
             </tr>
           </tbody>
         </table>
+        <button
+          v-if="tailCount > 0"
+          type="button"
+          class="usage-dist__more"
+          :aria-expanded="tailExpanded"
+          @click="tailExpanded = !tailExpanded"
+        >
+          {{ tailExpanded
+            ? t('charts.distribution.othersCollapse')
+            : t('charts.distribution.othersCount', { count: tailCount }) }}
+        </button>
       </div>
     </div>
 
@@ -144,7 +163,10 @@ const displayMetric = (row: UsageDistributionRow) =>
 
 <style scoped>
 .usage-dist{min-width:0;border:1px solid var(--border-subtle);border-radius:var(--r-lg);background:var(--card);padding:16px}
-.usage-dist__head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.usage-dist__head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.usage-dist__controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.usage-dist__more{margin-top:8px;border:0;background:none;padding:2px 0;color:var(--muted-foreground);font-size:var(--fs-2xs);cursor:pointer}
+.usage-dist__more:hover{color:var(--foreground)}
 .usage-dist__title{margin:0;color:var(--foreground);font-size:var(--fs-lg);font-weight:var(--fw-medium)}
 .usage-dist__state{display:flex;min-height:240px;align-items:center;justify-content:center}
 .usage-dist__body{display:flex;align-items:center;gap:16px;min-width:0}

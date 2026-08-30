@@ -43,6 +43,7 @@ export default {
     // Proxies
     proxies: {
       title: 'Proxy Management',
+      accounts: 'Accounts',
       description: 'Manage proxy servers for accounts',
       createProxy: 'Create Proxy',
       editProxy: 'Edit Proxy',
