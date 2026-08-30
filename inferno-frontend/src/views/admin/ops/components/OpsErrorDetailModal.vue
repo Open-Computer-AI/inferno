@@ -38,22 +38,29 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import { useAppStore } from '@/stores'
 import { opsAPI, type OpsErrorDetail } from '@/api/admin/ops'
 import { formatDateTime } from '@/utils/format'
-import { resolvePrimaryResponseBody, resolveUpstreamPayload } from '../utils/errorDetailResponse'
+import { resolveUpstreamPayload } from '../utils/errorDetailResponse'
 
 interface Props {
   show: boolean
   errorId: number | null
   errorType?: 'request' | 'upstream'
+  backToList?: boolean
 }
 
 interface Emits {
   (e: 'update:show', value: boolean): void
+  (e: 'back'): void
 }
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
 const { t } = useI18n()
+
+function goBack() {
+  emit('update:show', false)
+  emit('back')
+}
 const appStore = useAppStore()
 
 const loading = ref(false)
@@ -63,9 +70,46 @@ const showUpstreamList = computed(() => props.errorType === 'request')
 
 const requestId = computed(() => detail.value?.request_id || detail.value?.client_request_id || '')
 
-const primaryResponseBody = computed(() => {
-  return resolvePrimaryResponseBody(detail.value, props.errorType)
+type DiagnosticPayloadKey = 'client' | 'upstream_message' | 'upstream_detail' | 'upstream_events'
+
+/* An error's real cause is whichever of these the upstream actually filled in.
+   Preferring the first meaningful one stops the modal leading with a generic
+   gateway message when a specific upstream reason exists. */
+const rootCauseMessage = computed(() => {
+  const current = detail.value
+  if (!current) return ''
+  for (const candidate of [current.upstream_error_message, current.upstream_error_detail, current.message, current.error_body]) {
+    const value = meaningfulPayload(candidate)
+    if (value) return value
+  }
+  return ''
 })
+
+/* Every payload worth showing, de-duplicated: upstreams often repeat the same
+   string in two fields, and rendering it twice reads as two separate faults. */
+const diagnosticPayloadSections = computed(() => {
+  const current = detail.value
+  if (!current) return []
+  const candidates: Array<{ key: DiagnosticPayloadKey; value: string }> = [
+    { key: 'client', value: meaningfulPayload(current.error_body) },
+    { key: 'upstream_message', value: meaningfulPayload(current.upstream_error_message) },
+    { key: 'upstream_detail', value: meaningfulPayload(current.upstream_error_detail) },
+    { key: 'upstream_events', value: meaningfulPayload(current.upstream_errors) }
+  ]
+  return candidates.filter((section, index, all) => {
+    return section.value && all.findIndex(candidate => candidate.value === section.value) === index
+  })
+})
+
+function meaningfulPayload(candidate: unknown): string {
+  const value = String(candidate || '').trim()
+  if (!value || value === '[]' || value === '{}' || value.toLowerCase() === 'null') return ''
+  return value
+}
+
+function diagnosticPayloadLabel(key: DiagnosticPayloadKey): string {
+  return t(`admin.ops.errorDetail.payloads.${key}`)
+}
 
 const title = computed(() => {
   if (!props.errorId) return t('admin.ops.errorDetail.title')
@@ -302,8 +346,14 @@ function upstreamStatusTone(code: number | null | undefined) {
       <!-- The two things you opened this modal for. -->
       <div class="errd__head">
         <span class="errd__status" :data-tone="statusTone">{{ detail.status_code }}</span>
-        <p class="errd__message" :data-empty="detail.message ? undefined : true">
-          {{ detail.message || t('common.notRecorded') }}
+        <span
+          v-if="detail.upstream_status_code != null"
+          class="errd__status"
+          :data-tone="upstreamStatusTone(detail.upstream_status_code)"
+          :title="t('admin.ops.errorDetail.upstreamStatus')"
+        >{{ detail.upstream_status_code }}</span>
+        <p class="errd__message" :data-empty="rootCauseMessage ? undefined : true">
+          {{ rootCauseMessage || t('common.notRecorded') }}
         </p>
       </div>
 
@@ -322,10 +372,16 @@ function upstreamStatusTone(code: number | null | undefined) {
         </div>
       </dl>
 
-      <!-- Response content (client request -> error_body; upstream -> upstream_error_detail/message) -->
+      <!-- Every distinct payload the request produced, client and upstream. -->
       <section class="errd__section">
-        <h3 class="errd__section-title">{{ t('admin.ops.errorDetail.responseBody') }}</h3>
-        <pre class="errd__code"><code>{{ prettyJSON(primaryResponseBody || '') }}</code></pre>
+        <h3 class="errd__section-title">{{ t('admin.ops.errorDetail.diagnosticPayloads') }}</h3>
+        <p v-if="!diagnosticPayloadSections.length" class="errd__empty">{{ t('common.noData') }}</p>
+        <template v-else>
+          <div v-for="section in diagnosticPayloadSections" :key="section.key" class="errd__payload">
+            <h4 class="errd__payload-title">{{ diagnosticPayloadLabel(section.key) }}</h4>
+            <pre class="errd__code"><code>{{ prettyJSON(section.value) }}</code></pre>
+          </div>
+        </template>
       </section>
 
       <!-- Upstream errors list (only for request errors) -->
@@ -397,6 +453,19 @@ function upstreamStatusTone(code: number | null | undefined) {
         </div>
       </section>
     </div>
+
+    <!-- Opened from the error list: closing should hand the operator back to it
+         with their filters intact, not drop them on the dashboard. -->
+    <template v-if="backToList" #footer>
+      <button
+        type="button"
+        class="btn btn-secondary"
+        data-testid="error-detail-back-to-list"
+        @click="goBack"
+      >
+        {{ t('admin.ops.errorDetail.backToList') }}
+      </button>
+    </template>
   </BaseDialog>
 </template>
 

@@ -43,7 +43,12 @@ function mountTable(
   models: PlazaModel[],
   rateMultiplier: number,
   userRateMultiplier?: number | null,
-  extraProps?: { imageRateIndependent?: boolean; imageRateMultiplier?: number | null }
+  extraProps?: {
+    imageRateIndependent?: boolean
+    imageRateMultiplier?: number | null
+    peakWindow?: string
+    peakRateMultiplier?: number | null
+  }
 ) {
   return mount(PlazaModelPricingTable, {
     props: { models, rateMultiplier, userRateMultiplier: userRateMultiplier ?? null, ...extraProps }
@@ -507,23 +512,21 @@ describe('PlazaModelPricingTable 长上下文阶梯', () => {
     expect(marginal.findAll('tbody td')[0].text()).toContain('modelPlaza.table.marginalBadge')
   })
 
-  it('自定义中间档标签同单位时省略前一个单位', () => {
+  it('无标签的多档按区间生成统一形态(≤上限 / >下限),并按下限升序展示', () => {
     const model = ladderModel({
       pricing: {
         ...ladderModel().pricing!,
+        // 故意乱序:展示必须按上下文从低到高
         intervals: [
-          { ...ladderIntervals()[0], max_tokens: 100000, tier_label: '' },
+          { ...ladderIntervals()[1], min_tokens: 1000000, tier_label: '' },
           { ...ladderIntervals()[0], min_tokens: 100000, max_tokens: 200000, tier_label: '' },
-          { ...ladderIntervals()[1], min_tokens: 200000, max_tokens: 1000000, tier_label: '' },
-          { ...ladderIntervals()[1], min_tokens: 1000000, tier_label: '' }
+          { ...ladderIntervals()[0], max_tokens: 100000, tier_label: '' },
+          { ...ladderIntervals()[1], min_tokens: 200000, max_tokens: 1000000, tier_label: '' }
         ]
       }
     })
-    const text = mountTable([model], 1).findAll('tbody td')[1].text()
-    expect(text).toContain('≤100K')
-    expect(text).toContain('100-200K')
-    expect(text).toContain('200K-1M')
-    expect(text).toContain('>1M')
+    const rows = mountTable([model], 1).findAll('tbody td')[1].findAll('.leading-5')
+    expect(rows.map((r) => r.text().split(/\s+/)[0])).toEqual(['≤100K', '≤200K', '≤1M', '>1M'])
   })
 
   it('官方无 intervals 字段(旧响应)时官方列保持平价,实付无阶梯时缓存列保持两行', () => {
@@ -630,6 +633,25 @@ describe('PlazaModelPricingTable 分时计价', () => {
     const wrapper = mountTable([timePricedModel()], 1)
     expect(wrapper.find('tbody').text()).not.toContain('modelPlaza.table.timePricingWeekdays')
     expect(wrapper.find('[title="modelPlaza.table.timePricingRowHint"]').exists()).toBe(true)
+  })
+
+  it('分组启用高峰倍率时时段行 tooltip 追加高峰披露,价格与倍率列保持不含高峰的口径', () => {
+    const wrapper = mountTable([timePricedModel()], 0.8, null, {
+      peakWindow: '14:00-18:00 ×1.5 (UTC+08:00)',
+      peakRateMultiplier: 1.5
+    })
+    const nightCells = wrapper.findAll('tbody tr')[1].findAll('td')
+    const title = nightCells[0].find('[title*="modelPlaza.table.timePricingRowHint"]').attributes('title')
+    expect(title).toContain('modelPlaza.table.timePricingRowHintPeak')
+    // 行内数字仍是 基础倍率 × 时段倍率(0.8 × 0.5),高峰只进披露不进价格
+    expect(nightCells[1].text()).toContain('$1.20')
+    expect(nightCells[7].text()).toContain('0.4x')
+  })
+
+  it('分组未启用高峰(peakWindow 缺省)时 tooltip 不含高峰披露', () => {
+    const wrapper = mountTable([timePricedModel()], 1)
+    const badge = wrapper.find('[title*="modelPlaza.table.timePricingRowHint"]')
+    expect(badge.attributes('title')).not.toContain('modelPlaza.table.timePricingRowHintPeak')
   })
 
   it('无分时倍率时只有一行,不渲染时段标注', () => {

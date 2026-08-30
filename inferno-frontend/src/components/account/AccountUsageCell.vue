@@ -282,7 +282,13 @@
             :percent="primaryWindow.percent"
             :label="primaryWindow.label"
             :trailing="barTrailing(primaryWindow)"
-          />
+          >
+            <!-- Grok's primary bar carries its own window stats. Without this
+                 a Grok Free row (whose 24h bar is the only window) would show
+                 none at all: there is nothing to expand, so the usual
+                 "one click away" footer never appears. -->
+            <template v-if="primaryWindow.windowStats">{{ formatWindowStats(primaryWindow.windowStats) }}</template>
+          </CapacityBar>
           <button
             v-if="otherWindows.length"
             type="button"
@@ -315,10 +321,18 @@
         <div v-else class="uc-muted">-</div>
 
         <div v-if="grokPrepaidMoneyLine" class="uc-moneyrow">
-          <span class="uc-chip uc-chip--brand" :title="t('admin.accounts.usageWindow.grokPrepaid')">
+          <span
+            v-if="grokPrepaidMoneyLine.showPrepaid"
+            class="uc-chip uc-chip--brand"
+            :title="t('admin.accounts.usageWindow.grokPrepaid')"
+          >
             {{ t('admin.accounts.usageWindow.grokPrepaid') }} ${{ grokPrepaidMoneyLine.prepaid }}
           </span>
-          <span class="uc-hint" :title="t('admin.accounts.usageWindow.grokMonthlyLimit')">
+          <span
+            v-if="grokPrepaidMoneyLine.showUsedLimit"
+            class="uc-hint"
+            :title="t('admin.accounts.usageWindow.grokMonthlyLimit')"
+          >
             {{ t('admin.accounts.usageWindow.grokUsed') }}
             {{ grokPrepaidMoneyLine.used }}/{{ grokPrepaidMoneyLine.limit }}
           </span>
@@ -1054,24 +1068,30 @@ const grokPrepaidMoneyLine = computed(() => {
   const billing = grokBilling.value
   if (!billing) return null
   const prepaid = billing.prepaid_balance
-  // "只针对预付": only render when prepaid field exists (including $0.00).
-  if (prepaid == null || !Number.isFinite(prepaid)) return null
+  // Prepaid chip only for a positive balance, and used/limit only when the
+  // monthly limit is a positive number -- 0 means unlimited or unset, and
+  // rendering it produced a meaningless "3.5/0".
+  const showPrepaid = prepaid != null && Number.isFinite(prepaid) && prepaid > 0
   const used =
     billing.monthly_used != null
       ? billing.monthly_used
       : billing.used_cents != null
         ? billing.used_cents / 100
         : 0
-  const limit =
+  const limitRaw =
     billing.monthly_limit != null
       ? billing.monthly_limit
       : billing.monthly_limit_cents != null
         ? billing.monthly_limit_cents / 100
-        : 0
+        : null
+  const showUsedLimit = limitRaw != null && Number.isFinite(limitRaw) && limitRaw > 0
+  if (!showPrepaid && !showUsedLimit) return null
   return {
-    prepaid: formatGrokMoney(prepaid),
-    used: formatGrokMoney(used),
-    limit: formatGrokMoney(limit)
+    showPrepaid,
+    showUsedLimit,
+    prepaid: showPrepaid ? formatGrokMoney(prepaid) : null,
+    used: showUsedLimit ? formatGrokMoney(used) : null,
+    limit: showUsedLimit ? formatGrokMoney(limitRaw) : null
   }
 })
 const grokPlanLabelIsFree = (value: string) => value.includes('free') || value.includes('basic')
@@ -1105,6 +1125,16 @@ const grokIsFree = computed(() => {
   return billing != null
 })
 const grokFreeQuotaUsage = computed(() => usageInfo.value?.grok_local_usage_24h || null)
+
+/* xAI's billing probe gives money and a percent but no request/token counts.
+   These are this site's own 7d/30d aggregation, so the billing bars can carry
+   a windowStats tooltip like every other window does. */
+const grokLocalUsage7d = computed(() => (
+  usageInfo.value?.grok_local_usage_7d || usageInfo.value?.seven_day?.window_stats || null
+))
+const grokLocalUsageMonthly = computed(() => (
+  usageInfo.value?.grok_local_usage_monthly || usageInfo.value?.thirty_day?.window_stats || null
+))
 const grokFreeTokenBar = computed(() => {
   if (!grokIsFree.value || !grokFreeQuotaUsage.value) return null
   const limit = usageInfo.value?.grok_free_token_limit
@@ -1293,13 +1323,14 @@ const grokWindows = computed<UsageWindowBar[]>(() => {
     return windows
   }
   // grokWeeklyBillingBar / grokMonthlyBillingBar come from GrokBillingSummary
-  // (xAI's billing probe): money and a percent, no request/token count --
-  // there is no windowStats to attach here either.
+  // (xAI's billing probe): money and a percent, no request/token count. Since
+  // 269fbcac0 this site's own aggregation supplies those counts, so the bars
+  // now carry windowStats after all.
   if (grokWeeklyBillingBar.value) {
-    windows.push({ key: 'grok_7d', label: t('admin.accounts.usageWindow.sevenDay'), percent: grokWeeklyBillingBar.value.utilization, resetsAt: grokWeeklyBillingBar.value.resetsAt })
+    windows.push({ key: 'grok_7d', label: t('admin.accounts.usageWindow.sevenDay'), percent: grokWeeklyBillingBar.value.utilization, resetsAt: grokWeeklyBillingBar.value.resetsAt, windowStats: grokLocalUsage7d.value })
   }
   if (grokMonthlyBillingBar.value) {
-    windows.push({ key: 'grok_30d', label: t('admin.accounts.usageWindow.thirtyDay'), percent: grokMonthlyBillingBar.value.utilization, resetsAt: grokMonthlyBillingBar.value.resetsAt })
+    windows.push({ key: 'grok_30d', label: t('admin.accounts.usageWindow.thirtyDay'), percent: grokMonthlyBillingBar.value.utilization, resetsAt: grokMonthlyBillingBar.value.resetsAt, windowStats: grokLocalUsageMonthly.value })
   }
   return windows
 })
