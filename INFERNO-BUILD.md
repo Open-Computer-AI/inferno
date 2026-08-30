@@ -531,7 +531,23 @@ Everything else unique to those branches was either a rebase-rewritten copy of
 one of our own commits (same subject, new hash) or Razorpay lint debt that PR
 #15 re-raises against current code.
 
-#### Frontend port policy (moved out of the routine prompt, 2026-08-28)
+# Manifest discipline (non-negotiable)
+
+**A port and its COMMIT-MANIFEST.md row change land in the SAME commit.**
+
+On 2026-08-30 `26be82cc8` was ported twice. The first port (`7afe8e832`,
+08-29) did not touch the manifest, so the row still read TODO. The next
+session took the row at face value, re-applied the same upstream commit, and
+spent the merge fighting its own earlier work -- the four per-tier multiplier
+inputs ended up in the file twice and had to be deduplicated.
+
+The manifest is the only record of what has been taken. A port that does not
+update it is not finished, however good the code is. Before starting any row,
+confirm no commit in `upstream/main..HEAD` already claims that hash:
+
+    git log --format='%h %s' upstream/main..HEAD | grep <hash>
+
+# Frontend port policy (moved out of the routine prompt, 2026-08-28)
 
 These rules were load-bearing and lived ONLY in the daily routine's cloud prompt,
 where nothing could review them and they drifted out of date. They belong here.
