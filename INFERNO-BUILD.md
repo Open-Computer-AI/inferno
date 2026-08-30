@@ -576,6 +576,48 @@ database has none of. They rest on the gates plus upstream's own specs.
 across a merge. Twice an overlay showed conflict markers that were not on disk
 and `vue-tsc` reported 0. Restart the dev server before believing an overlay.
 
+# How to verify a port (learned the hard way, 2026-08-30)
+
+A six-agent audit of all 94 ported commits found **7 real gaps that every
+cheaper check had passed**. Each had green tsc, green tests, and a matching
+identifier grep. Do not trust any of the following as evidence a port landed:
+
+| Signal | Why it lies |
+|---|---|
+| `git apply` leaves no conflict markers | No conflict is also what *nothing applied* looks like. Check the exit code. |
+| exit code 0 | A partial apply can still return 0. `c4e46c3be` returned 0 and landed 10 of 38 lines. |
+| tsc passes | Missing code does not type-error. Nothing references what was never ported. |
+| the test suite passes | Upstream's tests for the missing feature were not ported either. |
+| grep finds the identifier | Proves a NAME exists, not that it is read, wired, or equivalent. |
+| the COMMIT-MANIFEST row says PORTED | We write those rows from the same broken signal. Circular. |
+
+**What actually works — read both sides, per file, per commit:**
+
+1. `git show <hash>:frontend/src/<path>` for upstream at that commit.
+2. Read our whole corresponding function/block.
+3. Ask explicitly:
+   - Is every new ref/computed/field READ somewhere load-bearing (request body,
+     template, condition)? A declaration nobody reads is a gap.
+   - Are predicates identical — operators, boundaries, null/zero/empty-string
+     handling? `??` vs `||` matters: `??` passes `''` through, `||` coerces it.
+   - Does each new field reach the API request body AND the DOM? Trace it.
+   - Are new watchers/resets/cleanup present?
+   - Did upstream REMOVE something we still carry?
+4. **Also diff against `frontend/src/<path>` (upstream HEAD).** A later upstream
+   commit may supersede the snapshot. Comparing only to the snapshot produced
+   two false positives in this audit, both retracted once HEAD was checked.
+5. For a fix, prove the test discriminates: reintroduce the bug and watch it go
+   red. Target the exact line -- an identifier can appear several times in a
+   file and a blind `replace(..., 1)` will hit the wrong one.
+
+**The gaps this found, as a calibration set:** a `windowStats` key missing from
+a returned object; `?? 'passthrough'` where upstream had `|| 'pass'`, printing a
+raw i18n key in the admin UI; a computed flattened to a bare property read,
+dropping three guards; an SLA guard ported into the diagnostics path but not the
+display path after a component was extracted; a commit whose i18n landed 16/16
+while its feature landed 10/38; a billing mode whose constant existed but whose
+entire UI did not; and two hardening commits that landed 5/39 and 0/6.
+
 # Manifest discipline (non-negotiable)
 
 **A port and its COMMIT-MANIFEST.md row change land in the SAME commit.**
