@@ -154,7 +154,13 @@ const sortedModels = computed(() => {
 
 const modelTotalAll = computed(() => sortedModels.value.reduce((sum, m) => sum + metricValue(m), 0))
 
+// The ranked bar list is the June design and it renders any number of rows.
+// TOP_N is a separate compactness choice bolted on top of it, so the tail must
+// stay REACHABLE rather than being silently dropped: the "N others" row expands
+// in place and every model inside it keeps its drill-down. Truncating to six and
+// making the remainder unclickable removed drill-down past rank 6 outright.
 const TOP_N = 6
+const othersExpanded = ref(false)
 
 interface DistRow {
   key: string
@@ -172,8 +178,8 @@ const displayValueFor = (raw: number): string =>
 
 const modelRows = computed<DistRow[]>(() => {
   const total = modelTotalAll.value
-  const top = sortedModels.value.slice(0, TOP_N)
   const tail = sortedModels.value.slice(TOP_N)
+  const top = othersExpanded.value ? sortedModels.value : sortedModels.value.slice(0, TOP_N)
 
   const result: DistRow[] = top.map((m) => {
     const raw = metricValue(m)
@@ -193,12 +199,17 @@ const modelRows = computed<DistRow[]>(() => {
     const raw = tail.reduce((sum, m) => sum + metricValue(m), 0)
     result.push({
       key: 'others',
-      label: t('charts.distribution.othersCount', { count: tail.length }),
-      displayValue: displayValueFor(raw),
-      pct: total > 0 ? (raw / total) * 100 : 0,
-      clickable: false,
+      label: othersExpanded.value
+        ? t('charts.distribution.othersCollapse')
+        : t('charts.distribution.othersCount', { count: tail.length }),
+      displayValue: othersExpanded.value ? '' : displayValueFor(raw),
+      pct: othersExpanded.value ? 0 : total > 0 ? (raw / total) * 100 : 0,
+      clickable: true,
       isOther: true,
-      mono: false
+      mono: false,
+      onClick: () => {
+        othersExpanded.value = !othersExpanded.value
+      }
     })
   }
 

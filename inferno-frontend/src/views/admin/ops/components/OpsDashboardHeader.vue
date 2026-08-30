@@ -10,6 +10,11 @@ import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import OpsResourceMeters from './OpsResourceMeters.vue'
 import OpsTrafficSplit from './OpsTrafficSplit.vue'
 import OpsStatCard from './OpsStatCard.vue'
+import {
+  getSLAThresholdLevel,
+  getCeilingThresholdLevel,
+  type ThresholdLevel
+} from '../utils/opsThresholds'
 import OpsHealthRing from './OpsHealthRing.vue'
 import OpsRealtimeTraffic from './OpsRealtimeTraffic.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -255,28 +260,18 @@ function openErrorDetails(kind: 'request' | 'upstream') {
 }
 
 // --- Threshold checking helpers ---
-type ThresholdLevel = 'normal' | 'warning' | 'critical'
-
-
-function getTTFTThresholdLevel(ttftMs: number | null): ThresholdLevel {
-  if (ttftMs == null) return 'normal'
-  const threshold = props.thresholds?.ttft_p99_ms_max
-  if (threshold == null) return 'normal'
-  if (ttftMs >= threshold) return 'critical'
-  if (ttftMs >= threshold * 0.8) return 'warning'
-  return 'normal'
-}
-
-
-function getUpstreamErrorRateThresholdLevel(upstreamErrorRatePercent: number | null): ThresholdLevel {
-  if (upstreamErrorRatePercent == null) return 'normal'
-  const threshold = props.thresholds?.upstream_error_rate_percent_max
-  if (threshold == null) return 'normal'
-  if (upstreamErrorRatePercent >= threshold) return 'critical'
-  if (upstreamErrorRatePercent >= threshold * 0.8) return 'warning'
-  return 'normal'
-}
-
+//
+// The verdict functions live in ../utils/opsThresholds so they can be tested
+// without mounting this view. That matters: two of the original four were
+// dropped in the June rewrite and nothing noticed, because reaching them
+// required a heavy mount. sla_percent_min and request_error_rate_percent_max
+// were write-only for weeks -- the Ops settings screen accepted and persisted
+// them and nothing read them back.
+//
+// These read the operator's configured thresholds. diagnosisReport() below is
+// a SEPARATE layer that keeps its own hardcoded 90/98 SLA bands on purpose:
+// it answers "is this bad in absolute terms", which must stay loud even for an
+// operator who configured a lax threshold.
 
 // --- Realtime / Overview labels ---
 
@@ -396,6 +391,14 @@ const tpsAvgLabel = computed(() => {
 })
 
 
+
+// Went with the two merged cards; the split bar still needs it to colour the
+// failed segment against request_error_rate_percent_max.
+const errorRatePercent = computed(() => {
+  const v = overview.value?.error_rate
+  if (typeof v !== 'number') return null
+  return v * 100
+})
 
 const upstreamErrorRatePercent = computed(() => {
   const v = overview.value?.upstream_error_rate
@@ -691,9 +694,36 @@ type CardTone = 'none' | 'ok' | 'warning' | 'critical'
 const toCardTone = (level: ThresholdLevel): CardTone =>
   level === 'critical' ? 'critical' : level === 'warning' ? 'warning' : 'none'
 
-const ttftTone = computed<CardTone>(() => toCardTone(getTTFTThresholdLevel(ttftP99Ms.value)))
+// 'normal' maps to 'none', not 'ok'. Upstream paints an unconfigured threshold
+// GREEN, which reads as "verified healthy" when it actually means "nothing was
+// measured against". Neutral is the honest state, same call as the unset case
+// in UserConcurrencyCell.
+const ttftTone = computed<CardTone>(() =>
+  toCardTone(getCeilingThresholdLevel(ttftP99Ms.value, props.thresholds?.ttft_p99_ms_max))
+)
 const upstreamTone = computed<CardTone>(() =>
-  toCardTone(getUpstreamErrorRateThresholdLevel(upstreamErrorRatePercent.value))
+  toCardTone(
+    getCeilingThresholdLevel(
+      upstreamErrorRatePercent.value,
+      props.thresholds?.upstream_error_rate_percent_max
+    )
+  )
+)
+const slaTone = computed<CardTone>(() =>
+  toCardTone(
+    getSLAThresholdLevel(
+      overview.value?.sla == null ? null : overview.value.sla * 100,
+      props.thresholds?.sla_percent_min
+    )
+  )
+)
+const requestErrorTone = computed<CardTone>(() =>
+  toCardTone(
+    getCeilingThresholdLevel(
+      errorRatePercent.value,
+      props.thresholds?.request_error_rate_percent_max
+    )
+  )
 )
 
 </script>
@@ -932,6 +962,10 @@ const upstreamTone = computed<CardTone>(() =>
             :business-limited-count="overview?.business_limited_count ?? 0"
             :sla="overview?.sla ?? null"
             :request-count-sla="overview?.request_count_sla ?? 0"
+            :sla-tone="slaTone"
+            :error-tone="requestErrorTone"
+            :error-rate-percent="errorRatePercent"
+            :error-rate-limit="props.thresholds?.request_error_rate_percent_max ?? null"
             :fullscreen="props.fullscreen"
             @open-details="openErrorDetails('request')"
           />

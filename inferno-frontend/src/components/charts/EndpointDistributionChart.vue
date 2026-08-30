@@ -127,7 +127,11 @@ const sortedStats = computed(() => {
 
 const totalAll = computed(() => sortedStats.value.reduce((sum, item) => sum + metricValue(item), 0))
 
+// Same as ModelDistributionChart: the bar list is the June design and renders
+// any number of rows; TOP_N is compactness, so the tail expands in place rather
+// than losing its drill-down.
 const TOP_N = 6
+const othersExpanded = ref(false)
 
 interface DistRow {
   key: string
@@ -144,8 +148,8 @@ const displayValueFor = (raw: number): string =>
 
 const rows = computed<DistRow[]>(() => {
   const total = totalAll.value
-  const top = sortedStats.value.slice(0, TOP_N)
   const tail = sortedStats.value.slice(TOP_N)
+  const top = othersExpanded.value ? sortedStats.value : sortedStats.value.slice(0, TOP_N)
 
   const result: DistRow[] = top.map((item) => {
     const raw = metricValue(item)
@@ -164,10 +168,12 @@ const rows = computed<DistRow[]>(() => {
     const raw = tail.reduce((sum, item) => sum + metricValue(item), 0)
     result.push({
       key: 'others',
-      label: t('charts.distribution.othersCount', { count: tail.length }),
-      displayValue: displayValueFor(raw),
-      pct: total > 0 ? (raw / total) * 100 : 0,
-      clickable: false,
+      label: othersExpanded.value
+        ? t('charts.distribution.othersCollapse')
+        : t('charts.distribution.othersCount', { count: tail.length }),
+      displayValue: othersExpanded.value ? '' : displayValueFor(raw),
+      pct: othersExpanded.value ? 0 : total > 0 ? (raw / total) * 100 : 0,
+      clickable: true,
       isOther: true
     })
   }
@@ -185,6 +191,10 @@ const subtitle = computed(() => {
 })
 
 const onRowClick = (row: DistRow) => {
+  if (row.isOther) {
+    othersExpanded.value = !othersExpanded.value
+    return
+  }
   if (!row.clickable || row.endpoint === undefined) return
   toggleBreakdown(row.endpoint)
 }

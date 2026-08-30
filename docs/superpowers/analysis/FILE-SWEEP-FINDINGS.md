@@ -119,8 +119,27 @@ triggered), `DataTable` (`isScrollable` machinery has no consumer),
 `OpsErrorDistributionChart` (colour assigned by post-filter index, so a slice
 changes colour between refreshes).
 
-Deliberate reductions needing sign-off, not defects: `ModelDistributionChart` and
-`EndpointDistributionChart` `TOP_N=6` truncation removes drill-down past rank 6.
+~~Deliberate reductions needing sign-off~~ — CLOSED, and the framing was wrong.
+Neither of these was a design-system decision, so neither needed a revert:
+
+- `GroupBadge` expiry tint. Upstream carried two jobs in one colour: expiry
+  urgency (STATE) and platform theming (CATEGORY). June's rule -- colour never
+  encodes category -- correctly kills the second. It never reached the first, and
+  this chip's own documented exception ("the only tinted variant left is a
+  per-user rate override, because that is the only one the reader has to act
+  on") is exactly the test an expiring subscription passes. The urgency half was
+  dropped only because it shared a function with the platform half. Restored on
+  `--destructive` / `--s2a-attn`, not upstream's `bg-red-200/80`.
+- `TOP_N=6`. The June conversion is the ranked bar list, and a bar list renders
+  any number of rows. The cap was a separate compactness choice bolted on top,
+  and it made everything past rank 6 unreachable because the "N others" row was
+  not clickable. The tail now expands in place: compact default kept, drill-down
+  restored, no upstream revert.
+
+Both violate the same standing rule as the sidebar rows -- never remove a row or
+control to tidy a layout. The lesson is narrower than "don't restyle": when one
+function serves both a state signal and a category signal, splitting it is part
+of the conversion, not optional.
 
 Coverage regressions (behaviour still live, its only test deleted):
 `AccountUsageCell.spec` (Grok tier resolution), `EditAccountModal.spec`

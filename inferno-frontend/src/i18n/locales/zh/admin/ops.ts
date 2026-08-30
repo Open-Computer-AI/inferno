@@ -137,6 +137,7 @@ export default {
         inBucket: '{bucket} 区间'
       },
       traffic: {
+      errorRateOverLimit: '错误率 {rate}% 超过设定上限 {limit}%',
         title: '请求结果',
         slaCaption: 'SLA',
         succeeded: '成功',
