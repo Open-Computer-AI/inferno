@@ -115,7 +115,7 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 51 | `e39fce270` | 08-22 | T1 | fix(codex): sync routed capabilities from upstream | BOTH | PORTED |
 | 52 | `77e0409f7` | 08-23 | T1 | 新增渠道时间段定价工作日规则 | weekdays_only; the types half was already in HEAD, this adds the UI + tests | **PORTED** |
 | 53 | `616df479e` | 08-23 | T2 | fix(admin): show account priority by default | ? | TODO |
-| 54 | `4a1da2950` | 08-23 | T2 | fix(deps): bump dompurify to patch multiple sanitizer-by | ? | TODO |
+| 54 | `4a1da2950` | 08-23 | T2 | fix(deps): bump dompurify to patch multiple sanitizer-by | dompurify 3.3.1 -> 3.4.14 + pnpm override; guards 7 HTML-rendering surfaces, several public. +6 tests pinning the floor | **PORTED** |
 | 55 | `40ea3aeba` | 08-24 | T1 | feat: add OAuth outbound transport plugin system | ? | TODO |
 | 56 | `684d9efb1` | 08-24 | T2 | fix: harden plugin runtime and UI bridge | ? | TODO |
 | 57 | `391d69e08` | 08-24 | T2 | fix: preserve initial plugin bridge requests | ? | TODO |
