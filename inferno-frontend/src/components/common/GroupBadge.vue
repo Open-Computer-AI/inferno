@@ -146,6 +146,22 @@ const nameColor = computed(() => {
   return props.platform ? 'var(--foreground)' : 'var(--muted-foreground)'
 })
 
+// Expiry urgency is STATE, not category, so the "colour never encodes category"
+// rule does not reach it -- and this chip's own exception ("the only tinted
+// variant left is a per-user rate override, because that is the only one the
+// reader has to act on") is exactly the test an expiring subscription passes.
+// Upstream carried urgency and platform theming in one function; June correctly
+// dropped the platform half, and the urgency half went with it by accident.
+// Restored on the state tokens, not upstream's bg-red-200/80.
+const expiryInk = computed(() => {
+  if (!isSubscription.value) return null
+  const days = props.daysRemaining
+  if (days === null || days === undefined) return null
+  if (days <= 3) return 'var(--destructive)'
+  if (days <= 7) return 'var(--s2a-attn)'
+  return null
+})
+
 // Only the personal-rate override takes the tinted chip fill; everything
 // else, including peak and subscription, stays on the neutral card fill.
 const variant = computed(() => (hasCustomRate.value ? 'personal' : 'default'))
@@ -167,7 +183,7 @@ const glyph = computed<Glyph | null>(() => {
     return { icon: 'hgi-clock-01', ink: 'var(--s2a-attn)', tip: peakRateTitle.value }
   }
   if (showLabel.value && isSubscription.value) {
-    return { icon: 'hgi-calendar-01', ink: 'var(--muted-foreground)', tip: labelText.value }
+    return { icon: 'hgi-calendar-01', ink: expiryInk.value ?? 'var(--muted-foreground)', tip: labelText.value }
   }
   return null
 })
@@ -177,7 +193,7 @@ const glyph = computed<Glyph | null>(() => {
   <span class="gbadge" :data-variant="variant">
     <span class="gbadge__dot" :style="{ background: dotColor }" aria-hidden="true" />
     <span class="gbadge__name" :style="{ color: nameColor }">{{ name }}</span>
-    <span v-if="showLabel" class="gbadge__rate">{{ labelText }}</span>
+    <span v-if="showLabel" class="gbadge__rate" :style="expiryInk ? { color: expiryInk } : undefined">{{ labelText }}</span>
     <i
       v-if="glyph"
       :class="['hgi-stroke', glyph.icon]"

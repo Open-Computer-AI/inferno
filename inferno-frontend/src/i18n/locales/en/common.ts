@@ -196,6 +196,7 @@ export default {
       subtitleTokens: '{value} tokens across {count} {entity}',
       subtitleCost: '{value} across {count} {entity}',
       othersCount: '{count} others',
+      othersCollapse: 'Show fewer',
       entityModels: 'models',
       entityGroups: 'groups',
       entityEndpoints: 'endpoints',

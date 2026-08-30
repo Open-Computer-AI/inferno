@@ -184,6 +184,7 @@ export default {
       subtitleTokens: '{count} 个{entity}共 {value} tokens',
       subtitleCost: '{count} 个{entity}共 {value}',
       othersCount: '其他 {count} 项',
+      othersCollapse: '收起',
       entityModels: '模型',
       entityGroups: '分组',
       entityEndpoints: '端点',
