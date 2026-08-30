@@ -142,4 +142,4 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 78 | `c03776604` | 08-28 | T2 | fix(keys): preserve Claude attribution headers | preserve Claude attribution headers | **PORTED** |
 | 79 | `706b5676a` | 08-29 | T2 | fix(groups): show API error messages on create and updat | surface API error messages on group create/update | **PORTED** |
 | 80 | `ed12ea716` | 08-29 | T2 | fix(frontend): authenticate Codex API key mode inline | authenticate Codex API key mode inline | **PORTED** |
-| 81 | `b5827cfd5` | 08-29 | T1 | fix(pricing): align DeepSeek billing with official peak/ | BOTH | PORTED — merged, DeepSeek under-billing |
+| 81 | `b5827cfd5` | 08-29 | T1 | fix(pricing): align DeepSeek billing with official peak/ | BOTH | PORTED — backend arrived by merge; its frontend half (deepseekModels v4 list) was NOT, and I wrongly assumed the merge covered it. Ported 2026-08-30 |
