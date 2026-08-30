@@ -68,32 +68,32 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 4 | `a6d868f27` | 07-11 | T2 | fix(dashboard): include cache tokens in token card break | ? | TODO |
 | 5 | `35e8ba2a3` | 07-11 | T2 | fix(announcements): use proper empty-state copy instead  | ? | TODO |
 | 6 | `0d5e3ca9b` | 07-11 | T2 | fix(ops): show neutral SLA card when window has no reque | ? | TODO |
-| 7 | `901a0439f` | 08-15 | T1 | feat: 国产供应商一等支持（Kimi/Zhipu/DeepSeek 多协议 + 配额/余额监控） | ? | TODO |
+| 7 | `901a0439f` | 08-15 | T1 | feat: 国产供应商一等支持（Kimi/Zhipu/DeepSeek 多协议 + 配额/余额监控） | CN providers base: 3 new cells verbatim; AccountUsageCell IS June so its CN block was rebuilt (uc-body/uc-muted); PlatformTypeBadge kept our tokens + upstream 3 new branches | **PORTED** |
 | 8 | `e8ff2017c` | 08-16 | T2 | fix(admin): show category labels in ops error distributi | ? | TODO |
 | 9 | `cb7841d85` | 08-16 | T2 | fix(i18n): add missing expired key to account status blo | ? | TODO |
 | 10 | `22fc0cdbf` | 08-16 | T2 | fix(frontend): clarify OpenAI Fast/Flex policy rules | ? | TODO |
 | 11 | `1977810cf` | 08-17 | T2 | fix(frontend): isolate account helper data loading | ? | TODO |
 | 12 | `9aac3b73f` | 08-16 | T2 | add Ollama usage query action | ? | TODO |
 | 13 | `8d82bb069` | 08-17 | T1 | fix(openai): expose bulk account settings | bulk OpenAI account settings (verbatim, 0 tokens/650 Tailwind); kept our dash-free copy, fixed its punctuation | **PORTED** |
-| 14 | `7cdca9e49` | 08-17 | T2 | feat(groups): 放行 kimi/zhipu/deepseek 平台分组创建入口 | ? | TODO |
-| 15 | `c38c5beef` | 08-17 | T2 | fix(i18n): CN 余额单元格误引 grokBalance 键致渲染原始 key | ? | TODO |
+| 14 | `7cdca9e49` | 08-17 | T2 | feat(groups): 放行 kimi/zhipu/deepseek 平台分组创建入口 | kept our derived GROUP_PLATFORM_OPTIONS over upstream literal; GroupBadge stays platform-agnostic (June rule 5) | **PORTED** |
+| 15 | `c38c5beef` | 08-17 | T2 | fix(i18n): CN 余额单元格误引 grokBalance 键致渲染原始 key | grokBalance key misuse in the CN balance cell | **PORTED** |
 | 16 | `9f24a5530` | 08-17 | T1 | 功能：支持渠道模型分时倍率定价 | TimePricingSection.vue new (verbatim); types layer was already partly ported, kept ours as the superset | **PORTED** |
 | 17 | `7e45634df` | 08-18 | T2 | chore: remove leftover Sora references after platform re | ? | TODO |
 | 18 | `a20e1c00c` | 08-18 | T1 | feat(monitor-ui): 配额模式表单、用量快照视图与 8 平台支持 | chain base: quota check-mode, MonitorQuotaView (new, verbatim), 8 providers, showQuota setting | **PORTED** |
 | 19 | `302a10b88` | 08-18 | T2 | test(monitor-ui): 配额视图渲染与开关门控用例 | the chain's own tests, taken whole | **PORTED** |
 | 20 | `269fbcac0` | 08-18 | T2 | feat: Grok 用量条补齐本站 24h/7d/30d 聚合 | ? | TODO |
 | 21 | `fd42d3722` | 08-18 | T2 | fix: hide Grok prepaid and used/limit when they are empt | ? | TODO |
-| 22 | `8f6f45983` | 08-18 | T2 | fix(channels): support kimi/zhipu/deepseek platforms in  | ? | TODO |
+| 22 | `8f6f45983` | 08-18 | T2 | fix(channels): support kimi/zhipu/deepseek platforms in  | kimi/zhipu/deepseek in channel pricing | **PORTED** |
 | 23 | `03c3f3b6f` | 08-18 | T2 | feat(ui): Select 组件支持可选远程搜索（remote/loading props + searc | Select remote-search — script-only; spec selectors retargeted to our June BEM names | **PORTED** |
 | 24 | `5cbd0c96a` | 08-18 | T2 | fix(monitor-ui): 关联账号选择器改服务端搜索+回填，OpenAI 配额模式加消耗提示 | server-side account search + backfill; **the manifest under-scoped the chain — c9effc456's specs require this** | **PORTED** |
 | 25 | `c9effc456` | 08-18 | T1 | fix(frontend): monitor form check-mode restore, account  | check-mode restore, account_id=0 unbind, mode badge | **PORTED** |
 | 26 | `2c250bfd7` | 08-18 | T1 | fix(monitor-ui): localize the "quota" placeholder model  | formatMonitorModel across 4 views | **PORTED** |
 | 27 | `58e147fba` | 08-19 | T2 | feat(composite): support Codex endpoints | ? | TODO |
-| 28 | `b171bb0e4` | 08-19 | T2 | fix(composite): support CN providers | ? | TODO |
-| 29 | `f917d19d3` | 08-19 | T2 | test(frontend): align Grok API key placeholder assertion | ? | TODO |
-| 30 | `994fbfedd` | 08-19 | T2 | fix(frontend): prevent CN quota labels overlapping bars | ? | TODO |
+| 28 | `b171bb0e4` | 08-19 | T2 | fix(composite): support CN providers | composite routes to CN providers; kept our derived CONCRETE_PLATFORM_OPTIONS, test rewritten to assert the catalog not the source text | **PORTED** |
+| 29 | `f917d19d3` | 08-19 | T2 | test(frontend): align Grok API key placeholder assertion | assertion follows 901a0439f refactoring the placeholder into a computed | **PORTED** |
+| 30 | `994fbfedd` | 08-19 | T2 | fix(frontend): prevent CN quota labels overlapping bars | CN quota label overlap | **PORTED** |
 | 31 | `63839f193` | 08-19 | T2 | fix(frontend): align admin role selector styling | ? | TODO |
-| 32 | `1b30a2d74` | 08-19 | T2 | feat(accounts): support header overrides for CN provider | ? | TODO |
+| 32 | `1b30a2d74` | 08-19 | T2 | feat(accounts): support header overrides for CN provider | header overrides for CN providers | **PORTED** |
 | 33 | `26be82cc8` | 08-19 | T1 | 前端：配置渠道倍率并精简长上下文开关 | **DOUBLE-PORTED** — landed 2026-08-29 in `7afe8e832`, which did not update this row, so it still read TODO and was ported again 2026-08-30 in `0827bb22d`. End state is correct (the duplicated multiplier controls were removed, +3 tests, browser-verified 10 inputs once each), but the second commit misattributes the duplication to a 3-way merge artifact | **PORTED** |
 | 34 | `d4d2c746c` | 08-19 | T2 | 前端：修正账号长上下文开关门控 | ? | TODO |
 | 35 | `1f2a87adb` | 08-20 | T1 | fix(admin): 补全平台筛选选项 | LOGIC | PORTED |
@@ -103,7 +103,7 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 39 | `39485f2e2` | 08-20 | T1 | 更新 Grok 默认模型与官方计费目录 | LOGIC | PORTED |
 | 40 | `6c3edc095` | 08-20 | T1 | feat(429): add configurable cooldown and retry strategie | - | SKIPPED — reverted by e62ec2c42, net no-op |
 | 41 | `e62ec2c42` | 08-20 | T1 | Revert "feat(429): add configurable cooldown and retry s | - | SKIPPED — the revert; verified total |
-| 42 | `2e279c81d` | 08-21 | T2 | fix(frontend): make CN provider quota/balance refresh af | ? | TODO |
+| 42 | `2e279c81d` | 08-21 | T2 | fix(frontend): make CN provider quota/balance refresh af | CN quota/balance refresh | **PORTED** |
 | 43 | `68653fb2c` | 08-21 | T2 | fix: allow messages dispatch for composite groups | ? | TODO |
 | 44 | `3445485eb` | 08-21 | T1 | fix(frontend): prevent token refresh lock loop | LOGIC | PORTED — fix was present, test added |
 | 45 | `d9d2854d2` | 08-21 | T2 | Make enabled model plaza discoverable from /home | ? | TODO |
