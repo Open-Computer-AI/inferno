@@ -137,6 +137,7 @@ export default {
         inBucket: 'in {bucket}'
       },
       traffic: {
+      errorRateOverLimit: 'Error rate {rate}% is over your {limit}% limit',
         title: 'Traffic outcome',
         slaCaption: 'SLA',
         succeeded: 'Succeeded',

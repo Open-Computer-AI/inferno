@@ -32,6 +32,17 @@ const props = defineProps<{
   sla: number | null
   /** SLA-eligible request count. Zero means "no data", not "0% success". */
   requestCountSla: number
+  /**
+   * Threshold verdicts from the operator's configured ops_metric_thresholds,
+   * computed by the parent (it owns the thresholds prop). 'none' means either
+   * healthy or unconfigured -- deliberately not green, since an unconfigured
+   * threshold has measured nothing.
+   */
+  slaTone?: 'none' | 'ok' | 'warning' | 'critical'
+  errorTone?: 'none' | 'ok' | 'warning' | 'critical'
+  /** Request error rate as a percentage, and the operator's configured ceiling. */
+  errorRatePercent?: number | null
+  errorRateLimit?: number | null
   fullscreen?: boolean
 }>()
 
@@ -72,6 +83,36 @@ const slaDisplay = computed(() => {
   if ((props.requestCountSla ?? 0) <= 0) return '-'
   return `${(props.sla * 100).toFixed(3)}%`
 })
+
+/* The headline SLA carries the operator's own threshold verdict. Nothing else
+   on this screen did: sla_percent_min was write-only, so an operator who set
+   99.5 got no signal here until the diagnosis panel's absolute 98. No tint when
+   there is no data to judge -- '-' must not read as a breach. */
+const slaInk = computed(() => {
+  if (slaDisplay.value === '-') return null
+  if (props.slaTone === 'critical') return 'var(--destructive)'
+  if (props.slaTone === 'warning') return 'var(--s2a-attn)'
+  return null
+})
+
+/* request_error_rate_percent_max gets a line of its own rather than a second
+   tint. SplitSegment.tone is semantic (good/bad/neutral), so the failed segment
+   is already 'bad' whether or not the operator's ceiling was crossed --
+   overloading it would say nothing new. The threshold is only worth pixels when
+   it is breached, and then it is worth stating in full: the rate AND the limit,
+   so the operator can see it is their own number talking. */
+const errorBreach = computed(() => {
+  if (!hasTraffic.value) return null
+  if (props.errorTone !== 'critical' && props.errorTone !== 'warning') return null
+  if (props.errorRatePercent == null || props.errorRateLimit == null) return null
+  return {
+    ink: props.errorTone === 'critical' ? 'var(--destructive)' : 'var(--s2a-attn)',
+    text: t('admin.ops.traffic.errorRateOverLimit', {
+      rate: props.errorRatePercent.toFixed(2),
+      limit: props.errorRateLimit
+    })
+  }
+})
 </script>
 
 <template>
@@ -86,7 +127,7 @@ const slaDisplay = computed(() => {
       </button>
     </div>
 
-    <p class="traffic__sla">
+    <p class="traffic__sla" :style="slaInk ? { color: slaInk } : undefined">
       {{ slaDisplay }}
       <span class="traffic__sla-name">{{ t('admin.ops.traffic.slaCaption') }}</span>
     </p>
@@ -97,7 +138,11 @@ const slaDisplay = computed(() => {
       :unit="t('admin.ops.traffic.unit')"
       :caption="t('admin.ops.traffic.caption')"
     />
-    <p v-else class="traffic__empty">{{ t('admin.ops.noData') }}</p>
+    <p v-if="errorBreach" class="traffic__breach" :style="{ color: errorBreach.ink }">
+      {{ errorBreach.text }}
+    </p>
+
+    <p v-if="!hasTraffic" class="traffic__empty">{{ t('admin.ops.noData') }}</p>
   </div>
 </template>
 
@@ -151,6 +196,11 @@ const slaDisplay = computed(() => {
 .traffic__sla-name {
   color: var(--muted-foreground);
   font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+}
+
+.traffic__breach {
+  margin: -8px 0 10px;
   font-size: var(--fs-sm);
 }
 
