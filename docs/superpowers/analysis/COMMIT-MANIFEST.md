@@ -107,12 +107,12 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 43 | `68653fb2c` | 08-21 | T2 | fix: allow messages dispatch for composite groups | ? | TODO |
 | 44 | `3445485eb` | 08-21 | T1 | fix(frontend): prevent token refresh lock loop | LOGIC | PORTED — fix was present, test added |
 | 45 | `d9d2854d2` | 08-21 | T2 | Make enabled model plaza discoverable from /home | ? | TODO |
-| 46 | `22e1b8144` | 08-22 | T1 | feat(gateway): expose routed Codex model catalogs | ? | TODO |
-| 47 | `e471be730` | 08-22 | T2 | feat(codex): complete routed model catalogs | ? | TODO |
-| 48 | `b16ed03ca` | 08-22 | T2 | fix(codex): align routed catalogs with actual routes | ? | TODO |
+| 46 | `22e1b8144` | 08-22 | T1 | feat(gateway): expose routed Codex model catalogs | routed Codex model catalogs; UseKeyModal patched not copied (ours had diverged, contrary to an earlier note) | **PORTED** |
+| 47 | `e471be730` | 08-22 | T2 | feat(codex): complete routed model catalogs | complete routed catalogs | **PORTED** |
+| 48 | `b16ed03ca` | 08-22 | T2 | fix(codex): align routed catalogs with actual routes | align catalogs with actual routes | **PORTED** |
 | 49 | `ee62dfbaf` | 08-22 | T2 | fix(proxy): support bracketed IPv6 hosts in batch proxy  | ? | TODO |
 | 50 | `5dfad32b8` | 08-22 | T2 | fix(frontend): accept unlimited (0) user concurrency in  | ? | TODO |
-| 51 | `e39fce270` | 08-22 | T1 | fix(codex): sync routed capabilities from upstream | BOTH | PORTED |
+| 51 | `e39fce270` | 08-22 | T1 | fix(codex): sync routed capabilities from upstream | BOTH | **PORTED** (was mismarked: 2b15d41f7 took only 12 of its 31 CreateAccountModal lines and skipped the spec; completed here) |
 | 52 | `77e0409f7` | 08-23 | T1 | 新增渠道时间段定价工作日规则 | weekdays_only; the types half was already in HEAD, this adds the UI + tests | **PORTED** |
 | 53 | `616df479e` | 08-23 | T2 | fix(admin): show account priority by default | ? | TODO |
 | 54 | `4a1da2950` | 08-23 | T2 | fix(deps): bump dompurify to patch multiple sanitizer-by | dompurify 3.3.1 -> 3.4.14 + pnpm override; guards 7 HTML-rendering surfaces, several public. +6 tests pinning the floor | **PORTED** |
@@ -132,8 +132,8 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 68 | `5705f4a4a` | 08-25 | T1 | fix(usage): hide mapped reasoning effort from users | privacy split — admin sees both values, user only their own; backend half already enforced | **PORTED** |
 | 69 | `a8cfe746b` | 08-25 | T2 | test(usage): cover user and admin reasoning effort page  | ? | TODO |
 | 70 | `d522aed65` | 08-26 | T2 | fix: preserve promo codes for OAuth signup | ? | TODO |
-| 71 | `195b21970` | 08-26 | T1 | fix(codex): isolate API-key catalog cache and DeepSeek C | ? | TODO |
-| 72 | `2abce6503` | 08-26 | T1 | fix(codex): harden routed catalog capability sync | BOTH | PARTIAL — preview hunk ported, UseKeyModal blocked |
+| 71 | `195b21970` | 08-26 | T1 | fix(codex): isolate API-key catalog cache and DeepSeek C | isolate API-key catalog cache + DeepSeek Codex defaults | **PORTED** |
+| 72 | `2abce6503` | 08-26 | T1 | fix(codex): harden routed catalog capability sync | BOTH | completed — the UseKeyModal half landed once 22e1b8144 was in |
 | 73 | `5f09442fc` | 08-27 | T2 | fix(openai): refresh usage after quota reset | ? | TODO |
 | 74 | `b56c61ecc` | 08-28 | T1 | feat(admin): let admins restrict which public groups a u | ported in 6e04b06ee (toggle + load-init + save-filter, applied atomically); row was left stale | **PORTED** |
 | 75 | `0756c9810` | 08-28 | T2 | fix(frontend): 批量编辑显式提交 codex_fingerprint_mode=off，修复无法关 | ? | TODO |
@@ -141,5 +141,5 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 77 | `02eee39dd` | 08-28 | T2 | fix(payment): show selected currency in recharge rate | ? | TODO |
 | 78 | `c03776604` | 08-28 | T2 | fix(keys): preserve Claude attribution headers | ? | TODO |
 | 79 | `706b5676a` | 08-29 | T2 | fix(groups): show API error messages on create and updat | ? | TODO |
-| 80 | `ed12ea716` | 08-29 | T2 | fix(frontend): authenticate Codex API key mode inline | ? | TODO |
+| 80 | `ed12ea716` | 08-29 | T2 | fix(frontend): authenticate Codex API key mode inline | authenticate Codex API key mode inline | **PORTED** |
 | 81 | `b5827cfd5` | 08-29 | T1 | fix(pricing): align DeepSeek billing with official peak/ | BOTH | PORTED — merged, DeepSeek under-billing |
