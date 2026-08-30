@@ -27,7 +27,7 @@ Kind: `LOGIC` (port as-is) · `UI` (rebuild in June) · `BOTH`
 | 2 | `4999231d6` | 2026-08-08 | 修复邮箱域名注册额度策略 | BOTH | PRESENT |
 | 3 | `563a72ca7` | 2026-08-09 | feat: add default-off switch for email domain regist | BOTH | PRESENT |
 | 4 | `bbc8b6e90` | 2026-08-09 | 完善大文件备份分卷上传与恢复 | BOTH | PORTED |
-| 5 | `f2da30bcd` | 2026-08-09 | Merge pull request #5423 from lyen1688/feat/email-do | - | merge, no content |
+| 5 | `f2da30bcd` | 2026-08-09 | Merge pull request #5423 from lyen1688/feat/email-do | empty merge commit, no content to port | **SKIPPED** |
 | 6 | `33351c7bc` | 2026-08-10 | fix(billing): gofmt channel.go and drop the redundan | BOTH | PRESENT |
 | 7 | `5350b3d98` | 2026-08-10 | fix(usage): restore request ID column visibility | BOTH | PORTED |
 | 8 | `9096492b5` | 2026-08-10 | feat(billing): support safe upstream response model  | BOTH | PORTED |

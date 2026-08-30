@@ -531,6 +531,21 @@ Everything else unique to those branches was either a rebase-rewritten copy of
 one of our own commits (same subject, new hash) or Razorpay lint debt that PR
 #15 re-raises against current code.
 
+# Upstream port status (2026-08-30)
+
+**Both port sets are closed.** The commit manifest has 103 rows: 90 PORTED,
+10 PRESENT (already satisfied by our rewrite), 3 SKIPPED (empty merges or
+backend-only). Zero open.
+
+`git fetch upstream main` on 2026-08-30 put our merge-base at `b5827cfd5`,
+which IS `upstream/main`'s tip -- 0 commits beyond it. There is nothing left to
+take. The next drift starts whenever upstream moves again; re-run the routine
+and add rows for whatever appears.
+
+Gates at close: tsc 0 · 1915/1915 tests across 260 files · i18n keycheck clean ·
+june-lint 1183 violations / 296 converted files · divergence all-declared ·
+production build clean.
+
 # Manifest discipline (non-negotiable)
 
 **A port and its COMMIT-MANIFEST.md row change land in the SAME commit.**
