@@ -1284,6 +1284,32 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(wrapper.text()).not.toContain("OpenAI 高级调度器");
   });
 
+  it("falls back to 'pass' when a rule has no fallback_action, not a raw i18n key", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      openai_fast_policy_settings: {
+        rules: [
+          {
+            service_tier: "all",
+            action: "filter",
+            scope: "all",
+            model_whitelist: ["gpt-5.6-sol"],
+            // deliberately no fallback_action: this is the default path
+          },
+        ],
+      },
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const summary = wrapper.get('[data-testid="openai-fast-policy-summary-0"]');
+    // 'passthrough' is not a member of summaryAction (pass|filter|block|
+    // force_priority), so defaulting to it printed the key itself.
+    expect(summary.text()).not.toContain("summaryAction");
+    expect(summary.text()).not.toContain("passthrough");
+  });
+
   it("summarizes target and other-model actions, then switches to all models", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
