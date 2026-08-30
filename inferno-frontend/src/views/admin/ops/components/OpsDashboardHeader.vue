@@ -557,9 +557,13 @@ const diagnosisReport = computed<DiagnosisItem[]>(() => {
     })
   }
 
-  // SLA diagnostics
+  // SLA diagnostics. A window with no SLA-eligible requests yields sla = 0,
+  // which is an absence of data, not a failure -- reporting it as critical
+  // sends operators chasing an outage that did not happen (0d5e3ca9b).
   const slaPct = (ov.sla ?? 0) * 100
-  if (slaPct < 90) {
+  if ((ov.request_count_sla ?? 0) <= 0) {
+    // no diagnosis either way
+  } else if (slaPct < 90) {
     report.push({
       type: 'critical',
       message: t('admin.ops.diagnosis.slaCritical', { sla: slaPct.toFixed(2) }),

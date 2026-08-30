@@ -64,16 +64,16 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 |---|-----|------|------|---------------|------|--------|
 | 1 | `5e72deb7d` | 05-01 | T2 | feat: ops 错误详情弹窗支持自定义时间区间 | ops error detail custom time range | **PORTED** |
 | 2 | `3bff4b64b` | 07-10 | T2 | fix(ui): localize user role label in app header | already satisfied — our June shell removed AppHeader and localises the role via shell.roleAdministrator/roleMember | **PRESENT** |
-| 3 | `7d796f111` | 07-11 | T2 | fix(ui): adapt native form controls to dark mode via col | ? | TODO |
-| 4 | `a6d868f27` | 07-11 | T2 | fix(dashboard): include cache tokens in token card break | ? | TODO |
+| 3 | `7d796f111` | 07-11 | T2 | fix(ui): adapt native form controls to dark mode via col | already satisfied — our style.css declares color-scheme light/dark and the June DateRangePicker dropped the invert(0.7) filter | **PRESENT** |
+| 4 | `a6d868f27` | 07-11 | T2 | fix(dashboard): include cache tokens in token card break | cache tokens in both dashboard token tiles | **PORTED** |
 | 5 | `35e8ba2a3` | 07-11 | T2 | fix(announcements): use proper empty-state copy instead  | announcements empty-state copy | **PORTED** |
-| 6 | `0d5e3ca9b` | 07-11 | T2 | fix(ops): show neutral SLA card when window has no reque | ? | TODO |
+| 6 | `0d5e3ca9b` | 07-11 | T2 | fix(ops): show neutral SLA card when window has no reque | a zero-request window no longer reports as a critical SLA failure; ported into our diagnostics rather than upstream's card | **PORTED** |
 | 7 | `901a0439f` | 08-15 | T1 | feat: 国产供应商一等支持（Kimi/Zhipu/DeepSeek 多协议 + 配额/余额监控） | CN providers base: 3 new cells verbatim; AccountUsageCell IS June so its CN block was rebuilt (uc-body/uc-muted); PlatformTypeBadge kept our tokens + upstream 3 new branches | **PORTED** |
 | 8 | `e8ff2017c` | 08-16 | T2 | fix(admin): show category labels in ops error distributi | category labels — our DitherDonut legend already renders them; ours kept | **PORTED** |
 | 9 | `cb7841d85` | 08-16 | T2 | fix(i18n): add missing expired key to account status blo | missing expired key in the account status block | **PORTED** |
 | 10 | `22fc0cdbf` | 08-16 | T2 | fix(frontend): clarify OpenAI Fast/Flex policy rules | Fast/Flex rule summary line; helpers added to SettingsView and provided to our extracted gateway page | **PORTED** |
 | 11 | `1977810cf` | 08-17 | T2 | fix(frontend): isolate account helper data loading | isolate account helper data loading | **PORTED** |
-| 12 | `9aac3b73f` | 08-16 | T2 | add Ollama usage query action | ? | TODO |
+| 12 | `9aac3b73f` | 08-16 | T2 | add Ollama usage query action | on-demand Ollama usage query, rebuilt in June (ocu__ BEM + tokens); our spec asserted zero buttons, now one | **PORTED** |
 | 13 | `8d82bb069` | 08-17 | T1 | fix(openai): expose bulk account settings | bulk OpenAI account settings (verbatim, 0 tokens/650 Tailwind); kept our dash-free copy, fixed its punctuation | **PORTED** |
 | 14 | `7cdca9e49` | 08-17 | T2 | feat(groups): 放行 kimi/zhipu/deepseek 平台分组创建入口 | kept our derived GROUP_PLATFORM_OPTIONS over upstream literal; GroupBadge stays platform-agnostic (June rule 5) | **PORTED** |
 | 15 | `c38c5beef` | 08-17 | T2 | fix(i18n): CN 余额单元格误引 grokBalance 键致渲染原始 key | grokBalance key misuse in the CN balance cell | **PORTED** |
@@ -95,7 +95,7 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 31 | `63839f193` | 08-19 | T2 | fix(frontend): align admin role selector styling | admin role selector styling | **PORTED** |
 | 32 | `1b30a2d74` | 08-19 | T2 | feat(accounts): support header overrides for CN provider | header overrides for CN providers | **PORTED** |
 | 33 | `26be82cc8` | 08-19 | T1 | 前端：配置渠道倍率并精简长上下文开关 | **DOUBLE-PORTED** — landed 2026-08-29 in `7afe8e832`, which did not update this row, so it still read TODO and was ported again 2026-08-30 in `0827bb22d`. End state is correct (the duplicated multiplier controls were removed, +3 tests, browser-verified 10 inputs once each), but the second commit misattributes the duplication to a 3-way merge artifact | **PORTED** |
-| 34 | `d4d2c746c` | 08-19 | T2 | 前端：修正账号长上下文开关门控 | ? | TODO |
+| 34 | `d4d2c746c` | 08-19 | T2 | 前端：修正账号长上下文开关门控 | our tree already gates the long-context block, not the WS block; its spec assertions added | **PRESENT** |
 | 35 | `1f2a87adb` | 08-20 | T1 | fix(admin): 补全平台筛选选项 | LOGIC | PORTED |
 | 36 | `85051616f` | 08-20 | T2 | feat(accounts): add adaptive API protocol routing | adaptive API protocol routing; unblocks c4e46c3be | **PORTED** |
 | 37 | `b3092145d` | 08-20 | T2 | fix(accounts): harden adaptive protocol compatibility | adaptive protocol compatibility hardening; spec gains interactive Group/ModelWhitelist stubs | **PORTED** |

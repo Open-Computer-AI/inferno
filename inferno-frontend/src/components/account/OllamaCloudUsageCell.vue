@@ -20,16 +20,38 @@
  *
  * Prop is unchanged (`account: Account`).
  */
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { Account } from '@/types'
 import CapacityBar from '@/components/common/CapacityBar.vue'
+import { adminAPI } from '@/api/admin'
+import type { OllamaCloudUsageState } from '@/types'
 import { formatCountdown } from '@/utils/format'
 
 const props = defineProps<{ account: Account }>()
+const emit = defineEmits<{ updated: [state: OllamaCloudUsageState] }>()
 const { t } = useI18n()
 
-const state = computed(() => props.account.ollama_cloud_usage)
+/* Local copy so an on-demand query updates this cell immediately; it follows
+   the prop whenever the row is refreshed from the list. */
+const localState = ref(props.account.ollama_cloud_usage)
+watch(() => props.account.ollama_cloud_usage, (next) => { localState.value = next })
+const state = computed(() => localState.value)
+const refreshing = ref(false)
+
+const refreshUsage = async () => {
+  if (refreshing.value) return
+  refreshing.value = true
+  try {
+    const next = await adminAPI.accounts.refreshOllamaCloudUsage(props.account.id)
+    localState.value = next
+    emit('updated', next)
+  } catch (error) {
+    console.error('Failed to refresh Ollama Cloud usage:', error)
+  } finally {
+    refreshing.value = false
+  }
+}
 const snapshot = computed(() => state.value?.snapshot)
 
 const thresholdInk = (percent: number) => {
@@ -62,6 +84,22 @@ const resetLabel = (resetsAt: string | null | undefined) => {
       </span>
       <span v-if="resetLabel(snapshot.data.seven_day.reset_at)" class="ocu__reset">{{ resetLabel(snapshot.data.seven_day.reset_at) }}</span>
     </div>
+    <div v-if="state?.configured" class="ocu__actions">
+      <button
+        type="button"
+        class="ocu__query"
+        :disabled="refreshing"
+        data-testid="ollama-cloud-usage-query"
+        @click="refreshUsage"
+      >
+        <i
+          class="hgi-stroke hgi-refresh ocu__query-icon"
+          :class="{ 'ocu__query-icon--spin': refreshing }"
+          aria-hidden="true"
+        />
+        {{ t('admin.accounts.usageWindow.activeQuery') }}
+      </button>
+    </div>
   </div>
   <span v-else class="ocu__empty">-</span>
 </template>
@@ -91,6 +129,48 @@ const resetLabel = (resetsAt: string | null | undefined) => {
 .ocu__bar {
   width: 40px;
   flex-shrink: 0;
+}
+
+.ocu__actions {
+  display: flex;
+  align-items: center;
+  padding-top: 2px;
+}
+
+/* Neutral at rest; the brand tint is an interaction state, not a category. */
+.ocu__query {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--r-sm);
+  padding: 2px 6px;
+  color: var(--muted-foreground);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-medium);
+}
+
+.ocu__query:hover:not(:disabled) {
+  background: var(--brand-tint);
+  color: var(--brand);
+}
+
+.ocu__query:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ocu__query-icon--spin {
+  animation: ocu-spin 1s linear infinite;
+}
+
+@keyframes ocu-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ocu__query-icon--spin {
+    animation: none;
+  }
 }
 
 .ocu__percent {

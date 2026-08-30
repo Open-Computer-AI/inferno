@@ -100,7 +100,11 @@ describe('OllamaCloudUsageCell', () => {
 
     expect(wrapper.find('[data-testid="ollama-cloud-usage-details"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="ollama-cloud-usage-refresh"]').exists()).toBe(false)
-    expect(wrapper.findAll('button')).toHaveLength(0)
+    // The cell carries exactly one control: the on-demand usage query added by
+    // 9aac3b73f. The old expand/refresh affordances stay out -- what this cell
+    // must not grow is a row of buttons, not a button.
+    expect(wrapper.findAll('button')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="ollama-cloud-usage-query"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('max')
     expect(wrapper.text()).not.toContain('$0')
     expect(wrapper.text()).not.toContain('gpt-oss:120b-cloud')
@@ -114,6 +118,6 @@ describe('OllamaCloudUsageCell', () => {
     await wrapper.setProps({ account: account(next) })
 
     expect(wrapper.get('[data-testid="ollama-cloud-five-hour"]').text()).toContain('43%')
-    expect(wrapper.findAll('button')).toHaveLength(0)
+    expect(wrapper.findAll('button')).toHaveLength(1)
   })
 })
