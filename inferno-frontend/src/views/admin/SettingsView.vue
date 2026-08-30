@@ -1142,6 +1142,8 @@ const form = reactive<SettingsForm>({
   // Model Plaza feature switches + description
   model_plaza_enabled: false,
   model_plaza_require_auth: false,
+  // Plugin management menu visibility; plugin runtime is unaffected.
+  plugin_management_enabled: false,
   model_plaza_description: '',
   // Affiliate (邀请返利) feature switch
   affiliate_enabled: false,
@@ -2798,6 +2800,7 @@ async function saveSettings() {
       // Model Plaza feature switches + description
       model_plaza_enabled: form.model_plaza_enabled,
       model_plaza_require_auth: form.model_plaza_require_auth,
+      plugin_management_enabled: form.plugin_management_enabled,
       model_plaza_description: form.model_plaza_description,
       // Affiliate (邀请返利) feature switch
       affiliate_enabled: form.affiliate_enabled,

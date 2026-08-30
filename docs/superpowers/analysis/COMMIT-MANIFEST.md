@@ -116,9 +116,9 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 52 | `77e0409f7` | 08-23 | T1 | 新增渠道时间段定价工作日规则 | weekdays_only; the types half was already in HEAD, this adds the UI + tests | **PORTED** |
 | 53 | `616df479e` | 08-23 | T2 | fix(admin): show account priority by default | ? | TODO |
 | 54 | `4a1da2950` | 08-23 | T2 | fix(deps): bump dompurify to patch multiple sanitizer-by | dompurify 3.3.1 -> 3.4.14 + pnpm override; guards 7 HTML-rendering surfaces, several public. +6 tests pinning the floor | **PORTED** |
-| 55 | `40ea3aeba` | 08-24 | T1 | feat: add OAuth outbound transport plugin system | ? | TODO |
-| 56 | `684d9efb1` | 08-24 | T2 | fix: harden plugin runtime and UI bridge | ? | TODO |
-| 57 | `391d69e08` | 08-24 | T2 | fix: preserve initial plugin bridge requests | ? | TODO |
+| 55 | `40ea3aeba` | 08-24 | T1 | feat: add OAuth outbound transport plugin system | plugin admin UI; api/plugins.ts was already present from a partial port, view/router/sidebar/i18n were not. Sidebar row + settings card rebuilt in our idiom | **PORTED** |
+| 56 | `684d9efb1` | 08-24 | T2 | fix: harden plugin runtime and UI bridge | plugin runtime + UI bridge hardening (ships WITH the system, never after) | **PORTED** |
+| 57 | `391d69e08` | 08-24 | T2 | fix: preserve initial plugin bridge requests | preserve initial plugin bridge requests | **PORTED** |
 | 58 | `377d1230f` | 08-24 | T1 | 模型广场：按计费阶梯单价表展示长上下文档位 | long-context tier table; **3-way landed sortByContext without its 2 call sites — fixed + test added** | **PORTED** |
 | 59 | `ecce0769c` | 08-24 | T2 | 模型广场：上下文档位统一标签形态并保证升序 | ? | TODO |
 | 60 | `83d4eb6a4` | 08-24 | T1 | 模型广场：增加渠道分时段计价展示 | time-window pricing display (verbatim; API types were already present) | **PORTED** |

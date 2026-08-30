@@ -110,6 +110,30 @@
         </div>
 
         <div class="settings-surface">
+          <div class="border-b border-[var(--border-subtle)] px-6 py-4">
+            <h2 class="text-lg font-[var(--fw-medium)] text-[var(--foreground)]">
+              {{ t('admin.settings.features.pluginManagement.title') }}
+            </h2>
+            <p class="mt-1 text-sm text-[var(--muted-foreground)]">
+              {{ t('admin.settings.features.pluginManagement.description') }}
+            </p>
+          </div>
+          <div class="space-y-5 p-6">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="text-sm font-[var(--fw-medium)] text-[var(--foreground)]">
+                  {{ t('admin.settings.features.pluginManagement.enabled') }}
+                </label>
+                <p class="mt-0.5 text-xs text-[var(--muted-foreground)]">
+                  {{ t('admin.settings.features.pluginManagement.enabledHint') }}
+                </p>
+              </div>
+              <Toggle v-model="form.plugin_management_enabled" />
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-surface">
           <div class="border-b border-[var(--border-subtle)] px-6 py-4            ">
 <h2 class="text-lg font-[var(--fw-medium)] text-[var(--foreground)] ">
               {{ t('admin.settings.features.availableChannels.title') }}

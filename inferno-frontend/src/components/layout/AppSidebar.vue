@@ -278,6 +278,7 @@ const roleLabel = computed(() => (isAdmin.value ? t('shell.roleAdministrator') :
 // ---- feature flags -------------------------------------------------------
 const flagOpsMonitoring = () => adminSettingsStore.opsMonitoringEnabled
 const flagAdminPayment = () => adminSettingsStore.paymentEnabled
+const flagPluginManagement = () => adminSettingsStore.pluginManagementEnabled
 
 // ---- custom menu items ----------------------------------------------------
 const customMenuItemsForAdmin = computed(() =>
@@ -410,6 +411,11 @@ function buildAdminGroups(): NavGroup[] {
     { path: '/admin/announcements', label: t('nav.announcements'), icon: 'hgi-notification-01' },
     { path: '/admin/settings', label: t('nav.settings'), icon: 'hgi-settings-01' }
   ]
+  // Upstream renders this with an inline SVG component; our rows take an hgi
+  // icon name, so the entry is built in that idiom instead.
+  if (flagPluginManagement()) {
+    system.splice(1, 0, { path: '/admin/plugins', label: t('nav.plugins'), icon: 'hgi-plug-socket' })
+  }
   for (const cm of customMenuItemsForAdmin.value) {
     system.push({ path: `/custom/${cm.id}`, label: cm.label, icon: '', iconSvg: cm.icon_svg })
   }
