@@ -37,6 +37,17 @@ const SRC = resolve(ROOT, 'src')
 // probe : prints evidence the item is STILL OPEN. Silence means closed.
 // expect: what we believe today. --check fails only when a 'closed' row reopens,
 //         so this gates against regression without blocking on known debt.
+// DELIBERATE, NOT DEBT -- do not re-add as a row:
+//
+// admin DashboardView does not show tpm, total_cost, today_account_cost or
+// total_account_cost. The file sweep flagged all four; Saksham confirmed the
+// omission is a product decision about what the dashboard puts in front of an
+// operator. Two of them could not have been rendered anyway -- the admin stats
+// endpoint returns 33 keys and neither account-cost field is among them, so
+// upstream's own markup paints a coerced $0 for money it never measured.
+//
+// Kept here rather than deleted because a future file-level sweep WILL flag
+// these again: they look exactly like dropped upstream logic.
 const LEDGER = [
   {
     id: 'grok-probe-column',
@@ -58,13 +69,6 @@ const LEDGER = [
     origin: 'file sweep 2026-08-30 — OpsDashboardHeader lost getSLAThresholdLevel and getRequestErrorRateThresholdLevel',
     expect: 'open',
     probe: `grep -rl "sla_percent_min" ${SRC} | grep -v "api/\\|OpsSettingsDialog\\|__tests__" | head -1 | grep -q . || echo "sla_percent_min is written but never read for display"`
-  },
-  {
-    id: 'dashboard-stat-fields',
-    what: 'admin DashboardView no longer renders tpm, today_account_cost, total_account_cost or total_cost',
-    origin: 'file sweep 2026-08-30 — an in-file comment still claims tpm is rendered inline',
-    expect: 'open',
-    probe: `for f in tpm today_account_cost total_account_cost total_cost; do grep -q "stats\\.$f" ${SRC}/views/admin/DashboardView.vue || echo "DashboardView does not render $f"; done`
   },
   {
     id: 'usage-endpoint-source',

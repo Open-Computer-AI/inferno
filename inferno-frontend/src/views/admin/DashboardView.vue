@@ -355,8 +355,15 @@ const formatDuration = (ms: number): string => {
 }
 
 /*
- * The two tray-floor lines that are conditional. The other two are direct
- * reads (rpm, tpm) and stay inline in the template.
+ * The two tray-floor lines that are conditional. The other is a direct read
+ * (rpm) and stays inline in the template.
+ *
+ * NOT tpm, despite what this comment used to say. tpm, total_cost and both
+ * account-cost figures are deliberately not shown -- a product decision about
+ * what this dashboard puts in front of an operator, not an oversight. The
+ * account-cost pair could not be shown regardless: the admin stats endpoint
+ * does not return them, so upstream's own markup renders a coerced $0 for
+ * money it never measured.
  *
  * Accounts is the only tile whose context can change tone: it restates the
  * verdict's evidence, so it takes ink for the same reason the verdict does.
