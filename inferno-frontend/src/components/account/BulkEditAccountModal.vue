@@ -979,13 +979,13 @@
           <label
             id="bulk-edit-openai-codex-fingerprint-label"
             class="input-label mb-0"
-            for="bulk-edit-openai-codex-fingerprint-enabled"
+            for="bulk-edit-openai-codex-fingerprint-mode-enabled"
           >
             {{ t('admin.accounts.openai.codexFingerprintMode') }}
           </label>
           <input
             v-model="enableCodexFingerprintMode"
-            id="bulk-edit-openai-codex-fingerprint-enabled"
+            id="bulk-edit-openai-codex-fingerprint-mode-enabled"
             type="checkbox"
             aria-controls="bulk-edit-openai-codex-fingerprint"
             class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
@@ -2100,11 +2100,15 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
 
   if (enableCodexFingerprintMode.value) {
     const extra = ensureExtra()
-    if (codexFingerprintMode.value !== 'off') {
-      extra.codex_fingerprint_mode = codexFingerprintMode.value
-    } else {
-      extra.codex_fingerprint_mode = ''
-    }
+    // off must be written explicitly, not expressed by deleting the key. The
+    // bulk path merges at the JSONB top level (extra = COALESCE(extra,'{}') ||
+    // payload), so omitting a key means "do not update it" -- it cannot clear
+    // an existing device/session/full. Worse, delete-without-write collapses
+    // the payload to {extra:{}}, which the backend rejects as an empty update.
+    // We already wrote a sentinel here for the same reason; upstream's literal
+    // 'off' is the better one, and reads identically (the extra->mode reader
+    // falls back to off for empty and unknown values alike).
+    extra.codex_fingerprint_mode = codexFingerprintMode.value
   }
   if (enableOpenAICompactMode.value) {
     const extra = ensureExtra()

@@ -3445,6 +3445,16 @@ const openaiFastPolicyScopeOptions = computed(() => [
   },
 ]);
 
+// The rule card exposes tier, action and target models as three separate
+// controls; this renders the sentence they add up to.
+function openaiFastPolicyActionSummary(action: OpenAIFastPolicyRule["action"]) {
+  return t(`admin.settings.openaiFastPolicy.summaryAction.${action}`);
+}
+
+function hasOpenAIFastPolicyTargetModels(rule: OpenAIFastPolicyRule) {
+  return Boolean(rule.model_whitelist?.some((pattern) => pattern.trim() !== ""));
+}
+
 function addOpenAIFastPolicyRule() {
   openaiFastPolicyForm.rules.push({
     service_tier: "priority",
@@ -4429,10 +4439,12 @@ DEFAULT_WEB_SEARCH_QUOTA_LIMIT,
   openEditProvider,
   openTestDialog,
   openaiFastPolicyActionOptions,
+  openaiFastPolicyActionSummary,
   openaiFastPolicyForm,
   openaiFastPolicyLoaded,
   openaiFastPolicyScopeOptions,
   openaiFastPolicyTierOptions,
+  hasOpenAIFastPolicyTargetModels,
   overloadCooldownForm,
   overloadCooldownLoading,
   overloadCooldownSaving,
