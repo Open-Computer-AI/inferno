@@ -93,10 +93,10 @@ describe('OllamaCloudUsageCell', () => {
     const sevenDay = wrapper.get('[data-testid="ollama-cloud-seven-day"]')
     expect(fiveHour.text()).toContain('admin.accounts.ollamaCloud.fiveHourShort')
     expect(fiveHour.text()).toContain('6%') // Math.round(5.6)
-    expect(fiveHour.text()).toContain('misc.resetIn')
+    expect(fiveHour.text()).toContain('userSubscriptions.resetIn')
     expect(sevenDay.text()).toContain('admin.accounts.ollamaCloud.sevenDayShort')
     expect(sevenDay.text()).toContain('14%') // Math.round(14.2)
-    expect(sevenDay.text()).toContain('misc.resetIn')
+    expect(sevenDay.text()).toContain('userSubscriptions.resetIn')
 
     expect(wrapper.find('[data-testid="ollama-cloud-usage-details"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="ollama-cloud-usage-refresh"]').exists()).toBe(false)

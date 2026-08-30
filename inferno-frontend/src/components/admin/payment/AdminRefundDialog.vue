@@ -9,7 +9,7 @@
       <!-- Refund Request Info -->
       <div
         v-if="order?.refund_requested_at || order?.refund_request_reason"
-        class="rounded-lg border border-[var(--brand-line)] bg-[var(--brand-tint)] p-3 border-[var(--brand-line)] bg-[var(--brand-tint)/20]"
+        class="rounded-lg border border-[var(--brand-line)] bg-[var(--brand-tint)] p-3 border-[var(--brand-line)] bg-[color-mix(in_srgb,var(--brand-tint)_20%,transparent)]"
       >
         <div class="flex items-center gap-2 text-sm font-[var(--fw-medium)] text-[var(--brand)] text-[var(--brand)]">
           <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -71,7 +71,7 @@
         <!-- Insufficient balance warning -->
         <div
           v-if="form.deduct_balance && balanceInsufficient"
-          class="mt-2 rounded-lg bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] p-3 text-sm text-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/20] text-[var(--warning)]"
+          class="mt-2 rounded-lg bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] p-3 text-sm text-[var(--warning)] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--warning)_14%,var(--card))_20%,transparent)] text-[var(--warning)]"
         >
           {{ t('payment.admin.insufficientBalance') }}
         </div>
@@ -79,7 +79,7 @@
         <!-- No deduction info -->
         <div
           v-if="!form.deduct_balance"
-          class="mt-2 rounded-lg bg-[var(--brand-tint)] p-3 text-sm text-[var(--brand)] bg-[var(--brand-tint)/20] text-[var(--brand)]"
+          class="mt-2 rounded-lg bg-[var(--brand-tint)] p-3 text-sm text-[var(--brand)] bg-[color-mix(in_srgb,var(--brand-tint)_20%,transparent)] text-[var(--brand)]"
         >
           {{ t('payment.admin.noDeduction') }}
         </div>
@@ -120,7 +120,7 @@
       <!-- Warning -->
       <div
         v-if="warning"
-        class="rounded-lg bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] p-3 text-sm text-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/20] text-[var(--warning)]"
+        class="rounded-lg bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] p-3 text-sm text-[var(--warning)] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--warning)_14%,var(--card))_20%,transparent)] text-[var(--warning)]"
       >
         {{ warning }}
       </div>

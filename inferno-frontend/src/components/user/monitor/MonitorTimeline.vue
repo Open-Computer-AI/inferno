@@ -1,5 +1,5 @@
 <template>
-  <div class="mt-4 pt-3 border-t border-[var(--brand-line)] border-[var(--brand-line)/60]">
+  <div class="mt-4 pt-3 border-t border-[var(--brand-line)] border-[color-mix(in_srgb,var(--brand-line)_60%,transparent)]">
     <div
       class="flex justify-between text-[10px] font-[var(--fw-medium)]  tracking-widest text-[var(--muted-foreground)] mb-2"
     >

@@ -57,3 +57,24 @@ export function formatPaymentAmount(amount: number, currency?: string | null, lo
     return `${normalized} ${(Number.isFinite(amount) ? amount : 0).toFixed(fractionDigits)}`
   }
 }
+
+/**
+ * The narrow symbol for a currency ($, ¥, ₹), for use as a standalone input
+ * prefix where there is no amount to format yet. Falls back to the ISO code
+ * when the runtime has no symbol for it.
+ */
+export function paymentCurrencySymbol(currency?: string | null, locale?: string): string {
+  const normalized = normalizePaymentCurrency(currency)
+  try {
+    const parts = new Intl.NumberFormat(locale || undefined, {
+      style: 'currency',
+      currency: normalized,
+      currencyDisplay: 'narrowSymbol',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).formatToParts(0)
+    return parts.find((p) => p.type === 'currency')?.value || normalized
+  } catch {
+    return normalized
+  }
+}

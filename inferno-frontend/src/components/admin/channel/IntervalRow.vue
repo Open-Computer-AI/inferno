@@ -1,6 +1,6 @@
 <template>
   <div class="flex items-start gap-2 rounded border p-2"
-       :class="isEmpty ? 'border-[var(--destructive)] bg-[var(--destructive-soft)] border-[var(--destructive)] bg-[var(--destructive-soft)/20]' : 'border-[var(--brand-line)] bg-white border-[var(--brand-line)] bg-[var(--brand-tint)]'">
+       :class="isEmpty ? 'border-[var(--destructive)] bg-[var(--destructive-soft)] border-[var(--destructive)] bg-[color-mix(in_srgb,var(--destructive-soft)_20%,transparent)]' : 'border-[var(--brand-line)] bg-white border-[var(--brand-line)] bg-[var(--brand-tint)]'">
     <!-- Token mode: context range + prices ($/MTok) -->
     <template v-if="mode === 'token'">
       <div class="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-6">

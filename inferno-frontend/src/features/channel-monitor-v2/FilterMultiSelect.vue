@@ -63,7 +63,7 @@
             <span class="flex min-w-0 flex-1 items-center gap-2">
               <span
                 class="checkbox flex h-4 w-4 items-center justify-center rounded border border-[var(--brand-line)] bg-white text-[var(--brand)] border-[var(--brand-line)] bg-[var(--brand-tint)]"
-                :class="modelValue.includes(option.value) ? 'border-[var(--brand-line)] bg-[var(--brand-tint)] bg-[var(--brand-tint)/30]' : ''"
+                :class="modelValue.includes(option.value) ? 'border-[var(--brand-line)] bg-[var(--brand-tint)] bg-[color-mix(in_srgb,var(--brand-tint)_30%,transparent)]' : ''"
               >
                 <Icon v-if="modelValue.includes(option.value)" name="check" size="sm" class="text-[var(--brand)]" />
               </span>
@@ -238,13 +238,13 @@ onBeforeUnmount(() => {
   @apply border border-[var(--brand-line)] border-[var(--brand-line)];
   @apply text-[var(--foreground)] text-[var(--muted-foreground)];
   @apply transition-[background-color,color,opacity] duration-200;
-  @apply focus:border-[var(--brand-line)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-line)/30];
+  @apply focus:border-[var(--brand-line)] focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--brand-line)_30%,transparent)];
   @apply hover:border-[var(--brand-line)] dark:hover:border-[var(--brand-line)];
   @apply cursor-pointer;
 }
 
 .select-trigger-open {
-  @apply border-[var(--brand-line)] ring-2 ring-[var(--brand-line)/30];
+  @apply border-[var(--brand-line)] ring-2 ring-[color-mix(in_srgb,var(--brand-line)_30%,transparent)];
 }
 
 .filter-menu summary::-webkit-details-marker {

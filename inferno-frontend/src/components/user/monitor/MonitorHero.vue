@@ -3,7 +3,7 @@
     <div class="flex items-center justify-end gap-3 flex-wrap">
       <div
         role="tablist"
-        class="inline-flex p-0.5 rounded-xl bg-[var(--brand-tint)] bg-[var(--brand-tint)] border border-[var(--brand-line)/60] border-[var(--brand-line)/60] text-xs"
+        class="inline-flex p-0.5 rounded-xl bg-[var(--brand-tint)] bg-[var(--brand-tint)] border border-[color-mix(in_srgb,var(--brand-line)_60%,transparent)] border-[color-mix(in_srgb,var(--brand-line)_60%,transparent)] text-xs"
       >
         <button
           v-for="opt in windowOptions"
@@ -96,10 +96,10 @@ const overallLabel = computed(() => t(`channelStatus.overall.${props.overallStat
 const overallChipClass = computed(() => {
   switch (props.overallStatus) {
     case 'operational':
-      return 'bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] text-[var(--success)] bg-[color-mix(in_oklch,var(--success)_14%,var(--card))/15] text-[var(--success)]'
+      return 'bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] text-[var(--success)] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--success)_14%,var(--card))_15%,transparent)] text-[var(--success)]'
     case 'degraded':
     default:
-      return 'bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] text-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/15] text-[var(--warning)]'
+      return 'bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] text-[var(--warning)] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--warning)_14%,var(--card))_15%,transparent)] text-[var(--warning)]'
   }
 })
 

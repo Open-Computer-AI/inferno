@@ -9,7 +9,7 @@
         class="version-badge-trigger"
         :class="[
           hasUpdate
-            ? 'bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] text-[var(--warning)] hover:bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/30] text-[var(--warning)] dark:hover:bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/50]'
+            ? 'bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] text-[var(--warning)] hover:bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--warning)_14%,var(--card))_30%,transparent)] text-[var(--warning)] dark:hover:bg-[color-mix(in_srgb,color-mix(in_oklch,var(--warning)_14%,var(--card))_50%,transparent)]'
             : 'bg-[var(--brand-tint)] text-[var(--muted-foreground)] hover:bg-[var(--brand-tint)] bg-[var(--brand-tint)] text-[var(--muted-foreground)] dark:hover:bg-[var(--card)]'
         ]"
         :title="hasUpdate ? t('version.updateAvailable') : t('version.upToDate')"
@@ -86,7 +86,7 @@
                   <!-- Show check mark when up to date -->
                   <span
                     v-if="!hasUpdate"
-                    class="flex h-5 w-5 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] bg-[color-mix(in_oklch,var(--success)_14%,var(--card))/30]"
+                    class="flex h-5 w-5 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--success)_14%,var(--card))_30%,transparent)]"
                   >
                     <svg
                       class="h-3 w-3 text-[var(--success)] text-[var(--success)]"
@@ -113,10 +113,10 @@
               <!-- Priority 1: Update error (must check before hasUpdate) -->
               <div v-if="updateError" class="space-y-2">
                 <div
-                  class="flex items-center gap-3 rounded-lg border border-[var(--destructive)] bg-[var(--destructive-soft)] p-3 border-[var(--destructive)/50] bg-[var(--destructive-soft)/20]"
+                  class="flex items-center gap-3 rounded-lg border border-[var(--destructive)] bg-[var(--destructive-soft)] p-3 border-[color-mix(in_srgb,var(--destructive)_50%,transparent)] bg-[color-mix(in_srgb,var(--destructive-soft)_20%,transparent)]"
                 >
                   <div
-                    class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[var(--destructive-soft)] bg-[var(--destructive-soft)/50]"
+                    class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[var(--destructive-soft)] bg-[color-mix(in_srgb,var(--destructive-soft)_50%,transparent)]"
                   >
                     <Icon
                       name="x"
@@ -129,7 +129,7 @@
                     <p class="text-sm font-[var(--fw-medium)] text-[var(--destructive)] text-[var(--destructive)]">
                       {{ t('version.updateFailed') }}
                     </p>
-                    <p class="truncate text-xs text-[var(--destructive)/70] text-[var(--destructive)/70]">
+                    <p class="truncate text-xs text-[color-mix(in_srgb,var(--destructive)_70%,transparent)] text-[color-mix(in_srgb,var(--destructive)_70%,transparent)]">
                       {{ updateError }}
                     </p>
                   </div>
@@ -151,10 +151,10 @@
               <!-- Priority 2: Update success - need restart -->
               <div v-else-if="updateSuccess && needRestart" class="space-y-2">
                 <div
-                  class="flex items-center gap-3 rounded-lg border border-[var(--success)] bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] p-3 border-[var(--success)/50] bg-[color-mix(in_oklch,var(--success)_14%,var(--card))/20]"
+                  class="flex items-center gap-3 rounded-lg border border-[var(--success)] bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] p-3 border-[color-mix(in_srgb,var(--success)_50%,transparent)] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--success)_14%,var(--card))_20%,transparent)]"
                 >
                   <div
-                    class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] bg-[color-mix(in_oklch,var(--success)_14%,var(--card))/50]"
+                    class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--success)_14%,var(--card))_50%,transparent)]"
                   >
                     <svg
                       class="h-4 w-4 text-[var(--success)] text-[var(--success)]"
@@ -174,7 +174,7 @@
                           : t('version.updateComplete')
                       }}
                     </p>
-                    <p class="text-xs text-[var(--success)/70] text-[var(--success)/70]">
+                    <p class="text-xs text-[color-mix(in_srgb,var(--success)_70%,transparent)] text-[color-mix(in_srgb,var(--success)_70%,transparent)]">
                       {{ t('version.restartRequired') }}
                     </p>
                   </div>
@@ -206,10 +206,10 @@
                   :href="releaseInfo.html_url"
                   target="_blank"
                   rel="noopener noreferrer"
-                  class="group flex items-center gap-3 rounded-lg border border-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] p-3 transition-colors hover:bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] border-[var(--warning)/50] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/20] dark:hover:bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/30]"
+                  class="group flex items-center gap-3 rounded-lg border border-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] p-3 transition-colors hover:bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] border-[color-mix(in_srgb,var(--warning)_50%,transparent)] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--warning)_14%,var(--card))_20%,transparent)] dark:hover:bg-[color-mix(in_srgb,color-mix(in_oklch,var(--warning)_14%,var(--card))_30%,transparent)]"
                 >
                   <div
-                    class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/50]"
+                    class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--warning)_14%,var(--card))_50%,transparent)]"
                   >
                     <Icon
                       name="download"
@@ -222,7 +222,7 @@
                     <p class="text-sm font-[var(--fw-medium)] text-[var(--warning)] text-[var(--warning)]">
                       {{ t('version.updateAvailable') }}
                     </p>
-                    <p class="text-xs text-[var(--warning)/70] text-[var(--warning)/70]">
+                    <p class="text-xs text-[color-mix(in_srgb,var(--warning)_70%,transparent)] text-[color-mix(in_srgb,var(--warning)_70%,transparent)]">
                       v{{ latestVersion }}
                     </p>
                   </div>
@@ -238,7 +238,7 @@
                 </a>
                 <!-- Source build hint -->
                 <div
-                  class="flex items-center gap-2 rounded-lg border border-[var(--brand-line)] bg-[var(--brand-tint)] p-2 border-[var(--brand-line)/50] bg-[var(--brand-tint)/20]"
+                  class="flex items-center gap-2 rounded-lg border border-[var(--brand-line)] bg-[var(--brand-tint)] p-2 border-[color-mix(in_srgb,var(--brand-line)_50%,transparent)] bg-[color-mix(in_srgb,var(--brand-tint)_20%,transparent)]"
                 >
                   <svg
                     class="h-3.5 w-3.5 flex-shrink-0 text-[var(--brand)] text-[var(--brand)]"
@@ -263,10 +263,10 @@
               <div v-else-if="hasUpdate && isReleaseBuild" class="space-y-2">
                 <!-- Update info card -->
                 <div
-                  class="flex items-center gap-3 rounded-lg border border-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] p-3 border-[var(--warning)/50] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/20]"
+                  class="flex items-center gap-3 rounded-lg border border-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] p-3 border-[color-mix(in_srgb,var(--warning)_50%,transparent)] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--warning)_14%,var(--card))_20%,transparent)]"
                 >
                 <div
-                  class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/50]"
+                  class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--warning)_14%,var(--card))_50%,transparent)]"
                 >
                   <Icon
                     name="download"
@@ -279,7 +279,7 @@
                     <p class="text-sm font-[var(--fw-medium)] text-[var(--warning)] text-[var(--warning)]">
                       {{ t('version.updateAvailable') }}
                     </p>
-                    <p class="text-xs text-[var(--warning)/70] text-[var(--warning)/70]">
+                    <p class="text-xs text-[color-mix(in_srgb,var(--warning)_70%,transparent)] text-[color-mix(in_srgb,var(--warning)_70%,transparent)]">
                       v{{ latestVersion }}
                     </p>
                   </div>
@@ -334,7 +334,7 @@
                 <div class="border-t border-[var(--brand-line)] pt-2 border-[var(--brand-line)]">
                   <button
                     @click="toggleRollbackPanel"
-                    class="group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs text-[var(--muted-foreground)] transition-colors hover:bg-[var(--brand-tint)] hover:text-[var(--muted-foreground)] text-[var(--muted-foreground)] dark:hover:bg-[var(--card)/50] dark:hover:text-[var(--muted-foreground)]"
+                    class="group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs text-[var(--muted-foreground)] transition-colors hover:bg-[var(--brand-tint)] hover:text-[var(--muted-foreground)] text-[var(--muted-foreground)] dark:hover:bg-[color-mix(in_srgb,var(--card)_50%,transparent)] dark:hover:text-[var(--muted-foreground)]"
                   >
                     <span class="flex items-center gap-1.5">
                       <Icon name="clock" size="xs" :stroke-width="2" />
@@ -354,7 +354,7 @@
                       <!-- Source build: online rollback unavailable, use git instead -->
                       <div
                         v-if="!isReleaseBuild"
-                        class="flex items-center gap-2 rounded-lg border border-[var(--brand-line)] bg-[var(--brand-tint)] p-2 border-[var(--brand-line)/50] bg-[var(--brand-tint)/20]"
+                        class="flex items-center gap-2 rounded-lg border border-[var(--brand-line)] bg-[var(--brand-tint)] p-2 border-[color-mix(in_srgb,var(--brand-line)_50%,transparent)] bg-[color-mix(in_srgb,var(--brand-tint)_20%,transparent)]"
                       >
                         <svg
                           class="h-3.5 w-3.5 flex-shrink-0 text-[var(--brand)] text-[var(--brand)]"
@@ -403,7 +403,7 @@
                       <!-- Load error + retry -->
                       <div v-else-if="rollbackVersionsError" class="space-y-2">
                         <p
-                          class="rounded-lg border border-[var(--destructive)] bg-[var(--destructive-soft)] p-2.5 text-xs text-[var(--destructive)] border-[var(--destructive)/50] bg-[var(--destructive-soft)/20] text-[var(--destructive)]"
+                          class="rounded-lg border border-[var(--destructive)] bg-[var(--destructive-soft)] p-2.5 text-xs text-[var(--destructive)] border-[color-mix(in_srgb,var(--destructive)_50%,transparent)] bg-[color-mix(in_srgb,var(--destructive-soft)_20%,transparent)] text-[var(--destructive)]"
                         >
                           {{ rollbackVersionsError }}
                         </p>
@@ -439,8 +439,8 @@
                           class="flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left transition-[background-color,color,opacity] disabled:cursor-not-allowed disabled:opacity-60"
                           :class="
                             selectedRollbackVersion === item.version
-                              ? 'border-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] shadow-sm border-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/20]'
-                              : 'border-[var(--brand-line)] hover:border-[var(--brand-line)] hover:bg-[var(--brand-tint)] border-[var(--brand-line)] dark:hover:border-[var(--brand-line)] dark:hover:bg-[var(--card)/40]'
+                              ? 'border-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] shadow-sm border-[var(--warning)] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--warning)_14%,var(--card))_20%,transparent)]'
+                              : 'border-[var(--brand-line)] hover:border-[var(--brand-line)] hover:bg-[var(--brand-tint)] border-[var(--brand-line)] dark:hover:border-[var(--brand-line)] dark:hover:bg-[color-mix(in_srgb,var(--card)_40%,transparent)]'
                           "
                         >
                           <span class="flex items-center gap-2">
@@ -521,7 +521,7 @@
 
                             <p
                               v-if="rollbackError"
-                              class="rounded-lg border border-[var(--destructive)] bg-[var(--destructive-soft)] p-2 text-xs text-[var(--destructive)] border-[var(--destructive)/50] bg-[var(--destructive-soft)/20] text-[var(--destructive)]"
+                              class="rounded-lg border border-[var(--destructive)] bg-[var(--destructive-soft)] p-2 text-xs text-[var(--destructive)] border-[color-mix(in_srgb,var(--destructive)_50%,transparent)] bg-[color-mix(in_srgb,var(--destructive-soft)_20%,transparent)] text-[var(--destructive)]"
                             >
                               {{ rollbackError }}
                             </p>

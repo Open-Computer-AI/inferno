@@ -3,12 +3,12 @@
     <div class="space-y-6 pb-12">
       <!-- Ops-style elevated shell: title toolbar + filters (mirrors OpsDashboardHeader) -->
       <section
-        class="surface-card sticky top-0 z-20 !rounded-3xl !border-0 bg-[var(--card)] p-0 shadow-sm ring-1 ring-[var(--brand-line)/5] dark:!bg-[var(--card)] dark:ring-[var(--ring-focus)]"
+        class="surface-card sticky top-0 z-20 !rounded-3xl !border-0 bg-[var(--card)] p-0 shadow-sm ring-1 ring-[color-mix(in_srgb,var(--brand-line)_5%,transparent)] dark:!bg-[var(--card)] dark:ring-[var(--ring-focus)]"
       >
         <header class="page-header mb-0 flex flex-wrap items-start justify-between gap-4 border-b border-[var(--brand-line)] px-5 py-4 dark:border-[var(--border-subtle)] sm:px-6">
           <div class="min-w-0">
             <h1 class="page-title flex items-center gap-2 text-xl font-[var(--fw-medium)] text-[var(--foreground)] dark:text-white">
-              <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--brand-tint)] text-[var(--brand)] bg-[var(--brand-tint)/30] text-[var(--brand)]">
+              <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--brand-tint)] text-[var(--brand)] bg-[color-mix(in_srgb,var(--brand-tint)_30%,transparent)] text-[var(--brand)]">
                 <Icon name="chart" size="sm" />
               </span>
               {{ t('channelMonitorV2.title') }}
@@ -59,7 +59,7 @@
         <!-- First-upgrade silent backfill: show until 30d product window is covered -->
         <div
           v-if="bootstrapActive"
-          class="border-b border-[var(--brand-line)] bg-[var(--brand-tint)/90] px-5 py-3 border-[var(--brand-line)/40] bg-[var(--brand-tint)/40] sm:px-6"
+          class="border-b border-[var(--brand-line)] bg-[color-mix(in_srgb,var(--brand-tint)_90%,transparent)] px-5 py-3 border-[color-mix(in_srgb,var(--brand-line)_40%,transparent)] bg-[color-mix(in_srgb,var(--brand-tint)_40%,transparent)] sm:px-6"
           role="status"
           aria-live="polite"
         >
@@ -68,7 +68,7 @@
               <p class="text-sm font-[var(--fw-medium)] text-[var(--brand)] text-[var(--brand)]">
                 {{ t('channelMonitorV2.bootstrap.title') }}
               </p>
-              <p class="mt-0.5 text-xs text-[var(--brand)/80] text-[var(--brand)/80]">
+              <p class="mt-0.5 text-xs text-[color-mix(in_srgb,var(--brand)_80%,transparent)] text-[color-mix(in_srgb,var(--brand)_80%,transparent)]">
                 {{ t('channelMonitorV2.bootstrap.description') }}
               </p>
             </div>
@@ -77,7 +77,7 @@
             </span>
           </div>
           <div
-            class="mt-2.5 h-1.5 overflow-hidden rounded-full bg-[var(--brand-tint)/80] bg-[var(--brand-tint)/60]"
+            class="mt-2.5 h-1.5 overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--brand-tint)_80%,transparent)] bg-[color-mix(in_srgb,var(--brand-tint)_60%,transparent)]"
             role="progressbar"
             :aria-valuenow="bootstrapPercent"
             aria-valuemin="0"
@@ -238,13 +238,13 @@
         />
         <div
           v-else-if="loading"
-          class="surface-card flex min-h-[320px] items-center justify-center !rounded-3xl !border-0 text-sm text-[var(--muted-foreground)] shadow-sm ring-1 ring-[var(--brand-line)/5] dark:ring-[var(--ring-focus)]"
+          class="surface-card flex min-h-[320px] items-center justify-center !rounded-3xl !border-0 text-sm text-[var(--muted-foreground)] shadow-sm ring-1 ring-[color-mix(in_srgb,var(--brand-line)_5%,transparent)] dark:ring-[var(--ring-focus)]"
         >
           <span class="animate-pulse">{{ t('common.loading') }}</span>
         </div>
       </div>
 
-      <section class="surface-card flex min-h-0 flex-col overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-[var(--brand-line)/5] dark:!bg-[var(--card)] dark:ring-[var(--ring-focus)]">
+      <section class="surface-card flex min-h-0 flex-col overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-[color-mix(in_srgb,var(--brand-line)_5%,transparent)] dark:!bg-[var(--card)] dark:ring-[var(--ring-focus)]">
         <div class="border-b border-[var(--brand-line)] px-5 pt-4 dark:border-[var(--border-subtle)] sm:px-6">
           <Segmented
             v-model="activeTab"
@@ -320,7 +320,7 @@
                 <span class="h-2 overflow-hidden rounded-full bg-[var(--brand-tint)] dark:bg-[var(--card)]">
                   <i
                     class="block h-full rounded-full"
-                    :class="row.ignored ? 'bg-[var(--brand-tint)] bg-[var(--brand-tint)]' : 'bg-[var(--brand-tint)]  '"
+                    :class="row.ignored ? 'bg-[var(--muted)]' : 'bg-[var(--destructive)]'"
                     :style="{ width: `${Math.max(2, row.rate * 100)}%` }"
                   ></i>
                 </span>

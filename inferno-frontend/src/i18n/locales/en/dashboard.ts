@@ -1026,7 +1026,10 @@ export default {
     startDate: 'Start Date',
     endDate: 'End Date',
     apply: 'Apply',
-    selectDateRange: 'Select date range'
+    selectDateRange: 'Select date range',
+    from: 'From',
+    to: 'To',
+    daySpan: '{count} day | {count} days'
   },
 
   // Admin

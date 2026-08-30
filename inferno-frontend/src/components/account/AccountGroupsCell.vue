@@ -109,7 +109,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
     </div>
 
     <Teleport to="body">
-      <div v-if="showPopover" ref="popoverRef" class="gcell__popover" :style="popoverStyle">
+      <div v-if="showPopover" class="gcell__popover" :style="popoverStyle">
         <div class="gcell__popover-head">
           <span class="gcell__popover-count">{{ t('admin.accounts.groupCountTotal', { count: groups.length }) }}</span>
           <IconButton icon="hgi-cancel-01" :label="t('common.close')" size="xs" @click="showPopover = false" />

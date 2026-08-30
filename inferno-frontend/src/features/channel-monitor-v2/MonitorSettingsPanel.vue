@@ -1,11 +1,11 @@
 <template>
   <section class="mx-auto w-full max-w-6xl space-y-5 px-1 py-2 sm:px-2">
     <header
-      class="page-header mb-0 flex flex-wrap items-center justify-between gap-3 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-[var(--brand-line)/5] dark:bg-[var(--card)] dark:ring-[var(--ring-focus)] sm:p-6"
+      class="page-header mb-0 flex flex-wrap items-center justify-between gap-3 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-[color-mix(in_srgb,var(--brand-line)_5%,transparent)] dark:bg-[var(--card)] dark:ring-[var(--ring-focus)] sm:p-6"
     >
       <div class="min-w-0">
         <h2 class="page-title flex items-center gap-2 text-xl font-[var(--fw-medium)] text-[var(--foreground)] dark:text-white">
-          <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--brand-tint)] text-[var(--brand)] bg-[var(--brand-tint)/30] text-[var(--brand)]">
+          <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--brand-tint)] text-[var(--brand)] bg-[color-mix(in_srgb,var(--brand-tint)_30%,transparent)] text-[var(--brand)]">
             <Icon name="chart" size="sm" />
           </span>
           {{ t('channelMonitorV2.settings.title') }}
@@ -28,7 +28,7 @@
 
     <div
       v-if="!systemModeV2"
-      class="rounded-2xl border border-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/90] px-4 py-3 text-sm text-[var(--warning)] border-[var(--warning)/50] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/20] text-[var(--warning)]"
+      class="rounded-2xl border border-[var(--warning)] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--warning)_14%,var(--card))_90%,transparent)] px-4 py-3 text-sm text-[var(--warning)] border-[color-mix(in_srgb,var(--warning)_50%,transparent)] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--warning)_14%,var(--card))_20%,transparent)] text-[var(--warning)]"
       role="status"
     >
       {{
@@ -42,13 +42,13 @@
 
     <div
       v-if="loading"
-      class="surface-card flex min-h-[200px] items-center justify-center !rounded-3xl !border-0 text-sm text-[var(--muted-foreground)] shadow-sm ring-1 ring-[var(--brand-line)/5] dark:ring-[var(--ring-focus)]"
+      class="surface-card flex min-h-[200px] items-center justify-center !rounded-3xl !border-0 text-sm text-[var(--muted-foreground)] shadow-sm ring-1 ring-[color-mix(in_srgb,var(--brand-line)_5%,transparent)] dark:ring-[var(--ring-focus)]"
     >
       <span class="animate-pulse">{{ t('channelMonitorV2.settings.loading') }}</span>
     </div>
 
     <template v-else-if="draft">
-      <div class="surface-card divide-y divide-[var(--brand-line)] !rounded-3xl !border-0 shadow-sm ring-1 ring-[var(--brand-line)/5] divide-[var(--brand-line)] dark:!bg-[var(--card)] dark:ring-[var(--ring-focus)]">
+      <div class="surface-card divide-y divide-[var(--brand-line)] !rounded-3xl !border-0 shadow-sm ring-1 ring-[color-mix(in_srgb,var(--brand-line)_5%,transparent)] divide-[var(--brand-line)] dark:!bg-[var(--card)] dark:ring-[var(--ring-focus)]">
         <div class="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
           <div>
             <strong class="text-sm font-[var(--fw-medium)] text-[var(--foreground)] dark:text-white">{{ t('channelMonitorV2.settings.enableTitle') }}</strong>
@@ -77,7 +77,7 @@
         </div>
       </div>
 
-      <div class="surface-card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-[var(--brand-line)/5] dark:!bg-[var(--card)] dark:ring-[var(--ring-focus)]">
+      <div class="surface-card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-[color-mix(in_srgb,var(--brand-line)_5%,transparent)] dark:!bg-[var(--card)] dark:ring-[var(--ring-focus)]">
         <div class="surface-card-header !py-3">
           <h3 class="text-sm font-[var(--fw-medium)] text-[var(--foreground)] dark:text-white">{{ t('channelMonitorV2.settings.platformsTitle') }}</h3>
           <p class="mt-0.5 text-xs text-[var(--muted-foreground)] dark:text-[var(--muted-foreground)]">
@@ -109,7 +109,7 @@
         </div>
       </div>
 
-      <div class="surface-card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-[var(--brand-line)/5] dark:!bg-[var(--card)] dark:ring-[var(--ring-focus)]">
+      <div class="surface-card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-[color-mix(in_srgb,var(--brand-line)_5%,transparent)] dark:!bg-[var(--card)] dark:ring-[var(--ring-focus)]">
         <div class="surface-card-header flex flex-wrap items-center justify-between gap-2 !py-3">
           <div>
             <h3 class="text-sm font-[var(--fw-medium)] text-[var(--foreground)] dark:text-white">{{ t('channelMonitorV2.settings.groupsTitle') }}</h3>
@@ -151,7 +151,7 @@
         </div>
       </div>
 
-      <div class="surface-card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-[var(--brand-line)/5] dark:!bg-[var(--card)] dark:ring-[var(--ring-focus)]">
+      <div class="surface-card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-[color-mix(in_srgb,var(--brand-line)_5%,transparent)] dark:!bg-[var(--card)] dark:ring-[var(--ring-focus)]">
         <div class="surface-card-header !py-3">
           <h3 class="text-sm font-[var(--fw-medium)] text-[var(--foreground)] dark:text-white">{{ t('channelMonitorV2.settings.errorsTitle') }}</h3>
           <p class="mt-0.5 text-xs text-[var(--muted-foreground)] dark:text-[var(--muted-foreground)]">
@@ -187,7 +187,7 @@
         </div>
       </div>
 
-      <div class="surface-card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-[var(--brand-line)/5] dark:!bg-[var(--card)] dark:ring-[var(--ring-focus)]">
+      <div class="surface-card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-[color-mix(in_srgb,var(--brand-line)_5%,transparent)] dark:!bg-[var(--card)] dark:ring-[var(--ring-focus)]">
         <div class="surface-card-header !py-3">
           <h3 class="text-sm font-[var(--fw-medium)] text-[var(--foreground)] dark:text-white">{{ t('channelMonitorV2.settings.healthTitle') }}</h3>
           <p class="mt-0.5 text-xs text-[var(--muted-foreground)] dark:text-[var(--muted-foreground)]">
@@ -239,7 +239,7 @@
             {{ t('channelMonitorV2.settings.namedModelsCount', { count: namedModelCount }) }}
           </template>
         </div>
-        <div class="rounded-2xl border border-[var(--brand-line)] bg-[var(--brand-tint)/80] px-4 py-3 text-xs text-[var(--muted-foreground)] dark:border-[var(--border-subtle)] dark:bg-[var(--card)] text-[var(--muted-foreground)]">
+        <div class="rounded-2xl border border-[var(--brand-line)] bg-[color-mix(in_srgb,var(--brand-tint)_80%,transparent)] px-4 py-3 text-xs text-[var(--muted-foreground)] dark:border-[var(--border-subtle)] dark:bg-[var(--card)] text-[var(--muted-foreground)]">
           <p class="font-[var(--fw-medium)] text-[var(--body-copy)] text-[var(--muted-foreground)]">{{ t('channelMonitorV2.settings.userContractTitle') }}</p>
           <ul class="mt-1.5 list-disc space-y-0.5 pl-4">
             <li>{{ t('channelMonitorV2.settings.userContract.health') }}</li>

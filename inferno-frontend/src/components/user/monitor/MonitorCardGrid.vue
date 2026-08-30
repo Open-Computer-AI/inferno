@@ -7,7 +7,7 @@
       <div
         v-for="i in 6"
         :key="i"
-        class="p-5 rounded-2xl min-h-[280px] bg-white/70 bg-[var(--brand-tint)/60] border border-[var(--brand-line)/80] border-[var(--brand-line)/70] animate-pulse"
+        class="p-5 rounded-2xl min-h-[280px] bg-white/70 bg-[color-mix(in_srgb,var(--brand-tint)_60%,transparent)] border border-[color-mix(in_srgb,var(--brand-line)_80%,transparent)] border-[color-mix(in_srgb,var(--brand-line)_70%,transparent)] animate-pulse"
       >
         <div class="flex items-start gap-3">
           <div class="w-9 h-9 rounded-xl bg-[var(--brand-tint)] bg-[var(--brand-tint)]"></div>
@@ -18,10 +18,10 @@
           <div class="h-6 w-16 rounded-full bg-[var(--brand-tint)] bg-[var(--brand-tint)]"></div>
         </div>
         <div class="mt-5 grid grid-cols-2 gap-2">
-          <div class="h-16 rounded-xl bg-[var(--brand-tint)] bg-[var(--brand-tint)/40]"></div>
-          <div class="h-16 rounded-xl bg-[var(--brand-tint)] bg-[var(--brand-tint)/40]"></div>
+          <div class="h-16 rounded-xl bg-[var(--brand-tint)] bg-[color-mix(in_srgb,var(--brand-tint)_40%,transparent)]"></div>
+          <div class="h-16 rounded-xl bg-[var(--brand-tint)] bg-[color-mix(in_srgb,var(--brand-tint)_40%,transparent)]"></div>
         </div>
-        <div class="mt-6 h-5 w-full rounded bg-[var(--brand-tint)] bg-[var(--brand-tint)/40]"></div>
+        <div class="mt-6 h-5 w-full rounded bg-[var(--brand-tint)] bg-[color-mix(in_srgb,var(--brand-tint)_40%,transparent)]"></div>
       </div>
     </div>
 

@@ -17,8 +17,12 @@ export function truncateMessage(msg: string, maxLength = 80): string {
  * 输出: `MM-DD HH:mm:ss`
  */
 export function formatDateTime(dateStr: string): string {
+  // A blank cell is never more informative than a dash, and a server timestamp
+  // we cannot parse is worth showing raw -- that is the only clue an operator
+  // gets that the row is malformed rather than merely empty.
+  if (!dateStr) return '-'
   const d = new Date(dateStr)
-  if (Number.isNaN(d.getTime())) return ''
+  if (Number.isNaN(d.getTime())) return dateStr
   return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
 }
 

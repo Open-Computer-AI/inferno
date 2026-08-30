@@ -37,7 +37,7 @@
         </span>
         <span
           v-if="hasPeakRate"
-          class="inline-flex items-center whitespace-nowrap rounded-full bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] px-3 py-1 text-xs font-[var(--fw-medium)] text-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/20] text-[var(--warning)]"
+          class="inline-flex items-center whitespace-nowrap rounded-full bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] px-3 py-1 text-xs font-[var(--fw-medium)] text-[var(--warning)] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--warning)_14%,var(--card))_20%,transparent)] text-[var(--warning)]"
           :title="peakRateTitle"
         >
           {{ peakRateText }}
@@ -127,13 +127,13 @@ const peakRateTitle = computed(() => {
 const ratePillClass = computed(() => {
   switch (props.platform) {
     case 'anthropic':
-      return 'bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] text-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/20] text-[var(--warning)]'
+      return 'bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] text-[var(--warning)] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--warning)_14%,var(--card))_20%,transparent)] text-[var(--warning)]'
     case 'openai':
-      return 'bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] text-[var(--success)] bg-[color-mix(in_oklch,var(--success)_14%,var(--card))/20] text-[var(--success)]'
+      return 'bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] text-[var(--success)] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--success)_14%,var(--card))_20%,transparent)] text-[var(--success)]'
     case 'gemini':
-      return 'bg-[var(--brand-tint)] text-[var(--brand)] bg-[var(--brand-tint)/20] text-[var(--brand)]'
+      return 'bg-[var(--brand-tint)] text-[var(--brand)] bg-[color-mix(in_srgb,var(--brand-tint)_20%,transparent)] text-[var(--brand)]'
     default: // antigravity and others
-      return 'bg-[var(--brand-tint)] text-[var(--brand)] bg-[var(--brand-tint)/20] text-[var(--brand)]'
+      return 'bg-[var(--brand-tint)] text-[var(--brand)] bg-[color-mix(in_srgb,var(--brand-tint)_20%,transparent)] text-[var(--brand)]'
   }
 })
 </script>

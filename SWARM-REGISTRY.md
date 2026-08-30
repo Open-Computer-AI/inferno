@@ -326,3 +326,50 @@ Agents are read-only and produce plans, not edits. Their final messages are in
 `~/.claude/projects/-Users-saksham/3555e339-*/subagents/`; extract the last
 assistant message only, the transcripts are large. The manifest survives in git
 and shows which rows still say TODO.
+
+---
+
+## Swarm: full file-level fidelity sweep (2026-08-30)
+
+Not commit-by-commit. This one walks the *file* surface: every file that exists
+in BOTH `frontend/src/` (pristine upstream) and `inferno-frontend/src/` (ours)
+AND differs -- 285 files. Each is classified STYLE / OURS-AHEAD / SUSPECT.
+
+Census that defined the surface:
+
+```
+identical to upstream : 467
+differ                : 285   <- the sweep target
+only in upstream      :   9   (all checked, benign: relocated or unreferenced)
+only in ours          :  89
+```
+
+| Batch | File list | Files | Agent purpose |
+|---|---|---|---|
+| 0 | `/tmp/fbatch0.txt` | 47 | classify diffs, flag dropped upstream logic |
+| 1 | `/tmp/fbatch1.txt` | 48 | same |
+| 2 | `/tmp/fbatch2.txt` | 48 | same |
+| 3 | `/tmp/fbatch3.txt` | 48 | same |
+| 4 | `/tmp/fbatch4.txt` | 47 | same |
+| 5 | `/tmp/fbatch5.txt` | 47 | same |
+
+Files were ranked by diff size and dealt round-robin, so every batch carries a
+share of the large files (`SettingsView.vue` 17644 diff lines,
+`OpsDashboardHeader.vue` 1773, `AppSidebar.vue` 1756, `AccountUsageCell.vue` 1447).
+
+**Agents are read-only.** They report; the main thread fixes and re-runs gates.
+
+### Recover
+
+The `/tmp/fbatch*.txt` lists are the durable input -- regenerate a batch by
+re-dispatching the same prompt against its list. If `/tmp` was cleared, rebuild
+the census with:
+
+```bash
+cd inferno && for f in $(cd inferno-frontend/src && find . -type f | sed 's|^\./||'); do
+  [ -f "frontend/src/$f" ] || continue
+  cmp -s "frontend/src/$f" "inferno-frontend/src/$f" || echo "$f"
+done
+```
+
+Distilled findings land in `docs/superpowers/analysis/FILE-SWEEP-FINDINGS.md`.

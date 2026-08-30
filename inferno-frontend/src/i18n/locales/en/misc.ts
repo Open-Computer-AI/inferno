@@ -289,6 +289,11 @@ export default {
     amountLabel: 'Amount',
     paymentAmount: 'Payment Amount',
     creditedBalance: 'Credited Balance',
+    amountRange: {
+      atLeast: 'At least {amount}.',
+      atMost: 'At most {amount}.',
+      between: 'Between {min} and {max}.'
+    },
     quickAmounts: 'Quick Amounts',
     customAmount: 'Custom Amount',
     enterAmount: 'Enter amount',

@@ -38,7 +38,8 @@
           class="auth-field"
           :class="{ 'auth-field--invalid': errors.password }"
           :disabled="isLoading"
-          :placeholder="t('auth.passwordPlaceholder')"
+          :aria-label="t('auth.newPassword')"
+          :placeholder="t('auth.newPasswordPlaceholder')"
         />
         <button
           type="button"
@@ -62,6 +63,7 @@
           class="auth-field"
           :class="{ 'auth-field--invalid': errors.confirmPassword }"
           :disabled="isLoading"
+          :aria-label="t('auth.confirmPassword')"
           :placeholder="t('auth.confirmPasswordPlaceholder')"
         />
         <button

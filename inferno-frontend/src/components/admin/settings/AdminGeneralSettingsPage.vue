@@ -160,7 +160,7 @@
                         type="button"
                         variant="danger"
                         size="xs"
-                        :aria-label="t('admin.settings.site.customEndpoints.remove')"
+                        :aria-label="t('admin.settings.site.remove')"
                         @click="removeEndpoint(index)"
                       >
                         <svg

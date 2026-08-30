@@ -43,7 +43,8 @@ const props = withDefaults(defineProps<Props>(), {
 
 const { t } = useI18n()
 
-// Accent under 80%, attention to 100%, destructive over. No max (never seen
+// Accent under 80%, attention approaching the cap, destructive AT the cap --
+// used >= max is saturation, and an enforced cap never exceeds 100%. No max (never seen
 // today, since a group always has a concurrency cap) falls back to neutral.
 function pctOf(used: number, max: number): number | null {
   return max > 0 ? (used / max) * 100 : null
@@ -51,14 +52,14 @@ function pctOf(used: number, max: number): number | null {
 
 function barColor(pct: number | null): string {
   if (pct === null) return 'var(--muted)'
-  if (pct > 100) return 'var(--destructive)'
+  if (pct >= 100) return 'var(--destructive)'
   if (pct >= 80) return 'var(--s2a-attn-bg)'
   return 'var(--brand)'
 }
 
 function inkColor(pct: number | null): string {
   if (pct === null) return 'var(--muted-foreground)'
-  if (pct > 100) return 'var(--destructive)'
+  if (pct >= 100) return 'var(--destructive)'
   if (pct >= 80) return 'var(--s2a-attn)'
   return 'var(--body-copy)'
 }

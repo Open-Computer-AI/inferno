@@ -78,7 +78,7 @@
         </p>
       </div>
 
-      <div v-if="form.provider === PROVIDER_OPENAI && usesProbePart" class="rounded-lg border border-[var(--brand-line)] bg-[var(--brand-tint)/50] p-3 border-[var(--brand-line)/20] bg-[var(--brand-tint)/10]">
+      <div v-if="form.provider === PROVIDER_OPENAI && usesProbePart" class="rounded-lg border border-[var(--brand-line)] bg-[color-mix(in_srgb,var(--brand-tint)_50%,transparent)] p-3 border-[color-mix(in_srgb,var(--brand-line)_20%,transparent)] bg-[color-mix(in_srgb,var(--brand-tint)_10%,transparent)]">
         <label class="field-label">{{ t('admin.channelMonitor.form.apiMode') }}</label>
         <div class="grid gap-3 sm:grid-cols-2">
           <button
@@ -171,7 +171,7 @@
       </div>
 
       <!-- 高级设置区：请求模板 + 自定义 headers/body（仅探活模式有意义） -->
-      <details v-if="usesProbePart" class="rounded-lg border border-[var(--brand-line)] bg-[var(--brand-tint)/50] p-3 border-[var(--brand-line)] bg-[var(--brand-tint)/30]">
+      <details v-if="usesProbePart" class="rounded-lg border border-[var(--brand-line)] bg-[color-mix(in_srgb,var(--brand-tint)_50%,transparent)] p-3 border-[var(--brand-line)] bg-[color-mix(in_srgb,var(--brand-tint)_30%,transparent)]">
         <summary class="cursor-pointer text-sm font-[var(--fw-medium)] text-[var(--body-copy)] text-[var(--muted-foreground)]">
           {{ t('admin.channelMonitor.advanced.section') }}
         </summary>
@@ -441,7 +441,7 @@ function normalizeAPIMode(mode: APIMode | undefined | null): APIMode {
 function apiModeButtonClass(mode: APIMode): string {
   const active = form.api_mode === mode
   if (active) {
-    return 'border-[var(--brand-line)] bg-white text-[var(--brand)] shadow-sm border-[var(--brand-line)] bg-[var(--brand-tint)/15] text-[var(--brand)]'
+    return 'border-[var(--brand-line)] bg-white text-[var(--brand)] shadow-sm border-[var(--brand-line)] bg-[color-mix(in_srgb,var(--brand-tint)_15%,transparent)] text-[var(--brand)]'
   }
   return 'border-[var(--brand-line)] bg-white/70 text-[var(--muted-foreground)] hover:border-[var(--brand-line)] border-[var(--brand-line)] bg-[var(--brand-tint)] text-[var(--muted-foreground)]'
 }

@@ -1,7 +1,7 @@
 <template>
   <div class="mt-5 grid grid-cols-2 gap-2">
     <div
-      class="rounded-xl p-3 bg-[var(--brand-tint)/80] bg-[var(--brand-tint)/40] border border-[var(--brand-line)] border-[var(--brand-line)/50]"
+      class="rounded-xl p-3 bg-[color-mix(in_srgb,var(--brand-tint)_80%,transparent)] bg-[color-mix(in_srgb,var(--brand-tint)_40%,transparent)] border border-[var(--brand-line)] border-[color-mix(in_srgb,var(--brand-line)_50%,transparent)]"
     >
       <div
         class="flex items-center gap-1.5 text-[10px] font-[var(--fw-medium)]  tracking-wider text-[var(--muted-foreground)]"
@@ -14,7 +14,7 @@
       </div>
     </div>
     <div
-      class="rounded-xl p-3 bg-[var(--brand-tint)/80] bg-[var(--brand-tint)/40] border border-[var(--brand-line)] border-[var(--brand-line)/50]"
+      class="rounded-xl p-3 bg-[color-mix(in_srgb,var(--brand-tint)_80%,transparent)] bg-[color-mix(in_srgb,var(--brand-tint)_40%,transparent)] border border-[var(--brand-line)] border-[color-mix(in_srgb,var(--brand-line)_50%,transparent)]"
     >
       <div
         class="flex items-center gap-1.5 text-[10px] font-[var(--fw-medium)]  tracking-wider text-[var(--muted-foreground)]"

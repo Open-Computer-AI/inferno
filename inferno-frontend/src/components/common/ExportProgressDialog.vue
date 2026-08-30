@@ -8,14 +8,14 @@
         <span>{{ t('usage.exportedCount', { current, total }) }}</span>
         <span class="font-[var(--fw-medium)] text-[var(--foreground)] dark:text-white">{{ normalizedProgress }}%</span>
       </div>
-      <div class="h-2 w-full rounded-full bg-[var(--brand-tint)] bg-[var(--brand-tint)]">
+      <div class="h-2 w-full rounded-full bg-[var(--brand-tint)]">
         <div
           role="progressbar"
           :aria-valuenow="normalizedProgress"
           aria-valuemin="0"
           aria-valuemax="100"
           :aria-label="`${t('usage.exportingProgress')}: ${normalizedProgress}%`"
-          class="h-2 rounded-full bg-[var(--brand-tint)] transition-[background-color,color,opacity]"
+          class="h-2 rounded-full bg-[var(--brand)] transition-[background-color,color,opacity]"
           :style="{ width: `${normalizedProgress}%` }"
         ></div>
       </div>

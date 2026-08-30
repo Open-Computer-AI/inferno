@@ -25,6 +25,7 @@
         class="grpsel__row"
         :data-selected="modelValue.includes(group.id) || undefined"
         :title="t('admin.groups.rateAndAccounts', { rate: group.rate_multiplier, count: group.account_count || 0 })"
+        @click="onRowClick(group.id, $event)"
       >
         <Checkbox
           :model-value="modelValue.includes(group.id)"
@@ -169,6 +170,16 @@ const capacityLabel = (group: AdminGroup): string => {
   const limited = group.rate_limited_account_count || 0
   if (limited > 0) return t('common.groupCapacityRateLimited', { limited, total })
   return t('common.groupCapacityTotal', { total })
+}
+
+// The row advertises a full-width target (cursor + hover background) and
+// upstream got that for free by making the row itself a <label>. Ours cannot:
+// Checkbox already renders its own <label>, and nesting labels is invalid. So
+// the row forwards the click, skipping events that came from the checkbox
+// itself -- those already toggle and would otherwise toggle twice.
+const onRowClick = (groupId: number, event: MouseEvent) => {
+  if ((event.target as HTMLElement | null)?.closest('.chk')) return
+  handleChange(groupId, !props.modelValue.includes(groupId))
 }
 
 const handleChange = (groupId: number, checked: boolean) => {

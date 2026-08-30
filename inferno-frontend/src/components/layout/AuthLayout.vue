@@ -15,6 +15,13 @@
                  that is their brand and not ours to override. -->
             <img v-if="settingsLoaded && siteLogo" :src="siteLogo" alt="" class="auth__logo" />
             <h1 v-else class="auth__wordmark">{{ siteName }}</h1>
+            <!-- Two different things, so two lines. The operator's site_subtitle
+                 is their tagline and upstream showed it on every auth page; the
+                 per-view slot is the instruction for THIS page ("Log into your
+                 account"). Folding the tagline into the slot as a fallback hid it
+                 on exactly the four views that set one -- login, register, reset,
+                 forgot -- which is where an operator looks for it. -->
+            <p v-if="siteSubtitle" class="auth__tagline">{{ siteSubtitle }}</p>
             <p v-if="$slots.subtitle" class="auth__subtitle"><slot name="subtitle" /></p>
           </header>
 
@@ -51,6 +58,9 @@ import { PRODUCT_NAME } from '@/config/brand'
 const appStore = useAppStore()
 
 const siteName = computed(() => appStore.siteName || PRODUCT_NAME)
+// Operator-configured, and still edited in Admin -> General settings. Losing it
+// here left it visible on the landing page but not on login/register/reset.
+const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || '')
 const siteLogo = computed(() =>
   sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true })
 )
@@ -145,6 +155,13 @@ onMounted(() => {
 }
 
 /* Set in the serif, like the wordmark above it -- the two read as one lockup. */
+.auth__tagline {
+  margin: 8px 0 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
 .auth__subtitle {
   margin: 16px 0 0;
   color: var(--body-copy);

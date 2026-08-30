@@ -72,3 +72,28 @@ describe('AppSidebar popover positioning', () => {
     expect(componentSource).toContain("position: 'fixed'")
   })
 })
+
+describe('AppSidebar route reachability', () => {
+  // The June reduction planned to fold channel status into the channels table
+  // and orders into Billing's lower half. Neither fold was built, so all three
+  // routes shipped with no entry point anywhere in the app -- /monitor linked
+  // from nowhere at all. Remove a row here only once its destination is
+  // genuinely reachable somewhere else.
+  it.each(['/monitor', '/purchase', '/orders'])('keeps a nav entry for %s', (path) => {
+    expect(componentSource).toContain(`path: '${path}'`)
+  })
+
+  it('gates /admin/prompt-audit on the same flag its router guard uses', () => {
+    // The route carries `requiresRiskControl`, so an ungated row is a dead link
+    // that bounces the admin to /admin/settings.
+    const gated = componentSource.matchAll(
+      /isFeatureFlagEnabled\(FeatureFlags\.riskControl\)\)\s*\{([\s\S]*?)\n  \}/g
+    )
+    const blocks = Array.from(gated, (m) => m[1])
+    expect(blocks.length).toBeGreaterThan(0)
+    for (const occurrence of componentSource.matchAll(/path: '\/admin\/prompt-audit'/g)) {
+      expect(blocks.some((b) => b.includes("path: '/admin/prompt-audit'"))).toBe(true)
+      expect(occurrence).toBeTruthy()
+    }
+  })
+})

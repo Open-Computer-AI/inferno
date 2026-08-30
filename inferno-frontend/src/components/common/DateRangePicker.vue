@@ -141,7 +141,7 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from './Button.vue'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 interface DatePreset {
   labelKey: string
@@ -297,16 +297,32 @@ const displayValue = computed(() => {
     const preset = presets.find((p) => p.value === committedPreset.value)
     if (preset) return t(preset.labelKey)
   }
-  if (props.startDate && props.endDate) return t('dates.custom')
+  if (props.startDate && props.endDate) {
+    // Upstream shows the actual dates, not the word "Custom" -- the trigger is the
+    // only place a hand-picked range is legible once the popover is closed.
+    if (props.startDate === props.endDate) return formatTriggerDate(props.startDate)
+    return `${formatTriggerDate(props.startDate)} - ${formatTriggerDate(props.endDate)}`
+  }
   return t('dates.selectDateRange')
 })
+
+const formatTriggerDate = (dateStr: string): string => {
+  const date = new Date(dateStr + 'T00:00:00')
+  return date.toLocaleDateString(locale.value === 'zh' ? 'zh-CN' : 'en-US', {
+    month: 'short',
+    day: 'numeric'
+  })
+}
 
 const spanLabel = computed(() => {
   if (!localStart.value || !localEnd.value) return ''
   const start = new Date(localStart.value + 'T00:00:00')
   const end = new Date(localEnd.value + 'T00:00:00')
   const diffDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1
-  return t('dates.daySpan', { count: Math.max(diffDays, 1) })
+  const days = Math.max(diffDays, 1)
+  // vue-i18n v9 does not pluralise from a named `count` alone -- the third
+  // argument is what selects the branch of a `singular | plural` message.
+  return t('dates.daySpan', { count: days }, days)
 })
 
 // v-model.lazy computed setters: commit on change/blur, not per keystroke. An

@@ -42,7 +42,7 @@
             type="button"
             :class="[
               'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[var(--brand-line)] focus:ring-offset-2',
-              value ? 'bg-[var(--brand-tint)]' : 'bg-[var(--brand-tint)] bg-[var(--brand-tint)]'
+              value ? 'bg-[var(--brand)]' : 'bg-[var(--muted)]'
             ]"
             @click="toggleForSale(row)"
           >

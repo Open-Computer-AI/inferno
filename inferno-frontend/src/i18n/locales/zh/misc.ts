@@ -313,6 +313,11 @@ export default {
     amountLabel: '充值金额',
     paymentAmount: '支付金额',
     creditedBalance: '到账余额',
+    amountRange: {
+      atLeast: '最低 {amount}。',
+      atMost: '最高 {amount}。',
+      between: '{min} 至 {max}。'
+    },
     quickAmounts: '快捷金额',
     customAmount: '自定义金额',
     enterAmount: '输入金额',

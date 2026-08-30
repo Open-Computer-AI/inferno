@@ -29,7 +29,7 @@
  */
 defineOptions({ inheritAttrs: false })
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     modelValue: boolean
     disabled?: boolean
@@ -40,7 +40,17 @@ withDefaults(
 const emit = defineEmits<{ 'update:modelValue': [boolean] }>()
 
 const onClick = (event: Event) => {
-  emit('update:modelValue', (event.target as HTMLInputElement).checked)
+  // Emit from the prop, not from the input's own `.checked`. The DOM flips
+  // itself during the click's pre-activation step, so reading it back makes
+  // the input -- not the parent -- the source of truth. A parent that refuses
+  // the change (validation, a rejected save) leaves modelValue unchanged, Vue
+  // sees no change to patch, and the input stays flipped: the next click then
+  // emits the value the parent already holds and the toggle appears dead.
+  // Restoring `.checked` here keeps the control in step with modelValue while
+  // the parent decides.
+  const input = event.target as HTMLInputElement
+  input.checked = props.modelValue
+  emit('update:modelValue', !props.modelValue)
 }
 </script>
 

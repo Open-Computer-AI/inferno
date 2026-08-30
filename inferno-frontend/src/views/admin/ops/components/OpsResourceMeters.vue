@@ -104,15 +104,20 @@ const meters = computed<Meter[]>(() => {
   }
 
   const dbActive = finite(m.db_conn_active)
+  const dbIdle = finite(m.db_conn_idle)
   const dbMax = finite(m.db_max_open_conns)
   if (dbActive != null && dbMax) {
-    const pct = (dbActive / dbMax) * 100
+    // Saturation is OPEN connections, not just active ones: an idle connection
+    // still holds a pool slot. Measuring active alone reports a fully checked-out
+    // pool as near-empty at exactly the moment it is about to block.
+    const dbOpen = dbActive + (dbIdle ?? 0)
+    const pct = (dbOpen / dbMax) * 100
     rows.push({
       key: 'db',
       icon: 'database-01',
       label: t('admin.ops.resources.database'),
       pct: Math.min(100, pct),
-      display: `${dbActive} / ${dbMax}`,
+      display: `${dbOpen} / ${dbMax}`,
       status: statusFor(pct)
     })
   }

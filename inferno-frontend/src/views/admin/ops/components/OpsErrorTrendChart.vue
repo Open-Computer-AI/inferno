@@ -45,8 +45,18 @@ const ramp = useSequentialRamp(3)
 const totalRequestErrors = computed(() =>
   props.points.reduce((sum, p) => sum + (p.error_count_sla ?? 0), 0)
 )
-const totalUpstreamErrors = computed(() =>
+// Two totals on purpose. The plotted series excludes 429/529, but they are
+// still real upstream errors -- gating the drill-down on the plotted total
+// alone hides it during an outage that is entirely rate-limit/overload.
+const totalUpstreamErrorsPlotted = computed(() =>
   props.points.reduce((sum, p) => sum + (p.upstream_error_count_excl_429_529 ?? 0), 0)
+)
+const totalUpstreamErrors = computed(() =>
+  props.points.reduce(
+    (sum, p) =>
+      sum + (p.upstream_error_count_excl_429_529 ?? 0) + (p.upstream_429_count ?? 0) + (p.upstream_529_count ?? 0),
+    0
+  )
 )
 const totalLimited = computed(() =>
   props.points.reduce((sum, p) => sum + (p.business_limited_count ?? 0), 0)
@@ -56,7 +66,7 @@ const hasRequestErrors = computed(() => totalRequestErrors.value > 0)
 const hasUpstreamErrors = computed(() => totalUpstreamErrors.value > 0)
 
 const totalDisplayed = computed(
-  () => totalRequestErrors.value + totalUpstreamErrors.value + totalLimited.value
+  () => totalRequestErrors.value + totalUpstreamErrorsPlotted.value + totalLimited.value
 )
 
 const labels = computed(() =>

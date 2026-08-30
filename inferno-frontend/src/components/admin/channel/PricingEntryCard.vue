@@ -40,7 +40,7 @@
 
         <!-- Billing mode badge -->
         <span
-          class="flex-shrink-0 rounded-full bg-[var(--brand-tint)] px-2 py-0.5 text-xs font-[var(--fw-medium)] text-[var(--brand)] bg-[var(--brand-tint)/30] text-[var(--brand)]"
+          class="flex-shrink-0 rounded-full bg-[var(--brand-tint)] px-2 py-0.5 text-xs font-[var(--fw-medium)] text-[var(--brand)] bg-[color-mix(in_srgb,var(--brand-tint)_30%,transparent)] text-[var(--brand)]"
         >
           {{ billingModeLabel }}
         </span>

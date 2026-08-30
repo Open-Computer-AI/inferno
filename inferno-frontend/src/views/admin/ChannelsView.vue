@@ -224,7 +224,7 @@
                   :key="p"
                   class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors"
                   :class="activePlatforms.includes(p)
-                    ? 'bg-[var(--brand-tint)] border-[var(--brand-line)] bg-[var(--brand-tint)/20] border-[var(--brand-line)]'
+                    ? 'bg-[var(--brand-tint)] border-[var(--brand-line)] bg-[color-mix(in_srgb,var(--brand-tint)_20%,transparent)] border-[var(--brand-line)]'
                     : 'border-[var(--brand-line)] hover:bg-[var(--brand-tint)] border-[var(--brand-line)] dark:hover:bg-[var(--card)]'"
                 >
                   <Checkbox
@@ -285,7 +285,7 @@
                     :key="group.id"
                     class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-[var(--brand-line)] px-2 py-1 text-xs transition-colors hover:bg-[var(--brand-tint)] border-[var(--brand-line)] dark:hover:bg-[var(--card)]"
                     :class="[
-                      section.group_ids.includes(group.id) ? 'bg-[var(--brand-tint)] border-[var(--brand-line)] bg-[var(--brand-tint)/20] border-[var(--brand-line)]' : '',
+                      section.group_ids.includes(group.id) ? 'bg-[var(--brand-tint)] border-[var(--brand-line)] bg-[color-mix(in_srgb,var(--brand-tint)_20%,transparent)] border-[var(--brand-line)]' : '',
                       isGroupInOtherChannel(group.id, section.platform) ? 'opacity-40' : ''
                     ]"
                   >
@@ -492,7 +492,7 @@
                       :key="gid"
                       class="inline-flex cursor-pointer items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors"
                       :class="rule.group_ids.includes(gid)
-                        ? 'border-[var(--brand-line)] bg-[var(--brand-tint)] border-[var(--brand-line)] bg-[var(--brand-tint)/20]'
+                        ? 'border-[var(--brand-line)] bg-[var(--brand-tint)] border-[var(--brand-line)] bg-[color-mix(in_srgb,var(--brand-tint)_20%,transparent)]'
                         : 'border-[var(--brand-line)] hover:bg-[var(--brand-tint)] border-[var(--brand-line)] dark:hover:bg-[var(--card)]'"
                     >
                       <Checkbox
@@ -515,7 +515,7 @@
                     <span
                       v-for="accountId in rule.account_ids"
                       :key="accountId"
-                      class="inline-flex items-center gap-1 rounded-md border border-[var(--brand-line)] bg-[var(--brand-tint)] px-2 py-0.5 text-xs border-[var(--brand-line)] bg-[var(--brand-tint)/20]"
+                      class="inline-flex items-center gap-1 rounded-md border border-[var(--brand-line)] bg-[var(--brand-tint)] px-2 py-0.5 text-xs border-[var(--brand-line)] bg-[color-mix(in_srgb,var(--brand-tint)_20%,transparent)]"
                     >
                       <span :class="['font-[var(--fw-medium)]', platformTextClass(section.platform)]">{{ getRuleAccountLabel(accountId) }}</span>
                       <IconButton

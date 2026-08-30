@@ -27,7 +27,9 @@ const unset = computed(() => props.max <= 0)
 
 const ink = computed(() => {
   if (unset.value) return 'var(--muted-foreground)'
-  if (percent.value > 100) return 'var(--destructive)'
+  // At capacity, not over it: current === max is the state an operator is
+  // scanning for, and >100 is not reachable when the cap is enforced.
+  if (percent.value >= 100) return 'var(--destructive)'
   if (percent.value >= 80) return 'var(--s2a-attn)'
   return 'var(--foreground)'
 })

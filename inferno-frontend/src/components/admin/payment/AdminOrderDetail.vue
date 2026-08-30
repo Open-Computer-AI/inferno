@@ -69,7 +69,7 @@
 
       <div
         v-if="order.refund_amount"
-        class="rounded-lg border border-[var(--destructive)] bg-[var(--destructive-soft)] p-3 border-[var(--destructive)] bg-[var(--destructive-soft)/20]"
+        class="rounded-lg border border-[var(--destructive)] bg-[var(--destructive-soft)] p-3 border-[var(--destructive)] bg-[color-mix(in_srgb,var(--destructive-soft)_20%,transparent)]"
       >
         <h4 class="mb-2 text-sm font-[var(--fw-medium)] text-[var(--destructive)] text-[var(--destructive)]">
           {{ t('payment.admin.refundInfo') }}

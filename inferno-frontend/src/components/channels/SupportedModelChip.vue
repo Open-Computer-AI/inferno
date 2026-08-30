@@ -21,7 +21,7 @@
       />
       <span
         v-if="showPlatform && model.platform"
-        class="rounded bg-[var(--brand-tint)/60] px-1 text-[10px]  text-[var(--muted-foreground)] bg-[var(--brand-tint)] text-[var(--muted-foreground)]"
+        class="rounded bg-[color-mix(in_srgb,var(--brand-tint)_60%,transparent)] px-1 text-[10px]  text-[var(--muted-foreground)] bg-[var(--brand-tint)] text-[var(--muted-foreground)]"
       >
         {{ model.platform }}
       </span>
@@ -48,7 +48,7 @@
           <span class="truncate font-[var(--fw-medium)]">{{ model.name }}</span>
           <span
             v-if="model.platform"
-            class="flex-shrink-0 rounded bg-white/70 px-1.5 py-0.5 text-[10px]  tracking-wide bg-[var(--brand-tint)/60]"
+            class="flex-shrink-0 rounded bg-white/70 px-1.5 py-0.5 text-[10px]  tracking-wide bg-[color-mix(in_srgb,var(--brand-tint)_60%,transparent)]"
           >
             {{ model.platform }}
           </span>
@@ -213,7 +213,7 @@ const popoverBorderClass = computed(() =>
 const popoverHeaderClass = computed(() =>
   effectivePlatform.value
     ? platformBadgeLightClass(effectivePlatform.value)
-    : 'bg-[var(--brand-tint)] text-[var(--body-copy)] bg-[var(--brand-tint)/60] text-[var(--muted-foreground)]',
+    : 'bg-[var(--brand-tint)] text-[var(--body-copy)] bg-[color-mix(in_srgb,var(--brand-tint)_60%,transparent)] text-[var(--muted-foreground)]',
 )
 
 function prefixKey(k: string): string {

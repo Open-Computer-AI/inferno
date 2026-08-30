@@ -145,7 +145,7 @@
         </div>
       </div>
 
-      <div v-if="form.provider === PROVIDER_OPENAI" class="rounded-lg border border-[var(--brand-line)] bg-[var(--brand-tint)/50] p-3 border-[var(--brand-line)/20] bg-[var(--brand-tint)/10]">
+      <div v-if="form.provider === PROVIDER_OPENAI" class="rounded-lg border border-[var(--brand-line)] bg-[color-mix(in_srgb,var(--brand-tint)_50%,transparent)] p-3 border-[color-mix(in_srgb,var(--brand-line)_20%,transparent)] bg-[color-mix(in_srgb,var(--brand-tint)_10%,transparent)]">
         <label class="field-label">{{ t('admin.channelMonitor.form.apiMode') }}</label>
         <div class="grid gap-3 sm:grid-cols-2">
           <button
@@ -478,9 +478,9 @@ function tabClass(value: Provider): string {
 function modeBadgeClass(mode: BodyOverrideMode): string {
   switch (mode) {
     case 'merge':
-      return 'bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] text-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))/15] text-[var(--warning)]'
+      return 'bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] text-[var(--warning)] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--warning)_14%,var(--card))_15%,transparent)] text-[var(--warning)]'
     case 'replace':
-      return 'bg-[var(--brand-tint)] text-[var(--brand)] bg-[var(--brand-tint)/15] text-[var(--brand)]'
+      return 'bg-[var(--brand-tint)] text-[var(--brand)] bg-[color-mix(in_srgb,var(--brand-tint)_15%,transparent)] text-[var(--brand)]'
     default:
       return 'bg-[var(--brand-tint)] text-[var(--muted-foreground)] bg-[var(--brand-tint)] text-[var(--muted-foreground)]'
   }
@@ -516,7 +516,7 @@ function normalizeAPIMode(mode: APIMode | undefined | null): APIMode {
 function apiModeButtonClass(mode: APIMode): string {
   const active = form.api_mode === mode
   if (active) {
-    return 'border-[var(--brand-line)] bg-white text-[var(--brand)] shadow-sm border-[var(--brand-line)] bg-[var(--brand-tint)/15] text-[var(--brand)]'
+    return 'border-[var(--brand-line)] bg-white text-[var(--brand)] shadow-sm border-[var(--brand-line)] bg-[color-mix(in_srgb,var(--brand-tint)_15%,transparent)] text-[var(--brand)]'
   }
   return 'border-[var(--brand-line)] bg-white/70 text-[var(--muted-foreground)] hover:border-[var(--brand-line)] border-[var(--brand-line)] bg-[var(--brand-tint)] text-[var(--muted-foreground)]'
 }
@@ -529,8 +529,8 @@ function apiModeLabel(mode: APIMode): string {
 
 function apiModeBadgeClass(mode: APIMode): string {
   if (normalizeAPIMode(mode) === API_MODE_RESPONSES) {
-    return 'bg-[var(--brand-tint)] text-[var(--brand)] bg-[var(--brand-tint)/15] text-[var(--brand)]'
+    return 'bg-[var(--brand-tint)] text-[var(--brand)] bg-[color-mix(in_srgb,var(--brand-tint)_15%,transparent)] text-[var(--brand)]'
   }
-  return 'bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] text-[var(--success)] bg-[color-mix(in_oklch,var(--success)_14%,var(--card))/15] text-[var(--success)]'
+  return 'bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] text-[var(--success)] bg-[color-mix(in_srgb,color-mix(in_oklch,var(--success)_14%,var(--card))_15%,transparent)] text-[var(--success)]'
 }
 </script>
