@@ -341,8 +341,12 @@
         <div v-if="grokRetryAfterLabel" class="uc-inline-warn">
           {{ t('admin.accounts.usageWindow.grokRetryAfter', { time: grokRetryAfterLabel }) }}
         </div>
+        <GrokQuotaProbeCell :account="account" compact @probed="handleGrokProbed" />
       </div>
-      <div v-else class="uc-muted">-</div>
+      <div v-else class="uc-body">
+        <div class="uc-muted">-</div>
+        <GrokQuotaProbeCell :account="account" compact @probed="handleGrokProbed" />
+      </div>
     </template>
 
     <!-- CN providers (Kimi / Zhipu / DeepSeek): coding-plan quota or payg balance -->
@@ -551,11 +555,18 @@
  * DataTable column-header concern, not this cell's — see `pinnedWindowKey`
  * below and the build report for exactly what the header needs to pass in.
  *
- * GrokQuotaProbeCell no longer renders inside this cell: its probe is a
- * real billable call to xAI, so per the same "three decisions" it becomes
- * its own opt-in column, off by default, rather than an affordance offered
- * on every visible Grok row. See the build report for what that column
- * needs.
+ * GrokQuotaProbeCell renders here, as upstream has it, in both the
+ * with-data and no-data branches. It was unhooked in part 08 on the
+ * reasoning that a live xAI call should not look like a routine row
+ * action, and an opt-in column was recorded as owed to replace it. That
+ * column was never built, so for weeks the probe had no call site anywhere
+ * and stale Grok quota could not be refreshed on demand at all.
+ *
+ * Removing is instant, replacing needs a decision -- so the trade defaulted
+ * to permanent loss. The original objection was that the click looks
+ * routine, and the honest fix for that is the tooltip saying what the click
+ * does ("Sends one live xAI request"), not hiding the button behind a
+ * feature nobody wrote. The component gates itself on grok + oauth.
  */
 import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch } from 'vue'
 import { useIntervalFn } from '@vueuse/core'
@@ -571,6 +582,7 @@ import OpenAIQuotaResetCell from './OpenAIQuotaResetCell.vue'
 import CNProviderQuotaCell from './CNProviderQuotaCell.vue'
 import CNProviderBalanceCell from './CNProviderBalanceCell.vue'
 import OllamaCloudUsageCell from './OllamaCloudUsageCell.vue'
+import GrokQuotaProbeCell from './GrokQuotaProbeCell.vue'
 import { cnQuotaCellVisible as cnQuotaCellVisibleFn, cnBalanceCellVisible as cnBalanceCellVisibleFn } from './credentialsBuilder'
 
 // Module-level cache shared across all AccountUsageCell instances
@@ -1478,6 +1490,12 @@ const syncManagedUsageState = () => {
   usageInfo.value = props.batchedUsage ?? null
   error.value = props.batchedUsageError ?? null
   loading.value = props.batchedUsageLoading === true
+}
+
+/* A probe returns fresh quota headers, so the cell re-reads bypassing cache --
+   otherwise the operator pays for a live xAI call and still sees stale numbers. */
+const handleGrokProbed = async () => {
+  await loadUsage({ source: 'active', bypassCache: true })
 }
 
 const loadUsage = async (options?: { source?: 'passive' | 'active'; bypassCache?: boolean }) => {

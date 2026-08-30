@@ -1541,7 +1541,7 @@ export default {
         grokUnknown: 'Grok quota is unknown until the first upstream response includes xAI rate-limit headers.',
         grokRetryAfter: 'Retry after {time}',
         grokProbe: 'Probe',
-        grokProbeTooltip: 'Send a minimal xAI Responses probe and read quota headers',
+        grokProbeTooltip: 'Sends one live xAI request to read quota headers',
         grokResetUnsupported: 'Reset unsupported',
         grokResetUnsupportedTooltip: 'xAI does not expose reset credits for Grok OAuth accounts',
         grokNoHeaders: 'No quota headers observed',
