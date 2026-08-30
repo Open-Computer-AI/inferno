@@ -1955,3 +1955,34 @@ re-litigated.
 
 **Last reviewed upstream SHA: `baeac1f3de21d37b129405f092ef86c24b3f203d`**
 (2026-08-15 13:40:21 UTC, "chore: sync VERSION to 0.1.177 [skip ci]").
+
+### 2026-08-30 — daily reconcile check, 0 drift
+
+Ran the runbook v2 procedure end to end. Repo clone was shallow; unshallowed
+first (`git fetch --unshallow`) per step 1's warning, then re-derived drift
+from a clean history rather than trusting the shallow count.
+
+`git merge-base HEAD upstream/main` == `git rev-parse upstream/main` ==
+`b5827cfd54d58c248a9480b800444d0b40f0c6ea` ("fix(pricing): align DeepSeek
+billing with official peak/off-peak rates", 2026-08-29 17:30:23 +08:00).
+`git rev-list --count HEAD..upstream/main` = **0**. This matches, and now
+reconfirms with an independent fetch, the "Upstream port status (2026-08-30)"
+finding above (commit manifest 103/103, zero open) — upstream has not moved
+since that port set closed, so there is nothing new to merge, resolve, or port.
+
+Ran gate 5 anyway, since a clean merge-base is not proof the tree is healthy:
+`./inferno-frontend/scripts/check-divergence.sh` — `divergence: base
+b5827cfd5 · 220 file(s) differ · 228 declared` / `all divergence declared`,
+exit 0. No undeclared drift; nothing to prune (the script did not flag any
+declared file as no longer differing).
+
+No merge, no port, no code change. Steps 2-8 of the runbook do not apply when
+step 1 measures zero. This entry is the "one line" advance the daily routine
+records on a quiet day, per its own convention (see the 2026-08-16 entry
+above for the same shape).
+
+**Last reviewed upstream SHA: `b5827cfd54d58c248a9480b800444d0b40f0c6ea`**
+(2026-08-29 17:30:23 +08:00, "fix(pricing): align DeepSeek billing with
+official peak/off-peak rates") — unchanged from the value already recorded in
+"Upstream port status (2026-08-30)" above; this entry is the reconfirmation,
+not a new value.
