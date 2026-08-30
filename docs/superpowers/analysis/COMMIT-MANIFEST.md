@@ -97,8 +97,8 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 33 | `26be82cc8` | 08-19 | T1 | 前端：配置渠道倍率并精简长上下文开关 | **DOUBLE-PORTED** — landed 2026-08-29 in `7afe8e832`, which did not update this row, so it still read TODO and was ported again 2026-08-30 in `0827bb22d`. End state is correct (the duplicated multiplier controls were removed, +3 tests, browser-verified 10 inputs once each), but the second commit misattributes the duplication to a 3-way merge artifact | **PORTED** |
 | 34 | `d4d2c746c` | 08-19 | T2 | 前端：修正账号长上下文开关门控 | ? | TODO |
 | 35 | `1f2a87adb` | 08-20 | T1 | fix(admin): 补全平台筛选选项 | LOGIC | PORTED |
-| 36 | `85051616f` | 08-20 | T2 | feat(accounts): add adaptive API protocol routing | ? | TODO |
-| 37 | `b3092145d` | 08-20 | T2 | fix(accounts): harden adaptive protocol compatibility | ? | TODO |
+| 36 | `85051616f` | 08-20 | T2 | feat(accounts): add adaptive API protocol routing | adaptive API protocol routing; unblocks c4e46c3be | **PORTED** |
+| 37 | `b3092145d` | 08-20 | T2 | fix(accounts): harden adaptive protocol compatibility | adaptive protocol compatibility hardening; spec gains interactive Group/ModelWhitelist stubs | **PORTED** |
 | 38 | `e4f869e0c` | 08-19 | T2 | 完善运维错误详情兼容展示 | ? | TODO |
 | 39 | `39485f2e2` | 08-20 | T1 | 更新 Grok 默认模型与官方计费目录 | LOGIC | PORTED |
 | 40 | `6c3edc095` | 08-20 | T1 | feat(429): add configurable cooldown and retry strategie | - | SKIPPED — reverted by e62ec2c42, net no-op |
@@ -137,7 +137,7 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 73 | `5f09442fc` | 08-27 | T2 | fix(openai): refresh usage after quota reset | ? | TODO |
 | 74 | `b56c61ecc` | 08-28 | T1 | feat(admin): let admins restrict which public groups a u | ported in 6e04b06ee (toggle + load-init + save-filter, applied atomically); row was left stale | **PORTED** |
 | 75 | `0756c9810` | 08-28 | T2 | fix(frontend): 批量编辑显式提交 codex_fingerprint_mode=off，修复无法关 | ? | TODO |
-| 76 | `c4e46c3be` | 08-28 | T2 | feat(zhipu): support team GLM Coding Plan usage query | ? | TODO |
+| 76 | `c4e46c3be` | 08-28 | T2 | feat(zhipu): support team GLM Coding Plan usage query | Zhipu team GLM Coding Plan — applied cleanly once adaptive routing was in; was the reason the CN unit stopped at 9 | **PORTED** |
 | 77 | `02eee39dd` | 08-28 | T2 | fix(payment): show selected currency in recharge rate | ? | TODO |
 | 78 | `c03776604` | 08-28 | T2 | fix(keys): preserve Claude attribution headers | ? | TODO |
 | 79 | `706b5676a` | 08-29 | T2 | fix(groups): show API error messages on create and updat | ? | TODO |

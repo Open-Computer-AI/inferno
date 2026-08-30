@@ -84,7 +84,41 @@ const OAuthAuthorizationFlowStub = defineComponent({
   `,
 })
 
-function mountModal() {
+const GroupSelectorStub = defineComponent({
+  name: 'GroupSelector',
+  props: {
+    modelValue: {
+      type: Array,
+      default: () => [],
+    },
+  },
+  emits: ['update:modelValue'],
+  template: `
+    <button
+      type="button"
+      data-testid="select-pricing-groups"
+      @click="$emit('update:modelValue', [1, 2])"
+    >
+      groups
+    </button>
+  `,
+})
+
+const ModelWhitelistSelectorStub = defineComponent({
+  name: 'ModelWhitelistSelector',
+  props: {
+    modelValue: {
+      type: Array,
+      default: () => [],
+    },
+    platform: String,
+    syncCredentials: Object,
+  },
+  emits: ['update:modelValue'],
+  template: '<div data-testid="model-whitelist-selector" />',
+})
+
+function mountModal(groups: any[] = []) {
   return mount(CreateAccountModal, {
     props: { show: true, proxies: [], groups: [] },
     global: {
@@ -96,8 +130,9 @@ function mountModal() {
         Icon: true,
         PlatformIcon: true,
         ProxySelector: true,
-        GroupSelector: true,
-        ModelWhitelistSelector: true,
+        ProxyAdBanner: true,
+        GroupSelector: GroupSelectorStub,
+        ModelWhitelistSelector: ModelWhitelistSelectorStub,
         QuotaLimitCard: true,
       },
     },
@@ -211,6 +246,43 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
 
     expect(createAccountMock.mock.calls[0]?.[0]?.upstream_billing_probe_enabled).toBe(false)
     expect(probeUpstreamBillingMock).not.toHaveBeenCalled()
+  })
+
+  it('submits adaptive Kimi protocol endpoints', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Kimi')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Kimi adaptive')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('sk-kimi')
+
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({
+      account_mode: 'payg',
+      api_protocol: 'adaptive',
+      base_url: 'https://api.moonshot.cn/v1',
+      api_base_urls: {
+        chat_completions: 'https://api.moonshot.cn/v1',
+        anthropic: 'https://api.moonshot.cn/anthropic'
+      }
+    })
+  })
+
+  it('uses the edited adaptive Chat endpoint when previewing upstream models', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Kimi')
+    await wrapper
+      .get('[data-testid="cn-adaptive-base-url-chat_completions"]')
+      .setValue('https://relay.example.com/v1')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('sk-relay')
+
+    expect(wrapper.getComponent(ModelWhitelistSelectorStub).props('syncCredentials')).toMatchObject({
+      platform: 'kimi',
+      type: 'apikey',
+      base_url: 'https://relay.example.com/v1',
+      api_key: 'sk-relay'
+    })
   })
 
   it('exposes Agent Identity in the OpenAI authorization methods', async () => {
