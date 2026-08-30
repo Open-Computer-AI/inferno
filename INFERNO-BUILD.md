@@ -546,6 +546,36 @@ Gates at close: tsc 0 · 1915/1915 tests across 260 files · i18n keycheck clean
 june-lint 1183 violations / 296 converted files · divergence all-declared ·
 production build clean.
 
+## Running-stack validation (2026-08-30)
+
+Every unit passed the gates. These were additionally exercised against the
+live stack (backend on :8080, Vite on :3000, per `skills/inferno-local-stack`):
+
+| Unit | What was observed |
+|---|---|
+| monitor quota chain | three-state Check Mode, 8 platforms; Quota hides endpoint/api_key and reveals the linked-account selector |
+| time pricing + per-tier multipliers | seeded through the real API, read back: 10 inputs per interval row, once each; Time zone / Effective days / Start / End / Multiplier |
+| auto-reset credit | thresholds render 85/90 from stored 0.85/0.9; captured PUT proves `codex_auto_reset_credit_state` is never written back |
+| June status chip | `oqr__auto-chip--bad` with the localized label, from state the real scheduler wrote |
+| CN providers | Kimi/Zhipu/DeepSeek in the create flow; API Protocol, Base URL, Header Override |
+| adaptive routing | Zhipu exposes API Protocol with `adaptive` |
+| plugin system | flag flipped via the real settings API: sidebar entry appears, /admin/plugins renders |
+| account list refresh | `/upstream-billing-rates` returns `{items,page,page_size,total}`; `If-None-Match` -> **304** |
+| reasoning effort | admin offers the column (matching upstream); user page never shows the upstream/requested variant |
+| bulk OpenAI settings | fingerprint control renders under the `allOpenAIOAuth` gate |
+| model plaza + home link | plaza renders; `/model-plaza` link present on home once enabled |
+| group platforms | all 9 options incl. Kimi/Zhipu GLM/DeepSeek/Composite -- proves the derived catalog we kept over upstream's literal |
+| composite Codex Live | the Live toggle now renders for a Composite group |
+| ops SLA | a zero-request window shows no critical SLA (0d5e3ca9b) |
+
+Not exercised live, and why: the ops error-detail modal, Grok usage bars, and
+the payment fixes all need request/usage/order history that a fresh local
+database has none of. They rest on the gates plus upstream's own specs.
+
+**Note for whoever runs this next:** vite-plugin-checker caches type errors
+across a merge. Twice an overlay showed conflict markers that were not on disk
+and `vue-tsc` reported 0. Restart the dev server before believing an overlay.
+
 # Manifest discipline (non-negotiable)
 
 **A port and its COMMIT-MANIFEST.md row change land in the SAME commit.**
