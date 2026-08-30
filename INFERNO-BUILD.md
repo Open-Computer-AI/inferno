@@ -1871,15 +1871,35 @@ Fixed by unioning `git ls-files --others --exclude-standard` into the scope.
 - [ ] **A Table pages** (21) — headings done via route meta. Interiors still
       legacy-but-bridged.
 
-### Owed cross-file work (shapes recorded earlier in this file)
+### Owed cross-file work -- MOVED TO A MEASURED LEDGER
 
-- [ ] `AccountsView` action-button collapse -> unblocks `stickyActionsColumn`
-- [ ] 55 -> 9 quota collapse (`QuotaDimension`)
-- [ ] Opt-in Grok probe column (must state "one billable request per visible row")
-- [ ] Column-header window picker (`pinnedWindowKey` already accepted)
-- [ ] ~40 raw checkboxes -> `Checkbox.vue` / `Radio.vue` (every `.setValue()` test breaks)
-- [ ] `AccountsView.vue` wire up `buildGrokUsageRefreshKey` (ported 2026-08-15,
-      unused) so Grok quota/billing cells refresh reactively like OpenAI's do
+**Do not add checkboxes here.** This list reached 17 unchecked and 0 checked, and
+when the boxes were finally probed on 2026-08-30, three were simply wrong:
+
+- `buildGrokUsageRefreshKey` was listed as owed; it had been wired weeks earlier
+  at `AccountsView.vue:1398`.
+- `/legal/terms` was listed as a 404; it renders, showing "No content" until an
+  operator fills the document in Settings.
+- "~40 raw checkboxes" is 23 files -- real progress nobody recorded.
+
+A checkbox records what someone believed once. The upstream ports never rotted
+this way because their ledger required a row and its port in the same commit, and
+every row could be checked against the tree. So the owed work now lives in
+
+```
+node scripts/debt-ledger.mjs           # status of every row, computed
+node scripts/debt-ledger.mjs --open    # only what is still open
+node scripts/debt-ledger.mjs --check   # exit 1 if a CLOSED row reopened
+```
+
+where every row carries a probe that prints evidence it is still open. A row
+cannot be closed by editing the file -- only by changing the code until its probe
+goes quiet. Verified discriminating: renaming one sidebar path flips the row to
+OPEN and `--check` exits 1.
+
+Same principle that killed the old `i18n-keycheck.mjs`, which reported "all t()
+keys resolve" while scanning zero files. Status you assert is worthless; status
+you measure is not.
 
 ### Known gaps, not blocking
 
