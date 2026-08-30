@@ -49,6 +49,40 @@ worked. Navigate to a real route.
 
 Full list: `grep -oE "path: '/admin/[a-z0-9-]+'" inferno-frontend/src/router/index.ts`
 
+## The two databases, and the two meanings of "mirror"
+
+Keep these apart — they answer different questions:
+
+| Name | What it is | Answers |
+|---|---|---|
+| `frontend/` (a directory) | pristine copy of upstream's frontend, never built | *did we port it faithfully?* |
+| `oc_internal` (a database) | copy of the internal VM's real data | *is the ported behaviour right for us?* |
+
+`oc_internal` is a `pg_dump` of `sub2api` on the `oc-internal` box (Tailscale,
+`ssh root@oc-internal`), restored locally. **`oc-internal` itself is read-only:
+pg_dump and SELECT, never a write.** To refresh it:
+
+```bash
+ssh -C root@oc-internal 'sudo -u architsakri -i docker exec sub2api-postgres \
+    pg_dump -U sub2api -d sub2api --no-owner --no-privileges' | gzip > dump.sql.gz
+docker exec sub2api-postgres psql -U sub2api -d postgres -c 'DROP DATABASE IF EXISTS oc_internal'
+docker exec sub2api-postgres psql -U sub2api -d postgres -c 'CREATE DATABASE oc_internal OWNER sub2api'
+gzip -dc dump.sql.gz | docker exec -i sub2api-postgres psql -U sub2api -d oc_internal -q
+```
+
+It holds **real credentials** (live Grok/OpenAI/Anthropic tokens). Local only,
+gitignored, and not inert -- a scheduler pointed at it will make real upstream
+calls. `DROP DATABASE oc_internal;` when you are done with it.
+
+The admin there is `admin@opencomputer.local`; set a known local password by
+copying a bcrypt hash from the `sub2api` database rather than resetting anything
+on the VM.
+
+**Count accounts through the API, not `SELECT count(*)`.** The table keeps
+soft-deleted rows (`deleted_at IS NOT NULL`) that the backend filters out: 23
+rows, 11 live. Counting rows once had me report 14 Anthropic accounts when
+there are 2.
+
 ## Querying the database
 
 ```bash
