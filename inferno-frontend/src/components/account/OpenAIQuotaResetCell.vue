@@ -232,7 +232,17 @@ const resetCreditExpirations = computed(() =>
 const primaryResetCreditExpiry = computed(() => resetCreditExpirations.value[0] ?? '')
 
 // Auto-reset-credit runtime state, written by the scheduler. Read-only here.
-const autoResetState = computed(() => props.account.extra?.codex_auto_reset_credit_state)
+type AutoResetCreditState = NonNullable<NonNullable<Account['extra']>['codex_auto_reset_credit_state']>
+const validAutoResetStatuses = new Set(['checking', 'available', 'resetting', 'success', 'no_credit', 'failed'])
+/* Three guards, all load-bearing: an operator who turned auto-reset off must
+   not keep seeing a chip driven by a stale state left in extra, and an unknown
+   status must render nothing rather than fall through to a missing i18n key. */
+const autoResetState = computed<AutoResetCreditState | null>(() => {
+  if (props.account.extra?.auto_reset_credit_enabled !== true) return null
+  const state = props.account.extra?.codex_auto_reset_credit_state
+  if (!state || typeof state !== 'object' || !validAutoResetStatuses.has(String(state.status))) return null
+  return state
+})
 
 const autoResetStateLabel = computed(() => {
   const status = autoResetState.value?.status

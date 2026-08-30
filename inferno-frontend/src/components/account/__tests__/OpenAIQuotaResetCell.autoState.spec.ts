@@ -55,7 +55,7 @@ describe('OpenAIQuotaResetCell auto-reset state', () => {
     ['checking', ''],
   ])('maps status %s to the June modifier %s', (status, modifier) => {
     const wrapper = mount(OpenAIQuotaResetCell, {
-      props: { account: makeAccount({ codex_auto_reset_credit_state: { status } }) },
+      props: { account: makeAccount({ auto_reset_credit_enabled: true, codex_auto_reset_credit_state: { status } }) },
     })
     const chip = wrapper.get('[data-testid="auto-reset-credit-state"] .oqr__auto-chip')
     if (modifier) expect(chip.classes()).toContain(modifier)
@@ -69,6 +69,7 @@ describe('OpenAIQuotaResetCell auto-reset state', () => {
     const wrapper = mount(OpenAIQuotaResetCell, {
       props: {
         account: makeAccount({
+          auto_reset_credit_enabled: true,
           codex_auto_reset_credit_state: {
             status: 'failed',
             trigger_window: '7d',
@@ -80,6 +81,40 @@ describe('OpenAIQuotaResetCell auto-reset state', () => {
     const block = wrapper.get('[data-testid="auto-reset-credit-state"]')
     expect(block.get('.oqr__auto-window').text()).toBe('7d')
     expect(block.get('.oqr__auto-error').text()).toBe('quota_exhausted')
+    wrapper.unmount()
+  })
+
+  // The three guards upstream ships, each of which suppresses a wrong chip.
+  it('renders nothing when auto-reset is switched off, even with a stale state', () => {
+    const wrapper = mount(OpenAIQuotaResetCell, {
+      props: { account: makeAccount({
+        auto_reset_credit_enabled: false,
+        codex_auto_reset_credit_state: { status: 'available', trigger_window: '5h' },
+      }) },
+    })
+    expect(wrapper.find('[data-testid="auto-reset-credit-state"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('renders nothing for an unknown status rather than a missing i18n key', () => {
+    const wrapper = mount(OpenAIQuotaResetCell, {
+      props: { account: makeAccount({
+        auto_reset_credit_enabled: true,
+        codex_auto_reset_credit_state: { status: 'wat' },
+      }) },
+    })
+    expect(wrapper.find('[data-testid="auto-reset-credit-state"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('renders nothing when the state is not an object', () => {
+    const wrapper = mount(OpenAIQuotaResetCell, {
+      props: { account: makeAccount({
+        auto_reset_credit_enabled: true,
+        codex_auto_reset_credit_state: 'broken' as unknown as Record<string, unknown>,
+      }) },
+    })
+    expect(wrapper.find('[data-testid="auto-reset-credit-state"]').exists()).toBe(false)
     wrapper.unmount()
   })
 })

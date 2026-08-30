@@ -30,6 +30,8 @@ const props = defineProps<{
   businessLimitedCount: number
   /** 0 to 1, as the API reports it. */
   sla: number | null
+  /** SLA-eligible request count. Zero means "no data", not "0% success". */
+  requestCountSla: number
   fullscreen?: boolean
 }>()
 
@@ -62,9 +64,14 @@ const hasTraffic = computed(() => segments.value.some((s) => s.value > 0))
 
 /* Kept as the headline because SLA is the number people are held to, and it is
    NOT simply the success share once business limits are excluded. */
-const slaDisplay = computed(() =>
-  props.sla == null ? '-' : `${(props.sla * 100).toFixed(3)}%`
-)
+/* A window with no SLA-eligible requests reports sla = 0, which is an absence
+   of data rather than a total failure. Rendering it as 0.000% reads as an
+   outage that never happened (0d5e3ca9b). */
+const slaDisplay = computed(() => {
+  if (props.sla == null) return '-'
+  if ((props.requestCountSla ?? 0) <= 0) return '-'
+  return `${(props.sla * 100).toFixed(3)}%`
+})
 </script>
 
 <template>

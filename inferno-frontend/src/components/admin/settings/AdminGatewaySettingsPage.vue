@@ -769,11 +769,9 @@
                     </div>
                   </div>
 
-                  <!-- Fallback Action (only when model_whitelist is non-empty) -->
+                  <!-- Other Models Action (only when target models are non-empty) -->
                   <div
-                    v-if="
-                      rule.model_whitelist && rule.model_whitelist.length > 0
-                    "
+                    v-if="hasOpenAIFastPolicyTargetModels(rule)"
                     class="mt-3"
                   >
                     <label
@@ -932,7 +930,7 @@
                     <span
                       class="inline-flex items-center rounded-[var(--r-sm)] bg-[var(--muted)] px-2 py-0.5 font-[var(--fw-medium)] text-[var(--muted-foreground)]"
                     >
-                      {{ openaiFastPolicyActionSummary(rule.fallback_action ?? 'passthrough') }}
+                      {{ openaiFastPolicyActionSummary(rule.fallback_action || 'pass') }}
                     </span>
                   </template>
                 </div>

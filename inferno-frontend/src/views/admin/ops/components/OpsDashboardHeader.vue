@@ -931,6 +931,7 @@ const upstreamTone = computed<CardTone>(() =>
             :error-count-sla="overview?.error_count_sla ?? 0"
             :business-limited-count="overview?.business_limited_count ?? 0"
             :sla="overview?.sla ?? null"
+            :request-count-sla="overview?.request_count_sla ?? 0"
             :fullscreen="props.fullscreen"
             @open-details="openErrorDetails('request')"
           />
