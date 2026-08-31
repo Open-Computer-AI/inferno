@@ -2017,3 +2017,161 @@ re-litigated.
 
 **Last reviewed upstream SHA: `baeac1f3de21d37b129405f092ef86c24b3f203d`**
 (2026-08-15 13:40:21 UTC, "chore: sync VERSION to 0.1.177 [skip ci]").
+
+### 2026-08-31 — daily reconcile, merge model (Runbook v2), 35 commits
+
+Ran as the scheduled daily reconciler. This entry's SHAs and counts are what
+the tree actually reported today; the note above this one was already stale
+before this run (a prior run's footer never got bumped past 2026-08-15) —
+left as-is rather than rewritten, since reconstructing what happened between
+`baeac1f3d` and `b5827cfd5` from memory would be worse than an honest gap.
+What this run *can* attest to: `b5827cfd5` was the merge-base sitting on
+`HEAD` at start of day (matching this doc's own note a few sections up that
+`git fetch upstream main` on 2026-08-30 found 0 commits of drift), and this
+run took it from there.
+
+**Range:** `b5827cfd54d58c248a9480b800444d0b40f0c6ea` .. `0678b24d58dceb668ce8b952b5d3c0be3ec9dbb0`
+(2026-08-31 11:19 +08:00, "Merge pull request #6283 from okbexx/feat/usage-compaction-kind").
+35 commits behind. Clone was shallow; `git fetch --unshallow` run first, then
+the count re-measured to confirm it wasn't the grafted-parentless inflation
+this doc warns about elsewhere — 35 held after unshallowing, so it was real.
+
+**Collision map regenerated** against the new base: we changed 215-ish files
+under `backend/deploy/docs`, upstream touched 35 commits' worth, **8 files
+overlap**: `cmd/server/wire_gen.go`, `handler/dto/{mappers,types}.go`,
+`repository/usage_log_repo_query.go`, `server/api_contract_test.go`,
+`service/{admin_group,domain_constants,setting_features}.go`. All 8 are D1/D7
+plumbing upstream also touched this round for its own usage-compaction and
+quota-limit features — none of it Razorpay or OAuth-AS surface, consistent
+with this doc's standing note that those two stay uncontested.
+
+**Merge, not rebase** (`git merge upstream/main` in a separate worktree,
+`../inferno-reconcile`, branch `sync/reconcile-2026-08-31`). **Zero
+conflicts** — including on all 8 collision-map files. Per this doc's own
+warning not to trust a clean merge, read every one of the 8 by hand rather
+than taking the auto-resolve on faith: all 8 were upstream adding fields/params
+next to our divergence (a new `SettingKeyOpenAIImagesOAuthUnavailableCooldownSettings`
+constant beside our branding constants, a nil-guard fix in `admin_group.go`
+beside our `RequireOAuthOnly` filtering, a new `NativeCompactionV2` field
+threaded through the DTOs) — our lines were all still there, nothing upstream
+fixed got silently dropped.
+
+**Generated files, regenerated rather than trusted:** upstream didn't touch
+`backend/ent/` this round (checked: empty diff), so no ent regen was needed.
+`wire_gen.go` did merge (upstream's PR #5866 threaded `apiKeyService` into
+`NewChannelMonitorV2Handler`) with zero conflicts; regenerated it anyway with
+the real wire CLI (`go run github.com/google/wire/cmd/wire@v0.7.0`, using the
+go1.27.0 toolchain `go.mod` requires — the sandbox's default `go` is 1.24.7,
+`GOTOOLCHAIN=auto` fetches 1.27 for `go build`/`go test` transparently but
+not for wire's internal package-loading subprocess, so the toolchain bin had
+to go on `PATH` directly). The regenerated file differed from the merge's
+auto-resolve by one provider-declaration reordering with no semantic
+difference (`idempotencyCoordinator` declared 3 lines earlier); took the
+regenerated version. Committed separately (`597e56099`) from the merge so the
+two are easy to tell apart in review.
+
+**Divergence gate:** `check-divergence.sh` exits 0 both immediately
+post-merge and after the frontend port work below — 222 files differ against
+`git merge-base HEAD upstream/main` (now `0678b24d5`), all 228 declared
+entries still needed (script reported no stale entries to prune).
+
+**Backend gate:** `go build ./...`, `go vet ./internal/...`, `go test
+./internal/...` all clean (go1.27.0 toolchain). Every package passed,
+`internal/service` (the largest, 127s) included.
+
+**Frontend port (Runbook v2 step 7 — the contract lives in two places):**
+diffed `backend/internal/handler` for JSON shape changes across the 35-commit
+range: only additive fields (`native_compaction_v2` *bool on three usage DTOs,
+`cooldown_minutes` on a new OpenAI-image cooldown setting) — no renames, no
+removals, so no stale-client risk from the Go side. Diffed `frontend/src/{api,types}`
+similarly: 34 files in the mirror changed. Of those, only 3 were both "ours"
+(touched since the vendor-point commit `47b1130cb`) and now differ from the
+moved mirror — `CNProviderQuotaCell.vue`, `MonitorQuotaView.vue`,
+`utils/format.ts` — because upstream moving the mirror is what made them
+newly stale, not anything in this reconcile touching them directly.
+
+- **Ported:** `utils/format.ts`'s `parseDateTimeLocalInput` (upstream
+  fix/5778739cd + fix/81e461f65 — replaced a bare `new Date(value)`, which
+  silently misparses timezone-bearing or malformed `datetime-local` strings,
+  with explicit component parsing plus calendar-overflow rejection) and the
+  new `getBrowserTimeZone` helper, both with upstream's ported test file.
+  `RedeemView.vue` had the identical bug inline
+  (`new Date(batchUpdateForm.expires_at_local)`) for the batch-expiry field —
+  fixed the same way, plus the browser-timezone hint and the
+  `expiryDaysRequired` → `expiryDateRequired` error-key split for that field
+  specifically (the sibling `custom_expiry_days` numeric field keeps the old
+  key; that one really is about days). `CreateAccountModal.vue` /
+  `EditAccountModal.vue` already called `parseDateTimeLocalInput`, so no
+  logic changed there — ported the matching timezone-hint UX line for
+  consistency.
+- **Ported:** the same upstream commit that prompted the `CNProviderQuotaCell`/
+  `MonitorQuotaView` staleness (fix/6532d5b61) also tightened
+  `UsageProgressBar.vue`'s alert thresholds from >=100/>=80 to >=90/>=75 — a
+  behaviour change, not styling. `UsageProgressBar.vue` is our real,
+  already-shipping usage bar (used by both account modals and
+  `AccountUsageCell`), so this was re-applied by hand to its two threshold
+  comparisons, with upstream's boundary test ported alongside
+  (`UsageProgressBar.spec.ts`). Touching it put the whole file in
+  june-lint's "converted" scope for the first time (it's still stock
+  Tailwind otherwise — `bg-gray-700`, `font-medium`, `transition-all`), which
+  is exactly the noise `TOUCHED_NOT_CONVERTED` exists for per the script's
+  own docstring, so added a line there rather than resolving three
+  unrelated pre-existing violations blind.
+- **Skipped, declared:** the `UsageProgressBar` consolidation itself in
+  `CNProviderQuotaCell.vue` / `MonitorQuotaView.vue` — pure component-reuse
+  refactor on upstream's side (confirmed by reading both diffs in full), and
+  both our copies are still unconverted stock Tailwind pre-dating any June
+  pass on them, so there is no styling to protect and no behaviour to lose by
+  leaving them as-is until their real conversion pass.
+- **Skipped, declared:** `native_compaction_v2` usage-log tracking
+  (feat/1cc6999ad) and the `openai_images_oauth_unavailable_cooldown_settings`
+  admin setting (feat/6ff771d3d) — both new features, not bug fixes, needing
+  their own June-converted UI surface rather than a blind port. The Go side
+  is additive-only (checked above), so nothing breaks by deferring these.
+- **Checked, no action needed:** upstream's cache-tooltip horizontal-scroll
+  fix (fix/0aef702b6, `UsageStatsCards.vue`) doesn't apply to us — our
+  `UsageStatsCards.vue` already uses the shared `HelpTooltip` component,
+  which uses `v-show` (`display:none` when hidden), not the `opacity-0`
+  upstream had to fix.
+- All 26 remaining backend-only commits in the 35 (OpenAI reauth-with-refresh-
+  token, image-tool cooldown, Grok Responses vision images, oversized
+  passthrough WS bridging, monitor-group scoping, quota-cooldown atomicity,
+  Ollama Cloud CN-platform usage windows) merged automatically with no
+  frontend contract change and are covered by the backend gate above; no
+  frontend action applicable.
+
+**Frontend gate:** `npm run typecheck` clean. `june-lint`: 1363 violations
+across 310 converted files. Pre-merge baseline (measured on a clean
+`pre-reconcile-2026-08-31` worktree, same install) was 1353/308 — **this gate
+was already red before this run**, part of the ongoing GOAL.md conversion
+backlog, not something a daily reconcile is scoped to fix. The delta is +10
+violations from the two skipped-and-declared presentational refactors above
+(their pre-existing, upstream-authored Tailwind now counts once the mirror
+drift put the files in scope) minus 0 from every file actually edited this
+run (verified file-by-file: none of `format.ts`, `RedeemView.vue`, or the two
+account modals added a single new violation; `UsageProgressBar.vue`'s three
+were the reason it went into `TOUCHED_NOT_CONVERTED` rather than staying
+counted). `npm run test:run`: 275 files / 1996 tests, all green — baseline
+was 274/1990, so strictly up, satisfying gate 3. `npm run build`: clean
+(`built in 1m 2s`, pre-existing >500kB chunk-size warning only).
+`conversion-status.mjs`: 211/352 files (59.9%), 9463 legacy utilities —
+still a large ratchet improvement over this doc's recorded 118/326 /
+14674 baseline, satisfying gate 6; the +2 utilities vs. yesterday's number
+are the timezone-hint lines added to the two still-unconverted account
+modals, not a reversal of prior conversion work.
+
+**Landing:** not merged into `inferno-redesign` by this session — per the
+routine's standing instructions a human reviews and lands sync PRs, this
+session never pushes to `inferno-redesign` or `main` and never merges its own
+PR. `git merge-base --is-ancestor origin/inferno-redesign HEAD` succeeds, so
+the PR should land by fast-forward; if GitHub reports otherwise at review
+time, that is a sign something changed on `inferno-redesign` after this
+branch was cut and is worth checking before landing, not a reason to force.
+
+**Unsure about / flagging for review:** nothing. Every file in the collision
+map and every newly-stale frontend file got a specific, checked
+classification (ported / skipped-with-reason / doesn't-apply) rather than a
+blanket "looks fine."
+
+**Last reviewed upstream SHA: `0678b24d58dceb668ce8b952b5d3c0be3ec9dbb0`**
+(2026-08-31 11:19:37 +08:00, "Merge pull request #6283 from okbexx/feat/usage-compaction-kind").
