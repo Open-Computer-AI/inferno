@@ -32,6 +32,9 @@ const {
 
 const messages: Record<string, string> = {
   'admin.groups.columnSettings': 'Column Settings',
+  'admin.groups.usageToday': 'Today',
+  'admin.groups.usageYesterday': 'Yesterday',
+  'admin.groups.usageTotal': 'Total',
   'admin.groups.columns.name': 'Name',
   'admin.groups.columns.id': 'ID',
   'admin.groups.columns.platform': 'Platform',
@@ -151,6 +154,9 @@ const DataTableStub = {
     <div>
       <div data-test="columns">{{ columns.map((col) => col.key).join(',') }}</div>
       <div data-test="rows">{{ data.map((row) => row.name).join(',') }}</div>
+      <div v-if="data.length" data-test="usage-cell">
+        <slot name="cell-usage" :row="data[0]" />
+      </div>
     </div>
   `,
 }
@@ -383,5 +389,29 @@ describe('admin GroupsView column settings', () => {
     await clickColumnToggle(wrapper, 'Capacity')
     expect(getUsageSummary).toHaveBeenCalledTimes(1)
     expect(getCapacitySummary).toHaveBeenCalledTimes(1)
+  })
+
+  /*
+   * Upstream's, restored. The port took this spec but not the DataTableStub
+   * change it depends on, so the case had nowhere to render and was dropped
+   * while GroupsView.vue:349 kept rendering yesterday_cost. Found by
+   * scripts/behaviour-parity.mjs measuring this spec one case short.
+   */
+  it('renders yesterday usage between today and total', async () => {
+    getUsageSummary.mockResolvedValue([
+      { group_id: 1, today_cost: 1.25, yesterday_cost: 2.5, total_cost: 9.75 }
+    ])
+
+    const wrapper = await mountView()
+    const text = wrapper.get('[data-test="usage-cell"]').text()
+
+    expect(text).toContain('Today')
+    expect(text).toContain('$1.25')
+    expect(text).toContain('Yesterday')
+    expect(text).toContain('$2.50')
+    expect(text).toContain('Total')
+    expect(text).toContain('$9.75')
+    expect(text.indexOf('Today')).toBeLessThan(text.indexOf('Yesterday'))
+    expect(text.indexOf('Yesterday')).toBeLessThan(text.indexOf('Total'))
   })
 })

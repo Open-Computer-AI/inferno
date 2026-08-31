@@ -57,6 +57,20 @@ const git = (args) => {
  */
 const countCases = (text) => (text.match(/^\s*(?:it|test)\s*\(/gm) || []).length
 
+/**
+ * Cases that moved to another file during the June rebuild, verified by
+ * comparing the case lists rather than assumed. Recorded here so a known
+ * relocation stops reading as a loss forever -- but each entry names the file
+ * the case landed in, so the claim stays checkable.
+ */
+const RELOCATED = {
+  'frontend/src/components/account/__tests__/OpenAIQuotaResetCell.spark_shadow.spec.ts': {
+    n: 1,
+    to: 'OpenAIQuotaResetCell.autoState.spec.ts',
+    why: "upstream's 开关关闭时不显示历史运行态 is our \"renders nothing when auto-reset is switched off, even with a stale state\""
+  }
+}
+
 const shas = [...readFileSync(MANIFEST, 'utf8').matchAll(/^\| \d+ \| `([0-9a-f]{7,})`/gm)].map((m) => m[1])
 if (!shas.length) { console.error('no manifest rows found — wrong path?'); process.exit(1) }
 
@@ -80,7 +94,8 @@ for (const sha of shas) {
     const ourPath = join(ROOT, sp.replace('frontend/', 'inferno-frontend/'))
     let ours
     try { ours = readFileSync(ourPath, 'utf8') } catch { missing.push({ sha, sp, u }); continue }
-    shared.push({ sp, u, o: countCases(ours) })
+    const reloc = RELOCATED[sp]
+    shared.push({ sp, u, o: countCases(ours) + (reloc?.n ?? 0), reloc })
   }
 }
 
@@ -104,6 +119,13 @@ if (short.length) {
   for (const r of short) {
     console.log(`  ${String(r.o - r.u).padStart(3)} ${String(r.u).padStart(3)} ${String(r.o).padStart(4)}  ${r.sp.replace('frontend/src/', '')}`)
   }
+  console.log()
+}
+
+const relocated = shared.filter((r) => r.reloc)
+if (relocated.length) {
+  console.log('Counted as present, relocated during the June rebuild:\n')
+  for (const r of relocated) console.log(`  +${r.reloc.n}  ${r.sp.replace('frontend/src/', '')}\n      -> ${r.reloc.to}: ${r.reloc.why}`)
   console.log()
 }
 

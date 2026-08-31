@@ -28,6 +28,7 @@ const { list, exportList, getStats, getSnapshotV2, getById, getModelStats, listE
 })
 
 const messages: Record<string, string> = {
+  'admin.usage.requestId': 'Request ID',
   'admin.dashboard.timeRange': 'Time Range',
   'admin.dashboard.day': 'Day',
   'admin.dashboard.hour': 'Hour',
@@ -133,6 +134,7 @@ const UsageFiltersStub = defineComponent({
   template: '<div><span data-test="user-filter-label">{{ userKeyword }}</span><slot name="after-reset" /></div>',
 })
 const UsageTableStub = {
+  props: ['columns'],
   emits: ['userClick'],
   template: '<div data-test="usage-table"><button class="user-click" @click="$emit(\'userClick\', 2)">user</button></div>',
 }
@@ -620,4 +622,38 @@ describe('admin UsageView model audit export', () => {
 		expect(row.slice(4, 8)).toEqual(['gpt-5.6-sol', 'gpt-5.5', 'gpt-5.4', 'Yes'])
 		expect(saveAs).toHaveBeenCalledTimes(1)
 	})
+
+  /*
+   * Upstream's, restored. The port took this spec but not the props:['columns']
+   * the stub needs to be inspected, so the case had nothing to assert against
+   * and was dropped -- while DEFAULT_HIDDEN_COLUMNS and the one-shot version
+   * stamp kept shipping untested. Found by scripts/behaviour-parity.mjs.
+   */
+  it('keeps request ID hidden by default and allows enabling it from column settings', async () => {
+    const wrapper = mount(UsageView, {
+      global: { stubs: {
+        AppLayout: AppLayoutStub, UsageStatsCards: true, UsageFilters: UsageFiltersStub,
+        UsageTable: UsageTableStub, UsageExportProgress: true, UsageCleanupDialog: true,
+        UserBalanceHistoryModal: true, AuditLogModal: true, Pagination: true, Select: true,
+        DateRangePicker: true, Icon: true, TokenUsageTrend: true,
+        ModelDistributionChart: true, GroupDistributionChart: true,
+        EndpointDistributionChart: true, UserTokenRanking: true,
+      } },
+    })
+    await wrapper.vm.$nextTick()
+
+    const usageTable = wrapper.findComponent(UsageTableStub)
+    expect(usageTable.props('columns')).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: 'request_id' })])
+    )
+
+    await wrapper.get('button[title="admin.users.columnSettings"]').trigger('click')
+    const toggle = wrapper.findAll('button').find((b) => b.text() === 'Request ID')
+    expect(toggle).toBeDefined()
+    await toggle!.trigger('click')
+
+    expect(usageTable.props('columns')).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: 'request_id', label: 'Request ID' })])
+    )
+  })
 })
