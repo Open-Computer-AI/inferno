@@ -146,4 +146,23 @@ describe('UsageProgressBar', () => {
     expect(wrapper.get('.h-1\\.5 > div').attributes('style')).toContain('width: 100%')
     expect(wrapper.get('.h-1\\.5 > div').classes()).toContain('bg-red-500')
   })
+
+  it('默认利用率模式按 75/90 阈值提前预警分级', () => {
+    const mountAt = (utilization: number) =>
+      mount(UsageProgressBar, {
+        props: { label: '5h', utilization, color: 'indigo' }
+      })
+
+    // Bar color: 74 green / 75 and 89 amber / 90 red
+    expect(mountAt(74).get('.h-1\\.5 > div').classes()).toContain('bg-green-500')
+    expect(mountAt(75).get('.h-1\\.5 > div').classes()).toContain('bg-amber-500')
+    expect(mountAt(89).get('.h-1\\.5 > div').classes()).toContain('bg-amber-500')
+    expect(mountAt(90).get('.h-1\\.5 > div').classes()).toContain('bg-red-500')
+
+    // Percentage text follows the same grading
+    expect(mountAt(74).get('.w-\\[32px\\].text-right').classes()).toContain('text-gray-600')
+    expect(mountAt(75).get('.w-\\[32px\\].text-right').classes()).toContain('text-amber-600')
+    expect(mountAt(89).get('.w-\\[32px\\].text-right').classes()).toContain('text-amber-600')
+    expect(mountAt(90).get('.w-\\[32px\\].text-right').classes()).toContain('text-red-600')
+  })
 })

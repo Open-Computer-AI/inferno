@@ -89,7 +89,12 @@ const TOUCHED_NOT_CONVERTED = [
   // Their remaining greys are a real conversion, not a patch; they land with
   // their parts. Remove these lines then.
   /src\/components\/common\/AnnouncementBell\.vue$/,
-  /src\/components\/user\/dashboard\/UserDashboardQuickActions\.vue$/
+  /src\/components\/user\/dashboard\/UserDashboardQuickActions\.vue$/,
+  // UsageProgressBar: untouched since VB until the 2026-08-31 reconcile ported
+  // upstream's 90/75 alert-threshold tightening (fix/6532d5b61) into the two
+  // numeric comparisons. Still stock Tailwind (bg-gray-700, font-medium,
+  // transition-all) otherwise. Remove this line when it is actually converted.
+  /src\/components\/account\/UsageProgressBar\.vue$/
 ]
 
 const RULES = [
