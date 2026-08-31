@@ -122,18 +122,12 @@ async function fetchErrorLogs() {
       sort_by: sortBy.value,
       sort_order: sortOrder.value
     }
+    // buildOpsErrorTimeParams already covers both branches: a valid custom range
+    // returns start_time/end_time with no time_range, and an incomplete one falls
+    // back to '1h' because the backend does not accept time_range=custom. The
+    // verbatim port of 5e72deb7d re-implemented that inline underneath, which was
+    // a no-op that would silently override the helper if the helper ever changed.
     Object.assign(params, buildOpsErrorTimeParams(props.timeRange, props.customStartTime, props.customEndTime))
-
-    if (props.timeRange === 'custom') {
-      if (props.customStartTime && props.customEndTime) {
-        params.start_time = props.customStartTime
-        params.end_time = props.customEndTime
-        delete params.time_range
-      } else {
-        // Safety fallback: avoid sending time_range=custom (backend doesn't support it)
-        params.time_range = '1h'
-      }
-    }
 
     const platform = String(props.platform || '').trim()
     if (platform) params.platform = platform

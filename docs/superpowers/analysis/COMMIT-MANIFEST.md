@@ -10,11 +10,20 @@ feature. A commit can — it says what it did and why.
 
 ## Totals
 
-| set | commits | period |
+| set | rows | period |
 |---|---|---|
 | **A. missed at vendor time** | 22 (21 with content, 1 merge) | 2026-08-07 → 08-15 |
-| **B. since vendor time** | 78 non-merge | 2026-08-16 → 08-29 |
-| | **100** | zero overlap |
+| **B. since vendor time** | 81 | 2026-08-16 → 08-29 |
+| | **103** | zero overlap |
+
+Counted from the rows, not asserted: `grep -cE '^\| [0-9]+ \| `' on this file
+returns 103. The earlier header said 22 / 78 / 100 and was never updated as rows
+were added — the rows were right, the summary above them was three behind.
+
+For reconciliation against upstream: `git log --since=2026-08-09 upstream/main
+-- frontend/` counts 95 non-merge commits (21 in 08-09→08-15, 74 in 08-16→08-29).
+The difference is set A's pre-fork catch-up: rows dated 08-07 and 08-08 predate
+our vendor point and are therefore outside that window.
 
 ## Set A — missed at vendor time
 
@@ -64,7 +73,7 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 |---|-----|------|------|---------------|------|--------|
 | 1 | `5e72deb7d` | 05-01 | T2 | feat: ops 错误详情弹窗支持自定义时间区间 | ops error detail custom time range | **PORTED** |
 | 2 | `3bff4b64b` | 07-10 | T2 | fix(ui): localize user role label in app header | already satisfied — our June shell removed AppHeader and localises the role via shell.roleAdministrator/roleMember | **PRESENT** |
-| 3 | `7d796f111` | 07-11 | T2 | fix(ui): adapt native form controls to dark mode via col | already satisfied — our style.css declares color-scheme light/dark and the June DateRangePicker dropped the invert(0.7) filter | **PRESENT** |
+| 3 | `7d796f111` | 07-11 | T2 | fix(ui): adapt native form controls to dark mode via col | the DateRangePicker half needed nothing (our June rewrite never carried the invert(0.7) filter); the style.css color-scheme hunk was NOT pre-existing — it was added by the preceding port commit 83cb0de5a, so this row is satisfied post-hoc, not natively | **PRESENT** |
 | 4 | `a6d868f27` | 07-11 | T2 | fix(dashboard): include cache tokens in token card break | cache tokens in both dashboard token tiles | **PORTED** |
 | 5 | `35e8ba2a3` | 07-11 | T2 | fix(announcements): use proper empty-state copy instead  | announcements empty-state copy | **PORTED** |
 | 6 | `0d5e3ca9b` | 07-11 | T2 | fix(ops): show neutral SLA card when window has no reque | a zero-request window no longer reports as a critical SLA failure; ported into our diagnostics rather than upstream's card | **PORTED** |

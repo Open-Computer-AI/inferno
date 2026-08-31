@@ -1,0 +1,315 @@
+89879d2c9|2026-08-30|feat(june): every checkbox is now the design system control, not the browser's
+6e5ffd6df|2026-08-30|fix(proxy,charts): restore the proxy row identity, and correct two wrong ledger rows
+936ec35be|2026-08-30|fix(accounts): put the Grok quota probe back where upstream has it
+19938bedb|2026-08-30|chore(dashboard): record the hidden stat fields as a decision, not debt
+bb7447a2c|2026-08-30|fix(ops): wire the operator's SLA and error-rate thresholds back into the display
+575145833|2026-08-30|chore(june): replace the owed-work checklist with a ledger that measures itself
+543b84ddc|2026-08-30|fix(charts,badge): restore two capabilities the June rewrite dropped, in June
+f5bb8dab1|2026-08-30|fix(auth): render the operator tagline alongside the per-view subtitle
+1e32bf4dc|2026-08-30|fix(frontend): repair logic the June rewrite dropped, and the gate that missed it
+c801624d3|2026-08-30|skill: document the oc_internal data mirror, and stop conflating two "mirrors"
+e81318679|2026-08-30|test(ops): exercise the error-detail modal with a real production error
+4e68140ba|2026-08-30|port: the frontend half of b5827cfd5 — DeepSeek v4 model whitelist
+1d35d7ca1|2026-08-30|docs: record how to verify a port, after an audit found 7 gaps every cheap check passed
+780b4f714|2026-08-30|test: cover the unset fallback_action path, which had no test at all
+d1cf4aac6|2026-08-30|fix(port): close six real gaps found by a deep six-agent audit
+49f7d0873|2026-08-30|fix(port): bring AccountUsageCell's Grok logic to exact parity with upstream
+0a1f12124|2026-08-30|docs: record the running-stack validation pass
+6fc14b4a1|2026-08-30|docs: close out the upstream port — 103/103 rows, nothing left to take
+a1f847bee|2026-08-30|port(set-b): the last five — Set B is now fully closed
+83cb0de5a|2026-08-30|port(set-b): tier-2 batch two — 16 commits, plus three that needed hand-porting
+d8adeeefc|2026-08-30|port(set-b): tier-2 batch — ops error details, Grok usage, composite, plaza, payment
+5e694334b|2026-08-30|port(set-b): OAuth outbound transport plugin system + its two hardening fixes
+54bde6ad2|2026-08-30|port(set-b): Codex routed model catalogs — 6-commit chain, and two mismarked rows
+dd42a35ea|2026-08-30|port(set-b): adaptive protocol routing + Zhipu team Coding Plan
+96ee640be|2026-08-30|port(set-b): CN providers (Kimi / Zhipu / DeepSeek) — 9 commits as one unit
+b04c99bf9|2026-08-30|docs: record that 26be82cc8 was ported twice, and the rule that prevents it
+03bc9581b|2026-08-30|skill(inferno-local-stack): bring up the local stack and log in for testing
+254e71a18|2026-08-30|port(set-b): 4a1da2950 — bump dompurify past the sanitizer-bypass range
+053c665cc|2026-08-30|port(set-b): 8d82bb069 — expose bulk OpenAI account settings
+0827bb22d|2026-08-30|port(set-b): 26be82cc8 — per-tier channel multipliers, trimmed long-context switch
+3559c0e6b|2026-08-30|port(set-b): 11ada80d5 + 5705f4a4a — reasoning effort before mapping
+d7e068755|2026-08-30|port(set-b): 377d1230f + 83d4eb6a4 + b07d85c49 — model plaza pricing display
+f601a70b7|2026-08-30|port(set-b): 9f24a5530 + 77e0409f7 — channel time-of-day pricing multipliers
+60ba2c664|2026-08-30|port(set-b): monitor quota-mode chain — 6 commits as one unit
+4c8d9d373|2026-08-30|port(set-b): 3f1581b2d — stop the account list full-page refreshing on rate probe
+f022f15d5|2026-08-30|port(set-b): 6f972145b — auto-use OpenAI reset credits at a usage threshold
+7afe8e832|2026-08-29|port(set-B): 26be82cc8 — channel billing multipliers and the long-context gate
+6e04b06ee|2026-08-29|port(set-B): b56c61ecc — per-user public group restriction, landed atomically
+36fe0e9c1|2026-08-29|port(set-B): 3445485eb test, and manifest through 8 commits
+2b15d41f7|2026-08-29|port(set-B): 2abce6503 + e39fce270 — upstream model sync correctness
+d31c0da2c|2026-08-29|port(set-B): 1f2a87adb — wire the platform catalog that was ported as dead code
+3d2c15b65|2026-08-29|fix(i18n): the monitor provider labels my Phase 1.1 change left dangling
+be693f40b|2026-08-29|docs(port): open set B — 81 commits, triaged and manifested
+1d919d5e7|2026-08-29|docs(port): set A complete — all 22 commits closed
+a9a7129cd|2026-08-29|port(set-A): c0ab3a00e + fce41e318 — Codex fingerprint convergence, opt-in
+bcc4b71a7|2026-08-29|port(set-A): f3d949107 + b830bc14d — per-model group pricing
+69b4619f2|2026-08-29|port(set-A): 5350b3d98 — request ID column in the admin usage log
+39c228801|2026-08-29|port(set-A): cb7b03795 — stop discarding yesterday_cost
+4597fd89d|2026-08-29|port(set-A): 363cc4994 + 0ae151a23 — Grok plan resolution reads the live tier
+21676a6f4|2026-08-29|port(set-A): 0d7b6ae64, 69648476d — sidebar simple mode, Grok tier display
+fb2e81e00|2026-08-29|port(set-A): 670b03f7e, 9096492b5, 943f09d35 — three logic ports
+15b10148a|2026-08-29|fix(billing): every group created via our UI was born undercharging long context
+20e48cdfd|2026-08-29|fix(i18n): add the backup part keys my Phase 1.1 copy left dangling
+fd5e31cb3|2026-08-29|docs(port): commit manifest and swarm registry for the catch-up
+b2ac43bae|2026-08-29|docs(port): gap D — 68 files were born stale at the vendor point
+c50d91bc4|2026-08-28|feat(sync): Phase 1.1 — types and API to upstream parity, all 8 platforms
+b0ca34260|2026-08-28|test(ui): stop asserting a sidebar logo that was deliberately removed
+250c28ac3|2026-08-28|feat(port): add the copy-vs-hand-merge classifier (Phase 0)
+bfd57824f|2026-08-28|docs(plan): sync to upstream parity first, convert to June second
+589c04c6a|2026-08-28|docs(port): the tracker was incomplete — there are three gaps, not one
+cc9bd73b2|2026-08-28|docs(port): the June port tracker — upstream features not yet built
+3e79e327e|2026-08-28|docs(fork): declare D10, the rebranded local dev compose
+df5eaf03c|2026-08-28|docs(sync): fold in the EN locale pass, which found two LIVE defects
+127bae8a3|2026-08-28|docs(sync): the verified upstream frontend port list
+3c520dbe9|2026-08-28|docs(swarm): register the upstream frontend port audit
+265f16f42|2026-08-28|docs: move the frontend port policy out of the routine prompt into the repo
+dd261a298|2026-08-28|docs(sync): record the one port not carried over from PRs #5-#13
+f395c6465|2026-08-28|docs(runbook): adopt the merge model and add the landing step v1 never had
+c6db18d36|2026-08-28|fix(reconcile): restore upstream go.sum, prune ent/group.go from the ledger
+c49d08101|2026-08-28|docs(fork): declare D8 branding + D9 registry spec, and map the 473-commit collision surface
+b5b22f4eb|2026-08-28|fix(lint): three more capitalized error strings in payment_razorpay_subscription.go
+4820b00e4|2026-08-28|fix(lint): resolve golangci-lint findings in Razorpay payment code (D5)
+f1b3b59bd|2026-08-28|fix(ci): point the frontend CI job at inferno-frontend, not the mirror
+bd6a9f622|2026-08-22|docs: spec for sub-project #2 -- agent registry + Chronos cron signer
+c54de9923|2026-08-22|docs: finish the C-1 sweep -- six surviving sites, incl. an inverted conformance step
+3418833fd|2026-08-22|fix: close the four fix-re-review conditions (C-1 docs, N-2 lazy catalogue)
+3402bd0aa|2026-08-22|fix: untrack the CLI harness (divergence 20 -> 19) and correct a false status claim
+5b32b6ac1|2026-08-22|docs: verify C-3 through the client's own renderer, and correct a bad transcript
+3d7ec1772|2026-08-22|fix(billing): I-3, I-4, M-2, M-3 -- query count, contradicting field, false comments
+ae742b336|2026-08-22|chore: untrack backend/scripts/drive-hermes-billing.py
+cab215f0b|2026-08-22|fix(billing): C-3 -- POST /api/billing/charge creates no order and refuses (D-2)
+7f2c877a2|2026-08-22|fix(billing): C-2 -- tierOrder must be a 1-based rank, not SubscriptionPlan.SortOrder
+feaa3f72e|2026-08-22|fix(oauth): C-1 -- billing:manage IS grantable; correct the false claim and pin reality
+7b26b764e|2026-08-22|docs: record the Task 6 billing conformance run
+6299007e5|2026-08-22|fix(billing): two defects Task 6 conformance caught that every unit test passed
+4817289c4|2026-08-22|fix: make Inferno the default product branding
+368fda8b6|2026-08-22|docs: record Task 5 in the D5 billing-contract-adapter ledger row
+69ecb7ba9|2026-08-22|test(billing): scope gate, cross-tenant proof, idempotency, refusals (Task 5)
+4e106cdc9|2026-08-22|feat(billing): handlers + routes for the 7 write endpoints (Task 5)
+a225bd2f4|2026-08-22|feat(billing): the 2 implementable writes -- POST /charge, GET /charge/{id} (Task 5)
+16970b31e|2026-08-21|Revert "feat(auth): add signup mode pill transition"
+577358e50|2026-08-21|feat(auth): add signup mode pill transition
+83f7985e4|2026-08-21|feat(auth): add watercolor inset login surface
+1fcd900f2|2026-08-20|docs: record Task 4 in the D5 billing-contract-adapter ledger row
+5589b0879|2026-08-20|test(billing): wire-byte coverage for GET /api/oauth/account's subscription
+1057837fe|2026-08-20|feat(billing): AccountSubscription -- the snake_case subscription object for GET /api/oauth/account (Task 4)
+2d9adef3a|2026-08-20|fix(billing): collapse tiers[] to one entry per group, not per plan (ruling R-3.1)
+b09cc919d|2026-08-20|fix(billing): normalise dollarsPerMonthDisplay by validity period (ruling R-3.2)
+796814639|2026-08-20|docs: record Task 3 in the D5 billing-contract-adapter ledger row
+a18152d5c|2026-08-20|feat(billing): mount GET /api/billing/subscription; pin the two phantom GETs at 404
+6b5e91f4c|2026-08-20|feat(billing): BillingContractHandler.Subscription -- GET /api/billing/subscription's HTTP shell
+5d42505a0|2026-08-20|feat(billing): BillingContractService.Subscription -- the /api/billing/subscription mapper
+847942272|2026-08-20|docs: rebuild the billing contract table from the client's call sites
+3cae8f632|2026-08-20|revert: drop GET /api/analytics/usage -- no client ever calls it
+569c7e3e3|2026-08-20|fix(oauth): /v1/usage and /v1/sub2api/billing require a valid token, not billing:read
+b7670aa9b|2026-08-20|feat(billing): GET /api/analytics/usage -- the contract adapter's second endpoint
+4205538f9|2026-08-20|fix(billing): /api/billing/state requires a valid token, not billing:read
+d987c1fdc|2026-08-20|fix(divergence): a backtick inside DECLARED executed as a command
+e865a48c3|2026-08-20|feat(billing): GET /api/billing/state — the contract adapter's first endpoint
+3731c5e99|2026-08-20|fix(test): the settings contract still expected the upstream name
+05289268f|2026-08-20|fix(oauth): report real paid-tier access, and stop shipping the upstream name
+ec7296645|2026-08-20|docs: billing plan — compose the CACHED services, not the repos
+a3c2474e7|2026-08-19|docs: spec the /api/billing/* contract adapter
+72d7ff314|2026-08-19|docs(oauth): non-loopback conformance — the production config, finally tested
+05a07587b|2026-08-19|docs(oauth): close F-6 — per-user attribution demonstrated end to end
+8134d828f|2026-08-19|test(oauth): close F-5, D-1, m-10, m-13, m-14 and correct the spec (S-1)
+0c3aae61d|2026-08-19|fix(oauth): close F-1..F-4, D-2, m-11 and the count_tokens mis-description
+58f7a8698|2026-08-19|fix(oauth): C-1 — a deleted owner must not resurrect a live backing row
+3a87a813c|2026-08-19|docs(oauth): conformance leg for OAuth-bearer inference — the gap is closed
+f4917699d|2026-08-19|feat(oauth): finish Task 5 — close the admin disclosure path
+1a12c18c2|2026-08-19|wip(oauth): make the backing row invisible on user-facing key surfaces
+1237bd4fa|2026-08-19|fix(oauth): close the Task 4 review findings (F1-F11 + escalation 3)
+d26e332bd|2026-08-19|feat(oauth): accept OAuth bearer tokens on the /v1 inference chain
+0c562282f|2026-08-19|fix(oauth): close the re-review findings (NEW-1..NEW-12)
+3ff4f559e|2026-08-19|fix(oauth): document the group policy in the tracked config template
+5d9055b91|2026-08-19|fix(oauth): close the Task 3 review findings (F1-F9)
+253ec6fc5|2026-08-19|feat(oauth): resolve an OAuth bearer to its backing api_keys row
+0fb1072c0|2026-08-19|docs: correct 909's partial-index rationale — I had the reason wrong
+d1e02e153|2026-08-19|feat(oauth): add api_keys.oauth_client_id backing-row column
+da3ee9a8d|2026-08-19|fix(oauth): close the fallthrough gap and duplication findings from Task 1 review
+00def91ad|2026-08-19|chore(gate): declare the sub-project #0 spec and plan
+9fa796e34|2026-08-19|refactor(oauth): extract VerifyOAuthBearer from RequireOAuthScope
+3d23be1f8|2026-08-19|docs: implementation plan for sub-project #0
+7a0e20726|2026-08-19|docs: spec sub-project #0 — OAuth-bearer inference on /v1
+d82d9ad4c|2026-08-19|test(oauth): guard the revoked-family marker ordering, stop overclaiming SREM
+e751f28ff|2026-08-19|fix(oauth): close the final whole-branch review's conditions
+7b800c1e3|2026-08-18|fix(oauth): canonicalise and require the token issuer
+b238e3448|2026-08-18|fix(oauth): pin the grace's string constants and correct the narrowness doc
+d2b539078|2026-08-18|fix(oauth): confine the reuse grace to the immediately previous token
+7747bd62f|2026-08-18|fix(oauth): seal the grace replay pair under the rotated token
+bfc7d19e0|2026-08-18|feat(oauth): 60s grace on refresh-token reuse
+8f1724e1d|2026-08-18|fix(oauth): close re-review round 2 findings on /oauth/authorize
+a32d3ca9b|2026-08-18|fix(gate): stop check-divergence.sh executing `go generate ./ent`
+bd41d748d|2026-08-18|fix(oauth): close review round 1 findings on /oauth/authorize
+da3570170|2026-08-18|feat(oauth): /oauth/authorize with consent and org auto-approve
+38c4f25c3|2026-08-18|fix(oauth): preserve error cause chain and broaden wrong-branch mutation coverage
+7959c5028|2026-08-18|fix(oauth): close round-2 review findings on authorization_code redemption
+b8aeb2aae|2026-08-18|fix(oauth): close review findings on authorization_code minting sequence
+34cb807d6|2026-08-18|feat(oauth): authorization_code grant with PKCE
+62d124d1b|2026-08-18|fix(oauth): apply trailing-dot canonicalization to the stored redirect origin, not just the loopback check
+1700dcfff|2026-08-18|fix(oauth): close 0.0.0.0/unspecified loopback gap, trailing-dot spellings, and normalize trailing-slash origins
+931755a55|2026-08-18|feat(oauth): validate redirect_uri at registration and authorize
+0c4bae2bc|2026-08-18|fix(oauth): drift-test the migration, split key-store failure from invalid_token, fix stale D5 label
+74483002c|2026-08-18|feat(oauth): RS256 signing with kid-dispatched verification
+b8305bccc|2026-08-18|docs(registry): record the step-5 PKCE run + resume commands
+49457d7ed|2026-08-18|docs(plan): implementation plan for authorization_code + PKCE
+b243c5457|2026-08-18|docs(spec): authorization_code + PKCE — the Hermes Desktop login leg
+68ef97c7d|2026-08-18|docs(fork): declare Razorpay + Dockerfile divergence as D5/D6
+5b2393f7b|2026-08-18|fix(oauth): close the four residuals from the final review
+979428890|2026-08-18|docs(registry): OAuth AS run complete at ee9b3c12, awaiting merge decision
+ee9b3c128|2026-08-18|fix(oauth): whole-branch fix wave — defects in the gaps between tasks
+a6145bf81|2026-08-18|fix(oauth): read the real client's refresh_token from its actual header
+4fb41de5f|2026-08-18|feat(oauth): end-to-end conformance against the real hermes client
+36ea7ab86|2026-08-18|fix(oauth): quote-safe comment in check-divergence.sh DECLARED string
+c49ecca12|2026-08-18|feat(oauth): device approval screen
+d0202ffe2|2026-08-18|fix(oauth): require exp claim on OAuth bearer tokens
+ba99ccd7f|2026-08-18|feat(oauth): scope enforcement middleware + account endpoint
+ef28ec67d|2026-08-18|fix(oauth): close the refresh-token rotation race and re-validate the account
+b186b939a|2026-08-18|feat(oauth): token endpoint with device_code and refresh_token grants
+3b5e48658|2026-08-18|fix(oauth): regenerate device_code alongside user_code on collision retry
+3c4cb636b|2026-08-18|feat(oauth): RFC 8628 device authorization request
+0955606e3|2026-08-17|fix(oauth): honor caller-supplied self-hosted client name
+12cb01fa1|2026-08-17|feat(oauth): oauth_client registry + self-hosted client registration
+f7a20f4e4|2026-08-17|fix(oauth): use ecdsa.PublicKey.Bytes() instead of deprecated X/Y access
+a525e7cae|2026-08-17|feat(oauth): ES256 signing key + JWKS endpoint
+55cc1c4c7|2026-08-17|fix(oauth): close the crash-atomicity gap in EnsurePersonalOrg
+ea01a6d15|2026-08-17|fix(oauth): make EnsurePersonalOrg concurrency-safe across processes
+10080a811|2026-08-17|feat(oauth): org + org_member tenancy, personal org on signup
+6f99cd7ce|2026-08-17|docs(registry): record the OAuth AS subagent run + resume commands
+1c91c3787|2026-08-17|docs(plan): implementation plan for the Inferno OAuth authorization server
+08df74abe|2026-08-17|docs(spec): resolve the three open questions
+bac26b550|2026-08-17|docs(ledger): declare D4 — OpenComputer portal design specs
+35af42c30|2026-08-17|docs(spec): Inferno as OAuth 2.0 authorization server
+1d2abdb39|2026-08-17|fix(payment): sync Razorpay subscription lifecycle
+faa2c265b|2026-08-17|fix: accept Razorpay webhook field variants
+d08220563|2026-08-17|chore: align Docker Go toolchain
+2271ac1f5|2026-08-17|fix: accept Razorpay subscription authorization payments
+7009d86ac|2026-08-17|fix(ui): remove sidebar brand mark
+3b756d076|2026-08-16|fix(payment): accept Razorpay subscription authorization payment
+318a7852e|2026-08-16|feat(payment): add Razorpay subscriptions
+18d13b08f|2026-08-16|refactor(avatar): one useAccountSeed instead of four hand-copied derivations
+1d95ff8f2|2026-08-16|feat(payment): add Razorpay top-up checkout
+040fa5ce4|2026-08-16|fix(shell): the rail ignored avatar_seed, so one user wore two avatars
+c907d941e|2026-08-16|fix(migrations): move our migration out of upstream's number space
+3b5fbe0cf|2026-08-16|chore(sync): advance reviewed SHA, no relevant upstream changes
+9a65ce933|2026-08-16|build(gate): replace "backend must be untouched" with a divergence ledger
+8b92f2b62|2026-08-16|feat(backend): re-land avatar_seed and English legal titles as tracked divergence
+e98393b47|2026-08-15|revert(backend): restore the thin-fork invariant broken by 84a3c4ac
+2ca39fbcd|2026-08-15|wip(profile): settings-style profile shell, sidebar + grouped rows
+d7531d884|2026-08-15|docs(goal): record the sync-PR landing and the six open decisions
+e5360fbc8|2026-08-15|test(ops): retarget the confirm-dialog helper at the Button primitive
+7f54c05a9|2026-08-15|fix(shell): restore the site logo the sidebar rewrite dropped
+08f992814|2026-08-15|chore(sync): land PR #3's upstream reconcile (2026-08-15)
+5b66791e7|2026-08-15|feat(ui): restore usage distribution donuts
+c41ad93cf|2026-08-15|feat(ui): restore settings, payment, and monitor work
+04fa87d7d|2026-08-13|refactor(ui): finish non-settings card migration
+c66840929|2026-08-13|refactor(ui): replace legacy cards outside settings
+ad74d4f96|2026-08-13|refactor(usage): use dashboard stat tiles
+fcf35892c|2026-08-13|refactor(settings): extract tab navigation
+fe54c7e85|2026-08-13|fix(shell): constrain card width inside flex layout
+5dda4c078|2026-08-13|feat(ops): consolidate runtime alert controls
+8f7d3e58b|2026-08-13|docs: record Inferno Codex handoff
+f127794f4|2026-08-13|feat(charts): remove remaining Chart.js consumers
+55832316a|2026-08-13|feat(payment): revenue chart off Chart.js; reconcile the duplicate stats modal
+4893e1b5c|2026-08-13|docs(goal): mark ops complete, defer SettingsView pending a URL decision
+c8b50d7ca|2026-08-13|feat(ops): last three ops surfaces converted; ops is now fully done
+c69d091d4|2026-08-13|feat(ops): error log table converted; six hues for a category become none
+59545e25e|2026-08-13|feat(ops): alert rules converted; the list stops showing machine names
+40574fe49|2026-08-13|feat(ops): request details modal converted; colour moves off the default state
+389efc78d|2026-08-13|feat(ops): error detail modal converted; twelve cards become a definition list
+dc157b35c|2026-08-13|feat(ops): settings dialog converted, plus a NumberField primitive
+353f881a1|2026-08-13|refactor(layout): TablePageLayout derives its height instead of hardcoding it
+3c4efe56a|2026-08-13|feat(dashboard): last Chart.js on the admin dashboard becomes a dither stack
+9d0eaf953|2026-08-13|fix(shell): hide the card scrollbar, which also squares up its padding
+7d77e3412|2026-08-12|fix(shell): the card scrolls, not the document
+f4b4f515b|2026-08-12|style(shell): hide the sidebar scrollbar, keep the scrolling
+9b16705d6|2026-08-12|feat(ops): skeleton converted, and made to match the page it stands in for
+441b736c0|2026-08-12|fix(ops): realtime window selector overflowed its card; concurrency card debt
+22aad2bc1|2026-08-12|feat(ops): dashboard header converted, waiver removed
+6d19f3087|2026-08-12|fix(ops): health ring block name was matching Tailwind's .ring utility
+7891815e6|2026-08-12|feat(ops): system logs converted, detail cell becomes fields not a wall
+6a0e08ef6|2026-08-12|feat(ops): alert events converted, colour moved onto open state
+80ff35684|2026-08-12|feat(ops): concurrency card converted, load tiers collapsed to three
+fb3606865|2026-08-12|feat(ops): realtime traffic block converted, and a fake EKG removed
+101419456|2026-08-12|feat(ops): health ring becomes its own converted component
+44146bdd4|2026-08-12|feat(ops): the four remaining header cards move onto one converted component
+8bc711a3b|2026-08-12|feat(ops): throughput becomes two strips, and the page leaves Chart.js entirely
+fc63ae673|2026-08-12|feat(ops): account-switch trend becomes a tile field
+f2541378f|2026-08-12|feat(ops): error trend becomes a stacked tile field
+eac6cc918|2026-08-12|feat(ops): request duration histogram becomes tile columns
+308ccba52|2026-08-12|feat(ops): SLA and error rate become one split bar
+05d5393cf|2026-08-12|feat(ops): resource usage becomes meter rows
+76733766b|2026-08-12|feat(ops): error distribution becomes a tile ring, card and all
+9bdcfa567|2026-08-12|feat(charts): customer dashboard donut moves to the tile ring
+f555d40a3|2026-08-12|feat(charts): TokenUsageTrend becomes a stacked tile field
+7a1a3460d|2026-08-12|refactor(charts): DitherArea takes stacked series, not a single array
+092d47839|2026-08-12|feat(dashboard): tile-field area chart with a two-axis spring scrubber
+502445731|2026-08-12|feat(dashboard): stacked bar card, tiles and all, tokens by model
+876979f7d|2026-08-12|feat(dashboard): canvas donut with a drifting tile dither and morphing wedges
+8598647f4|2026-08-12|feat(dashboard): colour the delta pills green and red, by sentiment not direction
+70b778fc3|2026-08-12|feat(dashboard): give the context line's value its weight
+0e41ab1f6|2026-08-12|refactor(dashboard): drop the tile sparklines, keep the delta pills
+d3ad9f604|2026-08-12|fix(dashboard): correct the delta baseline, densify sparklines, fix a raw i18n key
+c313feef6|2026-08-12|feat(dashboard): tiles drill into their page, and today's shape sits on the tray floor
+d016b3492|2026-08-11|feat(dashboard): day-over-day delta chips on the three today tiles
+ba0603aef|2026-08-11|feat(dashboard): state glyphs on the context lines, on the two lines that are states
+e91fd4570|2026-08-11|docs: record the time-based row split and the cache-share reasoning
+d15e06870|2026-08-11|feat(dashboard): split the rows by time, and show cache share instead of the input/output split
+32fabffe6|2026-08-11|feat(dashboard): below-fold figures get the tile treatment, minus the icons
+2cee36868|2026-08-11|docs: mark admin dashboard done, record the StatTile invariants
+189a04ace|2026-08-11|feat(dashboard): nested-card stat tiles with a context line per number
+ef5642c48|2026-08-11|feat(dashboard): archetype B -- a verdict, four numbers, one trend
+05328fc0b|2026-08-11|feat(shell): replace the admin section switcher with one grouped list
+314001bd0|2026-08-11|docs: add the live pending checklist
+0927f8cab|2026-08-11|fix(legacy): retire glass, card shadows and transition-all across the app
+bbd391c26|2026-08-11|fix(theme): retire the teal Tailwind ramp, remap primary-* to clay
+7f665accf|2026-08-11|fix(buttons): kill the teal hover glow that survived on the state rules
+dccf1e67f|2026-08-11|fix(select): the trigger could not shrink, so it overlapped its neighbour
+e00e2b603|2026-08-11|fix(views): tables use the full width, and Select stops overriding its size
+964e6d018|2026-08-11|fix(tour): kill driver.css's white text-shadow and pin the typeface
+b40c60758|2026-08-10|feat(tour): convert the driver.js tour to June
+8f8faa692|2026-08-10|fix(i18n): clean the first-run tour -- emoji, brand, teal
+863ea0d66|2026-08-10|feat(views): table pages take their heading from route meta
+a6b27fec5|2026-08-10|feat(views): phase 5 foundation -- the seven archetype primitives
+f7bd28e4e|2026-08-10|style(auth): scale the form column up one step
+befe93592|2026-08-10|feat(auth): convert the 8 callback views, widen the hover retraction
+f6b915705|2026-08-10|feat(auth): convert forgot, reset and register onto shared controls
+6e5f5db30|2026-08-10|fix(auth): paint the root canvas so an exposed surface is never near-black
+e11db6f45|2026-08-10|feat(auth): name the fork Inferno, finish the login screen
+56fd3a62f|2026-08-10|fix(auth): rebuild login against part 17's mock, measured not interpreted
+04120ea31|2026-08-10|fix: declare the app as English, not Chinese
+a074640ef|2026-08-10|fix(auth): hold the field's CELL SIZE, not its column count
+e28c3a59e|2026-08-10|feat(auth): part 17 login -- split screen with the dot-cut field
+9732d81a4|2026-08-10|fix: resolve the four findings from browser verification
+d69410730|2026-08-10|fix(sidebar): resolve RouterLink component instead of a string tag
+eafe1f76e|2026-08-10|feat(june): exempt data tables from the reading column
+f62c91284|2026-08-10|fix(june): restore reset times and per-window stats in AccountUsageCell
+8f46f26bd|2026-08-10|test(june): rewrite the four cell specs -- all 38 failures now fixed
+5d4a123be|2026-08-10|test(june): rewrite the chart specs, and add coverage the old ones lacked
+7acb7cb27|2026-08-10|test(june): rewrite the table-layer specs against the new behaviour
+60755c596|2026-08-09|feat(june): part 09 charts, 28 i18n keys, and the accurate red-test count
+866bf6d2a|2026-08-09|fix(june): remove stray </content> tags that broke the build, and close the gate hole
+3737762c9|2026-08-09|feat(june): part 08 departures -- one bar, and the billable probe unhooked
+a845d8a54|2026-08-09|feat(june): part 08 table cells -- the eight non-departure cells
+adb3b4742|2026-08-09|feat(june): bulk actions bar, and remove the resulting double confirm
+c964389d7|2026-08-09|feat(june): AccountActionMenu on June, and a correction about what it unblocks
+77e69a72f|2026-08-09|docs(june): part 04's open calls, researched against the real files
+2e41e0a66|2026-08-09|feat(june): part 04 tables -- DataTable and TablePageLayout
+19c469c30|2026-08-09|feat(june): add the 32 shell i18n keys in en and zh
+b24166101|2026-08-09|docs(june): part 07 fallout -- 32 pending i18n keys, dropped header features, orphaned routes
+421a9180d|2026-08-09|feat(june): part 07 app shell v2 -- header deleted, sidebar on the canvas
+eccaa0085|2026-08-09|feat(june): SectionedDialog, and the modal archetype map
+b132629f8|2026-08-09|feat(june): delete ProxyAdBanner, an upstream monetisation link
+34e80eeea|2026-08-09|feat(june): part 03 data display, all nine sections
+077af3595|2026-08-09|fix(june): lint scope needs both git history AND a real diff from the mirror
+a946ff820|2026-08-09|chore: rename the branch to inferno-redesign, sync every 6h
+3f1ae863e|2026-08-09|fix(june): correct the lint's scope, and port the 12 files the sync left stale
+e35c65fd9|2026-08-09|docs(june): first manual upstream sync, and two findings from it
+8848548ca|2026-08-09|docs(june): record the sync automation design and its two auth blockers
+447263877|2026-08-09|ci(june): automated upstream sync every two hours
+0ae07d500|2026-08-09|test(june): specimen board harness, plus build and swarm records
+3e1be1974|2026-08-09|feat(june): part 02 controls and part 05 modal primitives
+2cf7e6318|2026-08-09|fix(june): track the ground-rule lint, which .gitignore was swallowing
+18bf27054|2026-08-09|feat(june): token layer, self-hosted fonts and icons, ground-rule lint
+47b1130cb|2026-08-09|chore(inferno-frontend): vendor upstream frontend as the redesign target
