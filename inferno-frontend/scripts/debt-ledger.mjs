@@ -71,6 +71,13 @@ const SRC = resolve(ROOT, 'src')
 // these again: they look exactly like dropped upstream logic.
 const LEDGER = [
   {
+    id: 'behaviour-parity',
+    what: 'Upstream specs with no equivalent in ours, or holding fewer cases — behaviour they pin that we do not',
+    origin: 'scripts/behaviour-parity.mjs 2026-08-31; 4 missing files + 3 shortfalls remain, each needing a reason or a test',
+    expect: 'open',
+    probe: `cd ${ROOT} && n=$(node scripts/behaviour-parity.mjs --gaps 2>/dev/null | grep -cE '^  (-|[0-9a-f]{7})'); [ "$n" != "0" ] && echo "$n upstream-pinned behaviours unmatched in ours"`
+  },
+  {
     id: 'port-coverage-clean',
     what: 'No ported upstream commit has silently failed to land — coverage explained for every manifest row',
     origin: 'five ports partially applied and were recorded done; scripts/port-coverage.mjs 2026-08-31',

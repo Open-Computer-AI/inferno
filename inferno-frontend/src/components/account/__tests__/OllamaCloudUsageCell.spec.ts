@@ -1,7 +1,13 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import OllamaCloudUsageCell from '../OllamaCloudUsageCell.vue'
+import { flushPromises } from '@vue/test-utils'
 import type { Account, OllamaCloudUsageState } from '@/types'
+
+const refreshOllamaCloudUsage = vi.fn()
+vi.mock('@/api/admin', () => ({
+  adminAPI: { accounts: { refreshOllamaCloudUsage: (...a: unknown[]) => refreshOllamaCloudUsage(...a) } }
+}))
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
@@ -119,5 +125,38 @@ describe('OllamaCloudUsageCell', () => {
 
     expect(wrapper.get('[data-testid="ollama-cloud-five-hour"]').text()).toContain('43%')
     expect(wrapper.findAll('button')).toHaveLength(1)
+  })
+
+  /*
+   * The two below are upstream's, restored. The June conversion of this cell
+   * dropped them while the behaviour stayed live: the query still calls
+   * refreshOllamaCloudUsage and the action is still gated on `configured`.
+   * Found by scripts/behaviour-parity.mjs, which measured this spec two cases
+   * short of upstream's.
+   *
+   * Retargeted from upstream's UsageProgressBar to the rendered percentage,
+   * because our cell composes CapacityBar instead.
+   */
+  it('queries through the refresh endpoint and emits the updated state', async () => {
+    const next = usageState()
+    next.snapshot!.data!.five_hour!.used_percent = 43
+    refreshOllamaCloudUsage.mockResolvedValueOnce(next)
+
+    const wrapper = mount(OllamaCloudUsageCell, { props: { account: account() } })
+    await wrapper.get('[data-testid="ollama-cloud-usage-query"]').trigger('click')
+    await flushPromises()
+
+    expect(refreshOllamaCloudUsage).toHaveBeenCalledWith(7)
+    expect(wrapper.get('[data-testid="ollama-cloud-five-hour"]').text()).toContain('43%')
+    expect(wrapper.emitted<OllamaCloudUsageState[]>('updated')?.[0]?.[0]).toEqual(next)
+  })
+
+  it('hides the query action until a browser session is configured', () => {
+    const state = usageState()
+    state.configured = false
+
+    const wrapper = mount(OllamaCloudUsageCell, { props: { account: account(state) } })
+
+    expect(wrapper.find('[data-testid="ollama-cloud-usage-query"]').exists()).toBe(false)
   })
 })
