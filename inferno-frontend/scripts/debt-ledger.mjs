@@ -71,6 +71,13 @@ const SRC = resolve(ROOT, 'src')
 // these again: they look exactly like dropped upstream logic.
 const LEDGER = [
   {
+    id: 'port-coverage-clean',
+    what: 'No ported upstream commit has silently failed to land — coverage explained for every manifest row',
+    origin: 'five ports partially applied and were recorded done; scripts/port-coverage.mjs 2026-08-31',
+    expect: 'closed',
+    probe: `cd ${ROOT} && node scripts/port-coverage.mjs --below 40 2>/dev/null | grep -cE '^ *[0-9]+%' | grep -qx 5 || echo "port coverage below 40% changed from the 5 explained rows — re-check"`
+  },
+  {
     id: 'grok-probe-column',
     what: 'Opt-in Grok probe column — the probe has no call site, so an xAI quota probe cannot be triggered anywhere in the app',
     origin: 'part 08 departures (3737762c9) unhooked the embedded button and owed a replacement column',
