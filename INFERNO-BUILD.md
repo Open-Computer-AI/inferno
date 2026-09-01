@@ -2017,3 +2017,184 @@ re-litigated.
 
 **Last reviewed upstream SHA: `baeac1f3de21d37b129405f092ef86c24b3f203d`**
 (2026-08-15 13:40:21 UTC, "chore: sync VERSION to 0.1.177 [skip ci]").
+
+*(Superseded by the 2026-09-01 entry below — this file's reconciliation log
+was never kept strictly chronological; the manifest at
+`docs/superpowers/analysis/COMMIT-MANIFEST.md` and the merge-commit history on
+`inferno-redesign` carry the accurate record in between. See "Upstream port
+status (2026-08-30)" earlier in this file for the close-out that pushed the
+reviewed SHA to `b5827cfd5`.)*
+
+## Upstream reconciliation log (cont'd) — 2026-09-01, Runbook v2 (merge)
+
+**77 commits behind.** Range `b5827cfd5` (2026-08-29, the last-reviewed SHA
+recorded in `COMMIT-MANIFEST.md` after the upstream port closed) ..
+`a2fb09260` (2026-09-01 02:52 UTC, "chore: sync VERSION to 0.1.185 [skip
+ci]"), the new last-reviewed SHA. Local clone was shallow; ran `git fetch
+--unshallow` first per the runbook's warning before trusting the count.
+
+**Worktree, not the branch.** `git tag -f pre-reconcile-2026-09-01 HEAD` on
+`inferno-redesign`, then `git worktree add -b sync/reconcile-2026-09-01
+../inferno-reconcile HEAD`. All work below happened there; `inferno-redesign`
+itself was never touched.
+
+**Collision map regenerated against this cycle's base** (`b5827cfd5`, not a
+fresh `upstream/main`): we changed 223 files under `backend/deploy/docs`
+since the base, upstream changed 142, **11 overlap**:
+
+    backend/cmd/server/wire_gen.go
+    backend/internal/config/config.go
+    backend/internal/handler/dto/mappers.go
+    backend/internal/handler/dto/types.go
+    backend/internal/repository/usage_log_repo_query.go
+    backend/internal/server/api_contract_test.go
+    backend/internal/service/admin_group.go
+    backend/internal/service/domain_constants.go
+    backend/internal/service/setting_features.go
+    backend/internal/service/setting_parse.go
+    deploy/config.example.yaml
+
+No `ent/` schema overlap this cycle (upstream touched no `ent/` file), so
+Tier 1's "regenerate, never hand-merge" rule had nothing to apply to beyond
+`wire_gen.go` itself.
+
+**Merge: zero conflicts**, across all 11 contested files and the full
+556-file merge. `git merge upstream/main --no-edit` landed as `5d8a7ea6a`
+with parents `bcba4d37b` (our tip) and `a2fb09260` (upstream tip).
+
+**Gate 5 (`check-divergence.sh`): exit 0.** `223 file(s) differ · 228
+declared · all divergence declared`. No stale ledger entries reported (none
+to prune).
+
+**Backend gate:** `go build ./...` clean · `go vet ./internal/...` clean ·
+`go test -tags unit ./internal/... ./ent/...` all packages `ok` (the full
+run, ~4m43s; `internal/service` alone is 173s). Confirms the zero-conflict
+merge did not silently break at runtime the way `ent/runtime/runtime.go` did
+on 2026-08-28 -- there was nothing to regenerate this cycle, but the full
+build+test ran anyway per the "do not trust a clean merge" rule.
+
+**Frontend gate, before porting:** `vue-tsc` 0 errors · `june-lint`
+1363/312 (was 1353/308 pre-merge -- file count rose, not fell, which
+GOAL.md says to read as fine) · `vitest` 2008/2008 across 278 files ·
+`vite build` clean (only the pre-existing >500kB chunk warnings).
+
+### API contract diff (step 7): `b5827cfd5..a2fb09260`
+
+`frontend/src/{api,types,stores,composables,utils,constants,router}`:
+7 files. `frontend/src/{App.vue,main.ts,style.css,styles,index.html,tailwind.config.js}`:
+0 files. `backend/internal/handler`: 26 files (all test files or the three
+items below; the rest are gateway/proxy-path logic, same skip category as
+prior cycles).
+
+### Ported
+
+1. **`native_compaction_v2`** -- new `UsageLog.NativeCompactionV2 bool`
+   (backend: identifies requests on OpenAI's native remote compaction v2
+   wire, migration `231_add_usage_log_native_compaction_v2.sql`) plus a
+   matching optional filter param threaded through every usage/dashboard
+   query shape. Ported into `inferno-frontend/src/types/index.ts`
+   (`UsageLog`, `UsageQueryParams`) and the four API client files
+   (`api/usage.ts` x2, `api/admin/dashboard.ts` x4, `api/admin/usage.ts`
+   `getStats`). Type-only: no consumer wires a UI filter for it, matching
+   `admin/UsageView` and `user/DashboardView` both still being unconverted
+   (Phase 5 B is not done). No fixture broke -- grepped for hand-built
+   `UsageLog`/`SystemSettings` object literals in tests first; there are
+   none, everything comes from live API responses.
+2. **`openai_ttft_mode`** -- new `SystemSettings.openai_ttft_mode: string`
+   (gateway forwarding behaviour; backend values are `"semantic"` /
+   `"visible"`, default `"semantic"` per `setting_parse.go`'s
+   `normalizeOpenAITTFTMode`). Added to `api/admin/settings.ts`
+   (`SystemSettings`, `UpdateSettingsRequest`) and to `SettingsView.vue`'s
+   `form` defaults (`"semantic"`) and its update-payload builder, so it
+   round-trips through the existing generic load-settings loop
+   (`Object.assign`-style, keyed by `Object.entries(settings)`) without
+   further wiring. **Did not** add a settings-page control for it -- that is
+   a real new UI feature, out of scope for a port, same call as
+   `accountUsageRefresh.ts` on 2026-08-15.
+3. **`parseDateTimeLocalInput` strict parsing + `getBrowserTimeZone`** --
+   real bug fix (`81e461f65` "parse local expiry datetimes strictly"): the
+   old `new Date(value)` on a `datetime-local` control's value silently
+   reinterpreted timezone-bearing or malformed strings and let invalid
+   calendar dates (e.g. Feb 30) roll over instead of rejecting them. Ported
+   the fixed function plus the new `getBrowserTimeZone()` helper into
+   `utils/format.ts`, and wired it into `RedeemView.vue`'s batch-expiry
+   parser (`5778739cd` "use strict local expiry parsing for redeem codes"),
+   its one remaining raw-`Date` consumer -- confirmed by grep.
+   `CreateAccountModal.vue`, `EditAccountModal.vue` and
+   `AnnouncementsView.vue` already call the shared helper, so they pick up
+   the fix automatically with no edit. Ported upstream's new
+   `formatDateTimeLocalInput.spec.ts` wholesale (new file, no prior
+   divergence, matches this repo's naming convention for the sibling
+   `formatDateLocalInput.spec.ts`). **Did not** port the new UI hint
+   paragraph upstream added to `RedeemView.vue` alongside the fix (an
+   informational addition, not the correctness fix itself, and it would
+   need an orchestrator-coordinated i18n key); kept our existing
+   `admin.redeem.expiryDaysRequired` error key rather than upstream's
+   renamed `expiryDateRequired`, since the rename is cosmetic and unrelated
+   to the bug.
+
+### Skipped, with reasons
+
+- **`group_handler.go`'s `optionalLimitField.ToServiceInput()` default
+  change** (`9f1effd71` "preserve quota limits on partial group updates":
+  an explicit `null` daily/weekly/monthly limit was being converted
+  server-side to a hard `0.0`, i.e. clearing a group's spending cap
+  actually set it to zero and blocked all usage; now correctly maps to the
+  `-1.0` "unlimited" sentinel). Backend-only fix to server-side
+  interpretation of an already-accepted wire value (`null`) -- no JSON
+  shape changed, so no frontend port applies. Arrives automatically via the
+  merge.
+- **`channel_monitor_v2_handler.go`'s new `scopeFilter`** -- adds
+  server-side authorization so non-admin channel-monitor requests are
+  restricted to the caller's allowed groups (previously a user request
+  reached `service.Dimensions`/`Snapshot`/`Models`/`Matrix`/`Errors`/`Users`
+  with no group restriction applied at all). Response shape unchanged, pure
+  authorization hardening. Arrives automatically via the merge; nothing to
+  port.
+- Everything else in the 26-file `handler` diff not named above: test
+  files only (`*_test.go` for dashboard/usage/group/channel-monitor/gemini
+  handlers, plus `openai_delegation_bootstrap_test.go`), backend-only.
+
+### Frontend gate, after porting
+
+`vue-tsc` 0 errors. `june-lint` 1363/**310** (two fewer than the 312
+pre-port count: `utils/format.ts` and `api/admin/settings.ts` both became
+byte-identical to the freshly-merged mirror after the hand-merge, which
+drops them out of lint's `ourChangedFiles() && differsFromMirror()` scope --
+this is exactly the "health signal that improves when work is destroyed"
+trap GOAL.md warns about, so both were checked under `--all` before
+accepting it: **zero violations in either file, before and after.**
+Benign -- neither ever had June-specific styling to lose, being pure
+`.ts` logic files with no Tailwind/CSS surface.) `vitest` 2013/2013 across
+279 files (was 2008/278; +5 tests from the ported spec file, +1 file).
+`vite build` clean. `check-divergence.sh` re-run post-port: still exit 0,
+unchanged (none of the ported files are under `backend/`, `frontend/`,
+`deploy/` or `docs/`).
+
+Discarded before committing: `pnpm-lock.yaml` (`pnpm install` under this
+session's newer pnpm resolved ~200 lines of unrelated transitive-dependency
+churn) and an auto-generated `pnpm-workspace.yaml` (a pnpm
+`ignoredBuiltDependencies` placeholder neither requested nor part of the
+product). Same call as the 2026-08-15 precedent for lockfile-only drift:
+not a real port target.
+
+### Unsure about / flagging for review
+
+- The `openai_ttft_mode` default of `"semantic"` in `SettingsView.vue`'s
+  form is inferred from `setting_parse.go`'s fallback, not from an explicit
+  upstream frontend default (upstream's own `SettingsView.vue` is
+  unconverted and was not diffed for its literal default value in this
+  pass). Worth a second look against upstream's actual form default if this
+  setting gets a real UI control later.
+- The new UI hint paragraph and renamed error key in upstream's
+  `RedeemView.vue` (see "Ported" item 3) were deliberately left out. If a
+  future pass wants the hint, it needs an i18n key
+  (`admin.redeem.localTimeZoneHint`) added under the orchestrator's
+  i18n-ownership rule (`CONVENTIONS.md` rule 6), not a raw string.
+
+**Last reviewed upstream SHA: `a2fb09260a955676f99cdc92f05469febee82a08`**
+(2026-09-01 02:52:28 UTC, "chore: sync VERSION to 0.1.185 [skip ci]").
+Recovery point: tag `pre-reconcile-2026-09-01` on `inferno-redesign` @
+`bcba4d37b`. Branch: `sync/reconcile-2026-09-01`, merge commit `5d8a7ea6a`,
+port commit `7166c75c6`. `git merge-base --is-ancestor inferno-redesign
+sync/reconcile-2026-09-01` succeeds, so the PR lands by fast-forward.
