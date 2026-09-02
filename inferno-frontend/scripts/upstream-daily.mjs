@@ -94,7 +94,26 @@ if (day) {
   label = `since ${from.slice(0, 9)}${state.lastSeenAt ? ` (last run ${state.lastSeenAt})` : ' (fork point — no watermark yet)'}`
 }
 
-const shas = git(['log', '--no-merges', '--format=%H', ...range]).trim().split('\n').filter(Boolean).reverse()
+/*
+ * --no-merges WAS WRONG, and it cost a silent revert on 2026-09-02.
+ *
+ * upstream's 77729e272 is a merge that resolved a genuine conflict between
+ * two divergent branches (7c01ec9be and aa7a811e6, neither an ancestor of
+ * the other). Its resolution of ReasoningEffortPolicyFields.vue exists in
+ * NEITHER parent -- it is the only place both features coexist. Filtering it
+ * out meant the watcher reported two independent commits as if they were a
+ * chain, and porting them in order reverted the first.
+ *
+ * So merges are listed, but only when they carry a resolution of their own:
+ * `git show` on a merge prints a combined diff, which is empty for a merge
+ * that took one side wholesale and non-empty exactly when the merge author
+ * had to write something. That is the commit we need to see.
+ */
+const allShas = git(['log', '--format=%H', ...range]).trim().split('\n').filter(Boolean).reverse()
+const isEmptyMerge = (sha) =>
+  git(['rev-list', '--parents', '-n', '1', sha]).trim().split(' ').length > 2 &&
+  !git(['show', '--format=', '--name-only', sha]).trim()
+const shas = allShas.filter((sha) => !isEmptyMerge(sha))
 
 // ---------------------------------------------------------------- routing inputs
 
@@ -141,8 +160,10 @@ const commits = shas.map((sha) => {
     ? routed.reduce((w, r) => (ROUTE_RANK[r.route] > ROUTE_RANK[w] ? r.route : w), 'VERBATIM')
     : 'MERGE'
 
+  const parents = git(['rev-list', '--parents', '-n', '1', sha]).trim().split(' ').length - 1
+
   return {
-    sha: meta[0], date: meta[1], author: meta[2], subject: meta[3],
+    sha: meta[0], date: meta[1], author: meta[2], subject: meta[3], merge: parents > 1,
     route, files: routed, backend: be.length, other: other.length,
     otherFiles: other,
     specs: fe.filter((f) => f.includes('.spec.')).length,
@@ -179,7 +200,7 @@ if (!has('--quiet')) {
   for (const d of days) {
     console.log(`── ${d} ─────────────────────────────────────────`)
     for (const c of commits.filter((x) => x.date === d)) {
-      const flag = c.known ? ' [already in manifest]' : ''
+      const flag = (c.known ? ' [already in manifest]' : '') + (c.merge ? ' [CONFLICT RESOLUTION — port THIS, not its parents alone]' : '')
       console.log(`  ${c.route.padEnd(8)} ${c.sha}  ${c.subject.slice(0, 78)}${flag}`)
       if (c.route !== 'MERGE') {
         for (const f of c.files) console.log(`           ${f.route.padEnd(8)} ${f.file}`)
@@ -222,6 +243,7 @@ function renderHtml({ label, days, counts, commits }) {
           <code class="c__sha">${esc(c.sha)}</code>
           <h3 class="c__subject">${esc(c.subject)}</h3>
           ${c.known ? '<span class="c__known">already tracked</span>' : ''}
+          ${c.merge ? '<span class="c__known" style="border-color:var(--rebuild);color:var(--rebuild)">conflict resolution</span>' : ''}
         </header>
         ${c.route === 'MERGE'
           ? (c.backend
