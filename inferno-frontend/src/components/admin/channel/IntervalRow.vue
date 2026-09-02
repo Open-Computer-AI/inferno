@@ -3,7 +3,7 @@
        :class="isEmpty ? 'border-[var(--destructive)] bg-[var(--destructive-soft)] border-[var(--destructive)] bg-[color-mix(in_srgb,var(--destructive-soft)_20%,transparent)]' : 'border-[var(--brand-line)] bg-white border-[var(--brand-line)] bg-[var(--brand-tint)]'">
     <!-- Token mode: context range + prices ($/MTok) -->
     <template v-if="mode === 'token'">
-      <div class="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7">
+      <div class="pricing-interval-grid grid min-w-0 flex-1 gap-2">
         <div>
           <label class="text-xs text-[var(--muted-foreground)]">{{ t('admin.channels.form.minTokens') }}</label>
           <input :value="interval.min_tokens" @input="emitField('min_tokens', toInt(($event.target as HTMLInputElement).value))"
@@ -146,3 +146,9 @@ function toIntOrNull(val: string): number | null {
   return isNaN(n) ? null : n
 }
 </script>
+
+<style scoped>
+.pricing-interval-grid {
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+}
+</style>
