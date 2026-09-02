@@ -3,7 +3,7 @@
        :class="isEmpty ? 'border-[var(--destructive)] bg-[var(--destructive-soft)] border-[var(--destructive)] bg-[color-mix(in_srgb,var(--destructive-soft)_20%,transparent)]' : 'border-[var(--brand-line)] bg-white border-[var(--brand-line)] bg-[var(--brand-tint)]'">
     <!-- Token mode: context range + prices ($/MTok) -->
     <template v-if="mode === 'token'">
-      <div class="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-6">
+      <div class="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7">
         <div>
           <label class="text-xs text-[var(--muted-foreground)]">{{ t('admin.channels.form.minTokens') }}</label>
           <input :value="interval.min_tokens" @input="emitField('min_tokens', toInt(($event.target as HTMLInputElement).value))"
@@ -25,8 +25,13 @@
             type="number" step="any" min="0" class="field-control mt-0.5 text-xs" />
         </div>
         <div>
-          <label class="text-xs text-[var(--muted-foreground)]">{{ t('admin.channels.form.cacheWritePriceShort') }} <span class="text-[var(--muted-foreground)]">$/M</span></label>
+          <label class="text-xs text-[var(--muted-foreground)]">{{ t('admin.channels.form.cacheWrite5mPriceShort') }} <span class="text-[var(--muted-foreground)]">$/M</span></label>
           <input :value="interval.cache_write_price" @input="emitField('cache_write_price', ($event.target as HTMLInputElement).value)"
+            type="number" step="any" min="0" class="field-control mt-0.5 text-xs" />
+        </div>
+        <div>
+          <label class="text-xs text-[var(--muted-foreground)]">{{ t('admin.channels.form.cacheWrite1hPriceShort') }} <span class="text-[var(--muted-foreground)]">$/M</span></label>
+          <input :value="interval.cache_write_1h_price" @input="emitField('cache_write_1h_price', ($event.target as HTMLInputElement).value)"
             type="number" step="any" min="0" class="field-control mt-0.5 text-xs" />
         </div>
         <div>
@@ -117,6 +122,7 @@ const isEmpty = computed(() => {
   return (iv.input_price == null || iv.input_price === '') &&
     (iv.output_price == null || iv.output_price === '') &&
     (iv.cache_write_price == null || iv.cache_write_price === '') &&
+    (iv.cache_write_1h_price == null || iv.cache_write_1h_price === '') &&
     (iv.cache_read_price == null || iv.cache_read_price === '') &&
     (iv.per_request_price == null || iv.per_request_price === '') &&
     (iv.input_multiplier == null || iv.input_multiplier === '') &&

@@ -35,6 +35,7 @@ export const claudeModels = [
   'claude-opus-5',
   'claude-sonnet-4-6',
   'claude-sonnet-5',
+  'claude-fable-5-1',
   'claude-fable-5'
 ]
 
@@ -56,6 +57,7 @@ const geminiModels = [
 // 基于官方 API 返回的模型列表，只支持 Claude 4.5+ 和 Gemini 2.5+
 const antigravityModels = [
   // Claude 4.5+ 系列
+  'claude-fable-5-1',
   'claude-fable-5',
   'claude-opus-4-6',
   'claude-opus-4-6-thinking',
@@ -264,6 +266,7 @@ export const allModels = allModelsList.map(m => ({ value: m, label: m }))
 // =====================
 
 const anthropicPresetMappings = [
+  { label: 'Fable 5.1', from: 'claude-fable-5-1', to: 'claude-fable-5-1', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Fable 5', from: 'claude-fable-5', to: 'claude-fable-5', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Sonnet 5', from: 'claude-sonnet-5', to: 'claude-sonnet-5', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Sonnet 4', from: 'claude-sonnet-4-20250514', to: 'claude-sonnet-4-20250514', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
@@ -328,6 +331,7 @@ const grokPresetMappings = [
 const antigravityPresetMappings = [
   // Claude 通配符映射
   { label: 'Claude→Sonnet', from: 'claude-*', to: 'claude-sonnet-4-5', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
+  { label: 'Fable 5.1', from: 'claude-fable-5-1', to: 'claude-fable-5-1', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Fable 5', from: 'claude-fable-5', to: 'claude-fable-5', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Sonnet→Sonnet', from: 'claude-sonnet-*', to: 'claude-sonnet-4-5', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Opus→Opus', from: 'claude-opus-*', to: 'claude-opus-4-6-thinking', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
@@ -364,6 +368,7 @@ const antigravityPresetMappings = [
 
 // Bedrock 预设映射（与后端 DefaultBedrockModelMapping 保持一致）
 const bedrockPresetMappings = [
+  { label: 'Fable 5.1', from: 'claude-fable-5-1', to: 'anthropic.claude-fable-5-1', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Fable 5', from: 'claude-fable-5', to: 'anthropic.claude-fable-5', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Opus 4.6', from: 'claude-opus-4-6', to: 'us.anthropic.claude-opus-4-6-v1', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Opus 4.7', from: 'claude-opus-4-7', to: 'us.anthropic.claude-opus-4-7-v1', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },

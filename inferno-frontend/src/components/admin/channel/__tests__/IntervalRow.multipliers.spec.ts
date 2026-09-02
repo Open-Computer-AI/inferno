@@ -43,8 +43,9 @@ describe('IntervalRow per-tier multipliers', () => {
     for (const key of ['inputMultiplier', 'outputMultiplier', 'cacheWriteMultiplier', 'cacheReadMultiplier']) {
       expect(labels.filter((l) => l.includes(key)), key).toHaveLength(1)
     }
-    // the 6 base price/token fields plus the 4 multipliers, no duplicates
-    expect(wrapper.findAll('input[type="number"]')).toHaveLength(10)
+    // the 7 base price/token fields plus the 4 multipliers, no duplicates.
+    // 7, not 6, since upstream 34b8bf1a6 split cache write into 5m and 1h.
+    expect(wrapper.findAll('input[type="number"]')).toHaveLength(11)
   })
 
   it('renders none of them when disabled, and keeps every base field', () => {
@@ -53,7 +54,7 @@ describe('IntervalRow per-tier multipliers', () => {
     for (const key of ['inputMultiplier', 'outputMultiplier', 'cacheWriteMultiplier', 'cacheReadMultiplier']) {
       expect(labels).not.toContain(key)
     }
-    expect(wrapper.findAll('input[type="number"]')).toHaveLength(6)
+    expect(wrapper.findAll('input[type="number"]')).toHaveLength(7)
   })
 
   it('emits on each multiplier field', async () => {
