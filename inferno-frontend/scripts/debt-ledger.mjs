@@ -82,7 +82,26 @@ const LEDGER = [
     what: 'No ported upstream commit has silently failed to land — coverage explained for every manifest row',
     origin: 'five ports partially applied and were recorded done; scripts/port-coverage.mjs 2026-08-31',
     expect: 'closed',
-    probe: `cd ${ROOT} && node scripts/port-coverage.mjs --below 40 2>/dev/null | grep -cE '^ *[0-9]+%' | grep -qx 5 || echo "port coverage below 40% changed from the 5 explained rows — re-check"`
+    /*
+     * Pins the SET of low-coverage commits, not the COUNT. A count passes if
+     * one explained row rises above 40% while an unexplained one drops below
+     * it -- which is exactly the silent partial-port this row exists to catch.
+     *
+     * Every sha below scores low for a reason that has been checked:
+     *
+     *   b689e5b40  response-model billing hardening — our June billing cells
+     *              were rebuilt; upstream's literal lines are correctly absent
+     *   a6d868f27  cache tokens in the token card — same, UsageStatsCards
+     *   0d5e3ca9b  neutral SLA card — ops header rebuilt in June tokens
+     *   e8ff2017c  ops error distribution legend — chart rebuilt off Chart.js
+     *   6c3edc095  429 cooldown strategies — settings UI extracted into
+     *              AdminGatewaySettingsPage, so none of its markup matches
+     *   0aef702b6  hidden cache tooltip — REBUILD. Our HelpTooltip already
+     *              fixed the bug via v-show + Teleport, so the 4 unmatched
+     *              lines are upstream's class assertions on a span we do not
+     *              have. Added 2026-09-02 with the catch-up's Set C.
+     */
+    probe: `cd ${ROOT} && got=$(node scripts/port-coverage.mjs --below 40 2>/dev/null | grep -oE '[0-9a-f]{9}' | sort | tr '\\n' ' '); want='0aef702b6 0d5e3ca9b 6c3edc095 a6d868f27 b689e5b40 e8ff2017c '; [ "$got" = "$want" ] || echo "low-coverage set changed — expected [$want] got [$got]"`
   },
   {
     id: 'grok-probe-column',
