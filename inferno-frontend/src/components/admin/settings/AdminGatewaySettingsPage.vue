@@ -2042,6 +2042,26 @@
                   </p>
                 </div>
 
+              <!-- OpenAI Responses 首 token 统计 -->
+              <div class="border-b border-[var(--border-subtle)] pb-5 md:col-span-2">
+                <label
+                  for="openai-ttft-mode"
+                  class="text-sm font-[var(--fw-medium)] text-[var(--body-copy)]"
+                >
+                  {{ t("admin.settings.gatewayForwarding.openaiTTFTMode") }}
+                </label>
+                <BaseSelect
+                  id="openai-ttft-mode"
+                  class="mt-2 w-full"
+                  data-testid="openai-ttft-mode"
+                  v-model="form.openai_ttft_mode"
+                  :options="openaiTTFTModeOptions"
+                />
+                <p class="mt-1.5 text-xs text-[var(--muted-foreground)]">
+                  {{ t("admin.settings.gatewayForwarding.openaiTTFTModeHint") }}
+                </p>
+              </div>
+
               <!-- Fingerprint Unification -->
               <div class="flex items-center justify-between">
                 <div>
