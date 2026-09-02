@@ -14,11 +14,14 @@ feature. A commit can — it says what it did and why.
 |---|---|---|
 | **A. missed at vendor time** | 22 (21 with content, 1 merge) | 2026-08-07 → 08-15 |
 | **B. since vendor time** | 81 | 2026-08-16 → 08-29 |
-| | **103** | zero overlap |
+| **C. the 09-02 catch-up** | 24 (of 93 in window; 70 arrived free by merge) | 2026-07-26 → 09-02 |
+| | **127** | zero overlap |
 
 Counted from the rows, not asserted: `grep -cE '^\| [0-9]+ \| `' on this file
-returns 103. The earlier header said 22 / 78 / 100 and was never updated as rows
-were added — the rows were right, the summary above them was three behind.
+returns 127. The earlier header said 22 / 78 / 100 and was never updated as rows
+were added — the rows were right, the summary above them was three behind. Set C
+was verified the same way plus one more: every sha in it resolves with
+`git cat-file -e`, and the watcher's own work-commit list has nothing Set C omits.
 
 For reconciliation against upstream: `git log --since=2026-08-09 upstream/main
 -- frontend/` counts 95 non-merge commits (21 in 08-09→08-15, 74 in 08-16→08-29).
@@ -152,3 +155,69 @@ proved tier 2 is NOT safe to skip: 15 of its 40 component changes were bug fixes
 | 79 | `706b5676a` | 08-29 | T2 | fix(groups): show API error messages on create and updat | surface API error messages on group create/update | **PORTED** |
 | 80 | `ed12ea716` | 08-29 | T2 | fix(frontend): authenticate Codex API key mode inline | authenticate Codex API key mode inline | **PORTED** |
 | 81 | `b5827cfd5` | 08-29 | T1 | fix(pricing): align DeepSeek billing with official peak/ | BOTH | PORTED — backend arrived by merge; its frontend half (deepseekModels v4 list) was NOT, and I wrongly assumed the merge covered it. Ported 2026-08-30 |
+
+## Set C — the 2026-09-02 catch-up
+
+Everything upstream shipped between our vendor-era catch-up and 2026-09-02,
+found by `scripts/upstream-daily.mjs` rather than by hand. 93 commits in the
+window: **70 arrived free with the Phase 1 merge** (`0dc970bdd`) and are not
+listed individually here — a merge brings `backend/` and the `frontend/`
+mirror and structurally cannot touch `inferno-frontend/`, which was measured
+at 0 files, not assumed.
+
+The 24 below are the ones that needed hands, sequenced into seven stories by
+file overlap rather than by arrival order: `types/index.ts` is edited by five
+of them, `GroupsView.vue` by five, the `admin/overview` locales by four. Taken
+in log order they would have hand-merged the same file repeatedly against a
+moving target.
+
+Baseline pinned before any of it: `docs/superpowers/analysis/PHASE0-BASELINE.md`.
+
+| # | upstream | ours | story | what they did | how it was ported |
+|---|---|---|---|---|---|
+| 1 | `81e461f65` | `582972523` | 1 expiry | parse local expiry datetimes strictly | VERBATIM — our format.ts was byte-identical to upstream's parent |
+| 2 | `b7aca87fd` | `d67034510` | 1 expiry | cover local datetime parsing across timezones | NEW file verbatim; verified discriminating — old parser fails 3 of its 5 cases |
+| 3 | `263605779` + `ae1bcdc25` | `f86fbde92` | 1 expiry | clarify expiry timezone, en + zh | 6 keys hand-merged. **Order corrected**: the plan had locales last, but two later commits consume these keys |
+| 4 | `5778739cd` | `f7dcc0cf7` | 1 expiry | strict local expiry parsing for redeem codes | 4 hunks hand-merged; divergence held at 71 |
+| 5 | `d66bc88e6` | `538a5a067` | 1 expiry | apply expiry input changes in source paths | 3 hunks × 2 modals; divergence held at 87 / 91 |
+| 6 | `1cc6999ad` | `f3897b680` | 2 usage | track native compaction requests (14 files) | 3 api files + 2 specs verbatim, 4 files hand-merged. Only 2 of 3 param sites get the field — `loadStats` spreads `...filters.value` |
+| 7 | `0aef702b6` | `2b451bf50` | 2 usage | prevent hidden cache tooltip h-scroll | REBUILD — already fixed by our HelpTooltip (`v-show` + Teleport). Test rewritten to pin the guarantee, not the class |
+| 8 | `30b29e51e` | `afdeeac81` | 2 usage | Ollama Cloud usage window under CN platforms | markup mirrored into the CN branch in June classes; spec verbatim |
+| 9 | `6532d5b61` | `fe9b9625e` | 2 usage | unify usage window rendering, tighten thresholds | 6 files verbatim (all 0-divergence), 4 locales hand-merged; `resetSoon` confirmed dead in both trees before deleting |
+| 10 | `c66e700f0` | `8ae0b0ce2` | 3 ttft | move TTFT metric mode to admin settings | REBUILD — control lives in our extracted `AdminGatewaySettingsPage`; two `<option>`s became an options computed. No load hunk needed: `loadSettings` copies keys generically |
+| 11 | `7903716ad` | `e024d66af` | 4 fast | frontend group Fast types | hand-merged; our June-only `dev/SpecimenView.vue` needed the inert default |
+| 12 | `1a40e5690` | `aba28ded7` | 4 fast | localize the group Fast control | hand-merged at upstream's anchor |
+| 13 | `3fbce499d` | `f5bbe4590` | 4 fast | group Fast form helpers | NEW files verbatim; its 3rd case asserts our real locale objects |
+| 14 | `17747df84` | `f0078042b` | 4 fast | group Fast admin switch | 12 hunks, markup VERBATIM to match the Codex Live switch beside it. Verified by added-line + token parity, not divergence |
+| 15 | `e6722126b` | `56ecb4a38` | 4 fast | frontend free Fast types | hand-merged; SpecimenView again |
+| 16 | `498e06c58` | `b0e9264bc` | 4 fast | localize the free Fast control | hand-merged; preceding hint replaced, not appended to |
+| 17 | `4df6b0636` | `24316a459` | 4 fast | free Fast group switch | 10 hunks; spec verbatim and discriminating on the zh locale string |
+| 18 | `7c01ec9be` | `80361ccb6` | 5 effort | scope reasoning effort mappings by model | 4 files verbatim, types + 26 locale keys hand-merged. No GroupsView hunk needed — verified in both trees |
+| 19 | `aa7a811e6` | `cc89ba5a4` | 5 effort | deny-or-downgrade for the effort ceiling | **NOT a descendant of #18.** Copying its component reverted #18 outright; fixed by taking upstream's own resolution `77729e272` |
+| 20 | `92a550973` | `03b6dbb54` | 7 reauth | reauthorize OpenAI with refresh token | VERBATIM — the window's only one; 0 divergence and identical to upstream/main |
+| 21 | `e377c4358` | `976d706f3` | 6 kimi | forward native OpenAI Responses API | 2 files verbatim, 4 hand-merged. 9 hard-coded `deepseek` checks became `cnSupportsNativeResponses()` |
+| 22 | `34b8bf1a6` | `37e2648b5` | 6 fable | support Claude Fable 5.1 (20 files) | 6 verbatim, rest REBUILT in June tokens — copying would have re-added 18 rose utilities. **port-coverage caught a hunk that never applied** |
+| 23 | `1a33dc8cc` | `5d63054b3` | 6 layout | 优化分组模型定价弹窗布局 | VERBATIM — every class is layout, not palette. Arrived the same day the watcher reported it |
+| 24 | `77729e272` | (in `cc89ba5a4`) | 5 effort | upstream's own conflict resolution | Invisible to the watcher until `40a718267` stopped filtering merges. Its version of 4 files is the only place #18 and #19 coexist |
+
+### What this set changed about how we work
+
+**A verbatim copy is only safe when the source commit is a descendant of
+everything already ported.** Row 19 is the proof: the 0-divergence check said
+"this file carries no June work", which was true, and copying it still
+destroyed the previous commit. That check says nothing about lineage. Ancestry
+is now checked before any copy, and `upstream-daily.mjs` lists
+conflict-resolution merges instead of hiding them.
+
+**Hand-merging is safer than copying across divergent branches.** Row 19's
+types and locales were applied additively and landed on upstream's merged
+result exactly — 27 keys per language, contested strings byte-identical —
+while the copied files reverted.
+
+**Locales lead their consumers.** Row 3 was resequenced for this. Landing a
+view before its keys leaves a commit rendering raw key paths, and nothing
+fails, because i18n falls back to the key.
+
+**Coverage is expected to disagree with lint on a rebuild.** Row 22 reads 90%
+and row 7 reads 33%; in both cases the unmatched lines are exactly the Tailwind
+we refused to copy. A rebuild scoring 100% would mean we had copied the markup.
