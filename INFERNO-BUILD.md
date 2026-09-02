@@ -2017,3 +2017,127 @@ re-litigated.
 
 **Last reviewed upstream SHA: `baeac1f3de21d37b129405f092ef86c24b3f203d`**
 (2026-08-15 13:40:21 UTC, "chore: sync VERSION to 0.1.177 [skip ci]").
+
+### 2026-09-02 — fifth sync, merge model (Runbook v2)
+
+**This log has a gap.** The branch's actual merge-base going into this run was
+`b5827cfd5` (per GOAL.md's collision map header and the 2026-08-30 note in the
+Frontend port policy section), not `baeac1f3d` above -- meaning at least the
+2026-08-28 (473-behind) and 2026-08-30 reconciles landed on `inferno-redesign`
+without a log entry here. Not reconstructed after the fact; noting the gap
+rather than silently overwriting it, since GOAL.md said to trust the repo over
+this file and the repo's `git merge-base` is what this run actually used.
+
+**137 commits behind**, `b5827cfd5` (2026-08-30, prior actual base) ..
+`5097b3145` (2026-09-02, new last-reviewed SHA / VERSION 0.2.0). Clone was not
+shallow on `origin` at the start of this run's worktree, but `git fetch
+--unshallow origin` was run anyway before computing the count, per step 1.
+
+**Collision map regenerated fresh** (GOAL.md's stale one was measured
+2026-08-28 against `baeac1f3d`, 473 behind, 36 overlapping files -- both
+numbers are now wrong and superseded by this run's, not by hand-editing that
+section): we changed 223 files, upstream changed 227, **16 overlap**:
+
+```
+backend/cmd/server/wire_gen.go              backend/internal/service/admin_group.go
+backend/ent/migrate/schema.go               backend/internal/service/domain_constants.go
+backend/ent/mutation.go                     backend/internal/service/setting_features.go
+backend/ent/runtime/runtime.go              backend/internal/service/setting_parse.go
+backend/internal/config/config.go           deploy/config.example.yaml
+backend/internal/handler/dto/mappers.go
+backend/internal/handler/dto/types.go
+backend/internal/repository/api_key_repo.go
+backend/internal/repository/fixtures_integration_test.go
+backend/internal/repository/usage_log_repo_query.go
+backend/internal/server/api_contract_test.go
+```
+
+**`git merge upstream/main`: 0 conflicts.** Every one of the 16 collision files
+three-way-merged cleanly, including the three Tier-1 generated files
+(`ent/migrate/schema.go`, `ent/mutation.go`, `ent/runtime/runtime.go`) and
+`wire_gen.go`. Per the hard rule, a clean merge on generated code is not
+trusted on its own: ran `go generate ./ent` and `go generate ./cmd/server`
+regardless.
+
+- `go generate ./ent` changed exactly one file, `ent/group.go` -- a doc-comment
+  update on `ReasoningEffortMappings` (upstream commit `7c01ec9be`, "scope
+  OpenAI reasoning effort mappings by model", edited the field's `.Comment()`
+  in `ent/schema/group.go`, which merged into our tree with zero conflicts).
+  **This trips Gate 5 -- see BLOCKED below.**
+- `go generate ./cmd/server` (wire) required a `go get` to add
+  `github.com/google/subcommands` to `go.sum` -- the wire binary's own
+  transitive dependency, missing from **both** sides' `go.sum` already, only
+  surfacing because this run actually invoked codegen from a clean module
+  cache. `go build`/`go vet` pass without it, so it was **not shipped**: the
+  fix commit was immediately followed by a revert commit once that was
+  confirmed, keeping the wire regeneration's real (and harmless -- two DI
+  provider calls reordered, same graph) diff without the tooling-only
+  `go.sum` line. The regenerated `wire_gen.go` itself is committed.
+- Migration numbers: upstream's own 137 commits landed `231`/`232` **three
+  times each** (`231_add_usage_log_native_compaction_v2.sql` /
+  `231_add_usage_log_requested_reasoning_effort.sql` /
+  `231_user_restrict_public_groups.sql`, and similarly for `232`) -- their own
+  numbering collision, not ours; our migrations start at `900` so nothing
+  collides. Not our problem to fix per the backend edit-scope rule, flagging
+  in case a human wants to tell upstream.
+
+**Gate 5: FAILED -- 1 undeclared file: `backend/ent/group.go`.** Not added to
+DECLARED. It is not a new product divergence: our `ent/schema/group.go` is
+byte-identical to upstream's own schema for this field (both carry the longer,
+merged-in comment from `7c01ec9be`), but upstream's own **checked-in
+generated** `ent/group.go` still has the pre-`7c01ec9be` short comment --
+upstream itself did not regenerate ent for that commit. Correctly running
+`go generate ./ent`, as Tier 1 requires, produces a file that matches our
+schema and therefore differs from upstream's stale generated artifact by
+exactly that one doc-comment line. No field, type, tag, or ordering changed --
+diffed by hand. Reverting our regenerated file to match upstream's stale one
+would mean deliberately checking in generated code that disagrees with our own
+schema, which is worse than the one-line gate failure. Left for review per
+"report, don't decide": either declare it (and expect it to keep recurring,
+harmlessly, until upstream regenerates their own ent) or accept the mismatch
+each cycle.
+
+**Backend gate:** `go build ./...` clean, `go vet ./...` clean, `go test ./...`
+all packages `ok` (no `-tags` needed -- ran the full untagged suite).
+
+**Frontend port (Frontend port policy step, upstream's `frontend/` mirror vs
+inferno-frontend/):** grepped upstream's 137-commit range for `fix(frontend)`
+touching `frontend/src`. Ten commits; two were real logic, the rest pure
+CSS/layout (`1a33dc8cc` pricing-modal layout, `0aef702b6` cache-tooltip
+overflow) skipped by the standing components/views rule.
+
+- **Ported:** `81e461f65`/`5778739cd`/`d66bc88e6`/`263605779`/`ae1bcdc25`/
+  `b7aca87fd` (one series, one author, same day) -- `parseDateTimeLocalInput`
+  in `frontend/src/utils/format.ts` handed a `datetime-local` input straight to
+  `new Date(value)`, which can silently reinterpret a malformed or
+  timezone-bearing string. Our `utils/format.ts` carried a byte-identical copy
+  of the same buggy function, consumed by `RedeemView.vue`'s batch-expiry
+  field and (via `formatDateTimeLocalInput`/`parseDateTimeLocalInput`) by both
+  account modals' expiry inputs -- a logic bug inside converted components,
+  not styling, so per the port policy it is re-applied by hand rather than
+  skipped. Ported the strict parser, `getBrowserTimeZone()`, the new
+  `formatDateTimeLocalInput.spec.ts` test, the timezone-hint copy (new i18n
+  keys `expiresAtTimezoneHint` / `expiryDateRequired` / `localTimeZoneHint`,
+  en+zh, via `t()`, no hardcoded strings), and `RedeemView.vue`'s own inline
+  `new Date(...)` + stale `expiryDaysRequired` error key fix.
+- Diffed `frontend/src/api` and `frontend/src/types` against `backend/internal/handler`
+  for contract drift: no field removed or renamed, only additive (`AdminGroup.
+  ForceOpenAIFast`/`FreeOpenAIFast`, `UsageLog.NativeCompactionV2`, all new
+  admin-only toggles/tracking upstream added this cycle). None of it is
+  consumed by existing inferno-frontend code, so nothing is silently broken;
+  building the admin UI for these is a new-feature decision, not a reconcile
+  task, so **skipped** rather than ported.
+
+**Frontend gate:** `pnpm install`, `npm run typecheck` (0 errors), `node
+scripts/june-lint.mjs` (1387 violations / 316 files -- ported files carry zero
+new violations, checked by name), `npm run test:run` (279 files / 2013 tests
+green, including the 5 new ones), `npm run build` (succeeded, only the
+pre-existing >500kB chunk warnings).
+
+**Landing:** not fast-forwarded or pushed to `inferno-redesign` by this run --
+opened as `sync/reconcile-2026-09-02` / PR for human review and merge, per
+standing instruction that this routine never pushes to `inferno-redesign` or
+merges its own PR.
+
+**Last reviewed upstream SHA: `5097b31457e6dc9f49e5f5c9c72b925ce79543b3`**
+(2026-09-02, "chore: sync VERSION to 0.2.0 [skip ci]").
