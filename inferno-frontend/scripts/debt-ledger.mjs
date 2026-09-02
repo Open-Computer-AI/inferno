@@ -137,6 +137,25 @@ const LEDGER = [
     probe: `grep -rl "sla_percent_min" ${SRC} | grep -v "api/\\|OpsSettingsDialog\\|__tests__" | head -1 | grep -q . || echo "sla_percent_min is written but never read for display"`
   },
   {
+    id: 'capacity-sticky-reserve',
+    what: 'Account capacity red covers two states — over limit with sticky sessions still served, and fully blocked. Only the tooltip separates them',
+    origin: 'logic-drift audit 2026-09-02; upstream AccountCapacityCell has 4 tones (limit+reserve red, limit orange, 80% yellow), our CapacityBar has 3 (>100 red, >=80 amber)',
+    expect: 'closed',
+    /*
+     * NOT A BUG, and deliberately not "fix the colours". The June bar has three
+     * tones by design and the information is not lost -- it moved from colour
+     * to hover. What IS worth guarding is the pair of tooltip conditions that
+     * now carry the whole distinction. If a refactor drops either, red becomes
+     * genuinely ambiguous and nothing else in the tree would notice: both
+     * strings are i18n keys, so tsc stays clean, and no spec covers the
+     * reserve boundary.
+     *
+     * Recorded so the next drift audit reads a verdict instead of re-deriving
+     * it -- this one cost an hour to prove benign.
+     */
+    probe: `grep -q 'current >= limit + reserve' ${SRC}/components/account/AccountCapacityCell.vue && grep -q 'current >= base + buffer' ${SRC}/components/account/AccountCapacityCell.vue || echo "the tooltip guards that distinguish over-limit from blocked are gone — red now means two states with nothing separating them"`
+  },
+  {
     id: 'proxy-selector-name',
     what: 'ProxySelector rows omit proxy.name and account_count, while name is still what the search filters on',
     origin: 'file sweep 2026-08-30',
