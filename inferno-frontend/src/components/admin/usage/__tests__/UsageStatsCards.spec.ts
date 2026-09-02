@@ -64,4 +64,35 @@ describe('UsageStatsCards', () => {
     expect(text).toContain('Cache Read')
     expect(text).toContain('22')
   })
+
+  // Upstream 0aef702b6 fixed a phantom horizontal scroll on /usage and
+  // /admin/usage: its cache tooltip was hidden with `opacity-0`, which is
+  // invisible but still occupies layout, so a fixed w-56 box centred on a
+  // trigger near the right edge widened the document. Upstream's fix was to
+  // swap `opacity-0` for `hidden`, and its test asserts those two classes.
+  //
+  // That assertion cannot be ported: the June rebuild replaced the inline span
+  // with <HelpTooltip>, which hides via v-show and teleports to <body>, so
+  // there is no such span and no such class. The GUARANTEE ports, and this
+  // pins it in the shape our architecture actually has -- hidden must mean
+  // display:none, never merely transparent.
+  it('keeps the cache tooltip out of the layout while it is hidden', () => {
+    mount(UsageStatsCards, {
+      attachTo: document.body,
+      props: {
+        stats,
+      },
+      global: {
+        stubs: {
+          Icon: true,
+        },
+      },
+    })
+
+    const tooltip = document.body.querySelector('[role="tooltip"]') as HTMLElement | null
+
+    expect(tooltip).not.toBeNull()
+    expect(tooltip!.style.display).toBe('none')
+    expect(tooltip!.className).not.toContain('opacity-0')
+  })
 })
