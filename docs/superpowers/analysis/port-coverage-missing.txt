@@ -1,0 +1,711 @@
+MISSING   03c3f3b6f src/components/common/__tests__/Select.spec.ts const input = dropdown.querySelector<HTMLInputElement>('.select-search-input')
+MISSING   03c3f3b6f src/components/common/__tests__/Select.spec.ts const labels = [...dropdown.querySelectorAll('.select-option-label')].map((el) => el.textContent)
+MISSING   03c3f3b6f src/components/common/__tests__/Select.spec.ts const labels = [...dropdown.querySelectorAll('.select-option-label')].map((el) => el.textContent)
+MISSING   03c3f3b6f src/components/common/__tests__/Select.spec.ts expect(dropdown.querySelector('.select-empty')?.textContent).toContain('common.loading')
+MISSING   0aef702b6 src/components/admin/usage/__tests__/UsageStatsCards.spec.ts const tooltip = wrapper.findAll('span').find((el) => el.classes().includes('group-hover:block'))
+MISSING   0aef702b6 src/components/admin/usage/__tests__/UsageStatsCards.spec.ts expect(tooltip).toBeDefined()
+MISSING   0aef702b6 src/components/admin/usage/__tests__/UsageStatsCards.spec.ts expect(tooltip?.classes()).not.toContain('opacity-0')
+MISSING   0aef702b6 src/components/admin/usage/__tests__/UsageStatsCards.spec.ts expect(tooltip?.classes()).toContain('hidden')
+MISSING   0d5e3ca9b src/views/admin/ops/components/OpsDashboardHeader.vue <span class="font-bold text-gray-900 dark:text-white">{{ formatNumber((overview.request_count_sla ?? 0) - (overview.success_count ?? 0)) }}</span>
+MISSING   0d5e3ca9b src/views/admin/ops/components/OpsDashboardHeader.vue if ((overview.value?.request_count_sla ?? 0) <= 0) return null
+MISSING   11ada80d5 src/components/admin/usage/UsageTable.vue <div v-if="hasReasoningEffortMapping(row)" class="space-y-0.5 text-xs">
+MISSING   11ada80d5 src/components/admin/usage/UsageTable.vue <span class="mr-0.5">↳</span>{{ formatReasoningEffort(row.reasoning_effort) }}
+MISSING   11ada80d5 src/components/admin/usage/UsageTable.vue <span v-else class="text-sm text-gray-900 dark:text-white">
+MISSING   11ada80d5 src/components/admin/usage/UsageTable.vue const forwarded = row.reasoning_effort?.trim() || ''
+MISSING   11ada80d5 src/components/admin/usage/UsageTable.vue const requested = row.requested_reasoning_effort?.trim() || ''
+MISSING   11ada80d5 src/components/admin/usage/UsageTable.vue {{ formatReasoningEffort(row.requested_reasoning_effort || row.reasoning_effort) }}
+MISSING   11ada80d5 src/components/admin/usage/UsageTable.vue {{ formatReasoningEffort(row.requested_reasoning_effort) }}
+MISSING   11ada80d5 src/components/admin/usage/__tests__/UsageTable.spec.ts requested_reasoning_effort: 'max',
+MISSING   11ada80d5 src/components/admin/usage/__tests__/UsageTable.spec.ts requested_reasoning_effort: 'max',
+MISSING   11ada80d5 src/types/index.ts requested_reasoning_effort?: string | null
+MISSING   11ada80d5 src/views/admin/UsageView.vue log.upstream_model || log.model, log.upstream_response_model || '', log.upstream_model_mismatch == null ? '' : t(log.upstream_model_mismatch ? 'common.yes' : 'common.no'), formatReasoningEffort(log.requested_reasoning_effort || log.reasoning_effort), formatReasoningEffort(log.reasoning_effort), log.group?.name || '',
+MISSING   11ada80d5 src/views/user/UsageView.vue formatReasoningEffortMapping(log.requested_reasoning_effort, log.reasoning_effort),
+MISSING   1f2a87adb src/components/admin/ErrorPassthroughRulesModal.vue const platformOptions = CONCRETE_PLATFORM_OPTIONS
+MISSING   1f2a87adb src/views/admin/__tests__/GroupsView.compositePlatforms.spec.ts expect.arrayContaining(['kimi', 'zhipu', 'deepseek'])
+MISSING   1f2a87adb src/views/admin/__tests__/platformFilterCatalogUsage.spec.ts 'src/components/admin/ErrorPassthroughRulesModal.vue',
+MISSING   1f2a87adb src/views/admin/__tests__/platformFilterCatalogUsage.spec.ts 'src/components/admin/account/AccountTableFilters.vue',
+MISSING   1f2a87adb src/views/admin/__tests__/platformFilterCatalogUsage.spec.ts 'src/views/admin/ops/components/OpsDashboardHeader.vue'
+MISSING   1f2a87adb src/views/admin/__tests__/platformFilterCatalogUsage.spec.ts const source = readSource('src/views/admin/GroupsView.vue')
+MISSING   1f2a87adb src/views/admin/__tests__/platformFilterCatalogUsage.spec.ts const source = readSource('src/views/admin/SubscriptionsView.vue')
+MISSING   1f2a87adb src/views/admin/__tests__/platformFilterCatalogUsage.spec.ts const source = readSource(path)
+MISSING   1f2a87adb src/views/admin/__tests__/platformFilterCatalogUsage.spec.ts describe('admin platform filters', () => {
+MISSING   1f2a87adb src/views/admin/__tests__/platformFilterCatalogUsage.spec.ts expect(source).toContain("import { CONCRETE_PLATFORM_OPTIONS } from '@/constants/platforms'")
+MISSING   1f2a87adb src/views/admin/__tests__/platformFilterCatalogUsage.spec.ts expect(source).toContain("import { GROUP_PLATFORM_OPTIONS } from '@/constants/platforms'")
+MISSING   1f2a87adb src/views/admin/__tests__/platformFilterCatalogUsage.spec.ts expect(source).toContain('...CONCRETE_PLATFORM_OPTIONS')
+MISSING   1f2a87adb src/views/admin/__tests__/platformFilterCatalogUsage.spec.ts expect(source).toContain('...GROUP_PLATFORM_OPTIONS')
+MISSING   1f2a87adb src/views/admin/__tests__/platformFilterCatalogUsage.spec.ts expect(source).toMatch(/const platformFilterOptions[\s\S]*?\.\.\.GROUP_PLATFORM_OPTIONS/)
+MISSING   1f2a87adb src/views/admin/__tests__/platformFilterCatalogUsage.spec.ts expect(source).toMatch(/platformOptions\s*=.*CONCRETE_PLATFORM_OPTIONS|pOpts.*\.\.\.CONCRETE_PLATFORM_OPTIONS/s)
+MISSING   1f2a87adb src/views/admin/__tests__/platformFilterCatalogUsage.spec.ts function readSource(path: string): string {
+MISSING   1f2a87adb src/views/admin/__tests__/platformFilterCatalogUsage.spec.ts it('uses the concrete platform catalog wherever concrete platforms are selected', () => {
+MISSING   1f2a87adb src/views/admin/__tests__/platformFilterCatalogUsage.spec.ts it('uses the shared catalogs on the groups page', () => {
+MISSING   1f2a87adb src/views/admin/__tests__/platformFilterCatalogUsage.spec.ts return readFileSync(resolve(path), 'utf8')
+MISSING   22e1b8144 src/api/__tests__/codex.spec.ts json: async () => ({ models: [{ slug: 'grok-4.6' }, { slug: 'deepseek-v4-pro' }] })
+MISSING   22e1b8144 src/components/keys/UseKeyModal.vue ((props.platform === 'grok' || props.platform === 'deepseek' || props.platform === 'composite') && activeClientTab.value === 'codex'))
+MISSING   22e1b8144 src/components/keys/UseKeyModal.vue ((props.platform === 'openai' && (activeClientTab.value === 'codex' || activeClientTab.value === 'codex-ws')) ||
+MISSING   22e1b8144 src/components/keys/UseKeyModal.vue const label = platform === 'deepseek' ? 'DeepSeek' : 'Composite'
+MISSING   22e1b8144 src/components/keys/UseKeyModal.vue const model = platform === 'deepseek' ? 'deepseek-v4-pro' : 'gpt-5.5'
+MISSING   22e1b8144 src/components/keys/UseKeyModal.vue hint: t(`keys.useKeyModal.${platform}.codexConfigTomlHint`)
+MISSING   22e1b8144 src/components/keys/UseKeyModal.vue platform: 'deepseek' | 'composite'
+MISSING   22e1b8144 src/components/keys/__tests__/UseKeyModal.spec.ts json: async () => ({ models: [{ slug: 'gpt-5.5' }, { slug: 'grok-4.6' }] })
+MISSING   22fc0cdbf src/views/admin/SettingsView.vue "admin.settings.openaiFastPolicy.summaryOtherModels",
+MISSING   22fc0cdbf src/views/admin/SettingsView.vue : "admin.settings.openaiFastPolicy.summaryAllModels",
+MISSING   22fc0cdbf src/views/admin/SettingsView.vue ? "admin.settings.openaiFastPolicy.summaryTargetModels"
+MISSING   22fc0cdbf src/views/admin/SettingsView.vue action: OpenAIFastPolicyRule["action"],
+MISSING   22fc0cdbf src/views/admin/SettingsView.vue rule.fallback_action || "pass",
+MISSING   269fbcac0 src/components/account/AccountUsageCell.vue :window-stats="grokFreeQuotaUsage"
+MISSING   269fbcac0 src/components/account/AccountUsageCell.vue :window-stats="grokMonthlyBillingBar.windowStats"
+MISSING   269fbcac0 src/components/account/AccountUsageCell.vue :window-stats="grokWeeklyBillingBar.windowStats"
+MISSING   269fbcac0 src/components/account/__tests__/AccountUsageCell.spec.ts expect(wrapper.text()).not.toContain('|250000')
+MISSING   269fbcac0 src/components/account/__tests__/AccountUsageCell.spec.ts expect(wrapper.text()).toContain('24h|75|750000')
+MISSING   269fbcac0 src/components/account/__tests__/AccountUsageCell.spec.ts expect(wrapper.text()).toContain('30d|12|8000000')
+MISSING   269fbcac0 src/components/account/__tests__/AccountUsageCell.spec.ts expect(wrapper.text()).toContain('30d|8|4400000')
+MISSING   269fbcac0 src/components/account/__tests__/AccountUsageCell.spec.ts expect(wrapper.text()).toContain('7d|20|1500000')
+MISSING   269fbcac0 src/components/account/__tests__/AccountUsageCell.spec.ts expect(wrapper.text()).toContain('7d|37|2200000')
+MISSING   269fbcac0 src/components/account/__tests__/AccountUsageCell.spec.ts props: ['label', 'utilization', 'windowStats'],
+MISSING   269fbcac0 src/components/account/__tests__/AccountUsageCell.spec.ts props: ['label', 'utilization', 'windowStats'],
+MISSING   269fbcac0 src/components/account/__tests__/AccountUsageCell.spec.ts props: ['label', 'utilization', 'windowStats'],
+MISSING   269fbcac0 src/components/account/__tests__/AccountUsageCell.spec.ts template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.tokens }}</div>'
+MISSING   269fbcac0 src/components/account/__tests__/AccountUsageCell.spec.ts template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.tokens }}</div>'
+MISSING   269fbcac0 src/components/account/__tests__/AccountUsageCell.spec.ts template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.tokens }}</div>'
+MISSING   26be82cc8 src/components/admin/channel/IntervalRow.vue (iv.cache_read_multiplier == null || iv.cache_read_multiplier === '') &&
+MISSING   26be82cc8 src/components/admin/channel/IntervalRow.vue <div class="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-6">
+MISSING   26be82cc8 src/components/admin/channel/IntervalRow.vue <label class="text-xs text-gray-400">{{ t('admin.channels.form.cacheReadMultiplier') }}</label>
+MISSING   26be82cc8 src/components/admin/channel/IntervalRow.vue <label class="text-xs text-gray-400">{{ t('admin.channels.form.cacheReadPriceShort') }} <span class="text-gray-300">$/M</span></label>
+MISSING   26be82cc8 src/components/admin/channel/IntervalRow.vue <label class="text-xs text-gray-400">{{ t('admin.channels.form.cacheWriteMultiplier') }}</label>
+MISSING   26be82cc8 src/components/admin/channel/IntervalRow.vue <label class="text-xs text-gray-400">{{ t('admin.channels.form.cacheWritePriceShort') }} <span class="text-gray-300">$/M</span></label>
+MISSING   26be82cc8 src/components/admin/channel/IntervalRow.vue <label class="text-xs text-gray-400">{{ t('admin.channels.form.inputMultiplier') }}</label>
+MISSING   26be82cc8 src/components/admin/channel/IntervalRow.vue <label class="text-xs text-gray-400">{{ t('admin.channels.form.inputPrice') }} <span v-if="isEmpty" class="text-red-500">*</span> <span class="text-gray-300">$/M</span></label>
+MISSING   26be82cc8 src/components/admin/channel/IntervalRow.vue <label class="text-xs text-gray-400">{{ t('admin.channels.form.maxTokens') }} <span class="text-gray-300">{{ t('admin.channels.form.inclusive') }}</span></label>
+MISSING   26be82cc8 src/components/admin/channel/IntervalRow.vue <label class="text-xs text-gray-400">{{ t('admin.channels.form.minTokens') }}</label>
+MISSING   26be82cc8 src/components/admin/channel/IntervalRow.vue <label class="text-xs text-gray-400">{{ t('admin.channels.form.outputMultiplier') }}</label>
+MISSING   26be82cc8 src/components/admin/channel/IntervalRow.vue <label class="text-xs text-gray-400">{{ t('admin.channels.form.outputPrice') }} <span v-if="isEmpty" class="text-red-500">*</span> <span class="text-gray-300">$/M</span></label>
+MISSING   26be82cc8 src/components/admin/channel/IntervalRow.vue type="number" min="0" class="input mt-0.5 text-xs" />
+MISSING   26be82cc8 src/components/admin/channel/IntervalRow.vue type="number" min="0" class="input mt-0.5 text-xs" :placeholder="'∞'" />
+MISSING   26be82cc8 src/components/admin/channel/IntervalRow.vue type="number" step="any" min="0" class="input mt-0.5 text-xs" />
+MISSING   26be82cc8 src/components/admin/channel/IntervalRow.vue type="number" step="any" min="0" class="input mt-0.5 text-xs" />
+MISSING   26be82cc8 src/components/admin/channel/IntervalRow.vue type="number" step="any" min="0" class="input mt-0.5 text-xs" />
+MISSING   26be82cc8 src/components/admin/channel/IntervalRow.vue type="number" step="any" min="0" class="input mt-0.5 text-xs" />
+MISSING   26be82cc8 src/components/admin/channel/IntervalRow.vue type="number" step="any" min="0.000001" class="input mt-0.5 text-xs" />
+MISSING   26be82cc8 src/components/admin/channel/IntervalRow.vue type="number" step="any" min="0.000001" class="input mt-0.5 text-xs" />
+MISSING   26be82cc8 src/components/admin/channel/IntervalRow.vue type="number" step="any" min="0.000001" class="input mt-0.5 text-xs" />
+MISSING   26be82cc8 src/components/admin/channel/IntervalRow.vue type="number" step="any" min="0.000001" class="input mt-0.5 text-xs" />
+MISSING   26be82cc8 src/components/admin/channel/PricingEntryCard.vue <!-- Channel token intervals; the group long-context toggle controls whether tiers apply. -->
+MISSING   26be82cc8 src/components/admin/channel/PricingEntryCard.vue <label class="text-xs text-gray-400">{{ t('admin.channels.form.fastMultiplier') }}</label>
+MISSING   26be82cc8 src/components/admin/channel/PricingEntryCard.vue <label class="text-xs text-gray-400">{{ t('admin.channels.form.flexMultiplier') }}</label>
+MISSING   26be82cc8 src/components/admin/channel/PricingEntryCard.vue type="number" step="any" min="0.000001" class="input mt-0.5 text-sm" :placeholder="t('admin.channels.form.multiplierPlaceholder')" />
+MISSING   26be82cc8 src/components/admin/channel/PricingEntryCard.vue type="number" step="any" min="0.000001" class="input mt-0.5 text-sm" :placeholder="t('admin.channels.form.multiplierPlaceholder')" />
+MISSING   26be82cc8 src/i18n/locales/en/admin/channels.ts cacheReadMultiplier: 'Cache Read Mult.',
+MISSING   26be82cc8 src/i18n/locales/en/admin/channels.ts cacheWriteMultiplier: 'Cache Write Mult.',
+MISSING   26be82cc8 src/i18n/locales/en/admin/channels.ts fastMultiplier: 'Fast Multiplier',
+MISSING   26be82cc8 src/i18n/locales/en/admin/channels.ts flexMultiplier: 'Flex Multiplier',
+MISSING   26be82cc8 src/i18n/locales/en/admin/channels.ts inputMultiplier: 'Input Mult.',
+MISSING   26be82cc8 src/i18n/locales/en/admin/channels.ts multiplierPositive: 'Fast/Flex multipliers must be greater than 0',
+MISSING   26be82cc8 src/i18n/locales/en/admin/channels.ts outputMultiplier: 'Output Mult.',
+MISSING   26be82cc8 src/i18n/locales/zh/admin/channels.ts multiplierPlaceholder: '未配置',
+MISSING   26be82cc8 src/i18n/locales/zh/admin/channels.ts multiplierPositive: 'Fast/Flex 倍率必须大于 0',
+MISSING   2c250bfd7 src/components/admin/monitor/MonitorPrimaryModelCell.vue <span class="text-sm text-gray-900 dark:text-gray-100">{{ formatMonitorModel(row.primary_model) }}</span>
+MISSING   2c250bfd7 src/components/admin/monitor/MonitorRunResultDialog.vue <span class="font-medium text-gray-900 dark:text-white">{{ formatMonitorModel(r.model) }}</span>
+MISSING   2c250bfd7 src/components/user/MonitorDetailDialog.vue <td class="py-2 pr-3 font-medium text-gray-900 dark:text-gray-100">{{ formatMonitorModel(m.model) }}</td>
+MISSING   2e279c81d src/components/account/CNProviderQuotaCell.vue <!-- Tier rows: 5h + weekly utilization bars (snapshot renders on mount) -->
+MISSING   302a10b88 src/components/common/__tests__/MonitorQuotaView.spec.ts const rows = wrapper.findAll('[data-testid="monitor-quota-view"] .flex.items-center')
+MISSING   302a10b88 src/components/common/__tests__/MonitorQuotaView.spec.ts expect(html).toContain('bg-emerald-500')
+MISSING   302a10b88 src/components/common/__tests__/MonitorQuotaView.spec.ts expect(rows.length).toBeGreaterThanOrEqual(3)
+MISSING   34b8bf1a6 src/components/admin/channel/IntervalRow.vue <div class="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7">
+MISSING   34b8bf1a6 src/components/admin/channel/IntervalRow.vue <label class="text-xs text-gray-400">{{ t('admin.channels.form.cacheWrite1hPriceShort') }} <span class="text-gray-300">$/M</span></label>
+MISSING   34b8bf1a6 src/components/admin/channel/IntervalRow.vue <label class="text-xs text-gray-400">{{ t('admin.channels.form.cacheWrite5mPriceShort') }} <span class="text-gray-300">$/M</span></label>
+MISSING   34b8bf1a6 src/components/admin/channel/IntervalRow.vue type="number" step="any" min="0" class="input mt-0.5 text-xs" />
+MISSING   34b8bf1a6 src/components/admin/channel/PricingEntryCard.vue <div class="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7">
+MISSING   34b8bf1a6 src/components/admin/channel/PricingEntryCard.vue <label class="text-xs text-gray-400">{{ t('admin.channels.form.cacheWrite1hPrice') }}</label>
+MISSING   34b8bf1a6 src/components/admin/channel/PricingEntryCard.vue <label class="text-xs text-gray-400">{{ t('admin.channels.form.cacheWrite5mPrice') }}</label>
+MISSING   34b8bf1a6 src/components/admin/channel/PricingEntryCard.vue type="number" step="any" min="0" class="input mt-0.5 text-sm" :placeholder="t('admin.channels.form.pricePlaceholder')" />
+MISSING   34b8bf1a6 src/composables/useModelWhitelist.ts { label: 'Fable 5.1', from: 'claude-fable-5-1', to: 'anthropic.claude-fable-5-1', color: 'bg-rose-100 text-rose-700 hover:bg-rose-200 dark:bg-rose-900/30 dark:text-rose-400' },
+MISSING   34b8bf1a6 src/composables/useModelWhitelist.ts { label: 'Fable 5.1', from: 'claude-fable-5-1', to: 'claude-fable-5-1', color: 'bg-rose-100 text-rose-700 hover:bg-rose-200 dark:bg-rose-900/30 dark:text-rose-400' },
+MISSING   34b8bf1a6 src/composables/useModelWhitelist.ts { label: 'Fable 5.1', from: 'claude-fable-5-1', to: 'claude-fable-5-1', color: 'bg-rose-100 text-rose-700 hover:bg-rose-200 dark:bg-rose-900/30 dark:text-rose-400' },
+MISSING   363cc4994 src/views/admin/AccountsView.vue const cred = row.credentials?.subscription_tier
+MISSING   363cc4994 src/views/admin/AccountsView.vue const quota = (extra.grok_quota_snapshot || extra.grok_usage_snapshot) as Record<string, any> | undefined
+MISSING   363cc4994 src/views/admin/AccountsView.vue return String(value ?? '')
+MISSING   363cc4994 src/views/admin/AccountsView.vue return billing?.plan || 'SuperGrok'
+MISSING   377d1230f src/components/modelPlaza/PlazaModelPricingTable.vue <col class="w-[15%]" />
+MISSING   377d1230f src/components/modelPlaza/PlazaModelPricingTable.vue <col class="w-[15%]" />
+MISSING   377d1230f src/components/modelPlaza/PlazaModelPricingTable.vue <col class="w-[20%]" />
+MISSING   377d1230f src/components/modelPlaza/PlazaModelPricingTable.vue const hi = formatTokenCount(max)
+MISSING   377d1230f src/components/modelPlaza/PlazaModelPricingTable.vue const lo = formatTokenCount(min)
+MISSING   377d1230f src/components/modelPlaza/PlazaModelPricingTable.vue const unit = hi.slice(-1)
+MISSING   377d1230f src/components/modelPlaza/PlazaModelPricingTable.vue if (/[KM]/.test(unit) && lo.endsWith(unit)) return `${lo.slice(0, -1)}–${hi}`
+MISSING   377d1230f src/components/modelPlaza/PlazaModelPricingTable.vue return `${lo}–${hi}`
+MISSING   377d1230f src/components/modelPlaza/PlazaModelPricingTable.vue return intervals.some((iv) => iv.cache_write_price != null || iv.cache_read_price != null)
+MISSING   377d1230f src/components/modelPlaza/PlazaModelPricingTable.vue return m.official_pricing?.intervals ?? []
+MISSING   377d1230f src/components/modelPlaza/PlazaModelPricingTable.vue {{ paidPerMillion(iv.cache_read_price) }}
+MISSING   377d1230f src/components/modelPlaza/PlazaModelPricingTable.vue {{ paidPerMillion(iv.cache_write_price) }}
+MISSING   377d1230f src/components/modelPlaza/__tests__/PlazaModelPricingTable.spec.ts const text = mountTable([model], 1).findAll('tbody td')[1].text()
+MISSING   377d1230f src/components/modelPlaza/__tests__/PlazaModelPricingTable.spec.ts expect(text).toContain('100–200K')
+MISSING   377d1230f src/components/modelPlaza/__tests__/PlazaModelPricingTable.spec.ts expect(text).toContain('200K–1M')
+MISSING   377d1230f src/components/modelPlaza/__tests__/PlazaModelPricingTable.spec.ts expect(text).toContain('>1M')
+MISSING   377d1230f src/components/modelPlaza/__tests__/PlazaModelPricingTable.spec.ts expect(text).toContain('≤100K')
+MISSING   377d1230f src/components/modelPlaza/__tests__/PlazaModelPricingTable.spec.ts it('自定义中间档标签同单位时省略前一个单位', () => {
+MISSING   377d1230f src/components/modelPlaza/__tests__/PlazaModelPricingTable.spec.ts { ...ladderIntervals()[1], min_tokens: 200000, max_tokens: 1000000, tier_label: '' },
+MISSING   39485f2e2 src/composables/__tests__/useModelWhitelist.spec.ts expect(models).toContain('grok-imagine-video-1.5')
+MISSING   3bff4b64b src/components/layout/AppHeader.vue {{ t('admin.users.roles.' + user.role) }}
+MISSING   40ea3aeba src/components/layout/AppSidebar.vue const PluginIcon = {
+MISSING   40ea3aeba src/components/layout/AppSidebar.vue const flagPluginManagement = makeSidebarFlag(FeatureFlags.pluginManagement)
+MISSING   40ea3aeba src/components/layout/AppSidebar.vue render: () => h(Icon, { name: 'cube' })
+MISSING   40ea3aeba src/components/layout/AppSidebar.vue { path: '/admin/plugins', label: t('nav.plugins'), icon: PluginIcon, featureFlag: flagPluginManagement },
+MISSING   40ea3aeba src/views/admin/PluginsView.vue @load="uiLoading = false"
+MISSING   40ea3aeba src/views/admin/PluginsView.vue request_id: request.request_id,
+MISSING   4999231d6 src/i18n/locales/en/admin/settings.ts "Emails from allowlist domains can register without a quota. When the allowlist is not empty, every other registrable domain can register one account. Empty the allowlist to remove the quota for all domains (for example, {'@'}qq.com, {'@'}gmail.com, *.edu.cn).",
+MISSING   4999231d6 src/i18n/locales/en/admin/settings.ts emailSuffixWhitelistInputHint: 'Empty the allowlist to remove the registration quota. Use *.edu.cn to match edu.cn and its subdomains.',
+MISSING   4999231d6 src/i18n/locales/zh/admin/settings.ts "白名单域名的邮箱可无限注册；白名单非空时，其他可注册主域名各限注册一个账户。清空白名单后，所有域名均不限制注册数量（例如 {'@'}qq.com, {'@'}gmail.com, *.edu.cn）",
+MISSING   4999231d6 src/i18n/locales/zh/admin/settings.ts emailSuffixWhitelistInputHint: '清空白名单后不限制注册数量。使用 *.edu.cn 可匹配 edu.cn 及其子域名。',
+MISSING   4999231d6 src/views/admin/__tests__/SettingsView.spec.ts const enHint = enSettings.settings.registration.emailSuffixWhitelistHint;
+MISSING   4999231d6 src/views/admin/__tests__/SettingsView.spec.ts const zhHint = zhSettings.settings.registration.emailSuffixWhitelistHint;
+MISSING   4999231d6 src/views/admin/__tests__/SettingsView.spec.ts expect(enHint).toContain("empty");
+MISSING   4999231d6 src/views/admin/__tests__/SettingsView.spec.ts expect(enHint).toContain("one account");
+MISSING   4999231d6 src/views/admin/__tests__/SettingsView.spec.ts expect(zhHint).toContain("其他可注册主域名各限注册一个账户");
+MISSING   4999231d6 src/views/admin/__tests__/SettingsView.spec.ts expect(zhHint).toContain("清空白名单");
+MISSING   4a1da2950 pnpm-lock.yaml deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+MISSING   4a1da2950 pnpm-lock.yaml deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+MISSING   4a1da2950 pnpm-lock.yaml deprecated: Potential CWE-502 - Update to 1.3.1 or higher
+MISSING   4a1da2950 pnpm-lock.yaml deprecated: v9 and v10 no longer supported. please migrate to v11. about maintenance status, see https://vue-i18n.intlify.dev/guide/maintenance.html
+MISSING   5350b3d98 src/components/admin/usage/__tests__/UsageTable.spec.ts 'common.copyFailed': 'Copy failed',
+MISSING   5350b3d98 src/components/admin/usage/__tests__/UsageTable.spec.ts 'keys.copied': 'Copied',
+MISSING   5350b3d98 src/components/admin/usage/__tests__/UsageTable.spec.ts it('renders and copies the request ID', async () => {
+MISSING   5350b3d98 src/components/admin/usage/__tests__/UsageTable.spec.ts vi.mock('@/stores/app', () => ({ useAppStore: () => appStoreMocks }))
+MISSING   5350b3d98 src/views/admin/__tests__/UsageView.spec.ts 'request-id-hidden-by-default',
+MISSING   5350b3d98 src/views/admin/__tests__/UsageView.spec.ts 'usage-hidden-columns-version',
+MISSING   5350b3d98 src/views/admin/__tests__/UsageView.spec.ts await requestIdToggle!.trigger('click')
+MISSING   5350b3d98 src/views/admin/__tests__/UsageView.spec.ts const requestIdToggle = wrapper.findAll('button').find((button) => button.text() === 'Request ID')
+MISSING   5350b3d98 src/views/admin/__tests__/UsageView.spec.ts describe('admin UsageView request ID column visibility', () => {
+MISSING   5350b3d98 src/views/admin/__tests__/UsageView.spec.ts expect(localStorage.setItem).toHaveBeenCalledWith(
+MISSING   5350b3d98 src/views/admin/__tests__/UsageView.spec.ts expect(requestIdToggle).toBeDefined()
+MISSING   5350b3d98 src/views/admin/__tests__/UsageView.spec.ts expect.arrayContaining([expect.objectContaining({ key: 'request_id' })]),
+MISSING   5350b3d98 src/views/admin/__tests__/UsageView.spec.ts expect.arrayContaining([expect.objectContaining({ key: 'request_id', label: 'Request ID' })]),
+MISSING   5350b3d98 src/views/admin/__tests__/UsageView.spec.ts vi.mocked(localStorage.getItem).mockReset().mockReturnValue(null)
+MISSING   5350b3d98 src/views/admin/__tests__/UsageView.spec.ts vi.mocked(localStorage.setItem).mockReset()
+MISSING   563a72ca7 src/views/admin/SettingsView.vue <label class="font-medium text-gray-900 dark:text-white">{{
+MISSING   563a72ca7 src/views/auth/__tests__/RegisterView.spec.ts expect(wrapper.get('#email').classes()).toContain('input-error')
+MISSING   5cbd0c96a src/components/admin/monitor/MonitorFormDialog.vue <p v-if="accountHydrationFailed" class="mt-1 text-xs text-amber-600 dark:text-amber-400">
+MISSING   5cbd0c96a src/components/admin/monitor/MonitorFormDialog.vue <p v-if="accountOptions.length === 0 && !accountsLoading && !accountSearchQuery" class="mt-1 text-xs text-amber-600 dark:text-amber-400">
+MISSING   5cbd0c96a src/components/admin/monitor/MonitorFormDialog.vue <p v-if="form.provider === PROVIDER_OPENAI" class="mt-1 text-xs text-amber-600 dark:text-amber-400">
+MISSING   5cbd0c96a src/views/admin/__tests__/MonitorFormDialog.accountSelector.spec.ts const input = dropdown.querySelector<HTMLInputElement>('.select-search-input')
+MISSING   5cbd0c96a src/views/admin/__tests__/MonitorFormDialog.accountSelector.spec.ts const option = [...dropdown.querySelectorAll('.select-option')].find((el) =>
+MISSING   5e72deb7d src/views/admin/ops/components/OpsErrorDetailsModal.vue delete params.time_range
+MISSING   5e72deb7d src/views/admin/ops/components/OpsErrorDetailsModal.vue if (props.customStartTime && props.customEndTime) {
+MISSING   5e72deb7d src/views/admin/ops/components/OpsErrorDetailsModal.vue if (props.timeRange === 'custom') {
+MISSING   5e72deb7d src/views/admin/ops/components/OpsErrorDetailsModal.vue params.end_time = props.customEndTime
+MISSING   5e72deb7d src/views/admin/ops/components/OpsErrorDetailsModal.vue params.start_time = props.customStartTime
+MISSING   69648476d src/components/account/__tests__/AccountUsageCell.spec.ts account: makeAccount({ id: 4404, platform: 'grok', type: 'oauth', extra: {} })
+MISSING   69648476d src/components/account/__tests__/AccountUsageCell.spec.ts account: makeAccount({ id: 4405, platform: 'grok', type: 'oauth', extra: {} })
+MISSING   69648476d src/components/account/__tests__/AccountUsageCell.spec.ts expect(wrapper.text()).not.toContain('30d|')
+MISSING   69648476d src/components/account/__tests__/AccountUsageCell.spec.ts expect(wrapper.text()).toContain('24h|')
+MISSING   69648476d src/components/account/__tests__/AccountUsageCell.spec.ts expect(wrapper.text()).toContain('7d|')
+MISSING   69648476d src/components/account/__tests__/AccountUsageCell.spec.ts grok_free_token_limit: 500_000,
+MISSING   69648476d src/components/account/__tests__/AccountUsageCell.spec.ts it('Grok JWT free tier shows 24h bar even when leftover Heavy billing metrics remain', async () => {
+MISSING   69648476d src/components/account/__tests__/AccountUsageCell.spec.ts it('Grok SuperGrok Lite stays on paid 7d bar, not free 24h', async () => {
+MISSING   69648476d src/components/account/__tests__/AccountUsageCell.spec.ts plan: 'SuperGrok Heavy',
+MISSING   69648476d src/components/account/__tests__/AccountUsageCell.spec.ts subscription_tier: 'free',
+MISSING   69648476d src/components/account/__tests__/AccountUsageCell.spec.ts subscription_tier: 'supergrok_lite',
+MISSING   69648476d src/components/account/__tests__/AccountUsageCell.spec.ts usage_percent: 10,
+MISSING   69648476d src/components/common/__tests__/PlatformTypeBadge.grok.spec.ts expect(lite.html()).toContain('bg-cyan-100')
+MISSING   69648476d src/views/admin/AccountsView.vue row.credentials?.subscription_tier ||
+MISSING   6c3edc095 src/api/admin/settings.ts max_account_switches: number;
+MISSING   6c3edc095 src/api/admin/settings.ts retry_interval_ms: number;
+MISSING   6c3edc095 src/api/admin/settings.ts retry_max_duration_seconds: number;
+MISSING   6c3edc095 src/api/admin/settings.ts strategy: "cooldown" | "same_account_retry";
+MISSING   6c3edc095 src/views/admin/SettingsView.vue <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+MISSING   6c3edc095 src/views/admin/SettingsView.vue <div v-if="rateLimit429CooldownForm.strategy === 'same_account_retry'" class="grid grid-cols-1 gap-4 border-t border-gray-100 pt-4 dark:border-dark-700 md:grid-cols-3">
+MISSING   6c3edc095 src/views/admin/SettingsView.vue <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">处理策略</label>
+MISSING   6c3edc095 src/views/admin/SettingsView.vue <label class="text-sm">单号最大重试时长(秒)<input v-model.number="rateLimit429CooldownForm.retry_max_duration_seconds" type="number" min="1" max="600" class="input mt-2 w-full" /></label>
+MISSING   6c3edc095 src/views/admin/SettingsView.vue <label class="text-sm">最多切号次数<input v-model.number="rateLimit429CooldownForm.max_account_switches" type="number" min="0" max="10" class="input mt-2 w-full" /></label>
+MISSING   6c3edc095 src/views/admin/SettingsView.vue <label class="text-sm">重试间隔(ms)<input v-model.number="rateLimit429CooldownForm.retry_interval_ms" type="number" min="100" max="60000" class="input mt-2 w-full" /></label>
+MISSING   6c3edc095 src/views/admin/SettingsView.vue <option value="cooldown">账号冷却后恢复</option>
+MISSING   6c3edc095 src/views/admin/SettingsView.vue <option value="same_account_retry">原号重试后切号</option>
+MISSING   6c3edc095 src/views/admin/SettingsView.vue <select v-model="rateLimit429CooldownForm.strategy" class="input w-64">
+MISSING   6c3edc095 src/views/admin/SettingsView.vue max_account_switches: 2,
+MISSING   6c3edc095 src/views/admin/SettingsView.vue max_account_switches: rateLimit429CooldownForm.max_account_switches,
+MISSING   6c3edc095 src/views/admin/SettingsView.vue retry_interval_ms: 500,
+MISSING   6c3edc095 src/views/admin/SettingsView.vue retry_interval_ms: rateLimit429CooldownForm.retry_interval_ms,
+MISSING   6c3edc095 src/views/admin/SettingsView.vue retry_max_duration_seconds: 120,
+MISSING   6c3edc095 src/views/admin/SettingsView.vue retry_max_duration_seconds: rateLimit429CooldownForm.retry_max_duration_seconds,
+MISSING   6c3edc095 src/views/admin/SettingsView.vue strategy: "cooldown" as "cooldown" | "same_account_retry",
+MISSING   6c3edc095 src/views/admin/SettingsView.vue strategy: rateLimit429CooldownForm.strategy,
+MISSING   6c3edc095 src/views/admin/SettingsView.vue v-if="rateLimit429CooldownForm.enabled && rateLimit429CooldownForm.strategy === 'cooldown'"
+MISSING   6f972145b src/components/account/OpenAIQuotaResetCell.vue <span v-if="autoResetState.checked_at" class="text-gray-500 dark:text-gray-400">
+MISSING   6f972145b src/components/account/OpenAIQuotaResetCell.vue <span v-if="autoResetState.trigger_window" class="ml-1 tabular-nums">
+MISSING   6f972145b src/components/account/OpenAIQuotaResetCell.vue available: 'available',
+MISSING   6f972145b src/components/account/OpenAIQuotaResetCell.vue checking: 'checking',
+MISSING   6f972145b src/components/account/OpenAIQuotaResetCell.vue const autoResetStateClass = computed(() => {
+MISSING   6f972145b src/components/account/OpenAIQuotaResetCell.vue const keyByStatus: Record<string, string> = {
+MISSING   6f972145b src/components/account/OpenAIQuotaResetCell.vue if (!autoResetState.value?.status) return ''
+MISSING   6f972145b src/components/account/OpenAIQuotaResetCell.vue no_credit: 'noCredit',
+MISSING   6f972145b src/components/account/OpenAIQuotaResetCell.vue resetting: 'resetting',
+MISSING   6f972145b src/components/account/OpenAIQuotaResetCell.vue return 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+MISSING   6f972145b src/components/account/OpenAIQuotaResetCell.vue return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+MISSING   6f972145b src/components/account/OpenAIQuotaResetCell.vue return 'bg-gray-100 text-gray-600 dark:bg-dark-800 dark:text-gray-300'
+MISSING   6f972145b src/components/account/OpenAIQuotaResetCell.vue return 'bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
+MISSING   6f972145b src/components/account/OpenAIQuotaResetCell.vue return 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+MISSING   6f972145b src/components/account/OpenAIQuotaResetCell.vue return t(`admin.accounts.openaiQuotaReset.autoStatus.${keyByStatus[autoResetState.value.status]}`)
+MISSING   6f972145b src/components/account/OpenAIQuotaResetCell.vue success: 'success',
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts auto_reset_credit_5h_threshold: 0.755,
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts auto_reset_credit_7d_threshold: 0.92
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts await wrapper.get('[data-testid="auto-reset-credit-5h-threshold"]').setValue('0')
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts await wrapper.get('[data-testid="auto-reset-credit-5h-threshold"]').setValue('75.5')
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts await wrapper.get('[data-testid="auto-reset-credit-7d-threshold"]').setValue('92')
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts await wrapper.get('[data-testid="auto-reset-credit-enabled"]').trigger('click')
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts await wrapper.get('[data-testid="auto-reset-credit-enabled"]').trigger('click')
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts const account = buildOpenAIOAuthParentAccount()
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts const parent = mountModal(buildOpenAIOAuthParentAccount())
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts const wrapper = mountModal(buildOpenAIOAuthParentAccount())
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts credentials: { access_token: 'oauth-token' },
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts describe('EditAccountModal OpenAI 自动使用重置卡', () => {
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts expect((parent.get('[data-testid="auto-reset-credit-5h-threshold"]').element as HTMLInputElement).value).toBe('100')
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts expect((parent.get('[data-testid="auto-reset-credit-7d-threshold"]').element as HTMLInputElement).value).toBe('100')
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts expect(extra).not.toHaveProperty('codex_auto_reset_credit_state')
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts expect(extra).toMatchObject({
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts expect(parent.find('[data-testid="auto-reset-credit-settings"]').exists()).toBe(true)
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts expect(parent.get('[data-testid="auto-reset-credit-5h-threshold"]').attributes('disabled')).toBeDefined()
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts expect(wrapper.find('[data-testid="auto-reset-credit-settings"]').exists()).toBe(false)
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts for (const account of [buildAccount(), buildOpenAISetupTokenAccount(), buildOpenAISparkShadowAccount()]) {
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts function buildOpenAIOAuthParentAccount() {
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts it('仅对 OpenAI OAuth 母账号显示，默认关闭且阈值为 100/100', () => {
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts it('开启后拒绝超出 0.1–100 范围的任一阈值', async () => {
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts it('独立保存两个阈值，并禁止把运行态回写到管理请求', async () => {
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts name: 'OpenAI OAuth Parent',
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts parent.unmount()
+MISSING   6f972145b src/components/account/__tests__/EditAccountModal.spec.ts trigger_window: '5h',
+MISSING   6f972145b src/components/account/__tests__/OpenAIQuotaResetCell.spark_shadow.spec.ts ['available', 'available'],
+MISSING   6f972145b src/components/account/__tests__/OpenAIQuotaResetCell.spark_shadow.spec.ts ['checking', 'checking'],
+MISSING   6f972145b src/components/account/__tests__/OpenAIQuotaResetCell.spark_shadow.spec.ts ['failed', 'failed'],
+MISSING   6f972145b src/components/account/__tests__/OpenAIQuotaResetCell.spark_shadow.spec.ts ['no_credit', 'noCredit'],
+MISSING   6f972145b src/components/account/__tests__/OpenAIQuotaResetCell.spark_shadow.spec.ts ['resetting', 'resetting'],
+MISSING   6f972145b src/components/account/__tests__/OpenAIQuotaResetCell.spark_shadow.spec.ts ['success', 'success'],
+MISSING   6f972145b src/components/account/__tests__/OpenAIQuotaResetCell.spark_shadow.spec.ts checked_at: '2099-07-03T04:05:06Z',
+MISSING   6f972145b src/components/account/__tests__/OpenAIQuotaResetCell.spark_shadow.spec.ts codex_auto_reset_credit_state: { status: 'success', available_count: 1 },
+MISSING   6f972145b src/components/account/__tests__/OpenAIQuotaResetCell.spark_shadow.spec.ts const state = wrapper.get('[data-testid="auto-reset-credit-state"]')
+MISSING   6f972145b src/components/account/__tests__/OpenAIQuotaResetCell.spark_shadow.spec.ts describe('OpenAIQuotaResetCell 自动用卡运行态', () => {
+MISSING   6f972145b src/components/account/__tests__/OpenAIQuotaResetCell.spark_shadow.spec.ts error_code: status === 'failed' ? 'RESET_FAILED' : undefined,
+MISSING   6f972145b src/components/account/__tests__/OpenAIQuotaResetCell.spark_shadow.spec.ts expect(state.text()).not.toContain('credit_id')
+MISSING   6f972145b src/components/account/__tests__/OpenAIQuotaResetCell.spark_shadow.spec.ts expect(state.text()).toContain('5h')
+MISSING   6f972145b src/components/account/__tests__/OpenAIQuotaResetCell.spark_shadow.spec.ts expect(state.text()).toContain(`admin.accounts.openaiQuotaReset.autoStatus.${labelKey}`)
+MISSING   6f972145b src/components/account/__tests__/OpenAIQuotaResetCell.spark_shadow.spec.ts it('开关关闭时不显示历史运行态', () => {
+MISSING   6f972145b src/components/account/__tests__/OpenAIQuotaResetCell.spark_shadow.spec.ts trigger_window: '5h',
+MISSING   6f972145b src/i18n/locales/en/admin/accounts.ts thresholdHint: 'Each window is evaluated independently. Enter 0.1–100; both default to 100.',
+MISSING   6f972145b src/i18n/locales/zh/admin/accounts.ts thresholdHint: '两个窗口独立判断，任一达到自身阈值即触发。可填写 0.1–100，默认均为 100。',
+MISSING   77729e272 src/components/admin/group/__tests__/ReasoningEffortPolicyFields.spec.ts + overLimit: "downgrade",
+MISSING   77729e272 src/components/admin/group/__tests__/ReasoningEffortPolicyFields.spec.ts + overLimit: "downgrade",
+MISSING   7cdca9e49 src/components/common/GroupBadge.vue : 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400'
+MISSING   7cdca9e49 src/components/common/GroupBadge.vue : 'bg-pink-50 text-pink-700 dark:bg-pink-900/20 dark:text-pink-400'
+MISSING   7cdca9e49 src/components/common/GroupBadge.vue : 'bg-teal-50 text-teal-700 dark:bg-teal-900/20 dark:text-teal-400'
+MISSING   7cdca9e49 src/components/common/GroupBadge.vue return `${base} bg-indigo-200/60 text-indigo-800 dark:bg-indigo-800/40 dark:text-indigo-300`
+MISSING   7cdca9e49 src/components/common/GroupBadge.vue return `${base} bg-pink-200/60 text-pink-800 dark:bg-pink-800/40 dark:text-pink-300`
+MISSING   7cdca9e49 src/components/common/GroupBadge.vue return `${base} bg-teal-200/60 text-teal-800 dark:bg-teal-800/40 dark:text-teal-300`
+MISSING   7cdca9e49 src/components/common/GroupBadge.vue return isSubscription.value
+MISSING   7cdca9e49 src/components/common/GroupBadge.vue return isSubscription.value
+MISSING   7cdca9e49 src/components/common/GroupBadge.vue return isSubscription.value
+MISSING   7cdca9e49 src/views/admin/GroupsView.vue { value: "deepseek", label: "DeepSeek" },
+MISSING   7cdca9e49 src/views/admin/GroupsView.vue { value: "deepseek", label: "DeepSeek" },
+MISSING   7cdca9e49 src/views/admin/GroupsView.vue { value: "kimi", label: "Kimi" },
+MISSING   7cdca9e49 src/views/admin/GroupsView.vue { value: "kimi", label: "Kimi" },
+MISSING   7cdca9e49 src/views/admin/GroupsView.vue { value: "zhipu", label: "Zhipu GLM" },
+MISSING   7cdca9e49 src/views/admin/GroupsView.vue { value: "zhipu", label: "Zhipu GLM" },
+MISSING   83d4eb6a4 src/components/modelPlaza/PlazaModelPricingTable.vue :title="t('modelPlaza.table.timePricingRowHint', { timezone: m.time_pricing?.timezone })"
+MISSING   83d4eb6a4 src/components/modelPlaza/PlazaModelPricingTable.vue return `${clock(p.start_time)}–${clock(p.end_time)}`
+MISSING   83d4eb6a4 src/components/modelPlaza/__tests__/PlazaModelPricingTable.spec.ts expect(nightCells[0].text()).toContain('00:30–08:30')
+MISSING   83d4eb6a4 src/components/modelPlaza/__tests__/PlazaModelPricingTable.spec.ts expect(peakCells[0].text()).toContain('18:00–22:00')
+MISSING   85051616f src/components/account/CreateAccountModal.vue <input v-model="adaptiveBaseUrls[item.value]" type="text" class="input" />
+MISSING   85051616f src/components/account/CreateAccountModal.vue <p v-if="form.platform !== 'deepseek'" class="input-hint">
+MISSING   85051616f src/components/account/CreateAccountModal.vue if (form.platform === 'deepseek') opts.push({ value: 'responses', labelKey: 'responses' })
+MISSING   85051616f src/components/account/EditAccountModal.vue : adaptiveDefaults.anthropic,
+MISSING   85051616f src/components/account/EditAccountModal.vue : adaptiveDefaults.chat_completions,
+MISSING   85051616f src/components/account/EditAccountModal.vue : adaptiveDefaults.responses
+MISSING   85051616f src/components/account/EditAccountModal.vue <p v-if="account.platform !== 'deepseek'" class="input-hint">
+MISSING   85051616f src/components/account/EditAccountModal.vue anthropic: typeof storedBaseUrls.anthropic === 'string'
+MISSING   85051616f src/components/account/EditAccountModal.vue chat_completions: typeof storedBaseUrls.chat_completions === 'string'
+MISSING   85051616f src/components/account/EditAccountModal.vue editAdaptiveBaseUrls.value = {
+MISSING   85051616f src/components/account/EditAccountModal.vue if (props.account?.platform === 'deepseek') opts.push({ value: 'responses', labelKey: 'responses' })
+MISSING   85051616f src/components/account/EditAccountModal.vue responses: typeof storedBaseUrls.responses === 'string'
+MISSING   85051616f src/components/account/EditAccountModal.vue storedProtocol === 'adaptive' || storedProtocol === 'anthropic' || storedProtocol === 'responses'
+MISSING   85051616f src/components/account/__tests__/CreateAccountModal.spec.ts await selectButtonByText(wrapper, 'admin.accounts.cnProviders.apiProtocol.adaptive')
+MISSING   85051616f src/components/account/credentialsBuilder.ts responses: platform === 'deepseek' ? defaultCNBaseUrl(platform, mode, 'responses') : ''
+MISSING   8d82bb069 src/components/account/BulkEditAccountModal.vue :checked="openAIEndpointCapabilities.includes(option.value)"
+MISSING   8d82bb069 src/components/account/BulkEditAccountModal.vue @change="toggleOpenAIEndpointCapability(option.value, $event)"
+MISSING   8d82bb069 src/components/account/BulkEditAccountModal.vue capability: OpenAIEndpointCapability,
+MISSING   8d82bb069 src/components/account/BulkEditAccountModal.vue const input = event?.target as HTMLInputElement | null
+MISSING   8d82bb069 src/components/account/BulkEditAccountModal.vue event?: Event
+MISSING   8d82bb069 src/components/account/BulkEditAccountModal.vue if (input) input.checked = true
+MISSING   8f6f45983 src/views/admin/ChannelsView.vue const compositePlatforms: GroupPlatform[] = ['anthropic', 'openai', 'gemini', 'antigravity', 'grok']
+MISSING   901a0439f src/components/account/CNProviderBalanceCell.vue 'inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-dark-600',
+MISSING   901a0439f src/components/account/CNProviderBalanceCell.vue return t('admin.accounts.grokBalance')?.trim() || 'Balance'
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue 'inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-dark-600',
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue :style="{ width: `${Math.min(100, Math.max(0, tier.used_percent))}%` }"
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue <!-- Tier rows: 5h + weekly utilization bars -->
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue <div class="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-gray-200 dark:bg-dark-600">
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue <div v-for="tier in data.tiers" :key="tier.window" class="flex items-center gap-1.5 text-[10px]">
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue <span :class="['shrink-0 font-medium', utilizationTextColor(tier.used_percent)]">
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue <span class="w-10 shrink-0 text-gray-500 dark:text-gray-400">{{ windowLabel(tier.window) }}</span>
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue <span v-if="tier.reset_at" class="truncate text-gray-400 dark:text-gray-500" :title="tier.reset_at">
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue const diffMs = d.getTime() - now
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue const formatReset = (iso: string) => {
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue const hours = Math.round(diffMs / 3_600_000)
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue const utilizationColor = (pct: number) => {
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue const utilizationTextColor = (pct: number) => {
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue if (diffMs < 3_600_000) return `${Math.max(1, Math.round(diffMs / 60_000))}m`
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue if (diffMs <= 0) return t('admin.accounts.cnProviders.resetSoon')
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue if (hours < 48) return `${hours}h`
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue if (isNaN(d.getTime())) return iso
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue if (pct >= 75) return 'bg-amber-500'
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue if (pct >= 75) return 'text-amber-600 dark:text-amber-400'
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue if (pct >= 90) return 'bg-red-500'
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue if (pct >= 90) return 'text-red-600 dark:text-red-400'
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue return 'text-emerald-600 dark:text-emerald-400'
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue return `${mm}-${dd}`
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue {{ Math.round(tier.used_percent) }}%
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue {{ t('admin.accounts.cnProviders.window5h') }}/{{ t('admin.accounts.cnProviders.windowWeekly') }}
+MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue · {{ formatReset(tier.reset_at) }}
+MISSING   901a0439f src/components/account/CnBaseUrlPresets.vue protocol?: 'chat_completions' | 'anthropic' | 'responses'
+MISSING   901a0439f src/components/account/CreateAccountModal.vue <Icon :name="opt.value === 'anthropic' ? 'sparkles' : opt.value === 'responses' ? 'terminal' : 'chat'" size="sm" />
+MISSING   901a0439f src/components/account/CreateAccountModal.vue apiProtocol.value = 'chat_completions'
+MISSING   901a0439f src/components/account/CreateAccountModal.vue apiProtocol.value = 'chat_completions'
+MISSING   901a0439f src/components/account/CreateAccountModal.vue const apiProtocol = ref<CnApiProtocol>('chat_completions')
+MISSING   901a0439f src/components/account/CreateAccountModal.vue if (form.platform === 'deepseek') {
+MISSING   901a0439f src/components/account/CreateAccountModal.vue if (resolvedCNBase) {
+MISSING   901a0439f src/components/account/CreateAccountModal.vue watch(accountMode, (mode) => {
+MISSING   901a0439f src/components/account/EditAccountModal.vue const editApiProtocol = ref<CnApiProtocol>('chat_completions')
+MISSING   901a0439f src/components/account/EditAccountModal.vue if (newAccount.platform !== 'deepseek' && editApiProtocol.value === 'responses') {
+MISSING   901a0439f src/components/account/EditAccountModal.vue watch(editAccountMode, (mode) => {
+MISSING   901a0439f src/components/account/EditAccountModal.vue watch(editApiProtocol, (protocol) => {
+MISSING   901a0439f src/i18n/locales/en/admin/accounts.ts resetSoon: 'reset soon',
+MISSING   901a0439f src/i18n/locales/en/admin/accounts.ts window5h: '5-hour window',
+MISSING   901a0439f src/i18n/locales/en/admin/accounts.ts windowWeekly: 'Weekly window',
+MISSING   901a0439f src/i18n/locales/zh/admin/accounts.ts resetSoon: '即将重置',
+MISSING   901a0439f src/i18n/locales/zh/admin/accounts.ts window5h: '5 小时窗口',
+MISSING   901a0439f src/i18n/locales/zh/admin/accounts.ts windowWeekly: '每周窗口',
+MISSING   943f09d35 src/views/admin/ops/components/OpsDashboardHeader.vue : `${formatMemorySizeMB(systemMetrics.memory_used_mb)} / ${formatMemorySizeMB(systemMetrics.memory_total_mb)}`
+MISSING   994fbfedd src/components/account/CNProviderQuotaCell.vue 'inline-flex items-center gap-0.5 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-medium leading-4 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-dark-600',
+MISSING   994fbfedd src/components/account/CNProviderQuotaCell.vue :title="tier.reset_at"
+MISSING   994fbfedd src/components/account/CNProviderQuotaCell.vue data-test="cn-provider-quota-label"
+MISSING   994fbfedd src/components/account/CNProviderQuotaCell.vue v-if="tier.reset_at"
+MISSING   994fbfedd src/components/account/CNProviderQuotaCell.vue {{ windowLabel(tier.window) }}
+MISSING   994fbfedd src/components/account/__tests__/CNProviderQuotaCell.spec.ts const labels = root.findAll('[data-test="cn-provider-quota-label"]')
+MISSING   994fbfedd src/components/account/__tests__/CNProviderQuotaCell.spec.ts const probeButton = root.get('button')
+MISSING   994fbfedd src/components/account/__tests__/CNProviderQuotaCell.spec.ts const tiers = root.findAll('[data-test="cn-provider-quota-tier"]')
+MISSING   994fbfedd src/components/account/__tests__/CNProviderQuotaCell.spec.ts expect(label.classes()).toContain('w-14')
+MISSING   994fbfedd src/components/account/__tests__/CNProviderQuotaCell.spec.ts expect(label.classes()).toContain('whitespace-nowrap')
+MISSING   994fbfedd src/components/account/__tests__/CNProviderQuotaCell.spec.ts expect(labels).toHaveLength(2)
+MISSING   994fbfedd src/components/account/__tests__/CNProviderQuotaCell.spec.ts expect(probeButton.classes()).toContain('leading-4')
+MISSING   994fbfedd src/components/account/__tests__/CNProviderQuotaCell.spec.ts expect(probeButton.classes()).toContain('whitespace-nowrap')
+MISSING   994fbfedd src/components/account/__tests__/CNProviderQuotaCell.spec.ts expect(tier.classes()).toContain('leading-4')
+MISSING   994fbfedd src/components/account/__tests__/CNProviderQuotaCell.spec.ts expect(tier.classes()).toContain('min-w-0')
+MISSING   994fbfedd src/components/account/__tests__/CNProviderQuotaCell.spec.ts expect(tiers).toHaveLength(2)
+MISSING   994fbfedd src/components/account/__tests__/CNProviderQuotaCell.spec.ts for (const label of labels) {
+MISSING   994fbfedd src/components/account/__tests__/CNProviderQuotaCell.spec.ts for (const tier of tiers) {
+MISSING   994fbfedd src/components/account/__tests__/CNProviderQuotaCell.spec.ts it('keeps the compact quota stack readable inside the account table cell', async () => {
+MISSING   9aac3b73f src/components/account/OllamaCloudUsageCell.vue <div v-if="state.configured" class="flex items-center pt-0.5">
+MISSING   9aac3b73f src/components/account/OllamaCloudUsageCell.vue const state = ref(props.account.ollama_cloud_usage)
+MISSING   9aac3b73f src/components/account/__tests__/OllamaCloudUsageCell.spec.ts const query = wrapper.get('[data-testid="ollama-cloud-usage-query"]')
+MISSING   9aac3b73f src/components/account/__tests__/OllamaCloudUsageCell.spec.ts const { refreshOllamaCloudUsage } = vi.hoisted(() => ({
+MISSING   9aac3b73f src/components/account/__tests__/OllamaCloudUsageCell.spec.ts expect(query.classes()).toEqual(expect.arrayContaining(['text-blue-600', 'hover:bg-blue-50']))
+MISSING   9aac3b73f src/components/account/__tests__/OllamaCloudUsageCell.spec.ts expect(query.text()).toContain('admin.accounts.usageWindow.activeQuery')
+MISSING   9aac3b73f src/components/account/__tests__/OllamaCloudUsageCell.spec.ts expect(wrapper.findAllComponents(UsageProgressBar)[0].props('utilization')).toBe(43)
+MISSING   9aac3b73f src/components/account/__tests__/OllamaCloudUsageCell.spec.ts it('queries through the edit-page refresh endpoint and emits the updated state', async () => {
+MISSING   9aac3b73f src/components/account/__tests__/OllamaCloudUsageCell.spec.ts it('reacts to an account snapshot update', async () => {
+MISSING   9aac3b73f src/components/account/__tests__/OllamaCloudUsageCell.spec.ts it('renders native 5h and 7d windows with the configured-account query action', () => {
+MISSING   9aac3b73f src/components/account/__tests__/OllamaCloudUsageCell.spec.ts refreshOllamaCloudUsage.mockReset()
+MISSING   9f24a5530 src/components/admin/channel/PricingEntryCard.vue enableTimePricing: false,
+MISSING   9f24a5530 src/components/admin/channel/TimePricingSection.vue <div class="min-w-0 flex-1 sm:max-w-sm">
+MISSING   9f24a5530 src/components/admin/channel/TimePricingSection.vue <label class="mt-2 block text-xs text-gray-400">
+MISSING   9f24a5530 src/components/admin/channel/__tests__/TimePricingSection.spec.ts template: '<button type="button" data-testid="timezone-select" />',
+MISSING   9f24a5530 src/components/admin/channel/__tests__/types.spec.ts expect(form).toEqual({ timezone: 'Asia/Shanghai', periods: [] })
+MISSING   9f24a5530 src/components/admin/channel/__tests__/types.spec.ts it('round-trips and formats multiplier', () => {
+MISSING   9f24a5530 src/components/admin/channel/types.ts return { timezone: DEFAULT_TIME_PRICING_TIMEZONE, periods: [] }
+MISSING   a04ce4901 src/composables/useModelWhitelist.ts { label: 'Grok 4.6', from: 'grok-4.6', to: 'grok-4.6', color: 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800/50 dark:text-slate-300' },
+MISSING   a20e1c00c src/components/admin/monitor/MonitorFormDialog.vue ([show]) => {
+MISSING   a20e1c00c src/components/admin/monitor/MonitorFormDialog.vue <details v-if="usesProbePart" class="rounded-lg border border-gray-200 bg-gray-50/50 p-3 dark:border-dark-700 dark:bg-dark-900/30">
+MISSING   a20e1c00c src/components/admin/monitor/MonitorFormDialog.vue <div v-if="form.provider === PROVIDER_OPENAI && usesProbePart" class="rounded-lg border border-blue-100 bg-blue-50/50 p-3 dark:border-blue-500/20 dark:bg-blue-500/10">
+MISSING   a20e1c00c src/components/admin/monitor/MonitorFormDialog.vue <p class="mt-1 text-xs text-gray-400">{{ t('admin.channelMonitor.form.linkedAccountHint') }}</p>
+MISSING   a20e1c00c src/components/admin/monitor/MonitorFormDialog.vue <p v-if="accountOptions.length === 0 && !accountsLoading" class="mt-1 text-xs text-amber-600 dark:text-amber-400">
+MISSING   a20e1c00c src/components/admin/monitor/MonitorFormDialog.vue async function loadLinkedAccounts() {
+MISSING   a20e1c00c src/components/admin/monitor/MonitorFormDialog.vue const res = await adminAPI.accounts.list(1, 200, { platform: form.provider })
+MISSING   a20e1c00c src/components/admin/monitor/MonitorFormDialog.vue if (Number.isFinite(id)) form.account_id = id
+MISSING   a20e1c00c src/components/admin/monitor/MonitorFormDialog.vue if (form.account_id != null && !linkedAccounts.value.some((a) => a.id === form.account_id)) {
+MISSING   a20e1c00c src/components/admin/monitor/MonitorFormDialog.vue {{ t('admin.channelMonitor.form.linkedAccount') }} <span class="text-red-500">*</span>
+MISSING   a20e1c00c src/components/admin/monitor/MonitorPrimaryModelCell.vue <span class="text-sm text-gray-900 dark:text-gray-100">{{ row.primary_model }}</span>
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue :style="{ width: `${Math.min(100, Math.max(0, row.tier.used_percent))}%` }"
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue <!-- 用量窗口条形图（样式/阈值对齐账号页 CNProviderQuotaCell） -->
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue <div class="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-gray-200 dark:bg-dark-600">
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue <div v-for="row in tierRows" :key="row.key" class="flex items-center gap-1.5 text-[10px]">
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue <span :class="['shrink-0 font-medium', utilizationTextColor(row.tier.used_percent)]">
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue <span class="w-14 shrink-0 truncate text-gray-500 dark:text-gray-400" :title="row.title">
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue <span v-if="row.tier.reset_at" class="truncate text-gray-400 dark:text-gray-500" :title="row.tier.reset_at">
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue const diffMs = d.getTime() - now
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue const formatReset = (iso: string) => {
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue const hours = Math.round(diffMs / 3_600_000)
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue const utilizationColor = (pct: number) => {
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue const utilizationTextColor = (pct: number) => {
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue if (diffMs < 3_600_000) return `${Math.max(1, Math.round(diffMs / 60_000))}m`
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue if (diffMs <= 0) return t('monitorCommon.quota.resetSoon')
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue if (hours < 48) return `${hours}h`
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue if (isNaN(d.getTime())) return iso
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue if (pct >= 75) return 'bg-amber-500'
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue if (pct >= 75) return 'text-amber-600 dark:text-amber-400'
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue if (pct >= 90) return 'bg-red-500'
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue if (pct >= 90) return 'text-red-600 dark:text-red-400'
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue return 'text-emerald-600 dark:text-emerald-400'
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue return `${mm}-${dd}`
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue {{ Math.round(row.tier.used_percent) }}%
+MISSING   a20e1c00c src/components/common/MonitorQuotaView.vue · {{ formatReset(row.tier.reset_at) }}
+MISSING   a20e1c00c src/i18n/locales/en/admin/channels.ts checkModeQuotaHint: 'Only queries the linked account usage windows / balance, no LLM requests',
+MISSING   a20e1c00c src/i18n/locales/en/dashboard.ts resetSoon: 'resetting',
+MISSING   a20e1c00c src/i18n/locales/zh/admin/channels.ts checkModeQuotaHint: '只查询关联账号的用量滚动窗口/余额，不产生 LLM 请求',
+MISSING   a20e1c00c src/i18n/locales/zh/dashboard.ts resetSoon: '即将重置',
+MISSING   a6d868f27 src/components/user/dashboard/UserDashboardStats.vue <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('dashboard.input') }}: {{ formatTokens(stats?.today_input_tokens || 0) }} / {{ t('dashboard.output') }}: {{ formatTokens(stats?.today_output_tokens || 0) }} / {{ t('dashboard.cache') }}: {{ formatTokens((stats?.today_cache_creation_tokens || 0) + (stats?.today_cache_read_tokens || 0)) }}</p>
+MISSING   a6d868f27 src/components/user/dashboard/UserDashboardStats.vue <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('dashboard.input') }}: {{ formatTokens(stats?.total_input_tokens || 0) }} / {{ t('dashboard.output') }}: {{ formatTokens(stats?.total_output_tokens || 0) }} / {{ t('dashboard.cache') }}: {{ formatTokens((stats?.total_cache_creation_tokens || 0) + (stats?.total_cache_read_tokens || 0)) }}</p>
+MISSING   b07d85c49 src/components/modelPlaza/PlazaModelPricingTable.vue return t(key, { timezone: m.time_pricing?.timezone })
+MISSING   b07d85c49 src/components/modelPlaza/__tests__/PlazaModelPricingTable.spec.ts expect(nightCells[0].text()).toContain('00:30–08:30')
+MISSING   b16ed03ca src/components/keys/UseKeyModal.vue const codexCatalogModelSlugs = computed(() => {
+MISSING   b16ed03ca src/components/keys/UseKeyModal.vue const payload: unknown = JSON.parse(codexModelManifestContent.value)
+MISSING   b16ed03ca src/components/keys/UseKeyModal.vue const preferredModel = platform === 'deepseek' ? 'deepseek-v4-pro' : 'gpt-5.5'
+MISSING   b16ed03ca src/components/keys/UseKeyModal.vue const slug = (model as { slug?: unknown }).slug
+MISSING   b16ed03ca src/components/keys/UseKeyModal.vue if (!codexModelManifestContent.value) return []
+MISSING   b16ed03ca src/components/keys/UseKeyModal.vue if (typeof slug !== 'string' || !slug.trim()) return []
+MISSING   b16ed03ca src/components/keys/UseKeyModal.vue return [slug.trim()]
+MISSING   b171bb0e4 src/views/admin/GroupsView.vue { value: "deepseek", label: "DeepSeek" },
+MISSING   b171bb0e4 src/views/admin/GroupsView.vue { value: "kimi", label: "Kimi" },
+MISSING   b171bb0e4 src/views/admin/GroupsView.vue { value: "zhipu", label: "Zhipu GLM" },
+MISSING   b171bb0e4 src/views/admin/__tests__/GroupsView.compositePlatforms.spec.ts expect(options).toContain('{ value: "deepseek", label: "DeepSeek" }')
+MISSING   b171bb0e4 src/views/admin/__tests__/GroupsView.compositePlatforms.spec.ts expect(options).toContain('{ value: "kimi", label: "Kimi" }')
+MISSING   b171bb0e4 src/views/admin/__tests__/GroupsView.compositePlatforms.spec.ts expect(options).toContain('{ value: "zhipu", label: "Zhipu GLM" }')
+MISSING   b3092145d src/components/account/__tests__/CreateAccountModal.spec.ts template: '<div data-testid="model-whitelist-selector" />',
+MISSING   b56c61ecc src/components/admin/user/UserAllowedGroupsModal.vue :checked="config.isSelected"
+MISSING   b56c61ecc src/components/admin/user/UserAllowedGroupsModal.vue :checked="restrictPublicGroups"
+MISSING   b56c61ecc src/components/admin/user/UserAllowedGroupsModal.vue <label class="ml-auto flex cursor-pointer items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+MISSING   b56c61ecc src/components/admin/user/UserAllowedGroupsModal.vue @change="togglePublicGroup(config.groupId)"
+MISSING   b56c61ecc src/components/admin/user/UserAllowedGroupsModal.vue @change="toggleRestrictPublicGroups"
+MISSING   b56c61ecc src/i18n/locales/en/admin/overview.ts publicGroupsRestricted: 'Public Groups (Restricted)',
+MISSING   b689e5b40 src/i18n/locales/en/admin/channels.ts 'Pricing follows the model declared by the upstream response. It can only lower the charge, never raise it — only enable this for upstreams you trust.',
+MISSING   b689e5b40 src/i18n/locales/en/admin/channels.ts billingModelSourceResponseWarning:
+MISSING   b689e5b40 src/i18n/locales/zh/admin/channels.ts billingModelSourceResponseWarning: '计费基准以上游响应自报的模型为准。该模式只会降低费用、不会抬高，但请仅对可信的上游启用。',
+MISSING   b689e5b40 src/views/admin/ChannelsView.vue <p v-if="form.billing_model_source === 'response_model'" class="mt-1 text-xs text-amber-500">
+MISSING   b689e5b40 src/views/admin/ChannelsView.vue {{ t('admin.channels.form.billingModelSourceResponseWarning', 'Pricing follows the model declared by the upstream response. It can only lower the charge, never raise it — only enable this for upstreams you trust.') }}
+MISSING   b830bc14d src/components/admin/channel/PricingEntryCard.vue <!-- Token intervals (channel-only; group long-context uses official presets) -->
+MISSING   b830bc14d src/i18n/locales/en/admin/overview.ts description: 'Overrides channel and built-in prices for matching models. Long-context tiers come from official presets — do not enter custom intervals. Use per-request tiers such as realtime, tts, and stt for audio.',
+MISSING   b830bc14d src/i18n/locales/en/admin/overview.ts longContextHint: 'When checked, official/preset long-context tiers apply. When unchecked, token models stay on the first-tier base rate.',
+MISSING   b830bc14d src/i18n/locales/zh/admin/overview.ts longContextHint: '勾选后按官方/预设阶梯计费；关闭则始终按第一档基础价。',
+MISSING   bbc8b6e90 src/i18n/locales/en/admin/overview.ts downloadPartsHint: 'Download every part in order and concatenate the gzip bytes: on Linux/macOS run cat payload.part-* > backup.sql.gz; on Windows run copy /b payload.part-000001+payload.part-000002 backup.sql.gz.',
+MISSING   c0ab3a00e src/components/account/BulkEditAccountModal.vue <div :class="!enableCodexFingerprintMode && 'pointer-events-none opacity-50'">
+MISSING   c0ab3a00e src/components/account/BulkEditAccountModal.vue <p class="mb-2 text-xs text-gray-500 dark:text-gray-400">
+MISSING   c0ab3a00e src/components/account/BulkEditAccountModal.vue codexFingerprintMode.value = 'session'
+MISSING   c0ab3a00e src/components/account/BulkEditAccountModal.vue const codexFingerprintMode = ref<CodexFingerprintMode>('session')
+MISSING   c0ab3a00e src/components/account/BulkEditAccountModal.vue if (codexFingerprintMode.value !== 'session') {
+MISSING   c0ab3a00e src/components/account/BulkEditAccountModal.vue { value: 'full' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintFull') },
+MISSING   c0ab3a00e src/components/account/CreateAccountModal.vue codexFingerprintMode.value = 'session'
+MISSING   c0ab3a00e src/components/account/CreateAccountModal.vue const codexFingerprintMode = ref<CodexFingerprintMode>('session')
+MISSING   c0ab3a00e src/components/account/CreateAccountModal.vue if (codexFingerprintMode.value !== 'session') {
+MISSING   c0ab3a00e src/components/account/CreateAccountModal.vue { value: 'full' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintFull') },
+MISSING   c0ab3a00e src/components/account/EditAccountModal.vue : 'session')
+MISSING   c0ab3a00e src/components/account/EditAccountModal.vue codexFingerprintMode.value = 'session'
+MISSING   c0ab3a00e src/components/account/EditAccountModal.vue const codexFingerprintMode = ref<CodexFingerprintMode>('session')
+MISSING   c0ab3a00e src/components/account/EditAccountModal.vue if (codexFingerprintMode.value !== 'session') {
+MISSING   c0ab3a00e src/components/account/EditAccountModal.vue { value: 'full' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintFull') },
+MISSING   c0ab3a00e src/i18n/locales/en/admin/accounts.ts codexFingerprintModeDesc: 'When multiple users share the same OAuth account, converge device/session identifiers to account-level stable values to reduce upstream-visible device and session count. Off = pass through client identifiers as-is.',
+MISSING   c0ab3a00e src/i18n/locales/en/admin/accounts.ts codexFingerprintOff: 'Off (passthrough)',
+MISSING   c0ab3a00e src/i18n/locales/en/admin/accounts.ts codexFingerprintSession: 'Device + Session (recommended)',
+MISSING   c0ab3a00e src/i18n/locales/zh/admin/accounts.ts codexFingerprintModeDesc: '多人共享同一 OAuth 账号时，将各用户的设备/会话标识收敛为账号级恒定值，减少上游可见的设备数和会话数。关闭时原样透传客户端标识。',
+MISSING   c0ab3a00e src/i18n/locales/zh/admin/accounts.ts codexFingerprintOff: '关闭（透传）',
+MISSING   c0ab3a00e src/i18n/locales/zh/admin/accounts.ts codexFingerprintSession: '设备+会话（推荐）',
+MISSING   c66e700f0 src/views/admin/SettingsView.vue <div class="border-b border-gray-100 pb-5 dark:border-dark-700 md:col-span-2">
+MISSING   c66e700f0 src/views/admin/SettingsView.vue <option value="semantic">
+MISSING   c66e700f0 src/views/admin/SettingsView.vue <option value="visible">
+MISSING   c66e700f0 src/views/admin/SettingsView.vue <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+MISSING   c66e700f0 src/views/admin/SettingsView.vue {{ t("admin.settings.gatewayForwarding.openaiTTFTModeSemantic") }}
+MISSING   c66e700f0 src/views/admin/SettingsView.vue {{ t("admin.settings.gatewayForwarding.openaiTTFTModeVisible") }}
+MISSING   c9effc456 src/views/admin/__tests__/ChannelMonitorView.checkModeBadge.spec.ts expect(cls).not.toContain('bg-gray-100')
+MISSING   c9effc456 src/views/admin/__tests__/ChannelMonitorView.checkModeBadge.spec.ts expect(cls).toContain('bg-gray-100')
+MISSING   cb7b03795 src/api/__tests__/admin.groups.usage-summary.spec.ts apiClient: { get },
+MISSING   cb7b03795 src/api/__tests__/admin.groups.usage-summary.spec.ts { group_id: 1, today_cost: 1.25, yesterday_cost: 2.5, total_cost: 9.75 },
+MISSING   cb7b03795 src/views/admin/__tests__/GroupsView.columnSettings.spec.ts expect(getUsageSummary).toHaveBeenCalledWith()
+MISSING   cb7b03795 src/views/admin/__tests__/GroupsView.columnSettings.spec.ts expect(text).toContain('Today$1.25')
+MISSING   cb7b03795 src/views/admin/__tests__/GroupsView.columnSettings.spec.ts expect(text).toContain('Total$9.75')
+MISSING   cb7b03795 src/views/admin/__tests__/GroupsView.columnSettings.spec.ts expect(text).toContain('Yesterday$2.50')
+MISSING   cb7b03795 src/views/admin/__tests__/GroupsView.columnSettings.spec.ts { group_id: 1, today_cost: 1.25, yesterday_cost: 2.5, total_cost: 9.75 },
+MISSING   d9d2854d2 src/views/HomeView.vue () => appStore.cachedPublicSettings?.model_plaza_require_auth === true,
+MISSING   d9d2854d2 src/views/HomeView.vue () => modelPlazaEnabled.value && (isAuthenticated.value || !modelPlazaRequiresAuth.value),
+MISSING   e39fce270 src/components/account/CreateAccountModal.vue if (upstreamModelsPreviewed.value) {
+MISSING   e39fce270 src/components/account/__tests__/CreateAccountModal.spec.ts template: '<button type="button" data-testid="model-whitelist-selector" @click="$emit(\'upstream-synced\')">models</button>',
+MISSING   e39fce270 src/i18n/locales/zh/admin/accounts.ts syncUpstreamModelsMetadataIncomplete: '模型 ID 已同步，但能力元数据不完整，能力信息未更新。',
+MISSING   e4f869e0c src/i18n/locales/en/admin/ops.ts client: 'Client Response',
+MISSING   e4f869e0c src/i18n/locales/en/admin/ops.ts diagnosticPayloads: 'Diagnostic Payloads',
+MISSING   e4f869e0c src/i18n/locales/en/admin/ops.ts rootCause: 'Root Cause',
+MISSING   e4f869e0c src/i18n/locales/en/admin/ops.ts upstream_detail: 'Upstream Detail',
+MISSING   e4f869e0c src/i18n/locales/en/admin/ops.ts upstream_events: 'Upstream Events'
+MISSING   e4f869e0c src/i18n/locales/en/admin/ops.ts upstream_message: 'Upstream Message',
+MISSING   e4f869e0c src/views/admin/ops/components/OpsErrorDetailModal.vue <div class="mb-2 text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ diagnosticPayloadLabel(section.key) }}</div>
+MISSING   e4f869e0c src/views/admin/ops/components/OpsErrorDetailModal.vue <div class="mt-1 break-words text-sm font-medium text-gray-900 dark:text-white" :title="rootCauseMessage">
+MISSING   e4f869e0c src/views/admin/ops/components/OpsErrorDetailModal.vue <div class="mt-1">
+MISSING   e4f869e0c src/views/admin/ops/components/OpsErrorDetailModal.vue <div class="mt-3 break-words text-sm font-medium text-amber-900 dark:text-amber-100">{{ rootCauseMessage }}</div>
+MISSING   e4f869e0c src/views/admin/ops/components/OpsErrorDetailModal.vue <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.errorDetail.upstreamStatus') }}</div>
+MISSING   e4f869e0c src/views/admin/ops/components/OpsErrorDetailModal.vue <div v-else class="mt-4 space-y-4">
+MISSING   e4f869e0c src/views/admin/ops/components/OpsErrorDetailModal.vue <div v-for="section in diagnosticPayloadSections" :key="section.key">
+MISSING   e4f869e0c src/views/admin/ops/components/OpsErrorDetailModal.vue <div v-if="!diagnosticPayloadSections.length" class="mt-4 text-sm text-gray-500 dark:text-gray-400">{{ t('common.noData') }}</div>
+MISSING   e4f869e0c src/views/admin/ops/components/OpsErrorDetailModal.vue <div v-if="rootCauseMessage" class="rounded-xl bg-amber-50 p-6 dark:bg-amber-900/10">
+MISSING   e4f869e0c src/views/admin/ops/components/OpsErrorDetailModal.vue <h3 class="text-sm font-black uppercase tracking-wider text-amber-900 dark:text-amber-200">{{ t('admin.ops.errorDetail.rootCause') }}</h3>
+MISSING   e4f869e0c src/views/admin/ops/components/OpsErrorDetailModal.vue <h3 class="text-sm font-black uppercase tracking-wider text-gray-900 dark:text-white">{{ t('admin.ops.errorDetail.diagnosticPayloads') }}</h3>
+MISSING   e4f869e0c src/views/admin/ops/components/OpsErrorDetailModal.vue <pre class="max-h-[520px] overflow-auto rounded-xl border border-gray-200 bg-white p-4 text-xs text-gray-800 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-100"><code>{{ prettyJSON(section.value) }}</code></pre>
+MISSING   e4f869e0c src/views/admin/ops/components/OpsErrorDetailModal.vue <span :class="['inline-flex items-center rounded-lg px-2 py-1 text-xs font-black ring-1 ring-inset shadow-sm', upstreamStatusClass]">
+MISSING   e4f869e0c src/views/admin/ops/components/OpsErrorDetailModal.vue const statusClass = computed(() => statusBadgeClass(detail.value?.status_code ?? 0))
+MISSING   e4f869e0c src/views/admin/ops/components/OpsErrorDetailModal.vue const upstreamStatusClass = computed(() => statusBadgeClass(detail.value?.upstream_status_code ?? 0))
+MISSING   e4f869e0c src/views/admin/ops/components/OpsErrorDetailModal.vue function statusBadgeClass(code: number): string {
+MISSING   e4f869e0c src/views/admin/ops/components/OpsErrorDetailModal.vue {{ detail.upstream_status_code ?? '—' }}
+MISSING   e4f869e0c src/views/admin/ops/components/OpsErrorDetailModal.vue {{ rootCauseMessage || '—' }}
+MISSING   e4f869e0c src/views/admin/ops/components/__tests__/OpsErrorDetailModal.spec.ts expect(wrapper.text()).toContain('429')
+MISSING   e4f869e0c src/views/admin/ops/components/__tests__/OpsErrorDetailModal.spec.ts expect(wrapper.text()).toContain('admin.ops.errorDetail.upstreamStatus')
+MISSING   e8ff2017c src/views/admin/ops/components/OpsErrorDistributionChart.vue <span class="text-gray-500 dark:text-gray-400">{{ item.label }} {{ item.count }}</span>
+MISSING   f3d949107 src/components/admin/channel/PricingEntryCard.vue <!-- Image/video mode -->
+MISSING   f3d949107 src/components/admin/channel/PricingEntryCard.vue <button type="button" @click="addMediaTier" class="text-xs text-primary-600 hover:text-primary-700">
+MISSING   f3d949107 src/i18n/locales/en/admin/overview.ts description: 'Overrides channel and built-in prices for matching models. Use per-request tiers such as realtime, tts, and stt for audio.',
+MISSING   f3d949107 src/i18n/locales/en/admin/overview.ts longContextHint: 'When disabled, token models always use the lowest configured tier.',
+MISSING   f3d949107 src/i18n/locales/zh/admin/overview.ts description: '匹配模型后覆盖渠道和内置价格。音频可用按次层级配置 realtime、tts、stt。',
+MISSING   f3d949107 src/i18n/locales/zh/admin/overview.ts longContextHint: '关闭时，Token 模型始终只使用配置的最低档。',
+MISSING   f3d949107 src/views/admin/GroupsView.vue <PricingEntryCard v-for="(entry, index) in createForm.model_pricing" :key="index" :entry="entry" :platform="createForm.platform" @update="createForm.model_pricing[index] = $event" @remove="createForm.model_pricing.splice(index, 1)" />
+MISSING   f3d949107 src/views/admin/GroupsView.vue <PricingEntryCard v-for="(entry, index) in editForm.model_pricing" :key="index" :entry="entry" :platform="editForm.platform" @update="editForm.model_pricing[index] = $event" @remove="editForm.model_pricing.splice(index, 1)" />
+MISSING   f3d949107 src/views/admin/GroupsView.vue <button type="button" class="btn btn-secondary" @click="addGroupPricing(createForm.model_pricing)">
+MISSING   f3d949107 src/views/admin/GroupsView.vue <button type="button" class="btn btn-secondary" @click="addGroupPricing(editForm.model_pricing)">
+MISSING   f3d949107 src/views/admin/GroupsView.vue <input v-model="createForm.long_context_pricing_enabled" type="checkbox" class="mt-0.5" />
+MISSING   f3d949107 src/views/admin/GroupsView.vue <input v-model="editForm.long_context_pricing_enabled" type="checkbox" class="mt-0.5" />
+MISSING   f3d949107 src/views/admin/GroupsView.vue <label class="mt-3 flex items-start gap-2">
+MISSING   f3d949107 src/views/admin/GroupsView.vue <label class="mt-3 flex items-start gap-2">
+MISSING   f3d949107 src/views/admin/GroupsView.vue <span><span class="block text-sm text-gray-700 dark:text-gray-300">{{ t("admin.groups.modelPricing.longContext") }}</span><span class="block text-xs text-gray-500">{{ t("admin.groups.modelPricing.longContextHint") }}</span></span>
+MISSING   f3d949107 src/views/admin/GroupsView.vue <span><span class="block text-sm text-gray-700 dark:text-gray-300">{{ t("admin.groups.modelPricing.longContext") }}</span><span class="block text-xs text-gray-500">{{ t("admin.groups.modelPricing.longContextHint") }}</span></span>
+MISSING   f3d949107 src/views/admin/GroupsView.vue createForm.long_context_pricing_enabled = false;
+MISSING   f3d949107 src/views/admin/GroupsView.vue editForm.long_context_pricing_enabled = false;
+MISSING   f3d949107 src/views/admin/GroupsView.vue group.long_context_pricing_enabled ?? false;
+RELOCATED 0ae151a23 src/views/admin/__tests__/AccountsView.sparkShadow.spec.ts vi.restoreAllMocks()
+RELOCATED 0ae151a23 src/views/admin/__tests__/AccountsView.sparkShadow.spec.ts vi.useRealTimers()
+RELOCATED 1f2a87adb src/views/admin/GroupsView.vue ...CONCRETE_PLATFORM_OPTIONS,
+RELOCATED 1f2a87adb src/views/admin/__tests__/GroupsView.compositePlatforms.spec.ts expect(CONCRETE_PLATFORM_OPTIONS.map((option) => option.value)).toEqual(
+RELOCATED 22fc0cdbf src/views/admin/SettingsView.vue :aria-describedby="`openai-fast-policy-models-hint-${ruleIndex}`"
+RELOCATED 22fc0cdbf src/views/admin/SettingsView.vue :aria-labelledby="`openai-fast-policy-models-label-${ruleIndex}`"
+RELOCATED 22fc0cdbf src/views/admin/SettingsView.vue :data-testid="`openai-fast-policy-summary-${ruleIndex}`"
+RELOCATED 22fc0cdbf src/views/admin/SettingsView.vue :id="`openai-fast-policy-models-hint-${ruleIndex}`"
+RELOCATED 22fc0cdbf src/views/admin/SettingsView.vue :id="`openai-fast-policy-models-label-${ruleIndex}`"
+RELOCATED 22fc0cdbf src/views/admin/SettingsView.vue <!-- Other Models Action (only when target models are non-empty) -->
+RELOCATED 22fc0cdbf src/views/admin/SettingsView.vue <!-- Target Models -->
+RELOCATED 22fc0cdbf src/views/admin/SettingsView.vue <span aria-hidden="true">·</span>
+RELOCATED 22fc0cdbf src/views/admin/SettingsView.vue <span aria-hidden="true">→</span>
+RELOCATED 22fc0cdbf src/views/admin/SettingsView.vue <span aria-hidden="true">→</span>
+RELOCATED 22fc0cdbf src/views/admin/SettingsView.vue <span class="font-medium text-gray-700 dark:text-gray-300">
+RELOCATED 22fc0cdbf src/views/admin/SettingsView.vue <span class="font-medium text-gray-700 dark:text-gray-300">
+RELOCATED 22fc0cdbf src/views/admin/SettingsView.vue hasOpenAIFastPolicyTargetModels(rule)
+RELOCATED 22fc0cdbf src/views/admin/SettingsView.vue role="group"
+RELOCATED 22fc0cdbf src/views/admin/SettingsView.vue v-if="hasOpenAIFastPolicyTargetModels(rule)"
+RELOCATED 22fc0cdbf src/views/admin/SettingsView.vue {{ openaiFastPolicyActionSummary(rule.action) }}
+RELOCATED 30b29e51e src/components/account/AccountUsageCell.vue <div v-else class="space-y-1">
+RELOCATED 3bff4b64b src/components/layout/AppHeader.vue <div class="text-xs text-gray-500 dark:text-dark-400">
+RELOCATED 40ea3aeba src/views/admin/SettingsView.vue <Toggle v-model="form.plugin_management_enabled" />
+RELOCATED 40ea3aeba src/views/admin/SettingsView.vue <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+RELOCATED 40ea3aeba src/views/admin/SettingsView.vue <div class="card">
+RELOCATED 40ea3aeba src/views/admin/SettingsView.vue <div class="flex items-center justify-between gap-4">
+RELOCATED 40ea3aeba src/views/admin/SettingsView.vue <div class="space-y-5 p-6">
+RELOCATED 40ea3aeba src/views/admin/SettingsView.vue <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+RELOCATED 40ea3aeba src/views/admin/SettingsView.vue <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+RELOCATED 40ea3aeba src/views/admin/SettingsView.vue <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+RELOCATED 40ea3aeba src/views/admin/SettingsView.vue <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+RELOCATED 40ea3aeba src/views/admin/SettingsView.vue {{ t('admin.settings.features.pluginManagement.description') }}
+RELOCATED 40ea3aeba src/views/admin/SettingsView.vue {{ t('admin.settings.features.pluginManagement.enabled') }}
+RELOCATED 40ea3aeba src/views/admin/SettingsView.vue {{ t('admin.settings.features.pluginManagement.enabledHint') }}
+RELOCATED 40ea3aeba src/views/admin/SettingsView.vue {{ t('admin.settings.features.pluginManagement.title') }}
+RELOCATED 4999231d6 src/views/auth/EmailVerifyView.vue const { t } = useI18n()
+RELOCATED 4999231d6 src/views/auth/RegisterView.vue const { t } = useI18n()
+RELOCATED 563a72ca7 src/views/admin/SettingsView.vue <!-- Email Domain Quota -->
+RELOCATED 563a72ca7 src/views/admin/SettingsView.vue <p class="text-sm text-gray-500 dark:text-gray-400">
+RELOCATED 563a72ca7 src/views/admin/SettingsView.vue t("admin.settings.registration.emailDomainQuota")
+RELOCATED 563a72ca7 src/views/admin/SettingsView.vue v-model="form.registration_email_domain_quota_enabled"
+RELOCATED 563a72ca7 src/views/admin/SettingsView.vue {{ t("admin.settings.registration.emailDomainQuotaHint") }}
+RELOCATED 5e72deb7d src/views/admin/ops/components/OpsErrorDetailsModal.vue params.time_range = '1h'
+RELOCATED 69648476d src/components/account/__tests__/AccountUsageCell.spec.ts plan: 'SuperGrok',
+RELOCATED 69648476d src/components/account/__tests__/AccountUsageCell.spec.ts used_percent: 5
+RELOCATED 6f972145b src/components/account/OpenAIQuotaResetCell.vue failed: 'failed'
+RELOCATED 6f972145b src/components/account/__tests__/EditAccountModal.spec.ts available_count: 1
+RELOCATED 6f972145b src/components/account/__tests__/EditAccountModal.spec.ts parent_account_id: null,
+RELOCATED 6f972145b src/components/account/__tests__/EditAccountModal.spec.ts status: 'success',
+RELOCATED 6f972145b src/components/account/__tests__/EditAccountModal.spec.ts wrapper.unmount()
+RELOCATED 6f972145b src/components/account/__tests__/EditAccountModal.spec.ts wrapper.unmount()
+RELOCATED 6f972145b src/components/account/__tests__/EditAccountModal.spec.ts wrapper.unmount()
+RELOCATED 6f972145b src/components/account/__tests__/OpenAIQuotaResetCell.spark_shadow.spec.ts auto_reset_credit_enabled: false,
+RELOCATED 6f972145b src/components/account/__tests__/OpenAIQuotaResetCell.spark_shadow.spec.ts auto_reset_credit_enabled: true,
+RELOCATED 6f972145b src/components/account/__tests__/OpenAIQuotaResetCell.spark_shadow.spec.ts codex_auto_reset_credit_state: {
+RELOCATED 6f972145b src/components/account/__tests__/OpenAIQuotaResetCell.spark_shadow.spec.ts expect(wrapper.find('[data-testid="auto-reset-credit-state"]').exists()).toBe(false)
+RELOCATED 7cdca9e49 src/components/common/GroupBadge.vue ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'
+RELOCATED 7cdca9e49 src/components/common/GroupBadge.vue ? 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400'
+RELOCATED 7cdca9e49 src/components/common/GroupBadge.vue ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400'
+RELOCATED 7cdca9e49 src/components/common/GroupBadge.vue if (props.platform === 'deepseek') {
+RELOCATED 7cdca9e49 src/components/common/GroupBadge.vue if (props.platform === 'deepseek') {
+RELOCATED 7cdca9e49 src/components/common/GroupBadge.vue if (props.platform === 'kimi') {
+RELOCATED 7cdca9e49 src/components/common/GroupBadge.vue if (props.platform === 'kimi') {
+RELOCATED 7cdca9e49 src/components/common/GroupBadge.vue if (props.platform === 'zhipu') {
+RELOCATED 7cdca9e49 src/components/common/GroupBadge.vue if (props.platform === 'zhipu') {
+RELOCATED 7d796f111 src/components/common/DateRangePicker.vue filter: none;
+RELOCATED 8d82bb069 src/components/account/BulkEditAccountModal.vue type="checkbox"
+RELOCATED 8d82bb069 src/components/account/BulkEditAccountModal.vue type="checkbox"
+RELOCATED 8d82bb069 src/components/account/BulkEditAccountModal.vue type="checkbox"
+RELOCATED 8d82bb069 src/components/account/BulkEditAccountModal.vue type="checkbox"
+RELOCATED 901a0439f src/components/account/AccountUsageCell.vue <div class="space-y-1">
+RELOCATED 901a0439f src/components/account/CNProviderQuotaCell.vue <div v-if="error" class="truncate text-[10px] text-red-600 dark:text-red-400" :title="error">
+RELOCATED 901a0439f src/components/account/CNProviderQuotaCell.vue <div v-if="visible" class="space-y-1">
+RELOCATED 901a0439f src/components/account/CNProviderQuotaCell.vue const d = new Date(iso)
+RELOCATED 901a0439f src/components/account/CNProviderQuotaCell.vue const dd = String(d.getDate()).padStart(2, '0')
+RELOCATED 901a0439f src/components/account/CNProviderQuotaCell.vue const mm = String(d.getMonth() + 1).padStart(2, '0')
+RELOCATED 901a0439f src/components/account/CNProviderQuotaCell.vue const now = Date.now()
+RELOCATED 901a0439f src/components/account/CNProviderQuotaCell.vue platformTextClass(account.platform)
+RELOCATED 901a0439f src/components/account/CNProviderQuotaCell.vue return 'bg-emerald-500'
+RELOCATED 994fbfedd src/components/account/__tests__/CNProviderQuotaCell.spec.ts vi.mock('vue-i18n', () => ({
+RELOCATED 9aac3b73f src/components/account/OllamaCloudUsageCell.vue d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+RELOCATED 9aac3b73f src/components/account/OllamaCloudUsageCell.vue state.value = next
+RELOCATED 9aac3b73f src/components/account/OllamaCloudUsageCell.vue state.value = next
+RELOCATED 9aac3b73f src/components/account/OllamaCloudUsageCell.vue stroke-linecap="round"
+RELOCATED 9aac3b73f src/components/account/OllamaCloudUsageCell.vue stroke-linejoin="round"
+RELOCATED 9aac3b73f src/components/account/OllamaCloudUsageCell.vue stroke-width="2"
+RELOCATED 9aac3b73f src/components/account/OllamaCloudUsageCell.vue stroke="currentColor"
+RELOCATED 9aac3b73f src/components/account/OllamaCloudUsageCell.vue viewBox="0 0 24 24"
+RELOCATED 9aac3b73f src/components/account/__tests__/OllamaCloudUsageCell.spec.ts refreshOllamaCloudUsage: vi.fn()
+RELOCATED a20e1c00c src/components/common/MonitorQuotaView.vue const d = new Date(iso)
+RELOCATED a20e1c00c src/components/common/MonitorQuotaView.vue const dd = String(d.getDate()).padStart(2, '0')
+RELOCATED a20e1c00c src/components/common/MonitorQuotaView.vue const mm = String(d.getMonth() + 1).padStart(2, '0')
+RELOCATED a20e1c00c src/components/common/MonitorQuotaView.vue const now = Date.now()
+RELOCATED a20e1c00c src/components/common/MonitorQuotaView.vue return 'bg-emerald-500'
+RELOCATED a20e1c00c src/components/common/MonitorQuotaView.vue {{ row.label }}
+RELOCATED a20e1c00c src/views/admin/SettingsView.vue <Toggle v-model="form.channel_monitor_show_quota" />
+RELOCATED a20e1c00c src/views/admin/SettingsView.vue <div class="min-w-0">
+RELOCATED a20e1c00c src/views/admin/SettingsView.vue <div v-if="form.channel_monitor_mode === 'v1'" class="flex items-start justify-between gap-4">
+RELOCATED a20e1c00c src/views/admin/SettingsView.vue <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+RELOCATED a20e1c00c src/views/admin/SettingsView.vue <p class="text-sm font-medium text-gray-900 dark:text-white">
+RELOCATED a20e1c00c src/views/admin/SettingsView.vue {{ t('admin.settings.features.channelMonitor.showQuota') }}
+RELOCATED a20e1c00c src/views/admin/SettingsView.vue {{ t('admin.settings.features.channelMonitor.showQuotaHint') }}
+RELOCATED b16ed03ca src/components/keys/UseKeyModal.vue const models = (payload as { models?: unknown }).models
+RELOCATED b16ed03ca src/components/keys/UseKeyModal.vue if (!Array.isArray(models)) return []
+RELOCATED b16ed03ca src/components/keys/UseKeyModal.vue if (typeof model !== 'object' || model === null || !('slug' in model)) return []
+RELOCATED b16ed03ca src/components/keys/UseKeyModal.vue if (typeof payload !== 'object' || payload === null || !('models' in payload)) return []
+RELOCATED b16ed03ca src/components/keys/UseKeyModal.vue return models.flatMap((model) => {
+RELOCATED b56c61ecc src/components/admin/user/UserAllowedGroupsModal.vue type="checkbox"
+RELOCATED b56c61ecc src/components/admin/user/UserAllowedGroupsModal.vue type="checkbox"
+RELOCATED b830bc14d src/components/admin/channel/PricingEntryCard.vue const props = withDefaults(defineProps<{
+RELOCATED c0ab3a00e src/components/account/BulkEditAccountModal.vue <label class="input-label mb-0">{{ t('admin.accounts.openai.codexFingerprintMode') }}</label>
+RELOCATED c0ab3a00e src/components/account/BulkEditAccountModal.vue delete extra.codex_fingerprint_mode
+RELOCATED c0ab3a00e src/components/account/BulkEditAccountModal.vue type="checkbox"
+RELOCATED c66e700f0 src/views/admin/SettingsView.vue <!-- OpenAI Responses 首 token 统计 -->
+RELOCATED c66e700f0 src/views/admin/SettingsView.vue data-testid="openai-ttft-mode"
+RELOCATED c66e700f0 src/views/admin/SettingsView.vue for="openai-ttft-mode"
+RELOCATED c66e700f0 src/views/admin/SettingsView.vue id="openai-ttft-mode"
+RELOCATED c66e700f0 src/views/admin/SettingsView.vue v-model="form.openai_ttft_mode"
+RELOCATED c66e700f0 src/views/admin/SettingsView.vue {{ t("admin.settings.gatewayForwarding.openaiTTFTMode") }}
+RELOCATED c66e700f0 src/views/admin/SettingsView.vue {{ t("admin.settings.gatewayForwarding.openaiTTFTModeHint") }}
+RELOCATED cb7b03795 src/api/__tests__/admin.groups.usage-summary.spec.ts get: vi.fn(),
+RELOCATED e471be730 src/components/keys/__tests__/UseKeyModal.spec.ts input_modalities: ['text', 'image'],
+RELOCATED e471be730 src/components/keys/__tests__/UseKeyModal.spec.ts slug: 'gpt-5.5',
+RELOCATED e4f869e0c src/views/admin/ops/components/OpsErrorDetailModal.vue <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
+RELOCATED e62ec2c42 src/views/admin/SettingsView.vue v-if="rateLimit429CooldownForm.enabled"
+RELOCATED f3d949107 src/views/admin/GroupsView.vue <div class="flex items-start justify-between gap-4">
+RELOCATED f3d949107 src/views/admin/GroupsView.vue <div class="flex items-start justify-between gap-4">
+RELOCATED f3d949107 src/views/admin/GroupsView.vue intervals: formIntervalsToAPI(entry.intervals || []),
+RELOCATED f3d949107 src/views/admin/GroupsView.vue long_context_pricing_enabled: false,
+RELOCATED f3d949107 src/views/admin/GroupsView.vue long_context_pricing_enabled: false,
+RELOCATED fce41e318 src/components/account/BulkEditAccountModal.vue if (codexFingerprintMode.value !== 'off') {

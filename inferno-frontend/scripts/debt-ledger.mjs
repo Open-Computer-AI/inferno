@@ -101,7 +101,26 @@ const LEDGER = [
      *              lines are upstream's class assertions on a span we do not
      *              have. Added 2026-09-02 with the catch-up's Set C.
      */
-    probe: `cd ${ROOT} && got=$(node scripts/port-coverage.mjs --below 40 2>/dev/null | grep -oE '[0-9a-f]{9}' | sort | tr '\\n' ' '); want='0aef702b6 0d5e3ca9b 6c3edc095 a6d868f27 b689e5b40 e8ff2017c '; [ "$got" = "$want" ] || echo "low-coverage set changed — expected [$want] got [$got]"`
+    /*
+     * Pins the recorded SET of unaccounted lines, not a count of anything.
+     *
+     * Both earlier shapes were measurably too weak. A count of rows below 40%
+     * passed when one explained row rose and an unexplained one fell. A count
+     * of FILES with gaps passed when a new defect landed inside an
+     * already-explained file -- measured: flipping SettingsView's TTFT default
+     * took that file from 19% to 13% and the headline never moved.
+     *
+     * port-coverage --check-baseline diffs the current unaccounted set against
+     * docs/superpowers/analysis/port-coverage-missing.txt and exits 1 naming
+     * every line that changed state. Verified against four injected defects:
+     * a reverted hunk, a changed locale value, a flipped default and an
+     * inverted predicate. All four caught; the flipped default had previously
+     * escaped tsc, 2049 tests, june-lint, behaviour-parity and old coverage.
+     *
+     * Re-baseline only after reviewing the delta -- a June conversion
+     * legitimately removes upstream lines and will move this.
+     */
+    probe: `cd ${ROOT} && node scripts/port-coverage.mjs --check-baseline >/dev/null 2>&1 || echo "the unaccounted-line set changed — run: node scripts/port-coverage.mjs --check-baseline"`
   },
   {
     id: 'grok-probe-column',

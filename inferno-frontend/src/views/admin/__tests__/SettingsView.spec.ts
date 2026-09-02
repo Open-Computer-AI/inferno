@@ -1578,6 +1578,31 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(receivedProviders[0].supported_types).toEqual([]);
   });
 
+  // The DEFAULT, not the round-trip. Every other case supplies
+  // openai_ttft_mode explicitly, so nothing exercised the branch where the
+  // backend omits it and the form default decides. Measured 2026-09-02:
+  // flipping that default from "semantic" to "visible" passed tsc, all 2049
+  // tests, june-lint and behaviour-parity. Silently sending every OpenAI
+  // Responses request down the visible-output metric is a real behaviour
+  // change, so it gets pinned here as well as by port-coverage.
+  it("defaults the first-token metric to semantic when the backend omits it", async () => {
+    const { openai_ttft_mode: _omitted, ...withoutMode } = baseSettingsResponse as Record<string, unknown>;
+    getSettings.mockResolvedValueOnce(withoutMode);
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const modeSelect = wrapper.get('[data-testid="openai-ttft-mode"]');
+    expect((modeSelect.element as HTMLSelectElement).value).toBe("semantic");
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    const payload = updateSettings.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(payload.openai_ttft_mode).toBe("semantic");
+  });
+
   it("loads and saves the OpenAI Responses first-token metric mode", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,

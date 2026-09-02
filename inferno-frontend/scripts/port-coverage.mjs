@@ -35,14 +35,16 @@
  *   node scripts/port-coverage.mjs --below 40      only those under 40%
  *   node scripts/port-coverage.mjs <sha>           the missing lines for one commit
  */
+import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const OURS = resolve(ROOT, 'inferno-frontend')
 const MANIFEST = resolve(ROOT, 'docs/superpowers/analysis/COMMIT-MANIFEST.md')
+const BASELINE = resolve(ROOT, 'docs/superpowers/analysis/port-coverage-missing.txt')
 
 const git = (args) =>
   execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
@@ -80,6 +82,17 @@ const ourCorpus = () => {
   return corpus
 }
 
+/**
+ * Added lines, each tagged with the file upstream put it in.
+ *
+ * WHY THE FILE MATTERS: matching a line against the whole corpus answers
+ * "does this text exist somewhere in our tree", which is not the question.
+ * Measured on 2026-09-02: flipping SettingsView's openai_ttft_mode default
+ * from "semantic" to "visible" left coverage at 85%, because the literal
+ * `openai_ttft_mode: "semantic",` also lives in SettingsView.spec.ts and the
+ * corpus match found it there. tsc, 2049 tests, june-lint and
+ * behaviour-parity all passed too. Nothing saw it.
+ */
 const addedLines = (sha) => {
   let diff
   try {
@@ -87,12 +100,27 @@ const addedLines = (sha) => {
   } catch {
     return null
   }
-  return diff
-    .split('\n')
-    .filter((l) => l.startsWith('+') && !l.startsWith('+++'))
-    .map((l) => l.slice(1))
-    .filter((l) => !isNoise(l))
-    .map(norm)
+  const out = []
+  let file = null
+  for (const raw of diff.split('\n')) {
+    const m = /^\+\+\+ b\/frontend\/(.+)$/.exec(raw)
+    if (m) { file = m[1]; continue }
+    if (!raw.startsWith('+') || raw.startsWith('+++')) continue
+    const l = raw.slice(1)
+    if (isNoise(l)) continue
+    out.push({ file, line: norm(l) })
+  }
+  return out
+}
+
+/** Our copy of one upstream path, normalised, or null when we do not have it. */
+const fileCache = new Map()
+const ourFile = (rel) => {
+  if (fileCache.has(rel)) return fileCache.get(rel)
+  let v = null
+  try { v = norm(readFileSync(join(OURS, rel), 'utf8')) } catch { v = null }
+  fileCache.set(rel, v)
+  return v
 }
 
 const shas = [...readFileSync(MANIFEST, 'utf8').matchAll(/^\| \d+ \| `([0-9a-f]{7,})`/gm)].map((m) => m[1])
@@ -106,21 +134,115 @@ const results = []
 
 for (const sha of only ? [only] : shas) {
   const added = addedLines(sha)
-  if (added === null) { results.push({ sha, pct: null, hit: 0, total: 0, missing: [] }); continue }
+  if (added === null) { results.push({ sha, pct: null, hit: 0, total: 0, missing: [], moved: [] }); continue }
   if (!added.length) continue // no substantive frontend lines to account for
-  const missing = added.filter((l) => !ours.includes(l))
-  const hit = added.length - missing.length
-  results.push({ sha, pct: Math.round((hit / added.length) * 100), hit, total: added.length, missing })
+
+  /*
+   * Three outcomes per line, not two:
+   *   IN PLACE   present in the file upstream put it in
+   *   RELOCATED  absent there, present elsewhere in our tree -- real and
+   *              common (c66e700f0's control lives in our extracted
+   *              AdminGatewaySettingsPage), but it is a claim needing a
+   *              reason, not a silent pass
+   *   MISSING    nowhere at all
+   */
+  const inPlace = [], moved = [], missing = []
+  for (const { file, line } of added) {
+    const own = file ? ourFile(file) : null
+    if (own && own.includes(line)) inPlace.push(line)
+    else if (ours.includes(line)) moved.push({ file, line })
+    else missing.push({ file, line })
+  }
+  const hit = inPlace.length
+  results.push({
+    sha, pct: Math.round((hit / added.length) * 100),
+    hit, total: added.length, missing, moved,
+  })
 }
 
 if (only) {
   const r = results[0]
   if (!r || r.pct === null) { console.log(`${only}: no frontend diff`); process.exit(0) }
-  console.log(`${r.sha}  ${r.pct}%  (${r.hit}/${r.total} substantive added lines present)\n`)
-  if (!r.missing.length) console.log('  every line accounted for')
-  else for (const l of r.missing.slice(0, 60)) console.log(`  missing: ${l.slice(0, 150)}`)
-  if (r.missing.length > 60) console.log(`  ... and ${r.missing.length - 60} more`)
+  console.log(`${r.sha}  ${r.pct}%  (${r.hit}/${r.total} added lines in the file upstream put them in)\n`)
+  if (r.moved.length) {
+    console.log(`  RELOCATED — elsewhere in our tree, not in upstream's file (${r.moved.length}):`)
+    for (const m of r.moved.slice(0, 30)) console.log(`    ${m.file}\n      ${m.line.slice(0, 130)}`)
+    console.log()
+  }
+  if (!r.missing.length && !r.moved.length) console.log('  every line accounted for, in place')
+  else if (!r.missing.length) console.log('  nothing missing outright')
+  else {
+    console.log(`  MISSING — nowhere in our tree (${r.missing.length}):`)
+    for (const m of r.missing.slice(0, 40)) console.log(`    ${m.file}\n      ${m.line.slice(0, 130)}`)
+    if (r.missing.length > 40) console.log(`    ... and ${r.missing.length - 40} more`)
+  }
   process.exit(0)
+}
+
+/*
+ * --digest: a stable fingerprint of the exact set of MISSING lines across every
+ * manifest row.
+ *
+ * WHY A SET AND NOT A COUNT: an explained file used to become a blind spot.
+ * The old debt-ledger probe pinned "5 rows below 40%", so a sixth defect
+ * inside an already-explained file moved nothing. Measured: flipping
+ * SettingsView's TTFT default took that file from 19% to 13% -- the tool SAW
+ * it -- and the headline number did not move, because it counted files.
+ * A digest over the line set moves for any new missing line anywhere.
+ */
+if (process.argv.includes('--baseline') || process.argv.includes('--check-baseline')) {
+  /*
+   * The baseline covers MISSING **and** RELOCATED.
+   *
+   * A first cut tracked only missing, and it let the motivating defect through
+   * again: flipping SettingsView's TTFT default made
+   * `openai_ttft_mode: "semantic",` absent from SettingsView.vue, but the same
+   * literal exists in SettingsView.spec.ts, so it landed in the relocated
+   * bucket and the digest never moved. Three buckets had merely renamed the
+   * escape hatch.
+   *
+   * Relocation is a CLAIM -- "upstream put this line in file A and we keep it
+   * in file B" -- and claims get reviewed, not auto-accepted. Both buckets are
+   * legitimate and both belong in the reviewed set.
+   */
+  const all = [
+    ...results.flatMap((r) => r.missing.map((m) => `MISSING   ${r.sha} ${m.file} ${m.line}`)),
+    ...results.flatMap((r) => r.moved.map((m) => `RELOCATED ${r.sha} ${m.file} ${m.line}`)),
+  ].sort()
+  const digest = createHash('sha256').update(all.join('\n')).digest('hex').slice(0, 16)
+
+  if (process.argv.includes('--baseline')) {
+    writeFileSync(BASELINE, all.join('\n') + '\n')
+    console.log(`recorded ${all.length} unaccounted line(s) · digest ${digest}`)
+    console.log(BASELINE)
+    process.exit(0)
+  }
+
+  let prev
+  try { prev = readFileSync(BASELINE, 'utf8').split('\n').filter(Boolean) } catch {
+    console.error(`no baseline at ${BASELINE} — run: node scripts/port-coverage.mjs --baseline`)
+    process.exit(2)
+  }
+  const before = new Set(prev), after = new Set(all)
+  const appeared = all.filter((l) => !before.has(l))
+  const resolved = prev.filter((l) => !after.has(l))
+
+  // Printing the DELTA, not a pass/fail number, is the point. A bare count made
+  // an explained file a permanent blind spot; a diff makes every new line
+  // visible and every review cheap.
+  if (appeared.length) {
+    console.log(`${appeared.length} line(s) changed state — newly missing, or newly only-elsewhere:\n`)
+    for (const l of appeared.slice(0, 40)) console.log(`  + ${l.slice(0, 150)}`)
+    if (appeared.length > 40) console.log(`  ... and ${appeared.length - 40} more`)
+    console.log()
+  }
+  if (resolved.length) {
+    console.log(`${resolved.length} line(s) previously absent are now present (re-baseline if intended):\n`)
+    for (const l of resolved.slice(0, 20)) console.log(`  - ${l.slice(0, 150)}`)
+    console.log()
+  }
+  console.log(`${all.length} unaccounted line(s) (missing or relocated) · digest ${digest}`)
+  process.exit(appeared.length ? 1 : 0)
 }
 
 results.sort((a, b) => (a.pct ?? 999) - (b.pct ?? 999))
@@ -133,6 +255,9 @@ for (const r of shown) {
 
 const scored = results.filter((r) => r.pct !== null)
 const low = scored.filter((r) => r.pct < 40).length
+const missTotal = results.reduce((n, r) => n + r.missing.length, 0)
+const movedTotal = results.reduce((n, r) => n + r.moved.length, 0)
 console.log(`\n${scored.length} commits scored · ${low} below 40%`)
+console.log(`${missTotal} line(s) missing outright · ${movedTotal} relocated to another file of ours`)
 console.log('Low coverage is a worklist, not a verdict: a June rebuild is expected to score low.')
 console.log('Inspect one:  node scripts/port-coverage.mjs <sha>')
