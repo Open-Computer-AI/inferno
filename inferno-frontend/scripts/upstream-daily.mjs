@@ -192,6 +192,23 @@ if (has('--html')) {
   writeFileSync(arg('--html'), renderHtml({ label, days, counts, commits }))
 }
 
+/*
+ * ANCESTRY, not just the watermark.
+ *
+ * The watermark records what we have SEEN. It says nothing about what we have
+ * MERGED, and on 2026-09-02 those diverged: every frontend commit had been
+ * hand-ported, so the watcher reported "nothing shipped" while
+ * backend/cmd/server/VERSION sat at 0.1.185 against upstream's 0.2.0 and the
+ * frontend/ mirror was four files stale. Hand-porting a frontend commit never
+ * brings its backend sibling, and a stale mirror silently moves june-lint's
+ * scope and port-classify's copy-vs-hand-merge verdict.
+ *
+ * So the report ends with the question the watermark cannot answer: is
+ * upstream/main an ancestor of HEAD?
+ */
+const unmerged = git(['log', '--oneline', '--format=%h %s', 'upstream/main', '--not', 'HEAD'])
+  .split('\n').filter(Boolean)
+
 if (!has('--quiet')) {
   console.log(`\nsub2api — ${label}`)
   console.log(`${commits.length} commit(s) across ${days.length} day(s): ${days.join(', ') || '—'}\n`)
@@ -221,9 +238,24 @@ if (!has('--quiet')) {
   const work = counts.VERBATIM + counts.NEW + counts.REBUILD
   console.log(`\n  ${work} commit(s) need hands · ${counts.MERGE} arrive free`)
   console.log(`  ${commits.filter((c) => c.specs).length} ship upstream tests — those are the behaviour-parity oracle.`)
+
+  console.log('\nAncestry')
+  if (!unmerged.length) {
+    console.log('  upstream/main is an ancestor of HEAD — backend and the frontend/ mirror are current.')
+  } else {
+    console.log(`  ${unmerged.length} upstream commit(s) are NOT in our history, even if their frontend was hand-ported:`)
+    for (const l of unmerged.slice(0, 12)) console.log(`    ${l.slice(0, 92)}`)
+    console.log('  A hand-port never brings a commit\'s backend half, and leaves the frontend/ mirror')
+    console.log('  stale, which moves june-lint\'s scope. Run:  git merge upstream/main')
+  }
 }
 
 if (has('--record')) {
+  if (unmerged.length) {
+    console.error(`\nrefusing to record: ${unmerged.length} upstream commit(s) are not in our history.`)
+    console.error('The watermark means seen AND tracked. Merge upstream/main first, then record.')
+    process.exit(1)
+  }
   const head = git(['rev-parse', 'upstream/main']).trim()
   writeFileSync(STATE, JSON.stringify({ lastSeen: head, lastSeenAt: new Date().toISOString().slice(0, 10) }, null, 2) + '\n')
   console.log(`\nwatermark advanced to ${head.slice(0, 9)}`)
