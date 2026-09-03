@@ -15,7 +15,8 @@
     "test:coverage": "vitest run --coverage",
     "upstream:daily": "node scripts/upstream-daily.mjs",
     "upstream:daily:html": "node scripts/upstream-daily.mjs --html ../docs/superpowers/analysis/upstream-watch.html",
-    "port:prepare": "node scripts/port-prepare.mjs"
+    "port:prepare": "node scripts/port-prepare.mjs",
+    "port:verify": "node scripts/port-verify.mjs"
   },
   "dependencies": {
     "@airwallex/components-sdk": "^1.30.2",
