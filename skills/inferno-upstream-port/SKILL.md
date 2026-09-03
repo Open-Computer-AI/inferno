@@ -50,6 +50,22 @@ NODE_OPTIONS= node inferno-frontend/scripts/port-prepare.mjs --pending
 | `NEW` | no counterpart here — take it whole |
 | `DONE` | already matches upstream's post-image — nothing to do |
 
+Under every `HAND-MERGE` row it also prints **what we decided about that file
+last time** — the last three commits that touched it, and the lines in them
+carrying a decision:
+
+```
+HAND-MERGE src/components/account/AccountUsageCell.vue
+           afdeeac81  feat(ollama): Ollama Cloud usage window
+             · upstream's markup mirrored into the CN branch with our June
+               class (uc-body, not space-y-1)
+```
+
+Read those before deciding anything. They are the difference between porting a
+file for the first time and porting it for the fourth. They are surfaced, not
+summarised — the phrasings vary too much for a machine to be trusted with the
+meaning, and a dropped qualifying clause would be worse than no line at all.
+
 And each commit: `MECHANICAL` (all files copyable, ancestry clean),
 `HAND` (needs judgement), `BLOCKED` (divergent ancestry — resolve first),
 `DONE`.
