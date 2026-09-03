@@ -176,6 +176,66 @@ const plan = shas.map((sha) => {
   }
 })
 
+// ---------------------------------------------------------------- prior decisions
+
+/*
+ * What did we decide about this file LAST time?
+ *
+ * The knowledge that makes a hand-merge fast is not a map of where code moved --
+ * most June changes rewrote rather than moved, so no line survives to trace.
+ * It is the reasoning someone already wrote down: "our June class is uc-body,
+ * not space-y-1", "BaseSelect is options-driven so the two <option>s became a
+ * computed", "our brand token, not upstream's rose".
+ *
+ * All of that is already in the commit messages. It has simply never been read
+ * back at the moment it is needed, so the same judgement gets re-derived every
+ * time -- and occasionally re-derived differently, which is worse.
+ *
+ * This is deliberately NOT an extractor. The phrasings vary too much for a
+ * regex to be trusted with the meaning, and a summariser that quietly drops the
+ * qualifying clause would be worse than nothing. It surfaces the lines and
+ * lets a human read them.
+ */
+/*
+ * Tightened after a first pass surfaced noise: a line about "one billable
+ * request" matched on a weak keyword and told the reader nothing. These are
+ * the phrasings that actually carried a porting decision in this repo's
+ * history -- kept narrow on purpose, because a lookup that mostly returns
+ * noise stops being read.
+ */
+const DECISION = /(verbatim|hand-merge|hand merge|rebuilt in june|june class|june token|june idiom|divergence held|our (class|brand|idiom)|not upstream's (markup|class|palette|version)|became a computed|relocat|extracted into)/i
+
+const priorDecisions = (rel) => {
+  const log = git(['log', '--format=%h%x00%s%x00%b%x01', '--', `inferno-frontend/${rel}`])
+  const out = []
+  for (const entry of log.split('\x01')) {
+    const [sha, subject, bodyRaw] = entry.trim().split('\0')
+    if (!sha || !bodyRaw) continue
+    /*
+     * Commit bodies are wrapped, so the decision routinely straddles two lines:
+     * "...mirrored into the CN branch with our June class" / "(uc-body, not
+     * space-y-1)". Matching one line and printing it alone truncates the answer
+     * exactly where it becomes useful, so a wrapped continuation is carried
+     * along -- a following line that does not start a new sentence or block.
+     */
+    const raw = bodyRaw.split('\n').map((l) => l.trim())
+    const lines = []
+    for (let i = 0; i < raw.length; i++) {
+      if (raw[i].length <= 24 || !DECISION.test(raw[i])) continue
+      let text = raw[i]
+      const next = raw[i + 1]
+      if (next && next.length > 3 && !/^[A-Z0-9]{2,}|^[-*|]|^$/.test(next) && !/[.:]$/.test(text)) {
+        text += ' ' + next
+      }
+      lines.push(text)
+      if (lines.length === 2) break
+    }
+    if (lines.length) out.push({ sha, subject, lines })
+    if (out.length >= 3) break
+  }
+  return out
+}
+
 // ---------------------------------------------------------------- baseline
 
 const gates = has('--no-baseline') ? null : (() => {
@@ -209,7 +269,17 @@ if (divergent.length) {
 for (const p of plan) {
   const tag = { BLOCKED: 'BLOCKED   ', MECHANICAL: 'MECHANICAL', DONE: 'DONE      ', HAND: 'HAND      ' }[p.verdict]
   console.log(`${tag} ${p.sha}  ${p.date}  ${p.subject.slice(0, 62)}`)
-  for (const r of p.rows) console.log(`             ${r.action.padEnd(10)} ${r.rel}`)
+  for (const r of p.rows) {
+    console.log(`             ${r.action.padEnd(10)} ${r.rel}`)
+    // Only where judgement is actually required. On a COPY there is nothing to
+    // decide, and printing history there would bury the rows that matter.
+    if (r.action === 'HAND-MERGE') {
+      for (const d of priorDecisions(r.rel)) {
+        console.log(`                        ${d.sha}  ${d.subject.slice(0, 58)}`)
+        for (const l of d.lines) console.log(`                          · ${l.slice(0, 128)}`)
+      }
+    }
+  }
   if (p.rows.length) console.log(`             -> ${p.copyable} copy · ${p.hand} hand-merge · ${p.fresh} new · ${p.done} already done`)
   console.log()
 }
