@@ -174,7 +174,7 @@ type OAuthTokenService struct {
 // trailing slash silently broke the entire dashboard grant, and no unit
 // test saw it because every test passes an already-canonical issuer.
 func NewOAuthTokenService(entClient *dbent.Client, keySvc *OAuthKeyService, deviceSvc *OAuthDeviceService, refreshCache RefreshTokenCache, userRepo OAuthUserLookup, issuer string) *OAuthTokenService {
-	return &OAuthTokenService{
+	svc := &OAuthTokenService{
 		entClient: entClient,
 		keySvc:    keySvc,
 		deviceSvc: deviceSvc,
@@ -187,6 +187,35 @@ func NewOAuthTokenService(entClient *dbent.Client, keySvc *OAuthKeyService, devi
 		issuer:       strings.TrimRight(strings.TrimSpace(issuer), "/"),
 		now:          time.Now,
 	}
+	svc.warnIfIssuerUnset()
+	return svc
+}
+
+// warnIfIssuerUnset surfaces a missing server.frontend_url AT STARTUP rather
+// than at the first token exchange.
+//
+// WHY THIS EXISTS: on 2026-09-03 an internal gateway was rebuilt onto code that
+// mints OAuth access tokens with `iss` taken from server.frontend_url. That key
+// had never been set, because the previous build did not read it. Nothing
+// complained. The container reported healthy, /health returned 200, the SPA
+// served, and the auth gate rejected anonymous callers exactly as it should.
+// The failure surfaced only when a real client refreshed a token -- a 500 from
+// /api/oauth/token, hours of uptime later, presenting as "provider
+// authentication failed" on the client side with nothing pointing at config.
+//
+// A warning, not a fatal error: upstream defaults server.frontend_url to "" and
+// deployments that never call the OAuth token endpoint are legitimately fine
+// without it. Refusing to boot would break those. What was missing was not a
+// constraint but a SIGNAL -- so this makes the condition loud at the moment the
+// service is wired, where it is cheap to notice, instead of silent until a user
+// hits the one path that needs it.
+func (s *OAuthTokenService) warnIfIssuerUnset() {
+	if s.issuer != "" {
+		return
+	}
+	slog.Error("server.frontend_url is not set: OAuth token exchange will fail with 500. " +
+		"Set it to the base URL clients reach this server on -- it becomes the `iss` claim, " +
+		"and clients verify it against their configured portal URL.")
 }
 
 // Issuer returns the canonicalised issuer this service stamps into every
