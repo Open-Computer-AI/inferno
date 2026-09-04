@@ -2017,3 +2017,132 @@ re-litigated.
 
 **Last reviewed upstream SHA: `baeac1f3de21d37b129405f092ef86c24b3f203d`**
 (2026-08-15 13:40:21 UTC, "chore: sync VERSION to 0.1.177 [skip ci]").
+
+## 2026-09-04 — daily reconcile, Runbook v2
+
+Entering base `5097b31457e6dc9f49e5f5c9c72b925ce79543b3` (merge-base of
+`inferno-redesign` HEAD `78d2b4f1d` and `upstream/main` at the start of this
+run — the branch was already past the `b5827cfd5` / `baeac1f3d` SHAs recorded
+above from earlier cycles; this run trusts the repo over the stale doc
+sections per GOAL.md's own instruction).
+
+**Clone was shallow.** `git fetch --unshallow upstream main` run first, per
+Runbook v2 step 1's warning, before counting drift.
+
+**5 commits behind**, range `5097b3145..b1748c4ea`
+(`b1748c4ea99ce2120401a269142aa071e18a84da`, "chore: update sponsors"):
+
+```
+b1748c4ea chore: update sponsors
+432ebc498 Merge pull request #6179 from wwcchh0123/codex/upstream-error-proxy-attribution
+abc07bb07 test(ops): satisfy errcheck and gofmt in proxy attribution tests
+4c1f920d5 fix(ops): close proxy attribution gaps and bound queued upstream events
+e9e3c46cb fix(ops): snapshot proxy on upstream errors
+```
+
+60 files touched: `README.md`/`README_CN.md`/`README_JA.md` (sponsor-list
+trim, -11 lines each) and two now-removed `assets/partners/logos/*` images;
+one new `backend/dev-docs/upstream-error-proxy-attribution.md`; the rest are
+all `backend/internal/service/{antigravity,gateway,gemini,grok,openai,
+openai_gateway,ops}_*.go` (+ tests) — the AI gateway/proxy-path request
+handling, not the admin/user SPA-facing endpoints.
+
+**Collision map: 0 overlap.** `comm -12` between our 228 changed
+`backend|deploy|docs` files and upstream's 55 in this range returned nothing.
+None of the five commits touch a file any ledger row (D1-D10) owns.
+
+**Tag + worktree:** `pre-reconcile-2026-09-04` tagged on `inferno-redesign`
+HEAD; worked in `../inferno-reconcile` on branch `sync/reconcile-2026-09-04`.
+
+**Merge: 0 conflicts**, as the collision map predicted (`git merge
+upstream/main`, ort strategy, 60 files changed).
+
+**Gate 5 (`check-divergence.sh`): FAILS — pre-existing, not caused by this
+merge.** Reports two undeclared files under `deploy/`:
+
+```
+deploy/inference/README.md
+deploy/inference/bootstrap.sh
+```
+
+Verified these are **not new drift from this reconcile**: `check-divergence.sh`
+fails identically on `inferno-redesign` HEAD (`78d2b4f1d`) before the merge is
+even applied. They were added whole by that same commit,
+`feat(deploy): reproducible bootstrap for the inference endpoint` (a
+same-day earlier commit on this branch, not part of any upstream sync), which
+never added a ledger row or a `DECLARED` entry for them. Per the hard rule,
+this is not mine to fix by adding them to `DECLARED` — that decision belongs
+to whoever owns the ledger. Flagging rather than silently carrying it forward.
+
+**Backend gate: green.** `go build ./...` clean. `go vet ./internal/...`
+clean. `go test ./internal/...` — every package `ok`, including
+`internal/service` (126s) and the five touched files' own new/changed tests
+(`gateway_upstream_transport_error_test.go`,
+`grok_credential_failure_test.go`, `openai_compact_fallback_test.go`,
+`openai_first_output_timeout_test.go`,
+`openai_gateway_chat_completions_raw_test.go`, `openai_ws_fallback_test.go`,
+`ops_queue_sanitize_test.go`, `ops_upstream_context_test.go`).
+
+**Frontend gate: green, and unaffected.** The drift touches zero files under
+`inferno-frontend/` or `frontend/`. `pnpm install` clean. `june-lint`: 1370
+violations / 308 files — **byte-identical** to the pre-merge count on
+`inferno-redesign` HEAD, confirming no new lint debt, just pre-existing
+backlog. `vue-tsc --noEmit`: 0 errors. `vitest run`: 281/281 files,
+2050/2050 tests. `vite build`: succeeded (pre-existing >500kB chunk-size
+warnings only, nothing new).
+
+**API contract diff (step 7): empty on both sides.**
+`git diff 5097b3145..upstream/main -- frontend/src/api frontend/src/types`
+and `-- backend/internal/handler` both returned nothing. No admin/user-facing
+JSON shape changed in this drift.
+
+## Ported
+
+Nothing. All five commits are internal to the AI-gateway/proxy request path
+(`backend/internal/service/{gateway,openai_gateway,antigravity,gemini,grok,
+ops}_*.go`) with no `handler/`, `dto/`, or frontend-facing change — the same
+category as the 2026-08-15 entry's item 8 ("backend-only changes verified but
+not ported: gateway/proxy-path logic ... not admin/user SPA-facing, so
+nothing under `frontend/src/api` reads them"). The merge itself brings this
+code in; there is nothing further to port into `inferno-frontend/` because
+nothing in it changed a contract or a behavior our rewrite depends on.
+
+## Skipped, with reasons
+
+1. **README/README_CN/README_JA sponsor-list trim + the two removed
+   `assets/partners/logos/*` images.** Upstream community sponsor listing;
+   Inferno ships its own rebranded README content (D8 branding). Merged in
+   as-is (nothing on our side edits these sections), no action needed.
+2. **`backend/dev-docs/upstream-error-proxy-attribution.md`.** Upstream's own
+   internal dev note for commits `e9e3c46cb`/`4c1f920d5`/`abc07bb07`/
+   `432ebc498`. Informational only, landed by the merge, not a ledger
+   candidate (it is upstream's file, not ours, and nothing in `docs/` or
+   `deploy/` conflicts with it).
+
+## Gate output (real, not carried forward)
+
+Before merge (base, `inferno-redesign` HEAD `78d2b4f1d`): `check-divergence.sh`
+already failing (2 undeclared, see above) — pre-existing.
+
+After merge (`sync/reconcile-2026-09-04`, tip `0cc2cf40e`): `go build ./...`
+clean · `go vet ./internal/...` clean · `go test ./internal/...` all packages
+`ok` · `pnpm install` clean · `june-lint` 1370/308 (unchanged) · `vue-tsc
+--noEmit` 0 errors · `vitest run` 281/281 files, 2050/2050 tests · `vite
+build` succeeded · `check-divergence.sh` still fails on the same 2
+pre-existing undeclared files (unchanged by the merge — confirmed same 2
+files, same count, before and after).
+
+`git merge-base --is-ancestor inferno-redesign HEAD` on the reconcile branch:
+success — this PR is a fast-forward.
+
+## Unsure about / flagging for review
+
+- **Gate 5 is red, but not because of anything in this reconcile.** A human
+  needs to decide, for `deploy/inference/{README.md,bootstrap.sh}`: add a
+  ledger row (new D11?) and `DECLARED` entry, or revert/relocate them out of
+  the gated dirs. Until that happens, `check-divergence.sh` will keep
+  reporting these two on every future reconcile, independent of upstream
+  drift.
+
+**Last reviewed upstream SHA: `b1748c4ea99ce2120401a269142aa071e18a84da`**
+(2026-09-04, "chore: update sponsors").
