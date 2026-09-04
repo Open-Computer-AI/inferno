@@ -55,15 +55,6 @@ const routes: RouteRecordRaw[] = [
 
   // ==================== Public Routes ====================
   {
-    path: '/home',
-    name: 'Home',
-    component: () => import('@/views/HomeView.vue'),
-    meta: {
-      requiresAuth: false,
-      title: 'Home'
-    }
-  },
-  {
     path: '/login',
     name: 'Login',
     component: () => import('@/views/auth/LoginView.vue'),
@@ -213,7 +204,7 @@ const routes: RouteRecordRaw[] = [
   // ==================== User Routes ====================
   {
     path: '/',
-    redirect: '/home'
+    redirect: '/dashboard'
   },
   {
     path: '/dashboard',
@@ -940,7 +931,10 @@ router.beforeEach(async (to, _from, next) => {
             ? authStore.isAdmin
               ? '/admin/dashboard'
               : '/dashboard'
-            : '/home'
+            // /home no longer resolves (landing page removed); an anonymous
+            // visitor has nowhere else to go but /login, matching
+            // resolveCompletedSetupRedirectPath's unauthenticated case.
+            : '/login'
         )
         return
       }
