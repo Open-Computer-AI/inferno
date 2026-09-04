@@ -22,7 +22,29 @@ set -uo pipefail
 
 INFERENCE_URL="${INFERENCE_URL:-https://inference.tryopencomputer.com}"
 ROUTER_URL="${ROUTER_URL:-https://router.tryopencomputer.com}"
-INFERNO_PROBE_MODEL="${INFERNO_PROBE_MODEL:-}"
+# The probe runs claude-opus-5 first and falls back to gpt-5.6-sol ONLY when
+# the primary is out of capacity.
+#
+# Why a chain rather than just picking one: opus-5 is the model that actually
+# matters, so the probe should exercise it -- but the anthropic pool holds
+# only TWO accounts, and on 2026-09-04 both sat inside the same rate-limit
+# window (reset 09:30) and the probe came back "All available accounts
+# exhausted" on a perfectly healthy deploy. With a pool of two, one window
+# takes out the whole platform. openai has SEVEN accounts, one of them
+# limited, so it is the sturdier floor to fall back to.
+#
+# The fallback is gated on the failure being about CAPACITY (see
+# _is_capacity_failure). A broken gateway must never be retried into a green
+# probe.
+#
+# Effort values accepted by this gateway
+# (backend/internal/service/gateway_request.go): OpenAI models take
+# low / medium / high / xhigh; Claude models take low / medium / high / max.
+# "extrahigh", "max" and "ultracode" are aliases onto the top tier.
+INFERNO_PROBE_MODEL="${INFERNO_PROBE_MODEL:-claude-opus-5}"
+INFERNO_PROBE_EFFORT="${INFERNO_PROBE_EFFORT:-low}"
+INFERNO_PROBE_FALLBACK_MODEL="${INFERNO_PROBE_FALLBACK_MODEL:-gpt-5.6-sol}"
+INFERNO_PROBE_FALLBACK_EFFORT="${INFERNO_PROBE_FALLBACK_EFFORT:-high}"
 PROBE_MAX_TOKENS="${PROBE_MAX_TOKENS:-20}"
 CURL_TIMEOUT="${CURL_TIMEOUT:-15}"
 
@@ -72,21 +94,15 @@ _api_key() {
 # This is probe() -- the same function redeploy.sh calls to gate a deploy and
 # to confirm a rollback actually restored service. Do not duplicate this
 # logic anywhere else; change it here and both callers pick it up.
-probe() {
-  local key model body resp content
+# _one_completion <model> <effort> -- returns 0 and echoes the content on
+# success; echoes the raw response and returns 1 otherwise.
+_one_completion() {
+  local model="$1" effort="$2" key body resp content
   key="$(_api_key)"
-  if [ -z "$key" ]; then
-    echo "FAIL  completion  no API key available (set INFERNO_API_KEY)"
-    return 1
-  fi
-  model="${INFERNO_PROBE_MODEL}"
-  if [ -z "$model" ]; then
-    echo "FAIL  completion  no model set (set INFERNO_PROBE_MODEL to a model on a live seeded provider account)"
-    return 1
-  fi
+  [ -n "$key" ] || { echo "no API key available (set INFERNO_API_KEY)"; return 1; }
 
-  body=$(printf '{"model":"%s","messages":[{"role":"user","content":"Reply with exactly one word: OK"}],"max_tokens":%s}' \
-    "$model" "$PROBE_MAX_TOKENS")
+  body=$(printf '{"model":"%s","messages":[{"role":"user","content":"Reply with exactly one word: OK"}],"max_tokens":%s,"reasoning_effort":"%s"}' \
+    "$model" "$PROBE_MAX_TOKENS" "$effort")
 
   resp="$(curl -sS -m "$CURL_TIMEOUT" -X POST "${INFERENCE_URL}/v1/chat/completions" \
     -H "Authorization: Bearer ${key}" \
@@ -96,12 +112,45 @@ probe() {
   # Pull the completion content out without a JSON library dependency: look
   # for a non-empty "content" field anywhere in the response.
   content="$(printf '%s' "$resp" | grep -o '"content":"[^"]\{1,\}"' | head -1)"
-
   if [ -n "$content" ]; then
-    echo "PASS  completion  got content ($content)"
+    printf '%s' "$content"
     return 0
   fi
-  echo "FAIL  completion  no content in response: ${resp:0:300}"
+  printf '%s' "${resp:0:300}"
+  return 1
+}
+
+# Is this failure about CAPACITY rather than about the gateway being broken?
+# Only these fall through to the fallback model. Anything else -- a 500, an
+# auth error, a malformed response -- is a real failure and must stay one:
+# retrying it on another platform would turn a broken gateway into a green
+# probe, which is precisely the class of lie this whole script exists to stop.
+_is_capacity_failure() {
+  printf '%s' "$1" | grep -qiE 'accounts exhausted|rate.?limit|quota|too many requests|429|529|overloaded'
+}
+
+probe() {
+  local out fb_out
+  if out="$(_one_completion "$INFERNO_PROBE_MODEL" "$INFERNO_PROBE_EFFORT")"; then
+    echo "PASS  completion  got content ($out) via ${INFERNO_PROBE_MODEL}"
+    return 0
+  fi
+
+  # The primary platform is out of capacity, not broken. With only two
+  # anthropic accounts a single rate-limit window takes the whole platform
+  # out, and on 2026-09-04 exactly that made a healthy deploy look failed.
+  # Fall back to the deeper openai pool rather than call the deploy bad.
+  if [ -n "$INFERNO_PROBE_FALLBACK_MODEL" ] && _is_capacity_failure "$out"; then
+    echo "NOTE  completion  ${INFERNO_PROBE_MODEL} is out of capacity, trying ${INFERNO_PROBE_FALLBACK_MODEL}: ${out:0:120}"
+    if fb_out="$(_one_completion "$INFERNO_PROBE_FALLBACK_MODEL" "$INFERNO_PROBE_FALLBACK_EFFORT")"; then
+      echo "PASS  completion  got content ($fb_out) via ${INFERNO_PROBE_FALLBACK_MODEL} (primary was rate-limited)"
+      return 0
+    fi
+    echo "FAIL  completion  both ${INFERNO_PROBE_MODEL} and ${INFERNO_PROBE_FALLBACK_MODEL} failed. Fallback said: ${fb_out:0:200}"
+    return 1
+  fi
+
+  echo "FAIL  completion  no content in response: ${out}"
   return 1
 }
 
