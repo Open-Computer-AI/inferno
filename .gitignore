@@ -124,6 +124,13 @@ CLAUDE.md
 scripts
 !backend/scripts/
 !backend/scripts/resolve-version.sh
+# A bare `scripts` matches a directory of that name at ANY depth, so it was
+# silently swallowing every skill's scripts/ -- a skill whose SKILL.md is
+# tracked but whose scripts are not is a skill that does not survive a fresh
+# clone. Only sub2api-admin's was in the repo, and only because it predates
+# the rule.
+!skills/*/scripts/
+!skills/*/scripts/**
 .code-review-state
 #openspec/
 code-reviews/
