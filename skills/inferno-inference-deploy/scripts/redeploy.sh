@@ -322,13 +322,21 @@ echo "DEPLOY_TARGET=${TARGET_INSTANCE_ID} (${INSTANCE_PUBLIC_IP})"
 # the `2>&1` on the call swallowed the message -- a silent exit 0 immediately
 # after the gates passed. Preconditions that need remote state have to come
 # after the state they need.
+DEPLOY_LOCK_DIR="/tmp/inferno-deploy.lock"
 if [ "$AUTONOMOUS" = 1 ] && [ "$DRY_RUN" = 0 ]; then
-  # stderr is captured, not discarded, so the refusal can say what actually
-  # went wrong instead of asserting a lock conflict that may not be the cause.
-  LOCK_ERR="$(run_instance "mkdir /opt/inferno/.deploy.lock" 2>&1)" || \
-    refuse_autonomous "could not take /opt/inferno/.deploy.lock -- another deploy may hold it (if stale: rmdir it by hand). Detail: ${LOCK_ERR}"
+  # In /tmp, not /opt/inferno: that directory is root-owned and we connect as
+  # ec2-user, so the first attempt failed with "Permission denied" -- which
+  # the refusal reported as a lock conflict until stderr was captured. /tmp
+  # also means a reboot clears the lock, and a reboot is proof no deploy is
+  # still running, so the one stale-lock scenario heals itself. sudo would
+  # have worked too and buys nothing here.
+  #
+  # stderr is captured, not discarded, so the refusal says what actually went
+  # wrong rather than asserting a conflict that may not be the cause.
+  LOCK_ERR="$(run_instance "mkdir ${DEPLOY_LOCK_DIR}" 2>&1)" || \
+    refuse_autonomous "could not take ${DEPLOY_LOCK_DIR} -- another deploy may hold it (if stale: rmdir it by hand). Detail: ${LOCK_ERR}"
   echo "DEPLOY_LOCK=held"
-  trap 'run_instance "rmdir /opt/inferno/.deploy.lock" >/dev/null 2>&1 || true' EXIT
+  trap 'run_instance "rmdir '"${DEPLOY_LOCK_DIR}"'" >/dev/null 2>&1 || true' EXIT
 fi
 
 # ---- step 2: record the rollback target -----------------------------------

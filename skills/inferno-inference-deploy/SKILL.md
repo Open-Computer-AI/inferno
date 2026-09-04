@@ -190,11 +190,17 @@ is a *routine* deploy:
 | `vue-tsc`, `vitest`, `port-coverage --check-baseline` green at that ref | the gates already exist; this makes them a deploy precondition. `june-lint` is deliberately NOT here: it exits 1 on any violation and 1370 exist by design, so it would refuse every run forever |
 | deploy lock acquired | two concurrent deploys both retag `:latest` and the second recreate wins silently |
 
-The lock is `mkdir /opt/inferno/.deploy.lock` **on the instance** — shared by
+The lock is `mkdir /tmp/inferno-deploy.lock` **on the instance** — shared by
 every machine that could start a deploy rather than local to whichever one
 went first, and `mkdir` is atomic so there is no check-then-act window. It is
-released on exit. If a crash ever leaves it behind, `rmdir` it by hand; the
-refusal message says so.
+released on exit; if a crash leaves it behind, `rmdir` it by hand (the
+refusal says so), and a reboot clears it anyway — which is correct, since a
+reboot proves no deploy is still running.
+
+Not in `/opt/inferno`: that is root-owned and we connect as `ec2-user`, so
+the first version failed with `Permission denied` while *reporting* a lock
+conflict. That is why the refusal now includes the captured stderr rather
+than asserting a cause.
 
 Every terminal state reports to Slack: `deployed`, `rolled-back-ok`,
 `image-mismatch`, the not-archived-to-ECR warning, and `rollback-FAILED` with
