@@ -292,20 +292,6 @@ run_instance() {
   run_internal "$inner"
 }
 
-# ---- autonomous: take the deploy lock (needs run_instance, defined above) --
-#
-# Two concurrent deploys is the one way to reach a genuinely bad state: both
-# retag :latest, and whichever recreates second wins silently. The lock lives
-# on the INSTANCE, so it is shared by every machine that could start a deploy
-# rather than being local to whichever one happened to go first. `mkdir` is
-# the atomic primitive -- it either creates or fails, with no check-then-act
-# window for a second deploy to slip through.
-if [ "$AUTONOMOUS" = 1 ] && [ "$DRY_RUN" = 0 ]; then
-  run_instance "mkdir /opt/inferno/.deploy.lock" >/dev/null 2>&1 || \
-    refuse_autonomous "another deploy holds /opt/inferno/.deploy.lock (if stale: rmdir it by hand)"
-  trap 'run_instance "rmdir /opt/inferno/.deploy.lock" >/dev/null 2>&1 || true' EXIT
-fi
-
 # ---- resolve + re-guard the instance IP -----------------------------------
 if [ "$DRY_RUN" = 1 ]; then
   INSTANCE_PUBLIC_IP="$INSTANCE_PUBLIC_IP_DEFAULT"
@@ -320,6 +306,30 @@ else
 fi
 
 echo "DEPLOY_TARGET=${TARGET_INSTANCE_ID} (${INSTANCE_PUBLIC_IP})"
+
+# ---- autonomous: take the deploy lock -------------------------------------
+#
+# Two concurrent deploys is the one way to reach a genuinely bad state: both
+# retag :latest, and whichever recreates second wins silently. The lock lives
+# on the INSTANCE, so it is shared by every machine that could start a deploy
+# rather than being local to whichever one happened to go first. `mkdir` is
+# the atomic primitive -- it either creates or fails, with no check-then-act
+# window for a second deploy to slip through.
+#
+# Placed HERE, after INSTANCE_PUBLIC_IP is resolved, and not next to the other
+# preconditions: run_instance() interpolates that variable, so calling it
+# earlier read an unset variable, `set -u` killed the shell mid-script, and
+# the `2>&1` on the call swallowed the message -- a silent exit 0 immediately
+# after the gates passed. Preconditions that need remote state have to come
+# after the state they need.
+if [ "$AUTONOMOUS" = 1 ] && [ "$DRY_RUN" = 0 ]; then
+  # stderr is captured, not discarded, so the refusal can say what actually
+  # went wrong instead of asserting a lock conflict that may not be the cause.
+  LOCK_ERR="$(run_instance "mkdir /opt/inferno/.deploy.lock" 2>&1)" || \
+    refuse_autonomous "could not take /opt/inferno/.deploy.lock -- another deploy may hold it (if stale: rmdir it by hand). Detail: ${LOCK_ERR}"
+  echo "DEPLOY_LOCK=held"
+  trap 'run_instance "rmdir /opt/inferno/.deploy.lock" >/dev/null 2>&1 || true' EXIT
+fi
 
 # ---- step 2: record the rollback target -----------------------------------
 echo "DEPLOY_PHASE=record-previous"
