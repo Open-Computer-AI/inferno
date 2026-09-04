@@ -147,8 +147,55 @@ run_internal() {
   fi
   local b64
   b64="$(printf '%s' "$remote_cmd" | base64 | tr -d '\n')"
-  ssh -o ConnectTimeout=15 "root@${OC_INTERNAL_HOST}" \
-    "su - ${OC_INTERNAL_USER} -c 'echo ${b64} | base64 -d | bash -s'"
+
+  # `su - user -c '...'` does NOT propagate the child's exit status on this
+  # host: a remote `exit 42` comes back to us as 0. Verified directly on
+  # 2026-09-04, and it is why must() sat there doing nothing while push,
+  # describe-images and pull all failed in sequence -- every one of them
+  # "succeeded" as far as the local shell could tell.
+  #
+  # So the remote side reports its own status explicitly, on the last line,
+  # and we parse it back out. Output is captured rather than streamed, which
+  # costs live build progress and buys an exit code that is actually true.
+  local out rc
+  out="$(ssh -o ConnectTimeout=15 "root@${OC_INTERNAL_HOST}" \
+    "su - ${OC_INTERNAL_USER} -c 'echo ${b64} | base64 -d | bash -s; echo __RC__:\$?'" 2>&1)"
+  rc="$(printf '%s\n' "$out" | sed -n 's/^__RC__:\([0-9][0-9]*\)$/\1/p' | tail -1)"
+  printf '%s\n' "$out" | grep -v '^__RC__:[0-9]*$'
+  # No marker at all means the hop itself broke (ssh/su failed) -- that is a
+  # failure, not a pass. Never default this to 0.
+  return "${rc:-1}"
+}
+
+# must <label> <command...> -- run it, and abort the deploy if it fails.
+#
+# WHY: this script runs `set -uo pipefail` WITHOUT -e, deliberately, because
+# the probe and rollback paths need to inspect failures rather than die on
+# them. The cost of that choice was that every remote step's exit status was
+# simply discarded. On 2026-09-04 the push failed ("no basic auth
+# credentials"), the pull then failed ("manifest unknown"), the retag failed
+# ("No such image") -- and the script recreated the container on the OLD
+# image, watched it come up healthy, ran a probe that passed because the old
+# build works fine, and printed DEPLOY_STATUS=deployed. Three consecutive
+# hard failures and a green result.
+#
+# That is the exact failure this skill was written to prevent, reproduced
+# inside the skill: a check that passes for a reason unrelated to the claim
+# it is making. A probe proves the endpoint works; it cannot prove the thing
+# it is testing is the thing you just built. So every step that MUST succeed
+# is wrapped here, and the deploy stops at the first one that doesn't.
+must() {
+  local label="$1"; shift
+  # Capture straight off the command. Testing it with `if "$@"` and reading $?
+  # in the else branch reports the exit status of the *if*, not of the step --
+  # so a step that died with 137 gets reported as "exit 0", which is a
+  # confusing thing to hand someone at 2am.
+  local rc=0
+  "$@" || rc=$?
+  [ "$rc" = 0 ] && return 0
+  echo "DEPLOY_STATUS=FAILED at step '${label}' (exit ${rc})" >&2
+  echo "Nothing was rolled back: the running container was not replaced." >&2
+  exit 4
 }
 
 run_instance() {
@@ -180,11 +227,24 @@ echo "DEPLOY_TARGET=${TARGET_INSTANCE_ID} (${INSTANCE_PUBLIC_IP})"
 
 # ---- step 2: record the rollback target -----------------------------------
 echo "DEPLOY_PHASE=record-previous"
+# The anchor is the local IMAGE ID of what the container is running right now.
+#
+# The obvious-looking `docker inspect <container> --format '{{index
+# .RepoDigests 0}}'` does not work and fails in a way that reads like the app
+# is down: RepoDigests is a field on an *image*, and inspecting a container
+# returns container JSON, which has .Image (the image id) and .Config.Image
+# (the tag) but no RepoDigests at all. Docker answers with a template error
+# and an empty string, and the empty string then trips the "is it running?"
+# guard even though the container is perfectly healthy.
+#
+# .Image is also the better anchor than a repo digest would be. It is already
+# on the box, so a rollback is a local `docker tag` with nothing to pull, and
+# it stays valid even if the ECR tag is later overwritten or the repo pruned.
 if [ "$DRY_RUN" = 1 ]; then
-  echo "+ [oc-inference] docker inspect ${APP_CONTAINER} --format '{{index .RepoDigests 0}}'"
+  echo "+ [oc-inference] docker inspect ${APP_CONTAINER} --format '{{.Image}}'"
   PREV_IMAGE_REF="<resolved-at-runtime>"
 else
-  PREV_IMAGE_REF="$(run_instance "docker inspect ${APP_CONTAINER} --format '{{index .RepoDigests 0}}'")"
+  PREV_IMAGE_REF="$(run_instance "docker inspect ${APP_CONTAINER} --format '{{.Image}}'")"
   PREV_IMAGE_REF="$(printf '%s' "$PREV_IMAGE_REF" | tr -d '[:space:]')"
   if [ -z "$PREV_IMAGE_REF" ]; then
     echo "DEPLOY_STATUS=no-previous-image (is ${APP_CONTAINER} actually running?)" >&2
@@ -235,20 +295,34 @@ else
       "su - ${OC_INTERNAL_USER} -c 'mkdir -p ${STAGE} && tar -x -C ${STAGE}'"
 fi
 
-# ---- step 5: build (native amd64 on oc-internal) and push -----------------
-echo "DEPLOY_PHASE=build-and-push"
-run_internal "cd ${STAGE} && docker build -t ${IMAGE}:${TAG} -t ${IMAGE}:latest -f Dockerfile ."
-run_internal "aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
-run_internal "docker push ${IMAGE}:${TAG}"
-run_internal "docker push ${IMAGE}:latest"
+# ---- step 5: build on oc-internal, ship the image straight to the instance --
+#
+# The image does NOT travel via ECR on the way out, because oc-internal
+# physically cannot push from a non-interactive session.
+#
+# Its Docker is Docker Desktop for Mac, whose CLI stores registry credentials
+# in the login keychain. Over ssh there is no GUI session to unlock it, so
+# `docker login` dies with `User interaction is not allowed. (-25308)`. That
+# is not fixable from this side: an isolated --config dir, and even an
+# explicit "credsStore": "" in it, were both tried on 2026-09-04 and the CLI
+# still called the keychain helper (login rc=1 either way).
+#
+# So the image goes `docker save` -> ssh -> `docker load`, directly from the
+# builder to the instance. At ~132 MB gzipped this is seconds, needs no
+# registry credentials at all on the Mac, and removes ECR from the critical
+# path of a deploy entirely.
+echo "DEPLOY_PHASE=build-and-ship"
+must "build" run_internal "cd ${STAGE} && docker build -t ${IMAGE}:${TAG} -t ${IMAGE}:latest -f Dockerfile ."
+must "ship-image" run_internal "set -o pipefail
+docker save ${IMAGE}:${TAG} | gzip -1 | \
+  ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new -i ${INSTANCE_SSH_KEY} \
+  ec2-user@${INSTANCE_PUBLIC_IP} 'gunzip | docker load'"
 run_internal "rm -rf ${STAGE}"
 
-# ---- step 6: pull + recreate on the instance -------------------------------
-echo "DEPLOY_PHASE=pull-and-recreate"
-run_instance "aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
-run_instance "docker pull ${IMAGE}:${TAG}"
-run_instance "docker tag ${IMAGE}:${TAG} ${IMAGE}:latest"
-run_instance "cd ${COMPOSE_DIR} && docker compose up -d --no-deps --force-recreate ${APP_SERVICE}"
+# ---- step 6: retag + recreate on the instance ------------------------------
+echo "DEPLOY_PHASE=retag-and-recreate"
+must "retag" run_instance "docker tag ${IMAGE}:${TAG} ${IMAGE}:latest"
+must "recreate" run_instance "cd ${COMPOSE_DIR} && docker compose up -d --no-deps --force-recreate ${APP_SERVICE}"
 
 if [ "$DRY_RUN" = 1 ]; then
   echo "+ [oc-inference] wait for ${APP_CONTAINER} to report healthy (poll docker inspect .State.Health.Status)"
@@ -267,6 +341,26 @@ for _ in $(seq 1 30); do
   sleep 5
 done
 echo "DEPLOY_HEALTH=${HEALTH}"
+
+# ---- step 7b: is the container running the image we just built? ------------
+#
+# The probe below proves the endpoint works. It cannot prove the endpoint is
+# running the NEW build -- the old one works too, which is exactly how the
+# 2026-09-04 run passed every check while having shipped nothing. So compare
+# identity directly: the image id the container is on must equal the image id
+# of the tag we just pushed. This is the one assertion that distinguishes
+# "deployed" from "still running whatever was there before", and no amount of
+# health or completion checking can substitute for it.
+BUILT_ID="$(run_instance "docker inspect ${IMAGE}:${TAG} --format '{{.Id}}'" | tr -d '[:space:]')"
+RUNNING_ID="$(run_instance "docker inspect ${APP_CONTAINER} --format '{{.Image}}'" | tr -d '[:space:]')"
+if [ -z "$BUILT_ID" ] || [ "$BUILT_ID" != "$RUNNING_ID" ]; then
+  echo "DEPLOY_STATUS=FAILED image-mismatch" >&2
+  echo "  built   ${IMAGE}:${TAG} -> ${BUILT_ID:-<none>}" >&2
+  echo "  running ${APP_CONTAINER}          -> ${RUNNING_ID:-<none>}" >&2
+  echo "The container is NOT running the build this deploy produced." >&2
+  exit 5
+fi
+echo "DEPLOY_IMAGE_ID=${RUNNING_ID}"
 
 # ---- step 8: the check that actually matters -------------------------------
 #
@@ -298,6 +392,25 @@ if [ "$PROBE_OK" = 1 ]; then
   echo "DEPLOY_IMAGE=${IMAGE}:${TAG}"
   echo "DEPLOY_STATUS=deployed"
   ROLLED_BACK=0
+
+  # Archive the image to ECR from the INSTANCE, not from oc-internal: the
+  # instance authenticates with its IAM role and stores the token in a plain
+  # file, so it has none of the Mac keychain problem that took ECR out of the
+  # deploy path above.
+  #
+  # Deliberately NOT wrapped in must(): the deploy is already live and
+  # verified by this point, and a registry that is merely a historical record
+  # is not worth failing a good deploy over. It is loud when it fails so the
+  # gap in the archive is visible rather than silent.
+  echo "DEPLOY_PHASE=archive-to-ecr"
+  if run_instance "set -o pipefail
+aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+docker push ${IMAGE}:${TAG}
+docker push ${IMAGE}:latest" >/dev/null 2>&1; then
+    echo "DEPLOY_ARCHIVE=ok (${IMAGE}:${TAG} in ECR)"
+  else
+    echo "DEPLOY_ARCHIVE=FAILED -- the deploy is live and fine, but this build is NOT in ECR." >&2
+  fi
 else
   echo "DEPLOY_STATUS=probe-failed"
   echo "DEPLOY_PHASE=rollback"

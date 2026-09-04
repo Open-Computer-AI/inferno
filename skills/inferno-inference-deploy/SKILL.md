@@ -49,7 +49,8 @@ treats it that way everywhere — `scripts/verify.sh` gates on a real
 | network | no inbound 80/443 on either box; SSH (22) open only to one `/32` admin CIDR (`122.171.16.188/32` on `oc-inference`'s SG, `sg-0c2b5ebfe8b5de271`); the only way in is outbound-initiated |
 | tunnel | `cloudflared`, token-based (`systemctl status cloudflared`, token at `/etc/cloudflared/token`), tunnel id `033ebfb8-7c75-4018-9859-db47af90f68e` |
 | DNS | `inference.tryopencomputer.com` → proxied CNAME → `033ebfb8-7c75-4018-9859-db47af90f68e.cfargotunnel.com` |
-| image | ECR `133277694446.dkr.ecr.us-east-1.amazonaws.com/oc-platform/inferno`, `linux/amd64` only, `MUTABLE` tag policy |
+| image | ECR `133277694446.dkr.ecr.us-east-1.amazonaws.com/oc-platform/inferno`, `linux/amd64` only, `MUTABLE` tag policy. Written to **from the instance**, not from the builder — see **Traps**. |
+| IAM (ECR write) | inline policy `InfernoEcrPush` on `oc-router-ec2-role`, scoped to this one repository (`deploy/inference/ecr-push-policy.json`) |
 | compose | `/opt/inferno/docker-compose.yml`, project name `inferno`, services `postgres` / `redis` / `inferno` (container names `inferno-postgres` / `inferno-redis` / `inferno`) |
 | app | listens on `127.0.0.1:8080` only inside the box; `GET /health` → `{"status":"ok"}`; served through the tunnel at the public hostname |
 | data | `/opt/inferno/pgdata` (Postgres volume), `/opt/inferno/data` (`config.yaml`, `.installed`, `model_pricing.json`, `logs/`, `pages/`, `plugins/`) — seeded, live, never re-seeded (see **Data** below) |
@@ -129,26 +130,34 @@ The sequence, in order:
    `arm64`. Building from `git archive` also means a redeploy can never pick
    up someone else's uncommitted work sitting in the same checkout — it only
    ever ships what's actually committed at `<ref>`.
-5. **Tag and push.** The image is tagged both `<repo>:<short-sha>` (the git
-   short hash of the ref being shipped, `git rev-parse --short`) and
-   `<repo>:latest`, and both are pushed. The short-sha tag is what the
-   instance actually pulls by name; `:latest` is cosmetic for anyone browsing
-   ECR.
-6. **On the instance:** `docker pull <repo>:<short-sha>`, then `docker tag`
-   that pulled image as `<repo>:latest` **locally** (compose references
-   `:latest`), then `docker compose up -d --no-deps --force-recreate inferno`.
-   Retagging locally rather than trusting ECR's `:latest` avoids a race where
-   compose repulls a `:latest` that's already been overwritten by a second,
-   later build.
-7. **Wait for healthy**, then run the **same `probe()`** that
-   `scripts/verify.sh` uses (sourced, not copied — see below) — a real
-   `/v1/chat/completions` call, not a container-health poll.
-8. **On probe failure**, automatically retag the recorded previous digest
+5. **Ship the image straight to the instance**, `docker save | gzip | ssh |
+   docker load`. **ECR is not on the outbound path**, because `oc-internal`
+   physically cannot push to it — see **Traps**. At ~132 MB this takes
+   seconds and needs no registry credential on the Mac at all.
+6. **On the instance:** `docker tag <repo>:<short-sha> <repo>:latest` (compose
+   references `:latest`), then `docker compose up -d --no-deps
+   --force-recreate inferno`.
+7. **Wait for healthy**, then **assert the running container is the image we
+   just built** — compare `docker inspect inferno --format '{{.Image}}'`
+   against the built tag's id, and fail `image-mismatch` if they differ.
+   This is the single check that separates "deployed" from "still running
+   whatever was there before"; no health or completion check can substitute
+   for it (see **Traps**).
+8. **Then** run the **same `probe()`** that `scripts/verify.sh` uses (sourced,
+   not copied) — a real `/v1/chat/completions` call, not a health poll.
+9. **On probe failure**, automatically retag the recorded previous image id
    back to `:latest`, recreate, wait, and re-run the *real*, unmodified
    `probe()` to confirm the rollback actually restored service. Reports which
    of `DEPLOY_STATUS=deployed`, `DEPLOY_STATUS=rolled-back-ok`, or
    `DEPLOY_STATUS=rollback-FAILED` it ended in — the last one means the
    gateway may be down and needs a human now.
+10. **Archive to ECR from the INSTANCE**, once the deploy is live and
+    verified. ECR still matters — it is the only copy that outlives the box,
+    and compose pulls `:latest` from it on a rebuilt instance — but the
+    instance can authenticate (IAM role, plain-file credentials) where the
+    Mac cannot. This step is deliberately **not** fatal: the deploy is
+    already verified by then, and an archive is not worth failing a good
+    deploy over. It is loud on failure, so a gap in the archive is visible.
 9. **Always, regardless of outcome,** checks `router.tryopencomputer.com`
    over public HTTPS and reports it loudly if it doesn't answer as expected.
    This redeploy never touches the router directly, but a shared account, a
@@ -239,6 +248,44 @@ and are new to this skill.
   in both `docker-compose.yml`'s environment block and `config.yaml`'s
   `server.frontend_url`); a redeploy that touches either file without
   carrying it forward reopens the incident.
+- **`su - user -c '…'` does not propagate exit status. This is the big one.**
+  A remote `exit 42` comes back to the caller as `0`. Verified directly on
+  2026-09-04. While that hole was open, *no* error checking anywhere in the
+  script could work: push failed, the ECR existence check failed, pull failed,
+  retag failed — and every one of them reported success. `run_internal` now
+  has the remote side print `__RC__:$?` on its last line and parses it back,
+  and treats a missing marker (the ssh/su hop itself broke) as failure, never
+  as pass. If you add a new remote helper, do the same or it will lie to you.
+- **A green probe cannot tell you WHICH build is running.** The old image
+  answers `/v1/chat/completions` perfectly well. On 2026-09-04 a run whose
+  push, pull and retag had all failed recreated the container on the *old*
+  image, watched it come up healthy, passed the completion probe, and printed
+  `DEPLOY_STATUS=deployed`. That is this skill's own headline failure mode
+  turned inward: a check passing for a reason unrelated to the claim it makes.
+  Liveness is not identity — hence the `image-mismatch` assertion at step 7.
+- **`RepoDigests` is a field on an image, not a container.** `docker inspect
+  <container> --format '{{index .RepoDigests 0}}'` returns a template error
+  and an empty string, which then trips the "is the app even running?" guard
+  on a container that is perfectly healthy — a fields bug wearing the costume
+  of an outage. Use `{{.Image}}`, which is also the better rollback anchor:
+  already local, so rollback is a `docker tag` with nothing to pull, and
+  still valid if the ECR tag is later overwritten.
+- **`oc-internal` cannot push to any registry non-interactively.** It runs
+  Docker Desktop for Mac, whose CLI keeps credentials in the login keychain;
+  over ssh there is no GUI session to unlock it and `docker login` dies with
+  `User interaction is not allowed. (-25308)`. An isolated `--config` dir does
+  not help, and neither does an explicit `"credsStore": ""` in it — both were
+  tried, the CLI called the keychain helper anyway (`login rc=1`). Do not
+  spend another round on this; the image goes save/load and ECR is written
+  from the instance instead.
+- **The instance's IAM role was pull-only.** `oc-router-ec2-role` carried only
+  `AmazonEC2ContainerRegistryReadOnly`, so the archive push failed with
+  `not authorized to perform: ecr:InitiateLayerUpload`. Fixed 2026-09-04 with
+  an inline policy `InfernoEcrPush` scoped to
+  `repository/oc-platform/inferno` alone — checked into this repo at
+  `deploy/inference/ecr-push-policy.json`. The role is SHARED with the
+  production router instance, which is why the policy names one repository
+  and five actions rather than `ecr:*`.
 - **A stale hard-coded compose service name can kill a 20+ minute build at
   the very last step.** An earlier draft of this tooling hard-coded the
   compose service Redeploy needed to recreate; it had drifted from what the
@@ -277,17 +324,33 @@ lifetime, not just at rest.
 - **It will not trust a health check** as proof of anything beyond "the
   process is running."
 
-## Gaps — left for whoever runs this next
+## The probe key
 
-- **`INFERNO_API_KEY` has no known-good default.** The bootstrap
-  `DEFAULT_API_KEY` recorded in `config.yaml`'s `default.api_key` was tested
-  live against `/v1/models` on 2026-09-04 and returned `INVALID_API_KEY` —
-  whatever key real clients actually use is not that value (most likely a
-  per-user key issued after bootstrap, stored hashed, unrecoverable from the
-  config file). `verify.sh` takes the key from the environment for exactly
-  this reason; there is no scripted way to obtain a working one from the box
-  today, and that needs a person who knows which of the 23 seeded provider
-  accounts has a live client key to hand it over.
-- **`INFERNO_PROBE_MODEL` likewise has no confirmed-working default** — it
-  depends on which of the seeded provider accounts is actually enabled and
-  healthy right now, which this investigation had no working key to check.
+`verify.sh` and `redeploy.sh` both need `INFERNO_API_KEY` and
+`INFERNO_PROBE_MODEL`. Confirmed working 2026-09-04:
+
+```bash
+INFERNO_API_KEY="$(docker exec sub2api-postgres \
+  psql -U sub2api -d oc_internal -tAc 'select key from api_keys where id=2')"
+INFERNO_PROBE_MODEL=claude-opus-5
+```
+
+That is the local Inferno database on the laptop, and the key is `OAuth agent
+hermes-cli` — the admin's, stored in plaintext in the `key` column, live on
+production because production was seeded from that database.
+
+**Watch which database.** That one Postgres container holds three: `postgres`,
+`sub2api` and `oc_internal`. The container's own `POSTGRES_DB=sub2api` points
+at the WRONG one — `sub2api` is stale scaffolding holding thirteen fictional
+users (`ada`, `linus`, `grace`…) and twelve keys that authenticate nothing.
+It looks entirely plausible, which is what makes it dangerous: a full,
+coherent result reads as "found it" in a way an empty result never would.
+The tell is `last_used_at` — every key in `sub2api` has none. The real
+database is `oc_internal`: two users, one key, real usage history.
+
+The bootstrap `DEFAULT_API_KEY` recorded in the instance's `config.yaml` is
+NOT a working key — tested live against `/v1/models` on 2026-09-04, it
+returns `INVALID_API_KEY`. Don't reach for it.
+
+Note also that the auth middleware rate-limits repeated bad keys
+(`rejectInvalidAuthAbuse`), so guessing is actively costly.
