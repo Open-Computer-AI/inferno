@@ -190,6 +190,15 @@ if [ "$AUTONOMOUS" = 1 ] && [ "$DRY_RUN" = 0 ]; then
   # The gates that already exist become a deploy precondition. Shipping code
   # that does not typecheck, or whose tests fail, is not a routine deploy --
   # and routine is the only thing this mode is allowed to do.
+  #
+  # ONLY true pass/fail gates belong here. `june-lint` is deliberately absent:
+  # it exits 1 whenever any violation exists, and 1370 of them exist by
+  # design -- the standing backlog of the June conversion, tracked so it goes
+  # down over time, not a regression. Adding it would make --autonomous refuse
+  # every single run, forever. port-verify.mjs already encodes the same
+  # asymmetry (june-lint rising is a NOTE, never a FAIL). Do not "fix" this by
+  # putting it back; if you want it enforced, gate on it not RISING, which is
+  # a different check than the one this script needs.
   echo "DEPLOY_PHASE=autonomous-preflight"
   while IFS= read -r _gate; do
     [ -n "$_gate" ] || continue
@@ -199,7 +208,6 @@ if [ "$AUTONOMOUS" = 1 ] && [ "$DRY_RUN" = 0 ]; then
   done <<'GATES'
 npx vue-tsc --noEmit
 npx vitest run
-node scripts/june-lint.mjs
 node scripts/port-coverage.mjs --check-baseline
 GATES
 

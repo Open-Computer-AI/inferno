@@ -114,11 +114,11 @@ The sequence, in order:
    id — compared as literal ids, not as a name string that a later edit could
    quietly repoint.
 2. **Record the rollback target.** Before touching anything, read the
-   currently-running image's digest off the instance
-   (`docker inspect inferno --format '{{index .RepoDigests 0}}'`) and hold it.
-   This is the thing rollback retags back — not a tag, a digest, because
-   `:latest` is mutable and by the time rollback runs it may already point at
-   the broken build.
+   currently-running image's id off the instance
+   (`docker inspect inferno --format '{{.Image}}'`) and hold it. Rollback
+   retags *that*, not a tag: `:latest` is mutable and by the time rollback
+   runs it may already point at the broken build. Note it is `.Image`, not
+   `.RepoDigests` — see **Traps**.
 3. **Confirm the compose service name before trusting it.** `docker compose
    config --services` on the instance is checked against the constant this
    script hard-codes (`inferno`) before anything is recreated. See **Traps**
@@ -170,6 +170,46 @@ The sequence, in order:
 guarded so `verify.sh` only runs its own `main()` when executed standalone.
 One definition, one place it can drift.
 
+## Autonomous mode
+
+```bash
+./scripts/redeploy.sh --autonomous            # unattended, self-gating
+```
+
+The point of this mode is that **the gate lives in the script, not in a
+permission prompt**. A prompt only protects you while somebody is watching,
+which is exactly when protection matters least. `--autonomous` is allowed to
+run unattended precisely because it refuses unless it can establish that this
+is a *routine* deploy:
+
+| Precondition | Why it means "stop, a human should look" |
+|---|---|
+| `SLACK_BOT_TOKEN` + `SLACK_DEV_CHANNEL` set | it must be ABLE to shout before it may act; failures that go nowhere are the thing this mode exists to prevent |
+| working tree clean | `git archive` would not ship an in-flight edit, so what goes live differs silently from what its author sees |
+| ref resolves to a commit **on a branch** | never a detached scratch commit or a tag someone moved |
+| `vue-tsc`, `vitest`, `port-coverage --check-baseline` green at that ref | the gates already exist; this makes them a deploy precondition. `june-lint` is deliberately NOT here: it exits 1 on any violation and 1370 exist by design, so it would refuse every run forever |
+| deploy lock acquired | two concurrent deploys both retag `:latest` and the second recreate wins silently |
+
+The lock is `mkdir /opt/inferno/.deploy.lock` **on the instance** — shared by
+every machine that could start a deploy rather than local to whichever one
+went first, and `mkdir` is atomic so there is no check-then-act window. It is
+released on exit. If a crash ever leaves it behind, `rmdir` it by hand; the
+refusal message says so.
+
+Every terminal state reports to Slack: `deployed`, `rolled-back-ok`,
+`image-mismatch`, the not-archived-to-ECR warning, and `rollback-FAILED` with
+an `@here`, because that last one is the only state that needs somebody
+immediately. `notify()` is never fatal — Slack being down must not fail a
+good deploy — and always echoes to stdout, so the cron log has the line even
+when the post does not land.
+
+**Bare `redeploy.sh` is unchanged and still prompts.** In the engineering-ops
+profile only the exact `--autonomous` invocation (and `verify.sh`, and
+`--dry-run`) is on the `allow` list; everything else falls through to
+`ask: Bash(*)`. Grant new patterns narrowly, and never widen this to
+`Bash(*redeploy.sh*)` — that would hand away the hand-typed case this split
+exists to keep.
+
 ## How to verify
 
 Run standalone, any time, against the live public endpoint — no SSH required
@@ -207,11 +247,11 @@ acting:
 
 - **A bad build** (the new image is running but broken) → **image tag
   rollback**. `redeploy.sh` does this automatically on a failed probe; done
-  by hand it's: retag the previous digest (get it from `docker inspect
-  inferno --format '{{index .RepoDigests 0}}'` *before* you start, or from
-  ECR's image list by push date if you didn't) back to `<repo>:latest` on the
-  instance, then `docker compose up -d --no-deps --force-recreate inferno`.
-  No terminate, no data touched, seconds not minutes.
+  by hand it's: retag the previous image id (get it from `docker inspect
+  inferno --format '{{.Image}}'` *before* you start, or from `docker images`
+  / ECR's image list by push date if you didn't) back to `<repo>:latest` on
+  the instance, then `docker compose up -d --no-deps --force-recreate
+  inferno`. No terminate, no data touched, seconds not minutes.
 - **A bad instance** (the box itself is compromised, corrupted, or
   unrecoverable — not just a bad app build) → **terminate and recreate**,
   per `deploy/inference/README.md`'s original rollback: terminate the
