@@ -409,3 +409,21 @@ AWS `133277694446` / us-east-1, creds only on `oc-internal`
 `i-0e4fe42fc3fadf277` = oc-router (35.175.193.193, off-limits);
 ECR repo `oc-platform/inferno`, linux/amd64; hermes profiles on oc-internal at
 `/Users/architsakri/.hermes/profiles/<name>/skills/`.
+
+**Outcome (2026-09-04).** Both agents completed. Agent 1's code change shipped
+as `5e8da015a` — its two guard-test rewrites were rejected and redone by the
+main thread (one was a duplicate of a test three lines above it; the other had
+replaced the backend-mode allowlist's *negative* case with a plain-auth case
+the block already covered). Agent 2's skill shipped as `cfdabf7c2` and is
+installed and enabled in the `engineering-ops` hermes profile on oc-internal.
+
+The redeploy itself is NOT done: `verify.sh`'s probe needs a working
+`INFERNO_API_KEY`, and the bootstrap `DEFAULT_API_KEY` in the instance's
+`config.yaml` returns `INVALID_API_KEY`. Running the deploy without one would
+make the probe fail and auto-roll-back a perfectly good build. Resume with:
+
+```bash
+cd skills/inferno-inference-deploy
+INFERNO_API_KEY=<key> INFERNO_PROBE_MODEL=claude-opus-5 ./scripts/verify.sh
+INFERNO_API_KEY=<key> INFERNO_PROBE_MODEL=claude-opus-5 ./scripts/redeploy.sh
+```
