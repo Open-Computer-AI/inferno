@@ -239,9 +239,17 @@ run_internal() {
   # So the remote side reports its own status explicitly, on the last line,
   # and we parse it back out. Output is captured rather than streamed, which
   # costs live build progress and buys an exit code that is actually true.
+  #
+  # The marker is printed after a LEADING newline. `echo __RC__:$?` alone glues
+  # it onto output that does not end in one -- `curl -w '%{http_code}'` yields
+  # `200__RC__:0`, which the sed below cannot match, so rc falls back to 1 and
+  # a perfectly successful command is read as a failure. That went unnoticed
+  # because docker and git both end their output with a newline; it only
+  # appeared once doctor() started running curl remotely, where it turned a
+  # healthy app into "app-down-in-box".
   local out rc
   out="$(ssh -o ConnectTimeout=15 "root@${OC_INTERNAL_HOST}" \
-    "su - ${OC_INTERNAL_USER} -c 'echo ${b64} | base64 -d | bash -s; echo __RC__:\$?'" 2>&1)"
+    "su - ${OC_INTERNAL_USER} -c 'echo ${b64} | base64 -d | bash -s; printf \"\\n__RC__:%s\\n\" \$?'" 2>&1)"
   rc="$(printf '%s\n' "$out" | sed -n 's/^__RC__:\([0-9][0-9]*\)$/\1/p' | tail -1)"
   printf '%s\n' "$out" | grep -v '^__RC__:[0-9]*$'
   # No marker at all means the hop itself broke (ssh/su failed) -- that is a
@@ -530,6 +538,105 @@ docker push ${IMAGE}:latest" >/dev/null 2>&1; then
   fi
 else
   echo "DEPLOY_STATUS=probe-failed"
+
+  # ---- self-heal ladder, cheapest and most-likely first -------------------
+  #
+  # A failed probe does not mean "the build is bad" -- that is only one of its
+  # causes. doctor() (in verify.sh) says which layer is actually broken, and
+  # each rung here addresses one of them, re-probing after every attempt so
+  # the ladder stops the moment service is back.
+  #
+  # Ordering is deliberate: restarting the tunnel is seconds and fixes a
+  # failure the build had nothing to do with, while a rollback is the
+  # heaviest action and the only one that discards the thing we just shipped.
+  # Doing the cheap fixes first means a dead tunnel no longer costs us a
+  # perfectly good deploy.
+  echo "DEPLOY_PHASE=diagnose"
+  DIAG="$(doctor)"
+  echo "DEPLOY_DIAGNOSIS=${DIAG}"
+
+  reprobe() {
+    for _ in $(seq 1 24); do
+      HEALTH="$(run_instance "docker inspect ${APP_CONTAINER} --format '{{.State.Health.Status}}' 2>/dev/null || echo none")"
+      [ "$(printf '%s' "$HEALTH" | tr -d '[:space:]')" = "healthy" ] && break
+      sleep 5
+    done
+    printf '%s' "$(probe)" | grep -q '^PASS'
+  }
+
+  HEALED=0
+
+  # Cannot reach the instance at all. Every rung below needs an ssh hop, so
+  # there is nothing to try -- and blindly "restarting" things we cannot see
+  # would produce a confident recovery report about a box we never touched.
+  # Escalate immediately instead; this is also the one diagnosis where the
+  # service may be perfectly fine and only our path to it is broken.
+  if [ "$DIAG" = "unreachable" ]; then
+    echo "DEPLOY_STATUS=UNREACHABLE -- cannot ssh to the instance; no recovery possible from here." >&2
+    notify "@here cannot reach ${TARGET_INSTANCE_ID} over ssh after deploying ${TAG} - no self-heal is possible, needs a human"
+    echo "DEPLOY_PHASE=check-neighbour"
+    check_router
+    exit 7
+  fi
+
+  # The application is up and correctly rejecting anonymous callers, so
+  # serving, routing and auth all work -- the completion is failing upstream
+  # of us, in a provider account. Rolling back would swap a good build for an
+  # older one, fix nothing, and look like it had done something. So: don't.
+  if [ "$DIAG" = "provider-failing" ]; then
+    echo "DEPLOY_STATUS=deployed-provider-failing"
+    notify "${TAG} is deployed and the app is healthy, but completions are failing upstream (provider/account, not this build). NOT rolling back."
+    ROLLED_BACK=0
+    HEALED=1
+  fi
+
+  # The build is fine and the path to it is not. Seconds to fix.
+  if [ "$HEALED" = 0 ] && [ "$DIAG" = "tunnel-down" ]; then
+    echo "DEPLOY_PHASE=heal-tunnel"
+    run_instance "sudo systemctl restart cloudflared" >/dev/null 2>&1 || true
+    sleep 10
+    if reprobe; then
+      echo "DEPLOY_STATUS=healed-tunnel-restart"
+      notify "${TAG} probe failed on a dead tunnel, not a bad build - restarted cloudflared, service restored. No rollback."
+      ROLLED_BACK=0
+      HEALED=1
+    fi
+  fi
+
+  # Container gone or wedged: a restart is far cheaper than a rebuild, and a
+  # crashed process says nothing about whether the image is bad.
+  if [ "$HEALED" = 0 ] && { [ "$DIAG" = "container-down" ] || [ "$DIAG" = "app-degraded" ]; }; then
+    echo "DEPLOY_PHASE=heal-restart"
+    run_instance "cd ${COMPOSE_DIR} && docker compose restart ${APP_SERVICE}" >/dev/null 2>&1 || true
+    if reprobe; then
+      echo "DEPLOY_STATUS=healed-restart"
+      notify "${TAG} probe failed but recovered on a container restart - no rollback needed."
+      ROLLED_BACK=0
+      HEALED=1
+    fi
+  fi
+
+  # Dependencies, not the app: postgres or redis wedged looks exactly like a
+  # broken build from outside, and again the image is innocent.
+  if [ "$HEALED" = 0 ]; then
+    echo "DEPLOY_PHASE=heal-stack"
+    run_instance "cd ${COMPOSE_DIR} && docker compose up -d" >/dev/null 2>&1 || true
+    if reprobe; then
+      echo "DEPLOY_STATUS=healed-stack-recreate"
+      notify "${TAG} recovered after recreating the full stack (a dependency, not the build). No rollback."
+      ROLLED_BACK=0
+      HEALED=1
+    fi
+  fi
+
+  if [ "$HEALED" = 1 ]; then
+    echo "DEPLOY_PHASE=check-neighbour"
+    ROUTER_RESULT="$(check_router)"
+    echo "$ROUTER_RESULT"
+    exit 0
+  fi
+
+  # Nothing cheaper worked. Now the build is the prime suspect.
   echo "DEPLOY_PHASE=rollback"
   run_instance "docker tag ${PREV_IMAGE_REF} ${IMAGE}:latest"
   run_instance "cd ${COMPOSE_DIR} && docker compose up -d --no-deps --force-recreate ${APP_SERVICE}"
@@ -548,6 +655,26 @@ else
     notify "probe failed on ${TAG} - rolled back, service confirmed restored"
     ROLLED_BACK=1
   else
+    # Last rung: the previous LOCAL image did not bring service back either.
+    # ECR holds the last build that was archived after passing a real
+    # completion probe, which is a stronger guarantee than "whatever this box
+    # happened to be running" -- the local previous image could itself be a
+    # half-broken state nobody ever verified. Worth one attempt before waking
+    # a human at 3am.
+    echo "DEPLOY_PHASE=heal-from-ecr"
+    if run_instance "set -e
+aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+docker pull ${IMAGE}:latest
+cd ${COMPOSE_DIR} && docker compose up -d --no-deps --force-recreate ${APP_SERVICE}" >/dev/null 2>&1 && reprobe; then
+      echo "DEPLOY_STATUS=healed-from-ecr"
+      notify "${TAG} failed AND the local rollback failed - recovered by pulling the last archived build from ECR. Service restored, but look at this."
+      ROLLED_BACK=1
+      echo "DEPLOY_PHASE=check-neighbour"
+      ROUTER_RESULT="$(check_router)"
+      echo "$ROUTER_RESULT"
+      exit 0
+    fi
+
     echo "DEPLOY_STATUS=rollback-FAILED -- the gateway may be down. Escalate now." >&2
     notify "@here ROLLBACK FAILED after ${TAG} - the gateway may be DOWN, needs a human now"
     ROLLED_BACK=1

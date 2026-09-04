@@ -156,6 +156,92 @@ check_router() {
   return 1
 }
 
+# ------------------------------------------------------------------- doctor
+#
+# Which LAYER is broken? probe() answers "does a real client get a completion",
+# which is the right question for "did the deploy work" and the wrong one for
+# "what do I do about it". A failed completion has at least five causes and
+# only one of them is fixed by rolling back the build:
+#
+#   container not running      -> restart it
+#   app not answering in-box   -> the build really is bad -> roll back
+#   tunnel down                -> restart cloudflared; the build is fine
+#   app fine, provider failing -> NOTHING to fix here; rolling back is wrong
+#   everything up              -> transient; retry
+#
+# The discriminator that matters most is the fourth. If the SPA serves and an
+# anonymous call is correctly rejected, the application is working -- the
+# completion is failing somewhere upstream of us, in a provider account. A
+# rollback there swaps a good build for an older one and fixes nothing, while
+# looking like it addressed the problem.
+#
+# PRESUPPOSES A FAILED probe(). It does not re-test the completion -- it works
+# out which layer beneath the completion is broken. Called on a healthy system
+# it therefore returns "provider-failing", which is correct in context (every
+# layer we can see is fine, so the fault is above them) and meaningless out of
+# it. Do not use it as a health check; that is what main() is for.
+#
+# Echoes one token on stdout. Requires run_instance() from redeploy.sh, so it
+# is only usable when sourced from there; standalone verify.sh does not call
+# it, and says so rather than pretending to diagnose.
+doctor() {
+  if ! declare -F run_instance >/dev/null 2>&1; then
+    echo "doctor-unavailable"
+    return 0
+  fi
+
+  local state rc local_health tunnel spa_code anon_code
+
+  # "Cannot reach the box" and "the container is down" are different problems
+  # with different responses, and they look identical if you only inspect the
+  # output. An ssh failure returns an empty string, which read as
+  # container-down and would send the ladder off restarting services it has no
+  # connection to. Check the exit status, not just the value.
+  state="$(run_instance "docker inspect inferno --format '{{.State.Status}}'" 2>/dev/null)"; rc=$?
+  state="$(printf '%s' "$state" | tr -d '[:space:]')"
+  if [ "$rc" != 0 ]; then
+    echo "unreachable"
+    return 0
+  fi
+  if [ "$state" != "running" ]; then
+    echo "container-down"
+    return 0
+  fi
+
+  # Inside the box, bypassing the tunnel entirely. This is what separates "our
+  # app is broken" from "the path to our app is broken".
+  local_health="$(run_instance "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health" 2>/dev/null | tr -d '[:space:]')"
+  tunnel="$(run_instance "systemctl is-active cloudflared" 2>/dev/null | tr -d '[:space:]')"
+
+  if [ "$local_health" != "200" ]; then
+    echo "app-down-in-box"
+    return 0
+  fi
+
+  # App answers locally. Anything still failing is between us and the client.
+  if [ "$tunnel" != "active" ]; then
+    echo "tunnel-down"
+    return 0
+  fi
+
+  spa_code="$(curl -sS -m "$CURL_TIMEOUT" -o /dev/null -w '%{http_code}' "${INFERENCE_URL}/" 2>/dev/null)"
+  if [ "$spa_code" != "200" ]; then
+    echo "tunnel-down"
+    return 0
+  fi
+
+  anon_code="$(curl -sS -m "$CURL_TIMEOUT" -o /dev/null -w '%{http_code}' \
+    -X POST "${INFERENCE_URL}/v1/chat/completions" \
+    -H 'Content-Type: application/json' --data '{}' 2>/dev/null)"
+  if [ "$anon_code" = "401" ]; then
+    # Serving, routing and auth all work. The completion is failing upstream.
+    echo "provider-failing"
+    return 0
+  fi
+
+  echo "app-degraded"
+}
+
 # --------------------------------------------------------------------- main
 main() {
   local rc=0
@@ -176,7 +262,7 @@ main() {
 # Only run main when executed directly. When sourced (by redeploy.sh), this
 # file just defines probe()/check_spa()/check_anon_rejected()/check_router()
 # and the caller decides what to run and when.
-if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+if [ "${BASH_SOURCE[0]:-}" = "${0}" ]; then
   main "$@"
   exit $?
 fi
