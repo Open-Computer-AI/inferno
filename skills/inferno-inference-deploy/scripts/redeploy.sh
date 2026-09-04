@@ -97,25 +97,30 @@ APP_SERVICE="inferno"
 APP_CONTAINER="inferno"
 
 DRY_RUN=0
+AUTONOMOUS=0
 REF="HEAD"
 
 usage() {
   cat <<'EOF'
-Usage: redeploy.sh [--dry-run] [--ref <git-ref>] [-h|--help]
+Usage: redeploy.sh [--dry-run] [--autonomous] [--ref <git-ref>] [-h|--help]
 
-Build the given git ref (default HEAD), push it to ECR, ship it to
-oc-inference, and verify with a real completion. Automatically rolls back to
-the previously-running image if verification fails.
+Build the given git ref (default HEAD), ship it to oc-inference, verify with a
+real completion, and archive it to ECR. Automatically rolls back to the
+previously-running image if verification fails.
 
   --dry-run     print every command that would run; run none of them
   --ref <ref>   build this ref instead of HEAD (via `git archive`, so a dirty
                 working tree is never picked up)
+  --autonomous  run with no human watching: refuse unless a set of
+                preconditions hold, and report the outcome to Slack either
+                way. See "Autonomous mode" in SKILL.md.
 EOF
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
+    --autonomous) AUTONOMOUS=1; shift ;;
     --ref) REF="${2:?--ref needs a value}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -132,6 +137,75 @@ guard_not_router() {
   fi
 }
 guard_not_router
+
+# ---- autonomous mode: prove it is safe, or refuse ------------------------
+#
+# The gate for an unattended deploy belongs HERE, not in a permission prompt.
+# A prompt only protects you while somebody is watching, which is exactly when
+# protection matters least. So --autonomous refuses unless it can establish
+# that this is a ROUTINE deploy, and reports the outcome either way.
+#
+# Every precondition below is something that, if false, means a human should
+# be looking at it. None of them are style checks.
+notify() {
+  # $1 = one-line summary. Never fatal: a deploy must not fail because Slack
+  # is unreachable. The line still goes to stdout, so the cron log has it even
+  # when the post does not land.
+  local msg="$1"
+  echo "NOTIFY: ${msg}"
+  [ "$AUTONOMOUS" = 1 ] || return 0
+  [ -n "${SLACK_BOT_TOKEN:-}" ] && [ -n "${SLACK_DEV_CHANNEL:-}" ] || return 0
+  curl -sS -m 10 -o /dev/null -X POST https://slack.com/api/chat.postMessage \
+    -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+    -H "Content-type: application/json; charset=utf-8" \
+    --data "$(printf '{"channel":"%s","text":"inference redeploy: %s"}' \
+      "$SLACK_DEV_CHANNEL" "$msg")" >/dev/null 2>&1 || true
+}
+
+refuse_autonomous() {
+  echo "REFUSING (--autonomous): $1" >&2
+  notify "REFUSED before touching anything - $1"
+  exit 6
+}
+
+if [ "$AUTONOMOUS" = 1 ] && [ "$DRY_RUN" = 0 ]; then
+  # It must be ABLE to shout before it is allowed to act. An unattended deploy
+  # whose failures go nowhere is the exact thing this mode exists to prevent.
+  { [ -n "${SLACK_BOT_TOKEN:-}" ] && [ -n "${SLACK_DEV_CHANNEL:-}" ]; } || \
+    refuse_autonomous "SLACK_BOT_TOKEN/SLACK_DEV_CHANNEL unset - will not deploy with no way to report failure"
+
+  # A dirty tree means somebody is mid-edit. git archive would not ship their
+  # changes, so what goes live is silently different from what they are
+  # looking at.
+  [ -z "$(git -C "$REPO_DIR" status --porcelain 2>/dev/null)" ] || \
+    refuse_autonomous "working tree at ${REPO_DIR} is dirty - somebody is mid-edit"
+
+  # A real commit, reachable from a branch: never a detached scratch commit
+  # or a tag that has been moved.
+  AUTO_SHA="$(git -C "$REPO_DIR" rev-parse --verify "${REF}^{commit}" 2>/dev/null)" || \
+    refuse_autonomous "'${REF}' does not resolve to a commit"
+  [ -n "$(git -C "$REPO_DIR" branch --contains "$AUTO_SHA" 2>/dev/null)" ] || \
+    refuse_autonomous "commit ${AUTO_SHA} is not on any branch"
+
+  # The gates that already exist become a deploy precondition. Shipping code
+  # that does not typecheck, or whose tests fail, is not a routine deploy --
+  # and routine is the only thing this mode is allowed to do.
+  echo "DEPLOY_PHASE=autonomous-preflight"
+  while IFS= read -r _gate; do
+    [ -n "$_gate" ] || continue
+    ( cd "${REPO_DIR}/inferno-frontend" && NODE_OPTIONS= eval "$_gate" ) >/dev/null 2>&1 || \
+      refuse_autonomous "gate failed: ${_gate}"
+    echo "  gate ok: ${_gate}"
+  done <<'GATES'
+npx vue-tsc --noEmit
+npx vitest run
+node scripts/june-lint.mjs
+node scripts/port-coverage.mjs --check-baseline
+GATES
+
+  # The lock is acquired further down, once run_instance() exists -- it is a
+  # remote operation and these helpers are defined below.
+fi
 
 # ---- remote execution helpers --------------------------------------------
 #
@@ -209,6 +283,20 @@ run_instance() {
   local inner="ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -i ${INSTANCE_SSH_KEY} ec2-user@${INSTANCE_PUBLIC_IP} \"echo ${b64} | base64 -d | bash -s\""
   run_internal "$inner"
 }
+
+# ---- autonomous: take the deploy lock (needs run_instance, defined above) --
+#
+# Two concurrent deploys is the one way to reach a genuinely bad state: both
+# retag :latest, and whichever recreates second wins silently. The lock lives
+# on the INSTANCE, so it is shared by every machine that could start a deploy
+# rather than being local to whichever one happened to go first. `mkdir` is
+# the atomic primitive -- it either creates or fails, with no check-then-act
+# window for a second deploy to slip through.
+if [ "$AUTONOMOUS" = 1 ] && [ "$DRY_RUN" = 0 ]; then
+  run_instance "mkdir /opt/inferno/.deploy.lock" >/dev/null 2>&1 || \
+    refuse_autonomous "another deploy holds /opt/inferno/.deploy.lock (if stale: rmdir it by hand)"
+  trap 'run_instance "rmdir /opt/inferno/.deploy.lock" >/dev/null 2>&1 || true' EXIT
+fi
 
 # ---- resolve + re-guard the instance IP -----------------------------------
 if [ "$DRY_RUN" = 1 ]; then
@@ -355,6 +443,7 @@ BUILT_ID="$(run_instance "docker inspect ${IMAGE}:${TAG} --format '{{.Id}}'" | t
 RUNNING_ID="$(run_instance "docker inspect ${APP_CONTAINER} --format '{{.Image}}'" | tr -d '[:space:]')"
 if [ -z "$BUILT_ID" ] || [ "$BUILT_ID" != "$RUNNING_ID" ]; then
   echo "DEPLOY_STATUS=FAILED image-mismatch" >&2
+  notify "FAILED image-mismatch on ${TAG} - container is NOT running the new build"
   echo "  built   ${IMAGE}:${TAG} -> ${BUILT_ID:-<none>}" >&2
   echo "  running ${APP_CONTAINER}          -> ${RUNNING_ID:-<none>}" >&2
   echo "The container is NOT running the build this deploy produced." >&2
@@ -391,6 +480,7 @@ fi
 if [ "$PROBE_OK" = 1 ]; then
   echo "DEPLOY_IMAGE=${IMAGE}:${TAG}"
   echo "DEPLOY_STATUS=deployed"
+  notify "deployed ${TAG} - verified by real completion"
   ROLLED_BACK=0
 
   # Archive the image to ECR from the INSTANCE, not from oc-internal: the
@@ -410,6 +500,7 @@ docker push ${IMAGE}:latest" >/dev/null 2>&1; then
     echo "DEPLOY_ARCHIVE=ok (${IMAGE}:${TAG} in ECR)"
   else
     echo "DEPLOY_ARCHIVE=FAILED -- the deploy is live and fine, but this build is NOT in ECR." >&2
+    notify "WARN ${TAG} is live but NOT archived to ECR - a rebuilt instance would come back on the old image"
   fi
 else
   echo "DEPLOY_STATUS=probe-failed"
@@ -428,9 +519,11 @@ else
   echo "$BACK_RESULT"
   if printf '%s' "$BACK_RESULT" | grep -q '^PASS'; then
     echo "DEPLOY_STATUS=rolled-back-ok"
+    notify "probe failed on ${TAG} - rolled back, service confirmed restored"
     ROLLED_BACK=1
   else
     echo "DEPLOY_STATUS=rollback-FAILED -- the gateway may be down. Escalate now." >&2
+    notify "@here ROLLBACK FAILED after ${TAG} - the gateway may be DOWN, needs a human now"
     ROLLED_BACK=1
   fi
 fi
