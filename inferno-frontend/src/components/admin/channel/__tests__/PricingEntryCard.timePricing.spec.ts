@@ -18,6 +18,7 @@ function createEntry(billingMode: PricingFormEntry['billing_mode'] = 'token'): P
     cache_read_price: null,
     fast_multiplier: null,
     flex_multiplier: null,
+    max_reasoning_effort_multiplier: null,
     image_input_price: null,
     image_output_price: null,
     per_request_price: null,
@@ -72,15 +73,31 @@ describe('PricingEntryCard time pricing visibility', () => {
   })
 })
 
-describe('PricingEntryCard service tier multipliers', () => {
-  it('shows Fast and Flex controls only when explicitly enabled', () => {
+describe('PricingEntryCard request multipliers', () => {
+  it('shows Fast, Flex, and Max effort controls only when explicitly enabled', () => {
     const hidden = shallowMount(PricingEntryCard, { props: { entry: createEntry() } })
     expect(hidden.text()).not.toContain('admin.channels.form.fastMultiplier')
+    expect(hidden.text()).not.toContain('admin.channels.form.maxReasoningEffortMultiplier')
 
     const shown = shallowMount(PricingEntryCard, {
       props: { entry: createEntry(), enableTierMultipliers: true },
     })
     expect(shown.text()).toContain('admin.channels.form.fastMultiplier')
     expect(shown.text()).toContain('admin.channels.form.flexMultiplier')
+    expect(shown.text()).toContain('admin.channels.form.maxReasoningEffortMultiplier')
+  })
+
+  it('emits Max effort multiplier updates through the pricing entry', async () => {
+    const entry = { ...createEntry(), models: ['fable-5.1'] }
+    const wrapper = shallowMount(PricingEntryCard, {
+      props: { entry, enableTierMultipliers: true },
+    })
+
+    await wrapper.find('input[placeholder="admin.channels.form.fable51DefaultMaxReasoningMultiplier"]').setValue('3')
+
+    expect(wrapper.emitted('update')?.[0]?.[0]).toEqual({
+      ...entry,
+      max_reasoning_effort_multiplier: '3',
+    })
   })
 })
