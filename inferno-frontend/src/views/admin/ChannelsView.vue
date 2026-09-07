@@ -1557,8 +1557,14 @@ async function handleSubmit() {
       // Checked before the intervals early-return: an entry with no intervals
       // can still carry a bad multiplier.
       if (!isValidPositiveMultiplier(entry.fast_multiplier) ||
-          !isValidPositiveMultiplier(entry.flex_multiplier) ||
-          !isValidPositiveMultiplier(entry.max_reasoning_effort_multiplier)) {
+          !isValidPositiveMultiplier(entry.flex_multiplier)) {
+        const platformLabel = t('admin.groups.platforms.' + section.platform, section.platform)
+        const modelLabel = entry.models.join(', ') || t('admin.channels.form.unnamed')
+        appStore.showError(`${platformLabel} - ${modelLabel}: ${t('admin.channels.form.multiplierPositive')}`)
+        activeTab.value = section.platform
+        return
+      }
+      if (!isValidPositiveMultiplier(entry.max_reasoning_effort_multiplier)) {
         const platformLabel = t('admin.groups.platforms.' + section.platform, section.platform)
         const modelLabel = entry.models.join(', ') || t('admin.channels.form.unnamed')
         appStore.showError(`${platformLabel} - ${modelLabel}: ${t('admin.channels.form.multiplierPositive')}`)

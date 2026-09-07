@@ -146,7 +146,7 @@
 
           <!-- Request multipliers, channel pricing only. Applied on top of
                the base price when a request selects the relevant tier/effort. -->
-          <div v-if="enableTierMultipliers" class="mt-3 grid max-w-2xl grid-cols-1 gap-2 sm:grid-cols-3">
+          <div v-if="enableTierMultipliers" class="mt-3 grid max-w-md grid-cols-2 gap-2">
             <div>
               <label class="text-xs text-[var(--muted-foreground)]">{{ t('admin.channels.form.fastMultiplier') }}</label>
               <input :value="entry.fast_multiplier" @input="emitField('fast_multiplier', ($event.target as HTMLInputElement).value)"
@@ -157,6 +157,8 @@
               <input :value="entry.flex_multiplier" @input="emitField('flex_multiplier', ($event.target as HTMLInputElement).value)"
                 type="number" step="any" min="0.000001" class="field-control mt-0.5 text-sm" :placeholder="t('admin.channels.form.multiplierPlaceholder')" />
             </div>
+          </div>
+          <div v-if="enableTierMultipliers" class="mt-2 max-w-md">
             <div>
               <label class="text-xs text-[var(--muted-foreground)]">{{ t('admin.channels.form.maxReasoningEffortMultiplier') }}</label>
               <input :value="entry.max_reasoning_effort_multiplier" @input="emitField('max_reasoning_effort_multiplier', ($event.target as HTMLInputElement).value)"

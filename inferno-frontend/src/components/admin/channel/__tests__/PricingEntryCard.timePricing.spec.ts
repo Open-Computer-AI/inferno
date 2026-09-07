@@ -73,8 +73,8 @@ describe('PricingEntryCard time pricing visibility', () => {
   })
 })
 
-describe('PricingEntryCard request multipliers', () => {
-  it('shows Fast, Flex, and Max effort controls only when explicitly enabled', () => {
+describe('PricingEntryCard service tier multipliers', () => {
+  it('shows Fast and Flex controls only when explicitly enabled', () => {
     const hidden = shallowMount(PricingEntryCard, { props: { entry: createEntry() } })
     expect(hidden.text()).not.toContain('admin.channels.form.fastMultiplier')
     expect(hidden.text()).not.toContain('admin.channels.form.maxReasoningEffortMultiplier')
