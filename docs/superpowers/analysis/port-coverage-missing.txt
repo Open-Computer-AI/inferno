@@ -110,6 +110,7 @@ MISSING   2e279c81d src/components/account/CNProviderQuotaCell.vue <!-- Tier row
 MISSING   302a10b88 src/components/common/__tests__/MonitorQuotaView.spec.ts const rows = wrapper.findAll('[data-testid="monitor-quota-view"] .flex.items-center')
 MISSING   302a10b88 src/components/common/__tests__/MonitorQuotaView.spec.ts expect(html).toContain('bg-emerald-500')
 MISSING   302a10b88 src/components/common/__tests__/MonitorQuotaView.spec.ts expect(rows.length).toBeGreaterThanOrEqual(3)
+MISSING   302a10b88 src/views/admin/__tests__/ChannelMonitorView.grok.spec.ts expect(providerButtons).toHaveLength(8)
 MISSING   34b8bf1a6 src/components/admin/channel/IntervalRow.vue <div class="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7">
 MISSING   34b8bf1a6 src/components/admin/channel/IntervalRow.vue <label class="text-xs text-gray-400">{{ t('admin.channels.form.cacheWrite1hPriceShort') }} <span class="text-gray-300">$/M</span></label>
 MISSING   34b8bf1a6 src/components/admin/channel/IntervalRow.vue <label class="text-xs text-gray-400">{{ t('admin.channels.form.cacheWrite5mPriceShort') }} <span class="text-gray-300">$/M</span></label>
@@ -313,6 +314,7 @@ MISSING   83d4eb6a4 src/components/modelPlaza/__tests__/PlazaModelPricingTable.s
 MISSING   83d4eb6a4 src/components/modelPlaza/__tests__/PlazaModelPricingTable.spec.ts expect(peakCells[0].text()).toContain('18:00–22:00')
 MISSING   85051616f src/components/account/CreateAccountModal.vue <input v-model="adaptiveBaseUrls[item.value]" type="text" class="input" />
 MISSING   85051616f src/components/account/CreateAccountModal.vue <p v-if="form.platform !== 'deepseek'" class="input-hint">
+MISSING   85051616f src/components/account/CreateAccountModal.vue function resetAdaptiveBaseUrls(platform: 'kimi' | 'zhipu' | 'deepseek', mode: CnAccountMode) {
 MISSING   85051616f src/components/account/CreateAccountModal.vue if (form.platform === 'deepseek') opts.push({ value: 'responses', labelKey: 'responses' })
 MISSING   85051616f src/components/account/EditAccountModal.vue : adaptiveDefaults.anthropic,
 MISSING   85051616f src/components/account/EditAccountModal.vue : adaptiveDefaults.chat_completions,
@@ -325,6 +327,7 @@ MISSING   85051616f src/components/account/EditAccountModal.vue if (props.accoun
 MISSING   85051616f src/components/account/EditAccountModal.vue responses: typeof storedBaseUrls.responses === 'string'
 MISSING   85051616f src/components/account/EditAccountModal.vue storedProtocol === 'adaptive' || storedProtocol === 'anthropic' || storedProtocol === 'responses'
 MISSING   85051616f src/components/account/__tests__/CreateAccountModal.spec.ts await selectButtonByText(wrapper, 'admin.accounts.cnProviders.apiProtocol.adaptive')
+MISSING   85051616f src/components/account/credentialsBuilder.ts platform: 'kimi' | 'zhipu' | 'deepseek',
 MISSING   85051616f src/components/account/credentialsBuilder.ts responses: platform === 'deepseek' ? defaultCNBaseUrl(platform, mode, 'responses') : ''
 MISSING   8d82bb069 src/components/account/BulkEditAccountModal.vue :checked="openAIEndpointCapabilities.includes(option.value)"
 MISSING   8d82bb069 src/components/account/BulkEditAccountModal.vue @change="toggleOpenAIEndpointCapability(option.value, $event)"
@@ -333,6 +336,7 @@ MISSING   8d82bb069 src/components/account/BulkEditAccountModal.vue const input 
 MISSING   8d82bb069 src/components/account/BulkEditAccountModal.vue event?: Event
 MISSING   8d82bb069 src/components/account/BulkEditAccountModal.vue if (input) input.checked = true
 MISSING   8f6f45983 src/views/admin/ChannelsView.vue const compositePlatforms: GroupPlatform[] = ['anthropic', 'openai', 'gemini', 'antigravity', 'grok']
+MISSING   8f6f45983 src/views/admin/ChannelsView.vue const platformOrder: GroupPlatform[] = ['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kimi', 'zhipu', 'deepseek']
 MISSING   901a0439f src/components/account/CNProviderBalanceCell.vue 'inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-dark-600',
 MISSING   901a0439f src/components/account/CNProviderBalanceCell.vue return t('admin.accounts.grokBalance')?.trim() || 'Balance'
 MISSING   901a0439f src/components/account/CNProviderQuotaCell.vue 'inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-dark-600',
@@ -366,13 +370,22 @@ MISSING   901a0439f src/components/account/CreateAccountModal.vue <Icon :name="o
 MISSING   901a0439f src/components/account/CreateAccountModal.vue apiProtocol.value = 'chat_completions'
 MISSING   901a0439f src/components/account/CreateAccountModal.vue apiProtocol.value = 'chat_completions'
 MISSING   901a0439f src/components/account/CreateAccountModal.vue const apiProtocol = ref<CnApiProtocol>('chat_completions')
+MISSING   901a0439f src/components/account/CreateAccountModal.vue const cnPresetPlatform = computed<'kimi' | 'zhipu' | 'deepseek'>(() => {
+MISSING   901a0439f src/components/account/CreateAccountModal.vue function selectCNPlatform(platform: 'kimi' | 'zhipu' | 'deepseek') {
 MISSING   901a0439f src/components/account/CreateAccountModal.vue if (form.platform === 'deepseek') {
+MISSING   901a0439f src/components/account/CreateAccountModal.vue if (form.platform === 'kimi' || form.platform === 'zhipu' || form.platform === 'deepseek') {
+MISSING   901a0439f src/components/account/CreateAccountModal.vue if (form.platform === 'kimi' || form.platform === 'zhipu' || form.platform === 'deepseek') {
+MISSING   901a0439f src/components/account/CreateAccountModal.vue if (newPlatform === 'kimi' || newPlatform === 'zhipu' || newPlatform === 'deepseek') {
 MISSING   901a0439f src/components/account/CreateAccountModal.vue if (resolvedCNBase) {
 MISSING   901a0439f src/components/account/CreateAccountModal.vue watch(accountMode, (mode) => {
+MISSING   901a0439f src/components/account/EditAccountModal.vue const cnPresetPlatform = computed<'kimi' | 'zhipu' | 'deepseek'>(() => {
 MISSING   901a0439f src/components/account/EditAccountModal.vue const editApiProtocol = ref<CnApiProtocol>('chat_completions')
 MISSING   901a0439f src/components/account/EditAccountModal.vue if (newAccount.platform !== 'deepseek' && editApiProtocol.value === 'responses') {
+MISSING   901a0439f src/components/account/EditAccountModal.vue if (platform === 'kimi' || platform === 'zhipu' || platform === 'deepseek') {
+MISSING   901a0439f src/components/account/EditAccountModal.vue props.account.platform === 'deepseek')
 MISSING   901a0439f src/components/account/EditAccountModal.vue watch(editAccountMode, (mode) => {
 MISSING   901a0439f src/components/account/EditAccountModal.vue watch(editApiProtocol, (protocol) => {
+MISSING   901a0439f src/components/account/credentialsBuilder.ts return (platform === 'kimi' || platform === 'zhipu') && accountMode === 'coding'
 MISSING   901a0439f src/i18n/locales/en/admin/accounts.ts resetSoon: 'reset soon',
 MISSING   901a0439f src/i18n/locales/en/admin/accounts.ts window5h: '5-hour window',
 MISSING   901a0439f src/i18n/locales/en/admin/accounts.ts windowWeekly: 'Weekly window',
@@ -468,12 +481,18 @@ MISSING   b16ed03ca src/components/keys/UseKeyModal.vue const slug = (model as {
 MISSING   b16ed03ca src/components/keys/UseKeyModal.vue if (!codexModelManifestContent.value) return []
 MISSING   b16ed03ca src/components/keys/UseKeyModal.vue if (typeof slug !== 'string' || !slug.trim()) return []
 MISSING   b16ed03ca src/components/keys/UseKeyModal.vue return [slug.trim()]
+MISSING   b171bb0e4 src/views/admin/ChannelsView.vue const compositePlatforms: GroupPlatform[] = ['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kimi', 'zhipu', 'deepseek']
 MISSING   b171bb0e4 src/views/admin/GroupsView.vue { value: "deepseek", label: "DeepSeek" },
 MISSING   b171bb0e4 src/views/admin/GroupsView.vue { value: "kimi", label: "Kimi" },
 MISSING   b171bb0e4 src/views/admin/GroupsView.vue { value: "zhipu", label: "Zhipu GLM" },
+MISSING   b171bb0e4 src/views/admin/__tests__/GroupsView.compositePlatforms.spec.ts const options = source.slice(
+MISSING   b171bb0e4 src/views/admin/__tests__/GroupsView.compositePlatforms.spec.ts const source = readFileSync(resolve('src/views/admin/GroupsView.vue'), 'utf8')
 MISSING   b171bb0e4 src/views/admin/__tests__/GroupsView.compositePlatforms.spec.ts expect(options).toContain('{ value: "deepseek", label: "DeepSeek" }')
 MISSING   b171bb0e4 src/views/admin/__tests__/GroupsView.compositePlatforms.spec.ts expect(options).toContain('{ value: "kimi", label: "Kimi" }')
 MISSING   b171bb0e4 src/views/admin/__tests__/GroupsView.compositePlatforms.spec.ts expect(options).toContain('{ value: "zhipu", label: "Zhipu GLM" }')
+MISSING   b171bb0e4 src/views/admin/__tests__/GroupsView.compositePlatforms.spec.ts it('offers Kimi, Zhipu GLM, and DeepSeek as route targets', () => {
+MISSING   b171bb0e4 src/views/admin/__tests__/GroupsView.compositePlatforms.spec.ts source.indexOf('const compositeRouteEndpointOptions')
+MISSING   b171bb0e4 src/views/admin/__tests__/GroupsView.compositePlatforms.spec.ts source.indexOf('const compositeRoutePlatformOptions'),
 MISSING   b3092145d src/components/account/__tests__/CreateAccountModal.spec.ts template: '<div data-testid="model-whitelist-selector" />',
 MISSING   b56c61ecc src/components/admin/user/UserAllowedGroupsModal.vue :checked="config.isSelected"
 MISSING   b56c61ecc src/components/admin/user/UserAllowedGroupsModal.vue :checked="restrictPublicGroups"
