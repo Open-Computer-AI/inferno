@@ -46,8 +46,8 @@ describe('PlatformTypeBadge Grok plans', () => {
     expect(wrapper.text()).toContain('SuperGrok Heavy')
     expect(wrapper.find('[data-testid="grok-plan-icon"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="grok-free-plan-icon"]').exists()).toBe(false)
-    // Heavy uses purple plan chip
-    expect(wrapper.html()).toContain('bg-purple-100')
+    // Heavy uses the stronger brand plan token.
+    expect(wrapper.html()).toContain('bg-[var(--brand-tint-strong)]')
 
     await wrapper.setProps({ platform: 'openai', planType: 'free' })
     expect(wrapper.text()).toContain('Free')
@@ -59,29 +59,23 @@ describe('PlatformTypeBadge Grok plans', () => {
     const free = mount(PlatformTypeBadge, {
       props: { platform: 'grok', type: 'oauth', planType: 'free' },
     })
-    expect(free.html()).toContain('bg-gray-100')
-    expect(free.html()).not.toContain('bg-purple-100')
-    expect(free.html()).not.toContain('bg-cyan-100')
+    expect(free.html()).toContain('bg-[var(--muted)]')
+    expect(free.html()).not.toContain('bg-[var(--brand-tint-strong)]')
+    expect(free.html()).not.toContain('bg-[color-mix(in_oklch,var(--success)_14%,var(--card))]')
 
     const superGrok = mount(PlatformTypeBadge, {
       props: { platform: 'grok', type: 'oauth', planType: 'supergrok' },
     })
     expect(superGrok.text()).toContain('SuperGrok')
-    expect(superGrok.html()).toContain('bg-cyan-100')
+    expect(superGrok.html()).toContain('bg-[color-mix(in_oklch,var(--success)_14%,var(--card))]')
     expect(superGrok.find('[data-testid="grok-plan-icon"]').exists()).toBe(true)
 
     const heavy = mount(PlatformTypeBadge, {
       props: { platform: 'grok', type: 'oauth', planType: 'Heavy' },
     })
     expect(heavy.text()).toContain('Heavy')
-    expect(heavy.html()).toContain('bg-purple-100')
+    expect(heavy.html()).toContain('bg-[var(--brand-tint-strong)]')
     expect(heavy.find('[data-testid="grok-plan-icon"]').exists()).toBe(true)
-
-    const lite = mount(PlatformTypeBadge, {
-      props: { platform: 'grok', type: 'oauth', planType: 'supergrok_lite' },
-    })
-    expect(lite.text()).toContain('SuperGrok Lite')
-    expect(lite.html()).toContain('bg-cyan-100')
   })
 
   it('uses a dedicated 12px currentColor Grok mark with a Free sparkle', () => {
@@ -113,20 +107,34 @@ describe('PlatformTypeBadge OpenAI authentication modes', () => {
     await wrapper.setProps({ authMode: undefined })
     expect(wrapper.text()).toContain('OAuth')
   })
-})
 
-describe('PlatformTypeBadge MiniMax', () => {
-  it('labels MiniMax API keys as MiniMax, not Gemini', () => {
+  it('renders X Basic as a free tier, not a paid one with an expiry', () => {
+    // Before 69648476d this fell through to the "any other non-free Grok plan"
+    // arm: an amber paid-tier chip WITH a subscription expiry line, so an
+    // operator read a free account as a paying one.
     const wrapper = mount(PlatformTypeBadge, {
       props: {
-        platform: 'minimax',
-        type: 'apikey',
+        platform: 'grok',
+        type: 'oauth',
+        planType: 'x_basic',
+        subscriptionExpiresAt: '2027-01-01T00:00:00Z',
       },
     })
+    expect(wrapper.text()).toContain('X Basic')
+    expect(wrapper.html()).toContain('bg-[var(--muted)]')
+    expect(wrapper.html()).not.toContain('bg-[color-mix(in_oklch,var(--success)_14%,var(--card))]')
+    expect(wrapper.text()).not.toContain('2027')
+  })
 
-    expect(wrapper.text()).toContain('MiniMax')
-    expect(wrapper.text()).toContain('Key')
-    expect(wrapper.text()).not.toContain('Gemini')
-    expect(wrapper.html()).toContain('bg-rose-100')
+  it('gives SuperGrok Lite and Plus canonical labels instead of the raw prop', () => {
+    const lite = mount(PlatformTypeBadge, {
+      props: { platform: 'grok', type: 'oauth', planType: 'supergrok_lite' },
+    })
+    expect(lite.text()).toContain('SuperGrok Lite')
+
+    const plus = mount(PlatformTypeBadge, {
+      props: { platform: 'grok', type: 'oauth', planType: 'SuperGrok Plus' },
+    })
+    expect(plus.text()).toContain('SuperGrok Plus')
   })
 })

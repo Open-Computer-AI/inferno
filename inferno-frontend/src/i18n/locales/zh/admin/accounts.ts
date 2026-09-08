@@ -1,6 +1,8 @@
 export default {
     accounts: {
       title: '账号管理',
+      fromModel: '源模型',
+      toModel: '目标模型',
       description: '管理 AI 平台账号和 Cookie',
       createAccount: '添加账号',
       autoRefresh: '自动刷新',
@@ -47,7 +49,7 @@ export default {
       syncFromCrsTitle: '从 CRS 同步账号',
       syncFromCrsDesc:
         '将 claude-relay-service（CRS）中的账号同步到当前系统（不会在浏览器侧直接请求 CRS）。',
-      crsVersionRequirement: '⚠️ 注意：CRS 版本必须 ≥ v1.1.240 才支持此功能',
+      crsVersionRequirement: '注意：CRS 版本必须 ≥ v1.1.240 才支持此功能',
       crsBaseUrl: 'CRS 服务地址',
       crsBaseUrlPlaceholder: '例如：http://127.0.0.1:3000',
       crsUsername: '用户名',
@@ -224,6 +226,17 @@ export default {
       subscriptionExpires: '到期',
       // 容量状态提示
       capacity: {
+        dimension: {
+          concurrency: '并发',
+          windowCost: '5 小时费用',
+          sessions: '会话',
+          rpm: 'RPM',
+          quotaDaily: '每日额度',
+          quotaWeekly: '每周额度',
+          quotaTotal: '总额度'
+        },
+        moreLimits: '另有 {count} 项',
+        hideLimits: '收起其他限制',
         windowCost: {
           blocked: '5h窗口费用超限，账号暂停调度',
           stickyOnly: '5h窗口费用达阈值，仅允许粘性会话',
@@ -262,7 +275,7 @@ export default {
       quotaWeeklyLimit: '周限额',
       quotaWeeklyLimitHint: '从首次使用起每 7 天自动重置。',
       quotaTotalLimit: '总限额',
-      quotaTotalLimitHint: '累计消费上限，不会自动重置 — 使用「重置配额」手动清零。',
+      quotaTotalLimitHint: '累计消费上限，不会自动重置，使用「重置配额」手动清零。',
       quotaResetMode: '重置方式',
       quotaResetModeRolling: '滚动窗口',
       quotaResetModeFixed: '固定时间',
@@ -375,11 +388,9 @@ export default {
       antigravityProjectIdHint:
         'standard-tier 且未自动返回 project_id 的 Antigravity 账号需要填写用户自带 GCP project。',
       accountSchedulingThresholdOverride: '账号自动停调阈值覆盖',
-      accountSchedulingThresholdOverrideHint:
-        '仅对当前账号覆盖平台级自动停调阈值；关闭后使用平台设置。',
+      accountSchedulingThresholdOverrideHint: '仅对当前账号覆盖平台级自动停调阈值；关闭后使用平台设置。',
       accountSchedulingThresholdOverrideValue: '账号阈值百分比',
-      accountSchedulingThresholdOverrideDisabledHint:
-        '1-100，达到该用量百分比后临时不可调度；100 表示禁用当前账号自动停调。',
+      accountSchedulingThresholdOverrideDisabledHint: '1-100，达到该用量百分比后临时不可调度；100 表示禁用当前账号自动停调。',
       status: {
         active: '正常',
         inactive: '停用',
@@ -451,6 +462,16 @@ export default {
         }
       },
       usageWindow: {
+        fiveHour: '5 小时',
+        sevenDay: '7 天',
+        sevenDaySonnet: '7 天 Sonnet',
+        sevenDayFable: '7 天 Fable',
+        thirtyDay: '30 天',
+        oneDay: '1 天',
+        total: '总计',
+        grok24h: '24 小时',
+        moreWindows: '另有 {count} 项',
+        hideWindows: '收起其他窗口',
         statsTitle: '5小时窗口用量统计',
         statsTitleDaily: '每日用量统计',
         geminiProDaily: 'Pro',
@@ -472,7 +493,7 @@ export default {
         grokUnknown: 'Grok 配额需等待首次上游响应返回 xAI rate-limit 头后显示。',
         grokRetryAfter: '{time} 后重试',
         grokProbe: '探测',
-        grokProbeTooltip: '发送最小 xAI Responses 探测请求并读取配额响应头',
+        grokProbeTooltip: '会向 xAI 发送一次真实请求以读取配额响应头',
         grokResetUnsupported: '不支持重置',
         grokResetUnsupportedTooltip: 'xAI 未向 Grok OAuth 账号开放重置额度接口',
         grokNoHeaders: '未观察到配额响应头',
@@ -549,6 +570,11 @@ export default {
         clear: '清除选择',
         edit: '批量编辑账号',
         delete: '批量删除',
+        allInFilterSelected: '已选中当前筛选下的全部 {count} 个账号',
+        selectAllResultsLink: '选择全部 {count} 条结果',
+        selectPageOnly: '仅选择本页',
+        confirmDeleteTitle: '删除账号',
+        confirmDeleteAllInFilter: '删除筛选结果中的全部 {count} 个账号？此操作不可撤销。',
         confirmDelete: '确认删除选中的 {count} 个账号吗？此操作不可恢复。',
         deleteSuccess: '已成功删除 {count} 个账号',
         enableScheduling: '批量启用调度',
@@ -578,7 +604,7 @@ export default {
         rateSyncConflict: '无法修改账号倍率：{count} 个目标账号已开启上游倍率同步。',
         longContextShadowHint: '长上下文计费归母账号所有。选中的影子账号仍跟随母账号，筛选全量目标时同样如此。',
         longContextParentRequired: '选中的账号全部是影子账号，请选择母账号修改长上下文计费。',
-        mixedPlatformWarning: '所选账号跨越多个平台（{platforms}）。显示的模型映射预设为合并结果——请确保映射对每个平台都适用。'
+        mixedPlatformWarning: '所选账号跨越多个平台（{platforms}）。显示的模型映射预设为合并结果，请确保映射对每个平台都适用。'
       },
       bulkDeleteTitle: '批量删除账号',
       bulkDeleteConfirm: '确定要删除选中的 {count} 个账号吗？此操作无法撤销。',
@@ -645,14 +671,6 @@ export default {
       apiKeyRequired: 'API Key *',
       apiKeyPlaceholder: 'sk-ant-api03-...',
       apiKeyHint: '您的 Claude Console API Key',
-      upstreamRequestIdHeader: '上游ID',
-      upstreamRequestIdHeaderPlaceholder: '留空不记录',
-      upstreamRequestIdHeaderHelp: {
-        intro: '填写直接上游在响应头中声明请求标识的头名，记录到用量明细的“上游ID”列；留空则不记录。',
-        examplesTitle: '常见取值',
-        sub2apiNote: '对应对方用量明细的请求ID列',
-        official: '{platform} 官方 API'
-      },
       // OpenAI specific hints
       openai: {
         baseUrlHint: '留空使用官方 OpenAI API',
@@ -662,7 +680,7 @@ export default {
           '开启后，该 OpenAI 账号将自动透传请求与响应，仅替换认证并保留计费/并发/审计及必要安全过滤；如遇兼容性问题可随时关闭回滚。',
         flattenNamespaces: '摊平 Codex namespace 工具（兼容）',
         flattenNamespacesDesc:
-          '默认关闭：/responses 上的 namespace 工具声明原样转发，这正是 ChatGPT Codex 后端期望的形态。仅当该 OAuth 账号指向不认识 namespace 的兼容上游时才开启——摊平会把工具改名为 namespace__tool，使按 functions.<命名空间>.<工具> 寻址的模型（如 gpt-5.6 多智能体）无法调用。压缩（compact）请求不受该开关影响，始终摊平。',
+          '默认关闭：/responses 上的 namespace 工具声明原样转发，这正是 ChatGPT Codex 后端期望的形态。仅当该 OAuth 账号指向不认识 namespace 的兼容上游时才开启，摊平会把工具改名为 namespace__tool，使按 functions.<命名空间>.<工具> 寻址的模型（如 gpt-5.6 多智能体）无法调用。压缩（compact）请求不受该开关影响，始终摊平。',
         longContextBilling: 'API 长上下文计费',
         longContextBillingDesc: '默认关闭。仅当该账号的上游会按模型阈值收取 OpenAI API 长上下文费率时开启。',
         responsesWebsocketsV2: 'Responses WebSocket v2',
@@ -693,9 +711,6 @@ export default {
         responsesModeForceResponses: '强制 Responses',
         responsesModeForceChatCompletions: '强制 Chat Completions',
         responsesModeTextDisabledHint: '未启用 Responses / Chat Completions 端点时，此设置不适用。',
-        imagesUrlToB64Json: '生图结果 URL 转 base64',
-        imagesUrlToB64JsonDesc:
-          '仅对 OpenAI API Key 的 Images 非流式响应生效。上游返回的图片缺少 b64_json 但带 url 时，网关下载该 url 并以 base64 回填 b64_json（url 保留），兼容按官方接口实现的客户端；下载失败则原样返回。',
         endpointCapabilities: '端点能力',
         endpointCapabilitiesDesc:
           '用于调度筛选。文本端点会跟随上方 Responses API 支持显示为 Responses、Chat Completions 或自动模式；Embeddings 独立控制 /v1/embeddings。',
@@ -826,8 +841,6 @@ export default {
       modelRestriction: '模型限制（可选）',
       modelWhitelist: '模型白名单',
       modelMapping: '模型映射',
-      fromModel: '请求模型',
-      toModel: '目标模型',
       selectAllowedModels: '选择允许的模型。留空则支持所有模型。',
       mapRequestModels: '将请求模型映射到实际模型。左边是请求的模型，右边是发送到 API 的实际模型。',
       selectedModels: '已选择 {count} 个模型',
@@ -844,12 +857,11 @@ export default {
       syncUpstreamModels: '同步上游支持的模型',
       syncUpstreamModelsLoading: '同步上游中...',
       syncUpstreamModelsSuccess: '已从上游同步 {count} 个新模型（上游共 {total} 个）',
+      syncUpstreamModelsMetadataIncomplete: '模型 ID 已同步，但能力元数据不完整，未更新。',
       syncUpstreamModelsNoChanges: '上游 {count} 个模型均已在白名单中',
       syncUpstreamModelsEmpty: '上游没有返回可同步的模型',
       syncUpstreamModelsFailed: '同步上游模型失败',
       syncUpstreamModelsError: '同步上游模型失败：{message}',
-      syncUpstreamModelsMetadataIncomplete: '模型 ID 已同步，但未能更新任何能力元数据。',
-      syncUpstreamModelsMetadataPartial: '已更新部分模型的能力元数据；其余模型能力仍不完整。',
       clearAllModels: '清除所有模型',
       customModelName: '自定义模型名称',
       enterCustomModelName: '输入自定义模型名称',
@@ -924,15 +936,15 @@ export default {
 	  autoPause5hDisabled: '禁用 5h 自动暂停',
 	  autoPause7dDisabled: '禁用 7d 自动暂停',
 	  autoPauseDisabledHint: '开启后该账号永不进入自动暂停（即使全局默认阈值已配置）。',
-	  autoResetCredit: {
-	    title: '自动使用重置卡',
-	    hint: '仅在实际用量达到阈值时使用最早到期的可用卡；默认关闭。无卡或失败时账号保持暂停。',
-	    threshold5h: '5h 自动用卡阈值(%)',
-	    threshold7d: '7d 自动用卡阈值(%)',
-	    thresholdHint: '两个窗口独立判断，任一达到自身阈值即触发。可填写 0.1–100，默认均为 100。',
-	    thresholdInvalid: '自动使用重置卡阈值必须在 0.1% 到 100% 之间。'
-	  },
       // Quota control (Anthropic OAuth/SetupToken only)
+      autoResetCredit: {
+        title: '自动使用重置卡',
+        hint: '仅在实际用量达到阈值时使用最早到期的可用卡；默认关闭。无卡或失败时账号保持暂停。',
+        threshold5h: '5h 自动用卡阈值(%)',
+        threshold7d: '7d 自动用卡阈值(%)',
+        thresholdHint: '两个窗口独立判断，任一达到自身阈值即触发。可填写 0.1 至 100，默认均为 100。',
+        thresholdInvalid: '自动使用重置卡阈值必须在 0.1% 到 100% 之间。'
+      },
       quotaControl: {
         title: '配额控制',
         hint: '配置费用窗口、会话限制、客户端亲和等调度控制。',
@@ -1531,6 +1543,11 @@ export default {
       viewStats: '查看统计',
       usageStatistics: '使用统计',
       last30DaysUsage: '近30天使用统计（日均基于实际使用天数）',
+      todayStatsCell: {
+        loadFailed: '加载失败',
+        requests: '{count} 次请求',
+        costToday: '今日 {amount}'
+      },
       stats: {
         totalCost: '30天总费用',
         accumulatedCost: '累计成本',

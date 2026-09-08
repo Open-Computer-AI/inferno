@@ -258,15 +258,11 @@ export const GROK_BASE_URL_PRESETS: GrokBaseUrlPreset[] = [
 export type CnAccountMode = 'payg' | 'coding'
 export type CnProviderPlatform = 'kimi' | 'zhipu' | 'deepseek' | 'minimax'
 
-/** deepseek / kimi / minimax 支持原生 responses；adaptive 会按入站协议选择原生端点。 */
+/** deepseek / kimi 支持原生 responses；adaptive 会按入站协议选择原生端点。 */
 export type CnApiProtocol = 'adaptive' | 'chat_completions' | 'anthropic' | 'responses'
 export type CnNativeApiProtocol = Exclude<CnApiProtocol, 'adaptive'>
 
-export function isCNProviderPlatform(platform: string): platform is CnProviderPlatform {
-  return platform === 'kimi' || platform === 'zhipu' || platform === 'deepseek' || platform === 'minimax'
-}
-
-/** DeepSeek、Kimi 与 MiniMax 提供原生 Responses 端点。 */
+/** DeepSeek 与 Kimi（按量付费 / Coding Plan）提供原生 Responses 端点。 */
 export function cnSupportsNativeResponses(platform: string): boolean {
   return platform === 'deepseek' || platform === 'kimi' || platform === 'minimax'
 }
@@ -336,7 +332,7 @@ export function defaultCNBaseUrl(
         return ''
     }
   }
-  // responses：Kimi / DeepSeek / MiniMax 的 base 与 chat_completions 相同（端点路径差异由后端处理）。
+  // responses：Kimi / DeepSeek 的 base 与 chat_completions 相同（端点路径差异由后端处理）。
   switch (platform) {
     case 'kimi':
       return mode === 'coding' ? 'https://api.kimi.com/coding/v1' : 'https://api.moonshot.cn/v1'

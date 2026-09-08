@@ -409,7 +409,6 @@ export default {
     cacheWrite: '写入',
     serviceTier: '服务档位',
     serviceTierPriority: 'Fast',
-    serviceTierUltrafast: 'Ultrafast',
     serviceTierFlex: 'Flex',
     serviceTierStandard: 'Standard',
     rate: '倍率',
@@ -1012,7 +1011,10 @@ export default {
     startDate: '开始日期',
     endDate: '结束日期',
     apply: '应用',
-    selectDateRange: '选择日期范围'
+    selectDateRange: '选择日期范围',
+    from: '开始',
+    to: '结束',
+    daySpan: '{count} 天'
   },
 
   // Admin

@@ -672,7 +672,6 @@ const showUsageWindows = computed(() => {
     props.account.platform === 'kimi' ||
     props.account.platform === 'zhipu' ||
     props.account.platform === 'deepseek'
-    || props.account.platform === 'minimax'
   ) {
     return true
   }

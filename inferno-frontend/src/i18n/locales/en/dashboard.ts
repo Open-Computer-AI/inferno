@@ -404,7 +404,6 @@ export default {
     cacheWrite: 'Write',
     serviceTier: 'Service tier',
     serviceTierPriority: 'Fast',
-    serviceTierUltrafast: 'Ultrafast',
     serviceTierFlex: 'Flex',
     serviceTierStandard: 'Standard',
     rate: 'Rate',
@@ -762,6 +761,36 @@ export default {
   profile: {
     title: 'Profile Settings',
     description: 'Manage your account information and settings',
+    settings: {
+      groups: {
+        account: 'Account',
+        security: 'Security',
+        notifications: 'Notifications',
+        signInMethods: 'Sign-in methods',
+      },
+      sidebarTitle: 'Personal',
+      actions: {
+        change: 'Change',
+        edit: 'Edit',
+        manage: 'Manage',
+        close: 'Close',
+      },
+      emailFallback: 'Account email',
+      memberSince: 'Member since {date}',
+      memberSinceUnknown: 'Member since —',
+      usernameDescription: 'Shown on invoices and account activity',
+      avatarLabel: 'Avatar',
+      avatarDescription: 'A generated pattern synced to this account, or your own uploaded image',
+      passwordDescription: 'Use a strong password to protect your account',
+      securityDescription: 'Both methods can be active at the same time.',
+      signInMethodsDescription: 'Connect another provider or manage existing links',
+      notificationsDisabled: 'Low-balance notifications are not enabled by the administrator.',
+      notSet: 'Not set',
+      status: {
+        on: 'On',
+        off: 'Off',
+      },
+    },
     accountBalance: 'Account Balance',
     concurrencyLimit: 'Concurrency Limit',
     rpmLimit: 'RPM Limit',
@@ -900,6 +929,9 @@ export default {
       description: 'Upload an avatar image. Static uploads are compressed to 20KB before saving.',
       uploadAction: 'Upload image',
       uploadHint: 'Static uploads are compressed to 20KB when possible. GIF uploads must already be within 20KB.',
+      generatedHint: 'Use a generated pattern avatar synced to this account, or upload your own image.',
+      refreshAction: 'Refresh',
+      refreshSuccess: 'Generated avatar refreshed',
       uploadRequired: 'Upload an avatar image first',
       saveSuccess: 'Avatar updated',
       deleteSuccess: 'Avatar removed',
@@ -1008,7 +1040,10 @@ export default {
     startDate: 'Start Date',
     endDate: 'End Date',
     apply: 'Apply',
-    selectDateRange: 'Select date range'
+    selectDateRange: 'Select date range',
+    from: 'From',
+    to: 'To',
+    daySpan: '{count} day | {count} days'
   },
 
   // Admin

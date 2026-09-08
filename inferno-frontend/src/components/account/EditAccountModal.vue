@@ -1060,14 +1060,9 @@
 
         <!-- Shared: Force Global -->
         <div>
-          <label class="flex items-center gap-2 cursor-pointer">
-            <input
-              v-model="editBedrockForceGlobal"
-              type="checkbox"
-              class="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500"
-            />
-            <span class="text-sm text-gray-700 dark:text-gray-300">{{ t('admin.accounts.bedrockForceGlobal') }}</span>
-          </label>
+          <Checkbox v-model="editBedrockForceGlobal">
+            {{ t('admin.accounts.bedrockForceGlobal') }}
+          </Checkbox>
           <p class="input-hint mt-1">{{ t('admin.accounts.bedrockForceGlobalHint') }}</p>
         </div>
 
@@ -1482,11 +1477,9 @@
               {{ t('admin.accounts.accountSchedulingThresholdOverrideHint') }}
             </p>
           </div>
-          <input
+          <Checkbox
             v-model="accountSchedulingThresholdOverrideEnabled"
             data-testid="account-scheduling-threshold-override-enabled"
-            type="checkbox"
-            class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div v-if="accountSchedulingThresholdOverrideEnabled">
@@ -1538,16 +1531,9 @@
       <div v-if="!isSparkShadow">
         <div class="mb-1 flex items-center gap-2">
           <label class="input-label mb-0">{{ t('admin.accounts.proxy') }}</label>
-          <ProxyAdBanner />
         </div>
         <ProxySelector v-model="form.proxy_id" :proxies="proxies" />
       </div>
-
-      <UpstreamRequestIdHeaderField
-        v-model="upstreamRequestIdHeader"
-        :platform="account.platform"
-        :type="account.type"
-      />
 
       <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <div>
@@ -1617,14 +1603,6 @@
       <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <label class="input-label">{{ t('admin.accounts.expiresAt') }}</label>
         <input v-model="expiresAtInput" type="datetime-local" class="input" />
-        <div class="mt-2 flex gap-2">
-          <button type="button" class="btn btn-secondary btn-sm" @click="form.expires_at = getAccountExpiryTimestamp(1)">
-            {{ t('payment.oneMonth') }}
-          </button>
-          <button type="button" class="btn btn-secondary btn-sm" @click="form.expires_at = getAccountExpiryTimestamp(12)">
-            {{ t('payment.oneYear') }}
-          </button>
-        </div>
         <p class="input-hint">
           {{ t('admin.accounts.expiresAtHint') }}
           {{ t('admin.accounts.expiresAtTimezoneHint', { timezone: browserTimeZone }) }}
@@ -1810,54 +1788,22 @@
         <div>
           <label class="input-label mb-2 block">{{ t('admin.accounts.openai.endpointCapabilities') }}</label>
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <label
+            <div
               v-for="option in openAIEndpointCapabilityOptions"
               :key="option.value"
-              class="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-dark-600"
+              class="flex items-center rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-dark-600"
             >
-              <input
-                type="checkbox"
-                class="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500"
+              <Checkbox
                 :data-testid="`openai-endpoint-capability-${option.value}`"
-                :checked="openAIEndpointCapabilities.includes(option.value)"
-                @change="toggleOpenAIEndpointCapability(option.value, $event)"
-              />
-              <span class="text-gray-700 dark:text-gray-200">{{ option.label }}</span>
-            </label>
+                :model-value="openAIEndpointCapabilities.includes(option.value)"
+                @update:model-value="toggleOpenAIEndpointCapability(option.value)"
+              >
+                <span class="text-gray-700 dark:text-gray-200">{{ option.label }}</span>
+              </Checkbox>
+            </div>
           </div>
           <p class="input-hint">{{ t('admin.accounts.openai.endpointCapabilitiesDesc') }}</p>
         </div>
-      </div>
-
-      <!-- OpenAI APIKey images: backfill b64_json from url -->
-      <div
-        v-if="account?.platform === 'openai' && account?.type === 'apikey'"
-        class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
-      >
-        <div>
-          <label class="input-label mb-0">{{ t('admin.accounts.openai.imagesUrlToB64Json') }}</label>
-          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            {{ t('admin.accounts.openai.imagesUrlToB64JsonDesc') }}
-          </p>
-        </div>
-        <button
-          type="button"
-          data-testid="openai-images-url-to-b64-json-toggle"
-          role="switch"
-          :aria-checked="openAIImagesUrlToB64JsonEnabled"
-          @click="openAIImagesUrlToB64JsonEnabled = !openAIImagesUrlToB64JsonEnabled"
-          :class="[
-            'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-            openAIImagesUrlToB64JsonEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
-          ]"
-        >
-          <span
-            :class="[
-              'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-              openAIImagesUrlToB64JsonEnabled ? 'translate-x-5' : 'translate-x-0'
-            ]"
-          />
-        </button>
       </div>
 
       <div
@@ -2791,17 +2737,9 @@
 
         <!-- Mixed Scheduling (only for antigravity accounts, read-only in edit mode) -->
         <div v-if="account?.platform === 'antigravity'" class="flex items-center gap-2">
-          <label class="flex cursor-not-allowed items-center gap-2 opacity-60">
-            <input
-              type="checkbox"
-              v-model="mixedScheduling"
-              disabled
-              class="h-4 w-4 cursor-not-allowed rounded border-gray-300 text-primary-500 focus:ring-primary-500 dark:border-dark-500"
-            />
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-              {{ t('admin.accounts.mixedScheduling') }}
-            </span>
-          </label>
+          <Checkbox v-model="mixedScheduling" disabled>
+            {{ t('admin.accounts.mixedScheduling') }}
+          </Checkbox>
           <div class="group relative">
             <span
               class="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-gray-200 text-xs text-gray-500 hover:bg-gray-300 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500"
@@ -2820,16 +2758,9 @@
           </div>
         </div>
         <div v-if="account?.platform === 'antigravity'" class="mt-3 flex items-center gap-2">
-          <label class="flex cursor-pointer items-center gap-2">
-            <input
-              type="checkbox"
-              v-model="allowOverages"
-              class="h-4 w-4 rounded border-gray-300 text-primary-500 focus:ring-primary-500 dark:border-dark-500"
-            />
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-              {{ t('admin.accounts.allowOverages') }}
-            </span>
-          </label>
+          <Checkbox v-model="allowOverages">
+            {{ t('admin.accounts.allowOverages') }}
+          </Checkbox>
           <div class="group relative">
             <span
               class="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-gray-200 text-xs text-gray-500 hover:bg-gray-300 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500"
@@ -2850,6 +2781,7 @@
 
       <!-- Group Selection - 仅标准模式显示 -->
       <GroupSelector
+        v-if="!authStore.isSimpleMode"
         v-model="form.group_ids"
         :groups="groups"
         :platform="account?.platform"
@@ -2914,7 +2846,7 @@
 import { ref, reactive, computed, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
-
+import { useAuthStore } from '@/stores/auth'
 import { adminAPI } from '@/api/admin'
 import { useQuotaNotifyState } from '@/composables/useQuotaNotifyState'
 import type {
@@ -2929,13 +2861,12 @@ import type {
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import Checkbox from '@/components/common/Checkbox.vue'
 import Select from '@/components/common/Select.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
-import UpstreamRequestIdHeaderField from '@/components/account/UpstreamRequestIdHeaderField.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
-import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
@@ -2957,13 +2888,11 @@ import {
   cnSupportsNativeResponses,
   defaultCNAdaptiveBaseUrls,
   defaultCNBaseUrl,
-  isCNProviderPlatform,
   HEADER_OVERRIDE_ENABLED_CREDENTIAL_KEY,
   HEADER_OVERRIDES_CREDENTIAL_KEY,
   type CnAccountMode,
   type CnApiProtocol,
   type CnNativeApiProtocol,
-  type CnProviderPlatform,
   type HeaderOverrideRow
 } from '@/components/account/credentialsBuilder'
 import {
@@ -2973,7 +2902,6 @@ import {
   parseDateTimeLocalInput
 } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
-import { getAccountExpiryTimestamp } from '@/components/account/accountExpiry'
 import { allSelectedGroupsEnableLongContextPricing } from '@/components/account/longContextBilling'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
 import {
@@ -3009,12 +2937,16 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const authStore = useAuthStore()
 const browserTimeZone = getBrowserTimeZone()
 
 // Spark 影子账号(parent_account_id 非空):代理恒继承母账号,不可独立编辑(外审 B/P1),
 // 故隐藏代理选择器。
 const isSparkShadow = computed(() => props.account?.parent_account_id != null)
 
+// Hide the per-account long-context toggle when every selected group already
+// enables long-context tier pricing -- the account switch would be redundant
+// and reads as if it could override the group, which it cannot.
 const hideAccountLongContextBilling = computed(() => {
   return allSelectedGroupsEnableLongContextPricing(form.group_ids, props.groups)
 })
@@ -3057,14 +2989,18 @@ const editApiKey = ref('')
 // account_mode 决定额度/余额监控路径，api_protocol 决定转发端点与格式；
 // 二者均可修正（早期创建的账号可能存错默认值），切换时重置 base_url 预置。
 const isCNApiKeyAccount = computed(
-  () => props.account?.type === 'apikey' && isCNProviderPlatform(props.account.platform)
+  () =>
+    props.account?.type === 'apikey' &&
+    (props.account.platform === 'kimi' ||
+      props.account.platform === 'zhipu' ||
+      props.account.platform === 'deepseek' || props.account.platform === 'minimax')
 )
 // CnBaseUrlPresets 的 platform prop 是平台字面量联合类型，模板里不能写
 // `as` 断言（其中的 `|` 会被 eslint 误判为 Vue2 filter 语法），经此 computed 传递。
-const cnPresetPlatform = computed<CnProviderPlatform>(() => {
+const cnPresetPlatform = computed<'kimi' | 'zhipu' | 'deepseek' | 'minimax'>(() => {
   const platform = props.account?.platform
-  if (isCNProviderPlatform(platform ?? '')) {
-    return platform as CnProviderPlatform
+  if (platform === 'kimi' || platform === 'zhipu' || platform === 'deepseek' || platform === 'minimax') {
+    return platform
   }
   return 'kimi'
 })
@@ -3250,12 +3186,6 @@ const autoResetCredit7dThreshold = ref(100)
 const upstreamBillingAutoProbeEnabled = ref(false)
 const upstreamBillingRateSyncEnabled = ref(false)
 const mixedScheduling = ref(false) // For antigravity accounts: enable mixed scheduling
-// 上游ID：直接上游声明请求标识的响应头名，留空不记录。
-const upstreamRequestIdHeader = ref('')
-const readUpstreamRequestIdHeader = (extra: unknown): string => {
-  const value = (extra as Record<string, unknown> | undefined)?.upstream_request_id_header
-  return typeof value === 'string' ? value : ''
-}
 const allowOverages = ref(false) // For antigravity accounts: enable AI Credits overages
 const antigravityProjectId = ref('')
 const antigravityModelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
@@ -3318,8 +3248,6 @@ const openAILongContextBillingEnabled = ref(false)
 const editPlanType = ref<string>('')
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
-// Images 非流式响应缺 b64_json 时由网关下载 url 回填（仅 OpenAI API Key）。
-const openAIImagesUrlToB64JsonEnabled = ref(false)
 const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>(['chat_completions', 'embeddings'])
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
@@ -3327,6 +3255,12 @@ const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAppServerEnabled = ref(false)
 type CodexFingerprintMode = 'off' | 'device' | 'session' | 'full'
 const codexFingerprintMode = ref<CodexFingerprintMode>('off')
+const codexFingerprintModeOptions = computed(() => [
+  { value: 'off' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintOff') },
+  { value: 'device' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintDevice') },
+  { value: 'session' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintSession') },
+  { value: 'full' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintFull') }
+])
 type CodexImageToolMode = 'inherit' | 'enabled' | 'disabled' | 'block'
 const codexImageToolMode = ref<CodexImageToolMode>('inherit')
 type AnthropicAPIKeyAuthScheme = 'x_api_key' | 'authorization_bearer'
@@ -3358,13 +3292,6 @@ const editWeeklyResetMode = ref<'rolling' | 'fixed' | null>(null)
 const editWeeklyResetDay = ref<number | null>(null)
 const editWeeklyResetHour = ref<number | null>(null)
 const editResetTimezone = ref<string | null>(null)
-const codexFingerprintModeOptions = computed(() => [
-  { value: 'off' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintOff') },
-  { value: 'device' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintDevice') },
-  { value: 'session' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintSession') },
-  { value: 'full' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintFull') },
-])
-
 const openAIWSModeOptions = computed(() => [
   { value: OPENAI_WS_MODE_OFF, label: t('admin.accounts.openai.wsModeOff') },
   { value: OPENAI_WS_MODE_CTX_POOL, label: t('admin.accounts.openai.wsModeCtxPool') },
@@ -3513,11 +3440,9 @@ const readOpenAIEndpointCapabilities = (credentials?: Record<string, unknown>): 
   return ['chat_completions', 'embeddings']
 }
 
-const toggleOpenAIEndpointCapability = (capability: OpenAIEndpointCapability, event?: Event) => {
+const toggleOpenAIEndpointCapability = (capability: OpenAIEndpointCapability) => {
   if (openAIEndpointCapabilities.value.includes(capability)) {
     if (openAIEndpointCapabilities.value.length <= 1) {
-      const input = event?.target as HTMLInputElement | null
-      if (input) input.checked = true
       return
     }
     openAIEndpointCapabilities.value = openAIEndpointCapabilities.value.filter(
@@ -3779,8 +3704,6 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 	const extra = newAccount.extra as Record<string, unknown> | undefined
 	mixedScheduling.value = extra?.mixed_scheduling === true
 	allowOverages.value = extra?.allow_overages === true
-	upstreamRequestIdHeader.value = readUpstreamRequestIdHeader(extra)
-	openAIImagesUrlToB64JsonEnabled.value = extra?.images_url_to_b64_json === true
 	autoPause5hThreshold.value = typeof extra?.auto_pause_5h_threshold === 'number' ? extra.auto_pause_5h_threshold * 100 : null
 	autoPause7dThreshold.value = typeof extra?.auto_pause_7d_threshold === 'number' ? extra.auto_pause_7d_threshold * 100 : null
 	autoPause5hDisabled.value = extra?.auto_pause_5h_disabled === true
@@ -3861,7 +3784,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     }
     if (newAccount.type === 'oauth') {
       const fpMode = extra?.codex_fingerprint_mode as string | undefined
-      // 缺省/非法值按 off 呈现，与后端 GetCodexFingerprintMode 的 opt-in 语义一致（#5610）
+      // A missing or invalid value presents as off, matching the backend's
+      // opt-in codexFingerprintModeFromExtra (#5610).
       codexFingerprintMode.value = (['off', 'device', 'session', 'full'].includes(fpMode || '')
         ? fpMode as CodexFingerprintMode
         : 'off')
@@ -3991,7 +3915,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     const credentials = newAccount.credentials as Record<string, unknown>
     // 国产供应商：读取 account_mode 与 api_protocol 作为可编辑初始值
     // （编辑弹窗允许修正两者，用于修复早期存错默认值的账号）。
-    if (isCNProviderPlatform(newAccount.platform)) {
+    if (newAccount.platform === 'kimi' || newAccount.platform === 'zhipu' || newAccount.platform === 'deepseek') {
       editAccountMode.value = credentials.account_mode === 'coding' ? 'coding' : 'payg'
       const storedProtocol = credentials.api_protocol
       editApiProtocol.value =
@@ -4233,14 +4157,7 @@ const syncAntigravityUpstreamModels = async () => {
       }
     }
 
-    const warnings = result.warnings ?? []
-    const hasPartialMetadata = warnings.some(
-      (warning) => warning.code === 'upstream_model_metadata_partial'
-    )
-    const hasIncompleteMetadata = warnings.some(
-      (warning) => warning.code === 'upstream_model_metadata_incomplete'
-    )
-    if (hasIncompleteMetadata) {
+    if (result.warnings?.some((warning) => warning.code === 'upstream_model_metadata_incomplete')) {
       appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataIncomplete'))
       return
     }
@@ -4248,9 +4165,6 @@ const syncAntigravityUpstreamModels = async () => {
       appStore.showSuccess(t('admin.accounts.syncUpstreamModelsSuccess', { count: addedCount, total: upstreamModels.length }))
     } else {
       appStore.showInfo(t('admin.accounts.syncUpstreamModelsNoChanges', { count: upstreamModels.length }))
-    }
-    if (hasPartialMetadata) {
-      appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataPartial'))
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : t('admin.accounts.syncUpstreamModelsFailed')
@@ -5264,11 +5178,6 @@ const handleSubmit = async () => {
         } else {
           newExtra.openai_responses_mode = openAIResponsesMode.value
         }
-        if (openAIImagesUrlToB64JsonEnabled.value) {
-          newExtra.images_url_to_b64_json = true
-        } else {
-          delete newExtra.images_url_to_b64_json
-        }
 		}
 		if (autoPause5hThreshold.value != null && autoPause5hThreshold.value > 0) {
 			newExtra.auto_pause_5h_threshold = autoPause5hThreshold.value / 100
@@ -5290,6 +5199,7 @@ const handleSubmit = async () => {
 		} else {
 			delete newExtra.auto_pause_7d_disabled
 		}
+
 		if (props.account.type === 'oauth' && !isSparkShadow.value) {
 			newExtra.auto_reset_credit_enabled = autoResetCreditEnabled.value
 			newExtra.auto_reset_credit_5h_threshold = autoResetCredit5hThreshold.value / 100
@@ -5331,9 +5241,6 @@ const handleSubmit = async () => {
           delete newExtra.codex_cli_only_allow_app_server
         }
       }
-
-      // 指纹收敛模式：默认 off（不写入）；device/session/full 是显式 opt-in，
-      // 必须落键，否则管理员的选择会被后端当作"未设置"而回落到 off（#5610）。
       if (props.account.type === 'oauth') {
         if (codexFingerprintMode.value !== 'off') {
           newExtra.codex_fingerprint_mode = codexFingerprintMode.value
@@ -5402,19 +5309,6 @@ const handleSubmit = async () => {
       }
       // Quota notify config
       writeQuotaNotifyToExtra(newExtra, 'update')
-      updatePayload.extra = newExtra
-    }
-
-    // 上游ID头名只在改动时写回 extra，避免用弹窗打开时的快照覆盖运行态键。
-    const nextUpstreamRequestIdHeader = upstreamRequestIdHeader.value.trim()
-    if (nextUpstreamRequestIdHeader !== readUpstreamRequestIdHeader(props.account.extra)) {
-      const currentExtra = (updatePayload.extra as Record<string, unknown>) || (props.account.extra as Record<string, unknown>) || {}
-      const newExtra: Record<string, unknown> = { ...currentExtra }
-      if (nextUpstreamRequestIdHeader) {
-        newExtra.upstream_request_id_header = nextUpstreamRequestIdHeader
-      } else {
-        delete newExtra.upstream_request_id_header
-      }
       updatePayload.extra = newExtra
     }
 

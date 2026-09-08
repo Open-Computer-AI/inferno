@@ -106,7 +106,7 @@ describe('AccountUsageCell', () => {
     })
   })
 
-  it.each(['kimi', 'zhipu', 'deepseek', 'minimax'] as const)(
+  it.each(['kimi', 'zhipu', 'deepseek'] as const)(
     '%s apikey 账号 Ollama Cloud eligible 时渲染 Ollama 用量单元格并跳过 CN 子单元格',
     async (platform) => {
       const wrapper = mount(AccountUsageCell, {
@@ -1370,6 +1370,7 @@ describe('AccountUsageCell', () => {
     expect(prepaidOnly.text()).not.toContain('8.00/0')
   })
 
+  
   it('Grok paid hides zero prepaid and hides used/limit when monthly limit is 0', async () => {
     getUsage.mockResolvedValue({
       subscription_tier: 'SuperGrok',

@@ -1,6 +1,8 @@
 export default {
     accounts: {
       title: 'Account Management',
+      fromModel: 'From model',
+      toModel: 'To model',
       description: 'Manage AI platform accounts and credentials',
       createAccount: 'Create Account',
       autoRefresh: 'Auto Refresh',
@@ -47,7 +49,7 @@ export default {
       syncFromCrsTitle: 'Sync Accounts from CRS',
       syncFromCrsDesc:
         'Sync accounts from claude-relay-service (CRS) into this system (CRS is called server-to-server).',
-      crsVersionRequirement: '⚠️ Note: CRS version must be ≥ v1.1.240 to support this feature',
+      crsVersionRequirement: 'Note: CRS version must be ≥ v1.1.240 to support this feature',
       crsBaseUrl: 'CRS Base URL',
       crsBaseUrlPlaceholder: 'e.g. http://127.0.0.1:3000',
       crsUsername: 'Username',
@@ -74,7 +76,7 @@ export default {
       crsWillUpdate: 'Will update {count} existing accounts.',
       crsSelectedCount: '{count} new accounts selected',
       crsUpdateBehaviorNote:
-        'Existing accounts only sync fields returned by CRS; missing fields keep their current values. Credentials are merged by key — keys not returned by CRS are preserved. Proxies are kept when "Sync proxies" is unchecked.',
+        'Existing accounts only sync fields returned by CRS; missing fields keep their current values. Credentials are merged by key. keys not returned by CRS are preserved. Proxies are kept when "Sync proxies" is unchecked.',
       crsBack: 'Back',
       editAccount: 'Edit Account',
       deleteAccount: 'Delete Account',
@@ -172,11 +174,9 @@ export default {
       antigravityProjectIdHint:
         'Antigravity standard-tier accounts that do not receive an automatic project_id need a user-owned GCP project.',
       accountSchedulingThresholdOverride: 'Account Auto-Pause Threshold Override',
-      accountSchedulingThresholdOverrideHint:
-        'Override the platform auto-pause threshold for this account only. Disable to use platform settings.',
+      accountSchedulingThresholdOverrideHint: 'Override the platform auto-pause threshold for this account only. Disable to use platform settings.',
       accountSchedulingThresholdOverrideValue: 'Account threshold percent',
-      accountSchedulingThresholdOverrideDisabledHint:
-        'Use 1-100. The account becomes temporarily unschedulable after reaching this usage percent; 100 disables it for this account.',
+      accountSchedulingThresholdOverrideDisabledHint: 'Use 1-100. The account becomes temporarily unschedulable after reaching this usage percent; 100 disables it for this account.',
       status: {
         active: 'Active',
         inactive: 'Inactive',
@@ -230,7 +230,7 @@ export default {
         ungrouped: 'Ungrouped',
         hint: 'Displayed as "group / base score / sticky bonus". The base score is computed within the current filtered candidate set and includes priority, load, queue depth, error rate, first-token latency, reset window, quota headroom, billing rate, and related factors. The sticky bonus applies only when sticky weighting is enabled for previous_response_id or session_hash. Higher scores are preferred.'
       },
-      usageWindowsHint: '"5h / 7d" are the upstream account\'s official rolling usage windows (e.g. OpenAI ChatGPT, Claude). They are imposed by the upstream provider on the account itself — not configured by sub2api, and unrelated to the models you map. Usage resets automatically once each window rolls over, and the limit cannot be lifted from within sub2api.',
+      usageWindowsHint: '"5h / 7d" are the upstream account\'s official rolling usage windows (e.g. OpenAI ChatGPT, Claude). They are imposed by the upstream provider on the account itself. not configured by sub2api, and unrelated to the models you map. Usage resets automatically once each window rolls over, and the limit cannot be lifted from within sub2api.',
       ollamaCloud: {
         title: 'Ollama Cloud usage',
         sessionSecurityHint: 'The browser session is encrypted at rest and sent only to the fixed official settings URL.',
@@ -329,6 +329,17 @@ export default {
       subscriptionExpires: 'Expires',
       // Capacity status tooltips
       capacity: {
+        dimension: {
+          concurrency: 'Concurrency',
+          windowCost: '5 hour cost',
+          sessions: 'Sessions',
+          rpm: 'RPM',
+          quotaDaily: 'Daily quota',
+          quotaWeekly: 'Weekly quota',
+          quotaTotal: 'Total quota'
+        },
+        moreLimits: '{count} more',
+        hideLimits: 'Hide extra limits',
         windowCost: {
           blocked: '5h window cost exceeded, account scheduling paused',
           stickyOnly: '5h window cost at threshold, only sticky sessions allowed',
@@ -414,7 +425,7 @@ export default {
       quotaWeeklyLimit: 'Weekly Limit',
       quotaWeeklyLimitHint: 'Automatically resets every 7 days from first usage.',
       quotaTotalLimit: 'Total Limit',
-      quotaTotalLimitHint: 'Cumulative spending limit. Does not auto-reset — use "Reset Quota" to clear.',
+      quotaTotalLimitHint: 'Cumulative spending limit. Does not auto-reset. Use "Reset Quota" to clear.',
       quotaResetMode: 'Reset Mode',
       quotaResetModeRolling: 'Rolling Window',
       quotaResetModeFixed: 'Fixed Time',
@@ -462,6 +473,11 @@ export default {
         clear: 'Clear selection',
         edit: 'Bulk Edit',
         delete: 'Bulk Delete',
+        allInFilterSelected: 'All {count} accounts in this filter selected',
+        selectAllResultsLink: 'Select all {count} results',
+        selectPageOnly: 'Select this page only',
+        confirmDeleteTitle: 'Delete accounts',
+        confirmDeleteAllInFilter: 'Delete all {count} accounts matching your filter? This action cannot be undone.',
         confirmDelete: 'Delete the selected {count} account(s)? This action cannot be undone.',
         deleteSuccess: 'Deleted {count} account(s)',
         enableScheduling: 'Enable Scheduling',
@@ -492,7 +508,7 @@ export default {
         rateSyncConflict: 'Cannot change account rates: {count} target account(s) have upstream rate sync enabled.',
         longContextShadowHint: 'Long-context billing belongs to the parent account. Selected shadow accounts keep following their parent, including when targets come from a filter.',
         longContextParentRequired: 'All selected accounts are shadows. Select the parent account to change long-context billing.',
-        mixedPlatformWarning: 'Selected accounts span multiple platforms ({platforms}). Model mapping presets shown are combined — ensure mappings are appropriate for each platform.'
+        mixedPlatformWarning: 'Selected accounts span multiple platforms ({platforms}). Model mapping presets shown are combined; ensure mappings are appropriate for each platform.'
       },
       bulkDeleteTitle: 'Bulk Delete Accounts',
       bulkDeleteConfirm: 'Delete the selected {count} account(s)? This action cannot be undone.',
@@ -560,14 +576,6 @@ export default {
       apiKeyRequired: 'API Key *',
       apiKeyPlaceholder: 'sk-ant-api03-...',
       apiKeyHint: 'Your Claude Console API Key',
-      upstreamRequestIdHeader: 'Upstream ID',
-      upstreamRequestIdHeaderPlaceholder: 'Leave empty to record nothing',
-      upstreamRequestIdHeaderHelp: {
-        intro: 'Name of the response header in which the direct upstream declares its request ID. The value is recorded in the "Upstream ID" column of the usage log; leave empty to record nothing.',
-        examplesTitle: 'Common values',
-        sub2apiNote: 'Matches the request ID column of its usage log',
-        official: '{platform} official API'
-      },
       // OpenAI specific hints
       openai: {
         baseUrlHint: 'Leave default for official OpenAI API',
@@ -577,7 +585,7 @@ export default {
           'When enabled, this OpenAI account uses automatic passthrough: the gateway forwards request/response as-is and only swaps auth, while keeping billing/concurrency/audit and necessary safety filtering.',
         flattenNamespaces: 'Flatten Codex namespace tools (compatibility)',
         flattenNamespacesDesc:
-          'Disabled by default: Codex namespace tool declarations are forwarded as-is on /responses, which is what the ChatGPT Codex backend expects. Enable only when this OAuth account is routed to a relay that rejects namespace tools — flattening renames them to namespace__tool, which breaks models that address collaboration tools as functions.<namespace>.<tool>. Compaction requests always flatten regardless of this switch.',
+          'Disabled by default: Codex namespace tool declarations are forwarded as-is on /responses, which is what the ChatGPT Codex backend expects. Enable only when this OAuth account is routed to a relay that rejects namespace tools. flattening renames them to namespace__tool, which breaks models that address collaboration tools as functions.<namespace>.<tool>. Compaction requests always flatten regardless of this switch.',
         longContextBilling: 'API long-context pricing',
         longContextBillingDesc:
           'Disabled by default. Enable only when this account\'s upstream charges OpenAI API long-context rates above the model threshold.',
@@ -612,9 +620,6 @@ export default {
         responsesModeForceChatCompletions: 'Force Chat Completions',
         responsesModeTextDisabledHint:
           'Not applicable when the Responses / Chat Completions endpoint is not enabled.',
-        imagesUrlToB64Json: 'Image result URL to base64',
-        imagesUrlToB64JsonDesc:
-          'Only applies to non-streaming Images responses of OpenAI API Key accounts. When an upstream image item has a url but no b64_json, the gateway downloads the url and fills b64_json with its base64 content (url is kept) for clients built on the official API; the response is returned unchanged if the download fails.',
         endpointCapabilities: 'Endpoint capabilities',
         endpointCapabilitiesDesc:
           'Used by account routing. The text endpoint follows the Responses API support setting above and is shown as Responses, Chat Completions, or auto mode; Embeddings independently controls /v1/embeddings.',
@@ -749,8 +754,6 @@ export default {
       modelRestriction: 'Model Restriction (Optional)',
       modelWhitelist: 'Model Whitelist',
       modelMapping: 'Model Mapping',
-      fromModel: 'Request model',
-      toModel: 'Target model',
       selectAllowedModels: 'Select allowed models. Leave empty to support all models.',
       mapRequestModels:
         'Map request models to actual models. Left is the requested model, right is the actual model sent to API.',
@@ -768,14 +771,11 @@ export default {
       syncUpstreamModels: 'Sync upstream supported models',
       syncUpstreamModelsLoading: 'Syncing upstream...',
       syncUpstreamModelsSuccess: 'Synced {count} new model(s) from upstream ({total} upstream total)',
+      syncUpstreamModelsMetadataIncomplete: 'Model IDs were synced, but capability metadata is incomplete and was not updated.',
       syncUpstreamModelsNoChanges: 'All {count} upstream model(s) are already in the whitelist',
       syncUpstreamModelsEmpty: 'Upstream returned no models to sync',
       syncUpstreamModelsFailed: 'Failed to sync upstream models',
       syncUpstreamModelsError: 'Failed to sync upstream models: {message}',
-      syncUpstreamModelsMetadataIncomplete:
-        'Model IDs were synced, but no capability metadata could be updated.',
-      syncUpstreamModelsMetadataPartial:
-        'Some model capabilities were updated; remaining models are still incomplete.',
       clearAllModels: 'Clear all models',
       customModelName: 'Custom model name',
       enterCustomModelName: 'Enter custom model name',
@@ -854,15 +854,15 @@ export default {
 	  autoPause5hDisabled: 'Disable 5h auto-pause',
 	  autoPause7dDisabled: 'Disable 7d auto-pause',
 	  autoPauseDisabledHint: 'When enabled, this account is never auto-paused (even if a global default threshold is configured).',
-	  autoResetCredit: {
-	    title: 'Automatically use reset credits',
-	    hint: 'Uses the earliest-expiring available credit only when actual usage reaches a threshold. Off by default; the account remains paused if no credit is available or reset fails.',
-	    threshold5h: '5h auto-reset threshold (%)',
-	    threshold7d: '7d auto-reset threshold (%)',
-	    thresholdHint: 'Each window is evaluated independently. Enter 0.1–100; both default to 100.',
-	    thresholdInvalid: 'Automatic reset-credit thresholds must be between 0.1% and 100%.'
-	  },
       // Quota control (Anthropic OAuth/SetupToken only)
+      autoResetCredit: {
+        title: 'Automatically use reset credits',
+        hint: 'Uses the earliest-expiring available credit only when actual usage reaches a threshold. Off by default; the account remains paused if no credit is available or reset fails.',
+        threshold5h: '5h auto-reset threshold (%)',
+        threshold7d: '7d auto-reset threshold (%)',
+        thresholdHint: 'Each window is evaluated independently. Enter 0.1 to 100; both default to 100.',
+        thresholdInvalid: 'Automatic reset-credit thresholds must be between 0.1% and 100%.'
+      },
       quotaControl: {
         title: 'Quota Control',
         hint: 'Configure cost window, session limits, client affinity and other scheduling controls.',
@@ -1475,6 +1475,11 @@ export default {
       viewStats: 'View Stats',
       usageStatistics: 'Usage Statistics',
       last30DaysUsage: 'Last 30 days usage statistics (based on actual usage days)',
+      todayStatsCell: {
+        loadFailed: 'Failed to load',
+        requests: '{count} req',
+        costToday: '{amount} today'
+      },
       stats: {
         totalCost: '30-Day Total Cost',
         accumulatedCost: 'Accumulated cost',
@@ -1506,6 +1511,16 @@ export default {
         noData: 'No usage data available for this account'
       },
       usageWindow: {
+        fiveHour: '5 hour',
+        sevenDay: '7 day',
+        sevenDaySonnet: '7 day Sonnet',
+        sevenDayFable: '7 day Fable',
+        thirtyDay: '30 day',
+        oneDay: '1 day',
+        total: 'Total',
+        grok24h: '24 hour',
+        moreWindows: '{count} more',
+        hideWindows: 'Hide extra windows',
         statsTitle: '5-Hour Window Usage Statistics',
         statsTitleDaily: 'Daily Usage Statistics',
         geminiProDaily: 'Pro',
@@ -1527,7 +1542,7 @@ export default {
         grokUnknown: 'Grok quota is unknown until the first upstream response includes xAI rate-limit headers.',
         grokRetryAfter: 'Retry after {time}',
         grokProbe: 'Probe',
-        grokProbeTooltip: 'Send a minimal xAI Responses probe and read quota headers',
+        grokProbeTooltip: 'Sends one live xAI request to read quota headers',
         grokResetUnsupported: 'Reset unsupported',
         grokResetUnsupportedTooltip: 'xAI does not expose reset credits for Grok OAuth accounts',
         grokNoHeaders: 'No quota headers observed',
