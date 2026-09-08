@@ -122,6 +122,9 @@ describe('PlatformTypeBadge OpenAI authentication modes', () => {
     })
     expect(wrapper.text()).toContain('X Basic')
     expect(wrapper.html()).toContain('bg-[var(--muted)]')
+
+    await wrapper.setProps({ planType: 'SuperGrok Plus' })
+    expect(wrapper.text()).toContain('SuperGrok Plus')
     expect(wrapper.html()).not.toContain('bg-[color-mix(in_oklch,var(--success)_14%,var(--card))]')
     expect(wrapper.text()).not.toContain('2027')
   })

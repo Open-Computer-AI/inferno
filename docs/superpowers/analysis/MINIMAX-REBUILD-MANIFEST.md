@@ -1,11 +1,12 @@
 # MiniMax frontend rebuild manifest
 
 Base: `9b1673a10aaa9e5f96c8a1233cdd5fb531a78c2a`
-Candidate: `port/inferno-minimax-20260908`
+Candidate: `port/inferno-minimax-20260908` (exact final head recorded below)
 
-This rebuild restores the June product tree first, then applies only the MiniMax
-semantic delta from `31f550738c481c00cd6de9dd70d21ca5ab19f9d5`. The previous
-candidate's unrelated CreateAccountModal test churn is intentionally absent.
+This rebuild restores the June product tree first, then applies only the scoped
+MiniMax semantic delta from `31f550738c481c00cd6de9dd70d21ca5ab19f9d5`. The
+previous candidate's unrelated CreateAccountModal test churn is intentionally absent.
+This is cumulative changed-path evidence, not dynamic acceptance evidence.
 
 ## Changed inferno-frontend paths
 
@@ -59,3 +60,12 @@ then receive only the required MiniMax-aware assertions where applicable:
   any identical result must be justified from the MiniMax-only delta. The
   cumulative path/hash proof is emitted in the build handoff from `git diff`
   against this base.
+
+## Cumulative changed-files inventory
+
+Exact final head: `e6c7cbaccdd55d257312e1f292c58da10ddcfd9c`
+
+Authoritative inventory: `git diff --name-only
+9b1673a10aaa9e5f96c8a1233cdd5fb531a78c2a..e6c7cbaccdd55d257312e1f292c58da10ddcfd9c`.
+The cumulative diff contains 136 paths; this count and the exact path set are
+evaluated from the command above, rather than inferred from semantic categories.

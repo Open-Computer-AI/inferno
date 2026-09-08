@@ -20,7 +20,8 @@ const concretePlatforms = [
   'grok',
   'kimi',
   'zhipu',
-  'deepseek'
+  'deepseek',
+  'minimax'
 ]
 
 describe('platform option catalogs', () => {
@@ -38,7 +39,7 @@ describe('platform option catalogs', () => {
   it('gives every option a non-empty label', () => {
     // Ours, not upstream's: a value with no label renders an empty filter row,
     // which is the failure a derived catalog makes global rather than local.
-    for (const option of GROUP_PLATFORM_OPTIONS) {
+    for (const option of [...CONCRETE_PLATFORM_OPTIONS, ...GROUP_PLATFORM_OPTIONS]) {
       expect(option.label.trim().length).toBeGreaterThan(0)
     }
   })
