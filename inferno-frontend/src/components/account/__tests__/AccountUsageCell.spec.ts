@@ -1370,7 +1370,7 @@ describe('AccountUsageCell', () => {
     expect(prepaidOnly.text()).not.toContain('8.00/0')
   })
 
-  
+
   it('Grok paid hides zero prepaid and hides used/limit when monthly limit is 0', async () => {
     getUsage.mockResolvedValue({
       subscription_tier: 'SuperGrok',
