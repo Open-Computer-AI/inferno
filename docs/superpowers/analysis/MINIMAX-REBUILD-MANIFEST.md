@@ -42,5 +42,6 @@ after stripping the `inferno-frontend/src/` prefix.
 - `views/admin/groupsCompositeRoutes.ts`
 - `views/admin/__tests__/ChannelMonitorView.grok.spec.ts`
 - `views/admin/__tests__/GroupsView.compositePlatforms.spec.ts`
+- `views/admin/__tests__/platformFilterCatalogUsage.spec.ts`
 
-Inventory count: 32 paths.
+Inventory count: 33 paths.
