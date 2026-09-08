@@ -63,9 +63,9 @@ then receive only the required MiniMax-aware assertions where applicable:
 
 ## Cumulative changed-files inventory
 
-Exact final head: `e6c7cbaccdd55d257312e1f292c58da10ddcfd9c`
+Exact final head: `1c22ad2cfb480f8a8cf872212cab0281fa543dae`
 
 Authoritative inventory: `git diff --name-only
-9b1673a10aaa9e5f96c8a1233cdd5fb531a78c2a..e6c7cbaccdd55d257312e1f292c58da10ddcfd9c`.
-The cumulative diff contains 136 paths; this count and the exact path set are
-evaluated from the command above, rather than inferred from semantic categories.
+9b1673a10aaa9e5f96c8a1233cdd5fb531a78c2a..1c22ad2cfb480f8a8cf872212cab0281fa543dae`.
+The cumulative diff contains 140 paths; this count and the exact path set are
+ evaluated from the command above, rather than inferred from semantic categories.
