@@ -24,5 +24,4 @@ describe('platform option catalogs', () => {
       'composite'
     ])
   })
-
 })
