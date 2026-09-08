@@ -199,13 +199,8 @@ export default {
         codexNote: '启动 Codex 前先导出 SUB2API_API_KEY。下载的目录只包含模型元数据，不包含 API Key。'
       },
       minimax: {
-<<<<<<< inferno-frontend/src/i18n/locales/zh/dashboard.ts
         description: '通过当前 MiniMax 分组配置支持的客户端。',
         codexDescription: '使用 API Key 通过当前 MiniMax 分组配置 Codex。',
-=======
-        description: '通过当前 MiniMax 分组配置 Claude Code、Codex 或 OpenCode。',
-        codexDescription: '使用 API Key 配置 Codex，并通过当前 MiniMax 分组发送请求。',
->>>>>>> /tmp/upfile
         codexConfigTomlHint: '下载下方模型目录，将两个文件保存到 Codex 配置目录后重启 Codex。',
         codexNote: '启动 Codex 前先导出 SUB2API_API_KEY。下载的目录只包含模型元数据，不包含 API Key。'
       },
@@ -414,7 +409,6 @@ export default {
     cacheWrite: '写入',
     serviceTier: '服务档位',
     serviceTierPriority: 'Fast',
-    serviceTierUltrafast: 'Ultrafast',
     serviceTierFlex: 'Flex',
     serviceTierStandard: 'Standard',
     rate: '倍率',
@@ -1017,7 +1011,10 @@ export default {
     startDate: '开始日期',
     endDate: '结束日期',
     apply: '应用',
-    selectDateRange: '选择日期范围'
+    selectDateRange: '选择日期范围',
+    from: '开始',
+    to: '结束',
+    daySpan: '{count} 天'
   },
 
   // Admin
