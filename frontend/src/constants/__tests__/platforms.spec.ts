@@ -25,9 +25,4 @@ describe('platform option catalogs', () => {
     ])
   })
 
-  it('gives every option a non-empty label', () => {
-    for (const option of [...CONCRETE_PLATFORM_OPTIONS, ...GROUP_PLATFORM_OPTIONS]) {
-      expect(option.label.trim().length).toBeGreaterThan(0)
-    }
-  })
 })

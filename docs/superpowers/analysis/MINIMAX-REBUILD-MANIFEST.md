@@ -1,7 +1,7 @@
 # MiniMax frontend rebuild manifest
 
 Base: `9b1673a10aaa9e5f96c8a1233cdd5fb531a78c2a`
-Candidate: `port/inferno-minimax-20260908` (exact final head recorded below)
+Branch: `port/inferno-minimax-20260908`
 
 This rebuild restores the June product tree first, then applies only the scoped
 MiniMax semantic delta from `31f550738c481c00cd6de9dd70d21ca5ab19f9d5`. The
@@ -63,9 +63,9 @@ then receive only the required MiniMax-aware assertions where applicable:
 
 ## Cumulative changed-files inventory
 
-Exact final head: `b98a42231b826e1f0d0031a93d02eb2aa8f58505`
-
-Authoritative inventory: `git diff --name-only
-9b1673a10aaa9e5f96c8a1233cdd5fb531a78c2a..b98a42231b826e1f0d0031a93d02eb2aa8f58505`.
-The cumulative diff contains 140 paths; this count and the exact path set are
-evaluated from the command above, rather than inferred from semantic categories.
+The exact cumulative inventory is the 140 paths emitted by:
+`git diff --name-only 9b1673a10aaa9e5f96c8a1233cdd5fb531a78c2a..HEAD`.
+The evaluator MUST record and validate the current shared HEAD at evaluation time,
+confirm it is on `port/inferno-minimax-20260908`, and verify that this command emits
+exactly 140 paths. This manifest intentionally does not assert a stale or
+self-referential final SHA.
