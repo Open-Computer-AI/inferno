@@ -22,8 +22,15 @@ after stripping the `inferno-frontend/src/` prefix.
 - `components/admin/monitor/MonitorFiltersBar.vue`
 - `components/admin/monitor/MonitorFormDialog.vue`
 - `components/admin/monitor/MonitorTemplateManagerDialog.vue`
+- `components/admin/settings/AdminAgreementSettingsPage.vue`
+- `components/admin/settings/AdminApiKeySettingsPage.vue`
+- `components/admin/settings/AdminEmailSettingsPage.vue`
+- `components/admin/settings/AdminGeneralSettingsPage.vue`
+- `components/admin/settings/AdminPaymentSettingsPage.vue`
+- `components/admin/settings/AdminUserSettingsPage.vue`
 - `components/common/__tests__/PlatformTypeBadge.grok.spec.ts`
 - `components/keys/UseKeyModal.vue`
+- `components/layout/__tests__/AppSidebar.spec.ts`
 - `components/user/monitor/MonitorCard.vue`
 - `components/user/monitor/ProviderIcon.vue`
 - `constants/__tests__/platforms.spec.ts`
@@ -44,4 +51,4 @@ after stripping the `inferno-frontend/src/` prefix.
 - `views/admin/__tests__/GroupsView.compositePlatforms.spec.ts`
 - `views/admin/__tests__/platformFilterCatalogUsage.spec.ts`
 
-Inventory count: 33 paths.
+Inventory count: 40 paths.

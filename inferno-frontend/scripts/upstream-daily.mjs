@@ -69,7 +69,7 @@ const has = (flag) => process.argv.includes(flag)
 // ---------------------------------------------------------------- range
 
 if (!has('--no-fetch')) {
-  try { execFileSync('git', ['fetch', 'upstream', '--quiet'], { cwd: ROOT, stdio: 'ignore' }) } catch { /* offline is allowed with --no-fetch */ }
+  try { execFileSync('git', ['fetch', 'upstream', '--quiet'], { cwd: ROOT, stdio: 'ignore' }) } catch { /* fetch failure is allowed; continue with the local ref */ }
 }
 
 if (!git(['rev-parse', '--verify', 'upstream/main'], true)) {
