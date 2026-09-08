@@ -156,7 +156,7 @@
                           })
                         }}
                       </span>
-                      <Button
+                      <AppButton
                         type="button"
                         variant="danger"
                         size="xs"
@@ -176,7 +176,7 @@
                             d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
                           />
                         </svg>
-                      </Button>
+                      </AppButton>
                     </div>
                     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div>
@@ -240,7 +240,7 @@
                   </div>
                 </div>
 
-                <Button
+                <AppButton
                   type="button"
                   variant="ghost"
                   class="mt-3 w-full border-2 border-dashed border-[var(--border-subtle)]"
@@ -260,7 +260,7 @@
                     />
                   </svg>
                   {{ t("admin.settings.site.customEndpoints.add") }}
-                </Button>
+                </AppButton>
               </div>
 
               <!-- Contact Info -->
@@ -394,7 +394,7 @@
                   </span>
                   <div class="flex items-center gap-2">
                     <!-- Move up -->
-                    <Button
+                    <AppButton
                       v-if="index > 0"
                       type="button"
                       variant="ghost"
@@ -415,9 +415,9 @@
                           d="M5 15l7-7 7 7"
                         />
                       </svg>
-                    </Button>
+                    </AppButton>
                     <!-- Move down -->
-                    <Button
+                    <AppButton
                       v-if="index < form.custom_menu_items.length - 1"
                       type="button"
                       variant="ghost"
@@ -438,9 +438,9 @@
                           d="M19 9l-7 7-7-7"
                         />
                       </svg>
-                    </Button>
+                    </AppButton>
                     <!-- Delete -->
-                    <Button
+                    <AppButton
                       type="button"
                       variant="danger"
                       size="xs"
@@ -460,7 +460,7 @@
                           d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
                         />
                       </svg>
-                    </Button>
+                    </AppButton>
                   </div>
                 </div>
 
@@ -537,7 +537,7 @@
               </div>
 
               <!-- Add button -->
-              <Button
+              <AppButton
                 type="button"
                 variant="ghost"
                 class="w-full border-2 border-dashed border-[var(--border-subtle)]"
@@ -557,7 +557,7 @@
                   />
                 </svg>
                 {{ t("admin.settings.customMenu.add") }}
-              </Button>
+              </AppButton>
             </div>
           </div>
 	        </div>
@@ -566,16 +566,15 @@
 
 <script lang="ts">
 import { defineComponent } from 'vue'
-import Button from '@/components/common/Button.vue'
+import AppButton from '@/components/common/Button.vue'
 import ImageUpload from '@/components/common/ImageUpload.vue'
-import Icon from '@/components/icons/Icon.vue'
 import BaseSelect from '@/components/common/Select.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import { useSettingsPageBindings } from './settingsPageBindings'
 
 export default defineComponent({
   name: 'AdminGeneralSettingsPage',
-  components: { BaseSelect, Button, Icon, ImageUpload, Toggle },
+  components: { AppButton, BaseSelect, ImageUpload, Toggle },
   setup() {
     return useSettingsPageBindings()
   },

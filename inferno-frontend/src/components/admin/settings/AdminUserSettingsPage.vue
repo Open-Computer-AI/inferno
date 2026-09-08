@@ -81,7 +81,7 @@
                       }}
                     </p>
                   </div>
-                  <Button
+                  <AppButton
                     type="button"
                     variant="secondary"
                     size="sm"
@@ -89,7 +89,7 @@
                     :disabled="subscriptionGroups.length === 0"
                   >
                     {{ t("admin.settings.defaults.addDefaultSubscription") }}
-                  </Button>
+                  </AppButton>
                 </div>
 
                 <div
@@ -123,22 +123,22 @@
                             v-if="option"
                             :name="
                               (
-                                option as unknown as DefaultSubscriptionGroupOption
+                                option as unknown as _DefaultSubscriptionGroupOption
                               ).label
                             "
                             :platform="
                               (
-                                option as unknown as DefaultSubscriptionGroupOption
+                                option as unknown as _DefaultSubscriptionGroupOption
                               ).platform
                             "
                             :subscription-type="
                               (
-                                option as unknown as DefaultSubscriptionGroupOption
+                                option as unknown as _DefaultSubscriptionGroupOption
                               ).subscriptionType
                             "
                             :rate-multiplier="
                               (
-                                option as unknown as DefaultSubscriptionGroupOption
+                                option as unknown as _DefaultSubscriptionGroupOption
                               ).rate
                             "
                           />
@@ -150,27 +150,27 @@
                           <GroupOptionItem
                             :name="
                               (
-                                option as unknown as DefaultSubscriptionGroupOption
+                                option as unknown as _DefaultSubscriptionGroupOption
                               ).label
                             "
                             :platform="
                               (
-                                option as unknown as DefaultSubscriptionGroupOption
+                                option as unknown as _DefaultSubscriptionGroupOption
                               ).platform
                             "
                             :subscription-type="
                               (
-                                option as unknown as DefaultSubscriptionGroupOption
+                                option as unknown as _DefaultSubscriptionGroupOption
                               ).subscriptionType
                             "
                             :rate-multiplier="
                               (
-                                option as unknown as DefaultSubscriptionGroupOption
+                                option as unknown as _DefaultSubscriptionGroupOption
                               ).rate
                             "
                             :description="
                               (
-                                option as unknown as DefaultSubscriptionGroupOption
+                                option as unknown as _DefaultSubscriptionGroupOption
                               ).description
                             "
                             :selected="selected"
@@ -195,7 +195,7 @@
                       />
                     </div>
                     <div class="flex items-end">
-                      <Button
+                      <AppButton
                         type="button"
                         variant="danger"
                         size="sm"
@@ -203,7 +203,7 @@
                         @click="removeDefaultSubscription(index)"
                       >
                         {{ t("common.delete") }}
-                      </Button>
+                      </AppButton>
                     </div>
                   </div>
                 </div>
@@ -399,7 +399,7 @@
                           {{ t("admin.settings.authSourceDefaults.defaultSubscriptionsHint") }}
                         </p>
                       </div>
-                      <Button
+                      <AppButton
                         type="button"
                         variant="secondary"
                         size="sm"
@@ -411,7 +411,7 @@
                         {{
                           t("admin.settings.defaults.addDefaultSubscription")
                         }}
-                      </Button>
+                      </AppButton>
                     </div>
 
                     <div
@@ -450,22 +450,22 @@
                                 v-if="option"
                                 :name="
                                   (
-                                    option as unknown as DefaultSubscriptionGroupOption
+                                    option as unknown as _DefaultSubscriptionGroupOption
                                   ).label
                                 "
                                 :platform="
                                   (
-                                    option as unknown as DefaultSubscriptionGroupOption
+                                    option as unknown as _DefaultSubscriptionGroupOption
                                   ).platform
                                 "
                                 :subscription-type="
                                   (
-                                    option as unknown as DefaultSubscriptionGroupOption
+                                    option as unknown as _DefaultSubscriptionGroupOption
                                   ).subscriptionType
                                 "
                                 :rate-multiplier="
                                   (
-                                    option as unknown as DefaultSubscriptionGroupOption
+                                    option as unknown as _DefaultSubscriptionGroupOption
                                   ).rate
                                 "
                               />
@@ -479,27 +479,27 @@
                               <GroupOptionItem
                                 :name="
                                   (
-                                    option as unknown as DefaultSubscriptionGroupOption
+                                    option as unknown as _DefaultSubscriptionGroupOption
                                   ).label
                                 "
                                 :platform="
                                   (
-                                    option as unknown as DefaultSubscriptionGroupOption
+                                    option as unknown as _DefaultSubscriptionGroupOption
                                   ).platform
                                 "
                                 :subscription-type="
                                   (
-                                    option as unknown as DefaultSubscriptionGroupOption
+                                    option as unknown as _DefaultSubscriptionGroupOption
                                   ).subscriptionType
                                 "
                                 :rate-multiplier="
                                   (
-                                    option as unknown as DefaultSubscriptionGroupOption
+                                    option as unknown as _DefaultSubscriptionGroupOption
                                   ).rate
                                 "
                                 :description="
                                   (
-                                    option as unknown as DefaultSubscriptionGroupOption
+                                    option as unknown as _DefaultSubscriptionGroupOption
                                   ).description
                                 "
                                 :selected="selected"
@@ -526,7 +526,7 @@
                           />
                         </div>
                         <div class="flex items-end">
-                          <Button
+                          <AppButton
                             type="button"
                             variant="danger"
                             size="sm"
@@ -539,7 +539,7 @@
                             "
                           >
                             {{ t("common.delete") }}
-                          </Button>
+                          </AppButton>
                         </div>
                       </div>
                     </div>
@@ -619,12 +619,12 @@ import { defineComponent } from 'vue'
 import GroupBadge from '@/components/common/GroupBadge.vue'
 import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
 import BaseSelect from '@/components/common/Select.vue'
-import Button from '@/components/common/Button.vue'
+import AppButton from '@/components/common/Button.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import type { GroupPlatform, SubscriptionType } from '@/types'
 import { useSettingsPageBindings } from './settingsPageBindings'
 
-interface DefaultSubscriptionGroupOption {
+interface _DefaultSubscriptionGroupOption {
   label: string
   platform: GroupPlatform
   subscriptionType: SubscriptionType
@@ -634,7 +634,7 @@ interface DefaultSubscriptionGroupOption {
 
 export default defineComponent({
   name: 'AdminUserSettingsPage',
-  components: { BaseSelect, Button, GroupBadge, GroupOptionItem, Toggle },
+  components: { AppButton, BaseSelect, GroupBadge, GroupOptionItem, Toggle },
   setup() {
     return useSettingsPageBindings()
   },

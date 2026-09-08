@@ -142,7 +142,7 @@ const RULES = [
   },
   {
     id: 'ground-rule-8-no-emoji',
-    test: /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu,
+    test: /(?:[\u{1F300}-\u{1FAFF}]|[\u{2600}-\u{27BF}]|\u{FE0F})/gu,
     files: /\.(vue|ts)$/,
     message: 'No emoji (ground rule 8). Iconography carries that load.'
   },
