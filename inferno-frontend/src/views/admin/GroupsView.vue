@@ -4461,8 +4461,10 @@ import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/app";
 import { useOnboardingStore } from "@/stores/onboarding";
 import { adminAPI } from "@/api/admin";
-import { GROUP_PLATFORM_OPTIONS } from "@/constants/platforms";
-import { buildCompositeRoutePlatformOptions } from "./groupsCompositeRoutes";
+import {
+  CONCRETE_PLATFORM_OPTIONS,
+  GROUP_PLATFORM_OPTIONS,
+} from "@/constants/platforms";
 import type {
   AdminGroup,
   CompositeModelRoute,
@@ -4814,7 +4816,7 @@ const platformFilterOptions = computed(() => [
 ]);
 
 // Routes inside a composite group target concrete platforms, never composite itself.
-const compositeRoutePlatformOptions = computed(buildCompositeRoutePlatformOptions);
+const compositeRoutePlatformOptions = computed(() => [...CONCRETE_PLATFORM_OPTIONS]);
 
 const compositeRouteEndpointOptions = computed(() => [
   { value: "any", label: t("admin.groups.compositeRoutes.endpoints.any") },
