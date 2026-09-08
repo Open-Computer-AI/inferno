@@ -258,11 +258,15 @@ export const GROK_BASE_URL_PRESETS: GrokBaseUrlPreset[] = [
 export type CnAccountMode = 'payg' | 'coding'
 export type CnProviderPlatform = 'kimi' | 'zhipu' | 'deepseek' | 'minimax'
 
-/** deepseek / kimi 支持原生 responses；adaptive 会按入站协议选择原生端点。 */
+/** deepseek / kimi / minimax 支持原生 responses；adaptive 会按入站协议选择原生端点。 */
 export type CnApiProtocol = 'adaptive' | 'chat_completions' | 'anthropic' | 'responses'
 export type CnNativeApiProtocol = Exclude<CnApiProtocol, 'adaptive'>
 
-/** DeepSeek 与 Kimi（按量付费 / Coding Plan）提供原生 Responses 端点。 */
+export function isCNProviderPlatform(platform: string): platform is CnProviderPlatform {
+  return platform === 'kimi' || platform === 'zhipu' || platform === 'deepseek' || platform === 'minimax'
+}
+
+/** DeepSeek、Kimi 与 MiniMax 提供原生 Responses 端点。 */
 export function cnSupportsNativeResponses(platform: string): boolean {
   return platform === 'deepseek' || platform === 'kimi' || platform === 'minimax'
 }
@@ -300,12 +304,21 @@ export const CN_BASE_URL_PRESETS: Record<CnProviderPlatform, CnBaseUrlPreset[]> 
     { mode: 'payg', protocol: 'chat_completions', label: 'MiniMax CN', url: 'https://api.minimaxi.com/v1' },
     { mode: 'payg', protocol: 'anthropic', label: 'MiniMax CN Anthropic', url: 'https://api.minimaxi.com/anthropic' },
     { mode: 'payg', protocol: 'responses', label: 'MiniMax CN Responses', url: 'https://api.minimaxi.com/v1' },
+<<<<<<< inferno-frontend/src/components/account/credentialsBuilder.ts
     { mode: 'coding', protocol: 'chat_completions', label: 'MiniMax Coding CN', url: 'https://api.minimaxi.com/v1' },
     { mode: 'coding', protocol: 'anthropic', label: 'MiniMax Coding CN Anthropic', url: 'https://api.minimaxi.com/anthropic' },
     { mode: 'coding', protocol: 'responses', label: 'MiniMax Coding CN Responses', url: 'https://api.minimaxi.com/v1' },
     { mode: 'payg', protocol: 'chat_completions', label: 'MiniMax Intl', url: 'https://api.minimax.io/v1' },
     { mode: 'payg', protocol: 'anthropic', label: 'MiniMax Intl Anthropic', url: 'https://api.minimax.io/anthropic' },
     { mode: 'payg', protocol: 'responses', label: 'MiniMax Intl Responses', url: 'https://api.minimax.io/v1' },
+=======
+    { mode: 'payg', protocol: 'chat_completions', label: 'MiniMax Intl', url: 'https://api.minimax.io/v1' },
+    { mode: 'payg', protocol: 'anthropic', label: 'MiniMax Intl Anthropic', url: 'https://api.minimax.io/anthropic' },
+    { mode: 'payg', protocol: 'responses', label: 'MiniMax Intl Responses', url: 'https://api.minimax.io/v1' },
+    { mode: 'coding', protocol: 'chat_completions', label: 'MiniMax Coding CN', url: 'https://api.minimaxi.com/v1' },
+    { mode: 'coding', protocol: 'anthropic', label: 'MiniMax Coding CN Anthropic', url: 'https://api.minimaxi.com/anthropic' },
+    { mode: 'coding', protocol: 'responses', label: 'MiniMax Coding CN Responses', url: 'https://api.minimaxi.com/v1' },
+>>>>>>> /tmp/upfile
     { mode: 'coding', protocol: 'chat_completions', label: 'MiniMax Coding Intl', url: 'https://api.minimax.io/v1' },
     { mode: 'coding', protocol: 'anthropic', label: 'MiniMax Coding Intl Anthropic', url: 'https://api.minimax.io/anthropic' },
     { mode: 'coding', protocol: 'responses', label: 'MiniMax Coding Intl Responses', url: 'https://api.minimax.io/v1' }
@@ -332,7 +345,7 @@ export function defaultCNBaseUrl(
         return ''
     }
   }
-  // responses：Kimi / DeepSeek 的 base 与 chat_completions 相同（端点路径差异由后端处理）。
+  // responses：Kimi / DeepSeek / MiniMax 的 base 与 chat_completions 相同（端点路径差异由后端处理）。
   switch (platform) {
     case 'kimi':
       return mode === 'coding' ? 'https://api.kimi.com/coding/v1' : 'https://api.moonshot.cn/v1'

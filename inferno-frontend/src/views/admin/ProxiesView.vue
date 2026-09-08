@@ -99,22 +99,23 @@
           @sort="handleSort"
         >
           <template #header-select>
-            <span class="inline-flex" @click.stop>
-              <Checkbox
-                :model-value="allVisibleSelected"
-                :indeterminate="someVisibleSelected"
-                @update:model-value="toggleSelectAllVisible"
-              />
-            </span>
+            <input
+              type="checkbox"
+              class="h-4 w-4 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              :checked="allVisibleSelected"
+              @click.stop
+              @change="toggleSelectAllVisible($event)"
+            />
           </template>
 
           <template #cell-select="{ row }">
-            <span class="inline-flex" @click.stop>
-              <Checkbox
-                :model-value="selectedProxyIds.has(row.id)"
-                @update:model-value="toggleSelectRow(row.id, $event)"
-              />
-            </span>
+            <input
+              type="checkbox"
+              class="h-4 w-4 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              :checked="selectedProxyIds.has(row.id)"
+              @click.stop
+              @change="toggleSelectRow(row.id, $event)"
+            />
           </template>
 
           <template #cell-name="{ value }">
@@ -416,6 +417,7 @@
             {{ t('admin.proxies.batchAdd') }}
           </button>
         </div>
+        <ProxyAdBanner />
       </div>
 
       <!-- Standard Add Form -->
@@ -970,7 +972,6 @@ import type { Proxy, ProxyAccountSummary, ProxyProtocol, ProxyQualityCheckResult
 import type { Column } from '@/components/common/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
-import Checkbox from '@/components/common/Checkbox.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -978,6 +979,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ImportDataModal from '@/components/admin/proxy/ImportDataModal.vue'
 import Select from '@/components/common/Select.vue'
+import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import Icon from '@/components/icons/Icon.vue'
 import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import { useClipboard } from '@/composables/useClipboard'
@@ -1163,21 +1165,19 @@ const isAbortError = (error: unknown) => {
   return maybeError.name === 'AbortError' || maybeError.code === 'ERR_CANCELED'
 }
 
-const toggleSelectRow = (id: number, checked: boolean) => {
-  if (checked) {
+const toggleSelectRow = (id: number, event: Event) => {
+  const target = event.target as HTMLInputElement
+  if (target.checked) {
     select(id)
     return
   }
   deselect(id)
 }
 
-const toggleSelectAllVisible = (checked: boolean) => {
-  toggleVisible(checked)
+const toggleSelectAllVisible = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  toggleVisible(target.checked)
 }
-
-const someVisibleSelected = computed(
-  () => !allVisibleSelected.value && proxies.value.some(proxy => selectedProxyIds.value.has(proxy.id))
-)
 
 const buildProxyQueryFilters = () => ({
   protocol: filters.protocol || undefined,
@@ -1786,6 +1786,14 @@ const qualityTargetLabel = (target: string) => {
       return 'Gemini'
     case 'grok':
       return 'Grok'
+    case 'kimi':
+      return 'Kimi'
+    case 'zhipu':
+      return 'Zhipu GLM'
+    case 'deepseek':
+      return 'DeepSeek'
+    case 'minimax':
+      return 'MiniMax'
     default:
       return target
   }

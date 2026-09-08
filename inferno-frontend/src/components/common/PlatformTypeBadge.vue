@@ -1,5 +1,5 @@
 <template>
-  <div class="inline-flex flex-col gap-0.5 text-xs font-[var(--fw-medium)]">
+  <div class="inline-flex flex-col gap-0.5 text-xs font-medium">
     <!-- Row 1: Platform + Type -->
     <div class="inline-flex items-center overflow-hidden rounded-md">
       <span :class="['inline-flex items-center gap-1 px-2 py-1', platformClass]">
@@ -58,7 +58,7 @@
       </span>
     </div>
     <!-- Row 3: Subscription expiration (non-free paid accounts only) -->
-    <div v-if="expiresLabel" class="text-[10px] leading-tight text-[var(--muted-foreground)] pl-0.5" :title="subscriptionExpiresAt">
+    <div v-if="expiresLabel" class="text-[10px] leading-tight text-gray-400 dark:text-gray-500 pl-0.5" :title="subscriptionExpiresAt">
       {{ expiresLabel }}
     </div>
   </div>
@@ -68,6 +68,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { AccountPlatform, AccountType } from '@/types'
+import { platformLabel as sharedPlatformLabel } from '@/utils/platformColors'
 import GrokFreeIcon from './GrokFreeIcon.vue'
 import PlatformIcon from './PlatformIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -85,16 +86,7 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const platformLabel = computed(() => {
-  if (props.platform === 'anthropic') return 'Anthropic'
-  if (props.platform === 'openai') return 'OpenAI'
-  if (props.platform === 'antigravity') return 'Antigravity'
-  if (props.platform === 'grok') return 'Grok'
-  if (props.platform === 'kimi') return 'Kimi'
-  if (props.platform === 'zhipu') return 'Zhipu GLM'
-  if (props.platform === 'deepseek') return 'DeepSeek'
-  return 'Gemini'
-})
+const platformLabel = computed(() => sharedPlatformLabel(props.platform))
 
 const normalizedAuthMode = computed(() =>
   (props.authMode || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
@@ -180,16 +172,16 @@ const planIconName = computed<'bolt' | null>(() => {
 
 const platformClass = computed(() => {
   if (props.platform === 'anthropic') {
-    return 'bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] text-[var(--warning)]'
+    return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
   }
   if (props.platform === 'openai') {
-    return 'bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] text-[var(--success)]'
+    return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
   }
   if (props.platform === 'antigravity') {
-    return 'bg-[var(--brand-tint)] text-[var(--brand)]'
+    return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
   }
   if (props.platform === 'grok') {
-    return 'bg-[var(--brand-tint)] text-[var(--brand)]'
+    return 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
   }
   if (props.platform === 'kimi') {
     return 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400'
@@ -200,21 +192,24 @@ const platformClass = computed(() => {
   if (props.platform === 'deepseek') {
     return 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400'
   }
-  return 'bg-[var(--brand-tint)] text-[var(--brand)]'
+  if (props.platform === 'minimax') {
+    return 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
+  }
+  return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
 })
 
 const typeClass = computed(() => {
   if (props.platform === 'anthropic') {
-    return 'bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] text-[var(--warning)]'
+    return 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'
   }
   if (props.platform === 'openai') {
-    return 'bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] text-[var(--success)]'
+    return 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
   }
   if (props.platform === 'antigravity') {
-    return 'bg-[var(--brand-tint)] text-[var(--brand)]'
+    return 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400'
   }
   if (props.platform === 'grok') {
-    return 'bg-[var(--brand-tint)] text-[var(--brand)]'
+    return 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
   }
   if (props.platform === 'kimi') {
     return 'bg-pink-100 text-pink-600 dark:bg-pink-900/30 dark:text-pink-400'
@@ -225,12 +220,15 @@ const typeClass = computed(() => {
   if (props.platform === 'deepseek') {
     return 'bg-teal-100 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400'
   }
-  return 'bg-[var(--brand-tint)] text-[var(--brand)]'
+  if (props.platform === 'minimax') {
+    return 'bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400'
+  }
+  return 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
 })
 
 const planBadgeClass = computed(() => {
   if (normalizedPlanType.value === 'abnormal') {
-    return 'bg-[var(--destructive-soft)] text-[var(--destructive)]'
+    return 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
   }
   // Free stays muted gray; paid Grok tiers get distinct colors.
   if (
@@ -238,29 +236,29 @@ const planBadgeClass = computed(() => {
     normalizedPlanType.value === 'basic' ||
     normalizedPlanType.value === 'xbasic'
   ) {
-    return 'bg-[var(--muted)] text-[var(--muted-foreground)]'
+    return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
   }
   if (props.platform === 'grok' && normalizedPlanType.value) {
-    // Heavy / SuperGrok Heavy keeps the active brand tone.
+    // Heavy / SuperGrok Heavy → purple
     if (normalizedPlanType.value.includes('heavy')) {
-      return 'bg-[var(--brand-tint-strong)] text-[var(--brand)]'
+      return 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300'
     }
-    // SuperGrok uses the success token as the second paid-tier signal.
+    // SuperGrok → cyan
     if (normalizedPlanType.value.includes('supergrok')) {
-      return 'bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] text-[var(--success)]'
+      return 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300'
     }
     // Any other non-free Grok plan (future tiers) → amber so it still stands out
-    return 'bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] text-[var(--warning)]'
+    return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
   }
   // OpenAI / other paid plan labels: keep readable distinction from free gray
   if (normalizedPlanType.value === 'plus') {
-    return 'bg-[var(--brand-tint)] text-[var(--brand)]'
+    return 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
   }
   if (normalizedPlanType.value === 'team') {
-    return 'bg-[var(--brand-tint)] text-[var(--brand)]'
+    return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300'
   }
   if (normalizedPlanType.value === 'pro' || normalizedPlanType.value === 'chatgptpro') {
-    return 'bg-[var(--brand-tint)] text-[var(--brand)]'
+    return 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
   }
   return typeClass.value
 })
@@ -285,7 +283,7 @@ const expiresLabel = computed(() => {
   }
 })
 
-// Privacy badge - shows different states for OpenAI/Antigravity OAuth privacy setting
+// Privacy badge — shows different states for OpenAI/Antigravity OAuth privacy setting
 const privacyBadge = computed(() => {
   if (props.type !== 'oauth' || !props.privacyMode) return null
   // 支持 OpenAI 和 Antigravity 平台
@@ -296,16 +294,16 @@ const privacyBadge = computed(() => {
   switch (props.privacyMode) {
     // OpenAI states
     case 'training_off':
-      return { label: 'Private', icon: shieldCheck, title: t('admin.accounts.privacyTrainingOff'), class: 'bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] text-[var(--success)]' }
+      return { label: 'Private', icon: shieldCheck, title: t('admin.accounts.privacyTrainingOff'), class: 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' }
     case 'training_set_cf_blocked':
-      return { label: 'CF', icon: shieldX, title: t('admin.accounts.privacyCfBlocked'), class: 'bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] text-[var(--warning)]' }
+      return { label: 'CF', icon: shieldX, title: t('admin.accounts.privacyCfBlocked'), class: 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400' }
     case 'training_set_failed':
-      return { label: 'Fail', icon: shieldX, title: t('admin.accounts.privacyFailed'), class: 'bg-[var(--destructive-soft)] text-[var(--destructive)]' }
+      return { label: 'Fail', icon: shieldX, title: t('admin.accounts.privacyFailed'), class: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' }
     // Antigravity states
     case 'privacy_set':
-      return { label: 'Private', icon: shieldCheck, title: t('admin.accounts.privacyAntigravitySet'), class: 'bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] text-[var(--success)]' }
+      return { label: 'Private', icon: shieldCheck, title: t('admin.accounts.privacyAntigravitySet'), class: 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' }
     case 'privacy_set_failed':
-      return { label: 'Fail', icon: shieldX, title: t('admin.accounts.privacyAntigravityFailed'), class: 'bg-[var(--destructive-soft)] text-[var(--destructive)]' }
+      return { label: 'Fail', icon: shieldX, title: t('admin.accounts.privacyAntigravityFailed'), class: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' }
     default:
       return null
   }

@@ -106,7 +106,55 @@ describe('AccountUsageCell', () => {
     })
   })
 
-  it.each(['kimi', 'zhipu', 'deepseek'] as const)(
+  it('renders eligible Ollama Cloud state and forwards query updates', async () => {
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 9001,
+          platform: 'openai',
+          type: 'apikey',
+          ollama_cloud_usage: {
+            account_id: 9001,
+            eligible: true,
+            configured: true,
+            auto_refresh_enabled: true,
+            encryption_key_configured: true,
+            snapshot: {
+              status: 'ok',
+              last_attempt_at: '2026-07-23T00:00:00Z',
+              next_refresh_at: '2026-07-23T01:00:00Z',
+              data: {
+                five_hour: { used_percent: 12 },
+                seven_day: { used_percent: 34 }
+              }
+            }
+          }
+        })
+      },
+      global: {
+        stubs: {
+          OllamaCloudUsageCell: {
+            props: ['account'],
+            emits: ['updated'],
+            template: '<button data-test="embedded-ollama" @click="$emit(\'updated\', { ...account.ollama_cloud_usage, auto_refresh_enabled: false })">{{ account.ollama_cloud_usage.snapshot.data.five_hour.used_percent }}</button>'
+          },
+          UsageProgressBar: true,
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    expect(wrapper.get('[data-test="embedded-ollama"]').text()).toBe('12')
+    expect(getUsage).not.toHaveBeenCalled()
+
+    await wrapper.get('[data-test="embedded-ollama"]').trigger('click')
+
+    const updatedAccount = wrapper.emitted<Account[]>('account-updated')?.[0]?.[0]
+    expect(updatedAccount?.id).toBe(9001)
+    expect(updatedAccount?.ollama_cloud_usage?.auto_refresh_enabled).toBe(false)
+  })
+
+  it.each(['kimi', 'zhipu', 'deepseek', 'minimax'] as const)(
     '%s apikey 账号 Ollama Cloud eligible 时渲染 Ollama 用量单元格并跳过 CN 子单元格',
     async (platform) => {
       const wrapper = mount(AccountUsageCell, {
@@ -192,54 +240,6 @@ describe('AccountUsageCell', () => {
     expect(wrapper.find('[data-test="embedded-ollama"]').exists()).toBe(false)
   })
 
-  it('renders eligible Ollama Cloud state and forwards query updates', async () => {
-    const wrapper = mount(AccountUsageCell, {
-      props: {
-        account: makeAccount({
-          id: 9001,
-          platform: 'openai',
-          type: 'apikey',
-          ollama_cloud_usage: {
-            account_id: 9001,
-            eligible: true,
-            configured: true,
-            auto_refresh_enabled: true,
-            encryption_key_configured: true,
-            snapshot: {
-              status: 'ok',
-              last_attempt_at: '2026-07-23T00:00:00Z',
-              next_refresh_at: '2026-07-23T01:00:00Z',
-              data: {
-                five_hour: { used_percent: 12 },
-                seven_day: { used_percent: 34 }
-              }
-            }
-          }
-        })
-      },
-      global: {
-        stubs: {
-          OllamaCloudUsageCell: {
-            props: ['account'],
-            emits: ['updated'],
-            template: '<button data-test="embedded-ollama" @click="$emit(\'updated\', { ...account.ollama_cloud_usage, auto_refresh_enabled: false })">{{ account.ollama_cloud_usage.snapshot.data.five_hour.used_percent }}</button>'
-          },
-          UsageProgressBar: true,
-          AccountQuotaInfo: true
-        }
-      }
-    })
-
-    expect(wrapper.get('[data-test="embedded-ollama"]').text()).toBe('12')
-    expect(getUsage).not.toHaveBeenCalled()
-
-    await wrapper.get('[data-test="embedded-ollama"]').trigger('click')
-
-    const updatedAccount = wrapper.emitted<Account[]>('account-updated')?.[0]?.[0]
-    expect(updatedAccount?.id).toBe(9001)
-    expect(updatedAccount?.ollama_cloud_usage?.auto_refresh_enabled).toBe(false)
-  })
-
   it('Antigravity 图片用量会聚合新旧 image 模型', async () => {
     getUsage.mockResolvedValue({
       antigravity_quota: {
@@ -269,6 +269,10 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'resetsAt', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ resetsAt }}</div>'
+          },
           AccountQuotaInfo: true
         }
       }
@@ -276,16 +280,7 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    // The three image model variants (old + new) collapse into ONE bar: the
-    // guarantee is max-utilization aggregation (70, from gemini-3-pro-image),
-    // not a separate bar per model. CapacityBar (not the removed
-    // UsageProgressBar) is what now renders it.
-    const bars = wrapper.findAll('[role="progressbar"]')
-    expect(bars).toHaveLength(1)
-    expect(bars[0].attributes('aria-label')).toBe('admin.accounts.usageWindow.gemini3Image')
-    expect(bars[0].attributes('aria-valuenow')).toBe('70')
-    // A single window has nothing to collapse behind "+N more".
-    expect(wrapper.find('.uc-expand').exists()).toBe(false)
+    expect(wrapper.text()).toContain('admin.accounts.usageWindow.gemini3Image|70|2026-03-01T09:00:00Z')
   })
 
   it('Antigravity 会显示 AI Credits 余额信息', async () => {
@@ -368,6 +363,10 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'resetsAt', 'windowStats', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.tokens }}</div>'
+          },
           AccountQuotaInfo: true
         }
       }
@@ -376,26 +375,8 @@ describe('AccountUsageCell', () => {
     await flushPromises()
 
     expect(getUsage).toHaveBeenCalledWith(2000)
-    // Closest-to-limit window (7d, 77%) renders directly; 5h (15%) is one
-    // click away behind the expansion, not stacked below it. Per-window
-    // token/cost stats (window_stats) are no longer rendered by this cell at
-    // all -- see the report for that dropped guarantee.
-    const primary = wrapper.get('[role="progressbar"]')
-    expect(primary.attributes('aria-label')).toBe('admin.accounts.usageWindow.sevenDay')
-    expect(primary.attributes('aria-valuenow')).toBe('77')
-    await wrapper.get('.uc-expand').trigger('click')
-    const byLabel = Object.fromEntries(
-      wrapper.findAll('[role="progressbar"]').map((b) => [b.attributes('aria-label'), b.attributes('aria-valuenow')])
-    )
-    expect(byLabel['admin.accounts.usageWindow.fiveHour']).toBe('15')
-    expect(byLabel['admin.accounts.usageWindow.sevenDay']).toBe('77')
-    // Regression: window_stats (per-window requests/tokens/cost) arrives on
-    // the wire and used to be dropped before render entirely. It now
-    // resurfaces in the expansion, where there is room for it -- not on the
-    // primary bar, which stays at just percent + reset time.
-    expect(wrapper.text()).toContain('3 req')
-    expect(wrapper.text()).toContain('A $0.03')
-    expect(wrapper.text()).toContain('U $0.03')
+    expect(wrapper.text()).toContain('5h|15|300')
+    expect(wrapper.text()).toContain('7d|77|300')
   })
 
   it('OpenAI OAuth 有 codex 快照时仍然使用 /usage API 数据渲染', async () => {
@@ -443,6 +424,10 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'resetsAt', 'windowStats', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.tokens }}</div>'
+          },
           AccountQuotaInfo: true
         }
       }
@@ -451,16 +436,9 @@ describe('AccountUsageCell', () => {
     await flushPromises()
 
     expect(getUsage).toHaveBeenCalledWith(2001)
-    // 单一数据源：始终使用 /usage API 返回值 (18/36), 而不是 codex 快照 (12/34)。
-    const primary = wrapper.get('[role="progressbar"]')
-    expect(primary.attributes('aria-label')).toBe('admin.accounts.usageWindow.sevenDay')
-    expect(primary.attributes('aria-valuenow')).toBe('36')
-    await wrapper.get('.uc-expand').trigger('click')
-    const byLabel = Object.fromEntries(
-      wrapper.findAll('[role="progressbar"]').map((b) => [b.attributes('aria-label'), b.attributes('aria-valuenow')])
-    )
-    expect(byLabel['admin.accounts.usageWindow.fiveHour']).toBe('18')
-    expect(byLabel['admin.accounts.usageWindow.sevenDay']).toBe('36')
+    // 单一数据源：始终使用 /usage API 返回值，忽略 codex 快照
+    expect(wrapper.text()).toContain('5h|18|900')
+    expect(wrapper.text()).toContain('7d|36|900')
   })
 
   it('OpenAI OAuth 有现成快照时，手动刷新信号会触发 usage 重拉', async () => {
@@ -510,6 +488,10 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'resetsAt', 'windowStats', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.tokens }}</div>'
+          },
           AccountQuotaInfo: true
         }
       }
@@ -525,10 +507,8 @@ describe('AccountUsageCell', () => {
     // 手动刷新再拉一次
     expect(getUsage).toHaveBeenCalledTimes(2)
     expect(getUsage).toHaveBeenCalledWith(2010)
-    // 单一数据源：始终使用 /usage API 值 (7d 36%, the closest-to-limit window)
-    const primary = wrapper.get('[role="progressbar"]')
-    expect(primary.attributes('aria-label')).toBe('admin.accounts.usageWindow.sevenDay')
-    expect(primary.attributes('aria-valuenow')).toBe('36')
+    // 单一数据源：始终使用 /usage API 值
+    expect(wrapper.text()).toContain('5h|18|900')
   })
 
   it('OpenAI OAuth 在无 codex 快照时会回退显示 usage 接口窗口', async () => {
@@ -570,6 +550,10 @@ describe('AccountUsageCell', () => {
 		  },
 	  global: {
 	    stubs: {
+	      UsageProgressBar: {
+	        props: ['label', 'utilization', 'resetsAt', 'windowStats', 'color'],
+	        template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.tokens }}</div>'
+	      },
 	      AccountQuotaInfo: true
 	    }
 	  }
@@ -578,24 +562,15 @@ describe('AccountUsageCell', () => {
 	await flushPromises()
 
 	expect(getUsage).toHaveBeenCalledWith(2002)
-	// Both windows are 0%; the tie goes to the first computed window (5h)
-	// as the primary bar, 7d is reachable behind the expansion.
-	const primary = wrapper.get('[role="progressbar"]')
-	expect(primary.attributes('aria-label')).toBe('admin.accounts.usageWindow.fiveHour')
-	expect(primary.attributes('aria-valuenow')).toBe('0')
-	await wrapper.get('.uc-expand').trigger('click')
-	const byLabel = Object.fromEntries(
-	  wrapper.findAll('[role="progressbar"]').map((b) => [b.attributes('aria-label'), b.attributes('aria-valuenow')])
-	)
-	expect(byLabel['admin.accounts.usageWindow.fiveHour']).toBe('0')
-	expect(byLabel['admin.accounts.usageWindow.sevenDay']).toBe('0')
+	expect(wrapper.text()).toContain('5h|0|27700')
+	expect(wrapper.text()).toContain('7d|0|27700')
   })
 
   it('OpenAI OAuth 在行数据刷新但仍无 codex 快照时会重新拉取 usage', async () => {
 	getUsage
 	  .mockResolvedValueOnce({
 	    five_hour: {
-	      utilization: 8,
+	      utilization: 0,
 	      resets_at: null,
 	      remaining_seconds: 0,
 	      window_stats: {
@@ -610,7 +585,7 @@ describe('AccountUsageCell', () => {
 	  })
 	  .mockResolvedValueOnce({
 	    five_hour: {
-	      utilization: 21,
+	      utilization: 0,
 	      resets_at: null,
 	      remaining_seconds: 0,
 	      window_stats: {
@@ -636,16 +611,17 @@ describe('AccountUsageCell', () => {
 		  },
 	  global: {
 	    stubs: {
+	      UsageProgressBar: {
+	        props: ['label', 'utilization', 'resetsAt', 'windowStats', 'color'],
+	        template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.tokens }}</div>'
+	      },
 	      AccountQuotaInfo: true
 	    }
 	  }
 	})
 
 	await flushPromises()
-	// Per-window token/cost stats are no longer rendered by this cell, so the
-	// refetch is observed through the utilization it actually displays (the
-	// mocked responses use distinct 8%/21% to make the swap observable).
-	expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('8')
+	expect(wrapper.text()).toContain('5h|0|100')
 	expect(getUsage).toHaveBeenCalledTimes(1)
 
 	await wrapper.setProps({
@@ -660,7 +636,7 @@ describe('AccountUsageCell', () => {
 
 	await flushPromises()
 	expect(getUsage).toHaveBeenCalledTimes(2)
-	expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('21')
+	expect(wrapper.text()).toContain('5h|0|200')
   })
 
   it('OpenAI 重置响应更新账号行后重新拉取 usage', async () => {
@@ -750,6 +726,10 @@ describe('AccountUsageCell', () => {
 		  },
 	  global: {
 	    stubs: {
+	      UsageProgressBar: {
+	        props: ['label', 'utilization', 'resetsAt', 'windowStats', 'color'],
+	        template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.tokens }}</div>'
+	      },
 	      AccountQuotaInfo: true
 	    }
 	  }
@@ -758,17 +738,8 @@ describe('AccountUsageCell', () => {
 	await flushPromises()
 
   expect(getUsage).toHaveBeenCalledWith(2004)
-  // Both windows are at the 100% limit; the tie goes to 5h as the primary
-  // bar, 7d is reachable behind the expansion.
-  const primary = wrapper.get('[role="progressbar"]')
-  expect(primary.attributes('aria-label')).toBe('admin.accounts.usageWindow.fiveHour')
-  expect(primary.attributes('aria-valuenow')).toBe('100')
-  await wrapper.get('.uc-expand').trigger('click')
-  const byLabel = Object.fromEntries(
-    wrapper.findAll('[role="progressbar"]').map((b) => [b.attributes('aria-label'), b.attributes('aria-valuenow')])
-  )
-  expect(byLabel['admin.accounts.usageWindow.fiveHour']).toBe('100')
-  expect(byLabel['admin.accounts.usageWindow.sevenDay']).toBe('100')
+  expect(wrapper.text()).toContain('5h|100|106540000')
+  expect(wrapper.text()).toContain('7d|100|106540000')
   })
 
   it('Key 账号会展示 today stats 徽章并带 A/U 提示', async () => {
@@ -865,14 +836,18 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}</div>'
+          },
           AccountQuotaInfo: true
         }
       }
     })
 
     await flushPromises()
-    expect(wrapper.text()).toContain('admin.accounts.usageWindow.thirtyDay')
-    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grok24h')
+    expect(wrapper.text()).toContain('30d|')
+    expect(wrapper.text()).not.toContain('24h|')
   })
 
   it('Grok OAuth uses the official weekly billing percentage when available', async () => {
@@ -900,6 +875,10 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'resetsAt', 'remainingCapacity'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ resetsAt }}|{{ remainingCapacity }}</div>'
+          },
           AccountQuotaInfo: true,
         }
       }
@@ -907,15 +886,10 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    // Single window (weekly billing, 37%) -- request/token count chips and
-    // formatted-capacity text never existed for this cell and still don't.
-    const bars = wrapper.findAll('[role="progressbar"]')
-    expect(bars).toHaveLength(1)
-    expect(bars[0].attributes('aria-label')).toBe('admin.accounts.usageWindow.sevenDay')
-    expect(bars[0].attributes('aria-valuenow')).toBe('37')
-    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokRequests')
-    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokTokens')
-    expect(wrapper.text()).not.toContain('2M')
+    expect(wrapper.text()).toContain('7d|37|2026-07-16T03:25:00Z')
+    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokRequests|')
+    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokTokens|')
+    expect(wrapper.text()).not.toContain('2M|')
   })
 
   it.each([
@@ -948,6 +922,10 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}</div>'
+          },
           AccountQuotaInfo: true,
         }
       }
@@ -955,13 +933,11 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    const bars = wrapper.findAll('[role="progressbar"]')
-    expect(bars).toHaveLength(1)
-    expect(bars[0].attributes('aria-label')).toBe('admin.accounts.usageWindow.grok24h')
-    expect(bars[0].attributes('aria-valuenow')).toBe(String(expected))
-    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokRequests')
-    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokTokens')
-    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.sevenDay')
+    expect(wrapper.text()).toContain(`24h|${expected}`)
+    expect(wrapper.findAll('.usage-bar')).toHaveLength(1)
+    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokRequests|')
+    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokTokens|')
+    expect(wrapper.text()).not.toContain('7d|')
   })
 
   it('Grok Free uses rolling 24h usage instead of today-only usage', async () => {
@@ -994,6 +970,10 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'title'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ title }}</div>'
+          },
           AccountQuotaInfo: true,
         }
       }
@@ -1001,18 +981,8 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    // The bar uses the rolling-24h tokens (750K/1M = 75%), not today-only
-    // usage (200K, which would be 20%) or the account's raw local usage
-    // (250K, 25%). Note: the old UI carried an explanatory hint
-    // ("grokFreeQuota24hHint") on the bar explaining it uses a rolling
-    // window; CapacityBar has no title/hint slot, so that explanatory text
-    // is dropped from the UI in this pass -- the number itself is still
-    // correct and is what this assertion covers.
-    const bars = wrapper.findAll('[role="progressbar"]')
-    expect(bars).toHaveLength(1)
-    expect(bars[0].attributes('aria-label')).toBe('admin.accounts.usageWindow.grok24h')
-    expect(bars[0].attributes('aria-valuenow')).toBe('75')
-    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.sevenDay')
+    expect(wrapper.text()).toContain('24h|75|admin.accounts.usageWindow.grokFreeQuota24hHint')
+    expect(wrapper.text()).not.toContain('7d|')
     expect(wrapper.text()).not.toContain('200.0K')
     expect(wrapper.text()).not.toContain('250.0K')
   })
@@ -1060,6 +1030,81 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).not.toContain('250.0K')
   })
 
+  it('Grok JWT free tier shows 24h bar even when leftover Heavy billing metrics remain', async () => {
+    getUsage.mockResolvedValue({
+      grok_free_token_limit: 500_000,
+      subscription_tier: 'free',
+      grok_billing: {
+        plan: 'SuperGrok Heavy',
+        monthly_limit_cents: 150_000,
+        usage_percent: 10,
+        used_percent: 5
+      },
+      grok_local_usage_24h: {
+        requests: 2,
+        tokens: 250_000,
+        cost: 0,
+        standard_cost: 0
+      }
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({ id: 4404, platform: 'grok', type: 'oauth', extra: {} })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}</div>'
+          },
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+    expect(wrapper.text()).toContain('24h|')
+    expect(wrapper.text()).not.toContain('7d|')
+    expect(wrapper.text()).not.toContain('30d|')
+  })
+
+  it('Grok SuperGrok Lite stays on paid 7d bar, not free 24h', async () => {
+    getUsage.mockResolvedValue({
+      subscription_tier: 'supergrok_lite',
+      grok_billing: {
+        period_type: 'weekly',
+        plan: 'SuperGrok',
+        usage_percent: 20
+      },
+      grok_local_usage_24h: {
+        requests: 1,
+        tokens: 100,
+        cost: 0,
+        standard_cost: 0
+      }
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({ id: 4405, platform: 'grok', type: 'oauth', extra: {} })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}</div>'
+          },
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+    expect(wrapper.text()).toContain('7d|')
+    expect(wrapper.text()).not.toContain('24h|')
+  })
+
   it('Grok credential Free tier keeps the 1M fallback when billing is unavailable', async () => {
     getUsage.mockResolvedValue({
       grok_free_token_limit: 1_000_000,
@@ -1078,6 +1123,10 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}</div>'
+          },
           AccountQuotaInfo: true,
         }
       }
@@ -1085,47 +1134,7 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    const bar = wrapper.get('[role="progressbar"]')
-    expect(bar.attributes('aria-label')).toBe('admin.accounts.usageWindow.grok24h')
-    expect(bar.attributes('aria-valuenow')).toBe('100')
-  })
-
-  it('regression: a single-window account still shows its reset time (no expansion exists to hide it behind)', async () => {
-    getUsage.mockResolvedValue({
-      grok_free_token_limit: 1_000_000,
-      grok_billing: { period_type: 'weekly', usage_percent: null, plan: '' },
-      grok_local_usage_24h: {
-        requests: 5,
-        tokens: 500_000,
-        cost: 0,
-        standard_cost: 0
-      }
-    })
-
-    const wrapper = mount(AccountUsageCell, {
-      props: {
-        account: makeAccount({ id: 4500, platform: 'grok', type: 'oauth', extra: {} })
-      },
-      global: {
-        stubs: {
-          AccountQuotaInfo: true,
-        }
-      }
-    })
-
-    await flushPromises()
-
-    // Grok Free has exactly one window (grok_24h) and no expansion --
-    // `.uc-expand` never renders for a single-window account, so the reset
-    // label has nowhere else to live. Before the fix it was rendered only
-    // inside `.uc-expandlist`, which meant it was never rendered at all here.
-    expect(wrapper.find('.uc-expand').exists()).toBe(false)
-    const bar = wrapper.get('[role="progressbar"]')
-    expect(bar.attributes('aria-label')).toBe('admin.accounts.usageWindow.grok24h')
-    // grok_24h's resetsAt is always null (rolling window) -- resetsLabel
-    // resolves that to usage.resetNow, and it must appear on the primary
-    // bar itself since it is the only bar this row ever renders.
-    expect(wrapper.text()).toContain('usage.resetNow')
+    expect(wrapper.text()).toContain('24h|100')
   })
 
   it('Grok Free 24h bar shows rolling local usage chips', async () => {
@@ -1153,9 +1162,9 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
-          CapacityBar: {
-            props: ['label', 'percent', 'trailing'],
-            template: '<div class="usage-bar">{{ label }}|{{ percent }}|{{ trailing }}|<slot /></div>'
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'windowStats'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.tokens }}</div>'
           },
           AccountQuotaInfo: true
         }
@@ -1163,8 +1172,8 @@ describe('AccountUsageCell', () => {
     })
 
     await flushPromises()
-    expect(wrapper.text()).toContain('750.0K')
-    expect(wrapper.text()).not.toContain('250.0K')
+    expect(wrapper.text()).toContain('24h|75|750000')
+    expect(wrapper.text()).not.toContain('|250000')
     expect(wrapper.text()).not.toContain('7d|')
   })
 
@@ -1212,9 +1221,9 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
-          CapacityBar: {
-            props: ['label', 'percent', 'trailing'],
-            template: '<div class="usage-bar">{{ label }}|{{ percent }}|{{ trailing }}|<slot /></div>'
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'windowStats'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.tokens }}</div>'
           },
           AccountQuotaInfo: true
         }
@@ -1222,10 +1231,8 @@ describe('AccountUsageCell', () => {
     })
 
     await flushPromises()
-    expect(wrapper.text()).toContain('2.2M')
-    // 30d is not the primary window here, so it lives behind the expander.
-    await wrapper.get('.uc-expand').trigger('click')
-    expect(wrapper.text()).toContain('8.0M')
+    expect(wrapper.text()).toContain('7d|37|2200000')
+    expect(wrapper.text()).toContain('30d|12|8000000')
     expect(wrapper.text()).not.toContain('|99')
     expect(wrapper.text()).not.toContain('|100')
     expect(wrapper.text()).not.toContain('24h|')
@@ -1267,9 +1274,9 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
-          CapacityBar: {
-            props: ['label', 'percent', 'trailing'],
-            template: '<div class="usage-bar">{{ label }}|{{ percent }}|{{ trailing }}|<slot /></div>'
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'windowStats'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.tokens }}</div>'
           },
           AccountQuotaInfo: true
         }
@@ -1277,100 +1284,10 @@ describe('AccountUsageCell', () => {
     })
 
     await flushPromises()
-    expect(wrapper.text()).toContain('1.5M')
-    await wrapper.get('.uc-expand').trigger('click')
-    expect(wrapper.text()).toContain('4.4M')
+    expect(wrapper.text()).toContain('7d|20|1500000')
+    expect(wrapper.text()).toContain('30d|8|4400000')
   })
 
-  it('Grok paid hides zero prepaid and hides used/limit when monthly limit is 0', async () => {
-    getUsage.mockResolvedValue({
-      subscription_tier: 'SuperGrok',
-      grok_billing: {
-        period_type: 'weekly',
-        usage_percent: 20,
-        prepaid_balance: 0,
-        monthly_limit: 0,
-        monthly_used: 3.5,
-        plan: 'SuperGrok'
-      }
-    })
-
-    const wrapper = mount(AccountUsageCell, {
-      props: {
-        account: makeAccount({ id: 4413, platform: 'grok', type: 'oauth', extra: {} })
-      },
-      global: {
-        stubs: {
-          UsageProgressBar: true,
-          AccountQuotaInfo: true
-        }
-      }
-    })
-
-    await flushPromises()
-    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokPrepaid')
-    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokUsed')
-    expect(wrapper.text()).not.toContain('3.5/0')
-  })
-
-  it('Grok paid shows used/limit without prepaid, and prepaid without a zero monthly limit', async () => {
-    getUsage.mockResolvedValueOnce({
-      subscription_tier: 'SuperGrok',
-      grok_billing: {
-        period_type: 'weekly',
-        usage_percent: 20,
-        monthly_limit: 25,
-        monthly_used: 3.5,
-        plan: 'SuperGrok'
-      }
-    })
-
-    const usedOnly = mount(AccountUsageCell, {
-      props: {
-        account: makeAccount({ id: 4414, platform: 'grok', type: 'oauth', extra: {} })
-      },
-      global: {
-        stubs: {
-          UsageProgressBar: true,
-          AccountQuotaInfo: true
-        }
-      }
-    })
-    await flushPromises()
-    expect(usedOnly.text()).not.toContain('admin.accounts.usageWindow.grokPrepaid')
-    expect(usedOnly.text()).toContain('admin.accounts.usageWindow.grokUsed')
-    expect(usedOnly.text()).toContain('3.50/25.0')
-
-    getUsage.mockResolvedValueOnce({
-      subscription_tier: 'SuperGrok Heavy',
-      grok_billing: {
-        period_type: 'weekly',
-        usage_percent: 20,
-        prepaid_balance: 12.5,
-        monthly_limit: 0,
-        monthly_used: 8,
-        plan: 'SuperGrok Heavy'
-      }
-    })
-    const prepaidOnly = mount(AccountUsageCell, {
-      props: {
-        account: makeAccount({ id: 4415, platform: 'grok', type: 'oauth', extra: {} })
-      },
-      global: {
-        stubs: {
-          UsageProgressBar: true,
-          AccountQuotaInfo: true
-        }
-      }
-    })
-    await flushPromises()
-    expect(prepaidOnly.text()).toContain('admin.accounts.usageWindow.grokPrepaid')
-    expect(prepaidOnly.text()).toContain('$12.5')
-    expect(prepaidOnly.text()).not.toContain('admin.accounts.usageWindow.grokUsed')
-    expect(prepaidOnly.text()).not.toContain('8.00/0')
-  })
-
-  
   it('Grok paid hides zero prepaid and hides used/limit when monthly limit is 0', async () => {
     getUsage.mockResolvedValue({
       subscription_tier: 'SuperGrok',
@@ -1480,12 +1397,7 @@ describe('AccountUsageCell', () => {
 
 		await flushPromises()
 
-		// June ground rule 7: loading is a flat static skeleton, not a Tailwind
-		// `.animate-pulse` glyph. `.uc-chips-skel` is the component's own
-		// scoped hook for that state (no data-testid exists on it).
-		const skeleton = wrapper.find('.uc-chips-skel')
-		expect(skeleton.exists()).toBe(true)
-		expect(wrapper.text()).not.toContain('req')
+		expect(wrapper.findAll('.animate-pulse').length).toBeGreaterThan(0)
   })
 
   it('Key 账号在无 today stats 且无配额时显示兜底短横线', async () => {
@@ -1590,6 +1502,10 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'resetsAt', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}</div>'
+          },
           AccountQuotaInfo: true,
         }
       }
@@ -1597,19 +1513,10 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    // Closest-to-limit window (7d Fable, 100%) renders directly; the other
-    // three windows -- including 7d Sonnet -- are reachable behind the
-    // expansion, not stacked below it.
-    const primary = wrapper.get('[role="progressbar"]')
-    expect(primary.attributes('aria-label')).toBe('admin.accounts.usageWindow.sevenDayFable')
-    expect(primary.attributes('aria-valuenow')).toBe('100')
-    await wrapper.get('.uc-expand').trigger('click')
-    const byLabel = Object.fromEntries(
-      wrapper.findAll('[role="progressbar"]').map((b) => [b.attributes('aria-label'), b.attributes('aria-valuenow')])
-    )
-    expect(byLabel['admin.accounts.usageWindow.fiveHour']).toBe('41')
-    expect(byLabel['admin.accounts.usageWindow.sevenDay']).toBe('56')
-    expect(byLabel['admin.accounts.usageWindow.sevenDaySonnet']).toBe('30')
+    expect(wrapper.text()).toContain('5h|41')
+    expect(wrapper.text()).toContain('7d|56')
+    expect(wrapper.text()).toContain('7d S|30')
+    expect(wrapper.text()).toContain('7d F|100')
   })
 
   it('Anthropic OAuth 无 Fable 数据时不渲染 7d F 进度条', async () => {
@@ -1638,6 +1545,10 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'resetsAt', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}</div>'
+          },
           AccountQuotaInfo: true,
         }
       }
@@ -1645,13 +1556,9 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    const primary = wrapper.get('[role="progressbar"]')
-    expect(primary.attributes('aria-label')).toBe('admin.accounts.usageWindow.sevenDay')
-    expect(primary.attributes('aria-valuenow')).toBe('56')
-    await wrapper.get('.uc-expand').trigger('click')
-    const labels = wrapper.findAll('[role="progressbar"]').map((b) => b.attributes('aria-label'))
-    expect(labels).toContain('admin.accounts.usageWindow.fiveHour')
-    expect(labels).not.toContain('admin.accounts.usageWindow.sevenDaySonnet')
-    expect(labels).not.toContain('admin.accounts.usageWindow.sevenDayFable')
+    expect(wrapper.text()).toContain('5h|41')
+    expect(wrapper.text()).toContain('7d|56')
+    expect(wrapper.text()).not.toContain('7d S')
+    expect(wrapper.text()).not.toContain('7d F')
   })
 })

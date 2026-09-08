@@ -1,58 +1,9 @@
 export default {
     // Dashboard
     dashboard: {
-      cacheBreakdownTooltip: '{total} ({created} created, {read} read)',
-      trendTooltipFooter: '{actual} actual, {standard} standard',
       title: 'Admin Dashboard',
       description: 'System overview and real-time statistics',
-      /* The verdict sentence. It states what it is basing the reading on:
-         "everything is fine" with no number behind it is a claim rather than a
-         reading. */
-      verdictHealthy: 'Everything is healthy. {serving} accounts serving, no errors.',
-      verdictAttention: '{count} accounts need attention. {serving} of {total} still serving.',
-      verdictEmpty: 'No accounts connected yet. Add one to start serving traffic.',
-      /* The tray-floor line under each tile. Each one is the second value that
-         gives its headline number a baseline: a count with no rate, or a
-         charge with no list price, cannot be read as good or bad on its own. */
-      period: {
-        week: 'Week',
-        month: 'Month',
-        quarter: 'Quarter',
-        year: 'Year',
-        toDate: '{period} to date',
-        thisPeriod: 'This {period}',
-      },
-      tokenTrend: {
-        title: 'Tokens per day'
-      },
-      modelMix: {
-        title: 'Tokens by model',
-        cacheBadge: '{pct}% cache',
-        subDefault: 'top models this {period}',
-        subModel: 'at {model} this {period}',
-        subBand: '{band} tokens this {period}'
-      },
-      mix: {
-        title: 'Token mix',
-        caption: 'total tokens',
-        input: 'Input',
-        output: 'Output',
-        cacheWrite: 'Cache write',
-        cacheRead: 'Cache read'
-      },
-      tileAccountsHealthy: 'All serving normally',
-      tileAccountsAttention: '{count} need attention',
-      tileAccountsEmpty: 'None connected yet',
-      tileRequestsRate: '{rate} per minute over the last 5',
-      tileCostSaved: '{standard} standard, {saved} saved',
-      tileCostStandard: 'Billed at the standard rate',
-      tileKeysActive: '{count} active',
-      tileUsersActive: '{active} active, {new} new today',
-      tileUsersActiveOnly: '{active} active',
-      tileCacheShare: '{pct}% served from cache',
-      tileNoTraffic: 'No traffic yet',
-      tileAcrossRequests: 'across {count} requests',
-      apiKeys: 'API keys',
+      apiKeys: 'API Keys',
       totalApiKeys: 'Total API Keys',
       activeApiKeys: 'Active Keys',
       accounts: 'Accounts',
@@ -60,18 +11,18 @@ export default {
       activeAccounts: 'Active Accounts',
       users: 'Users',
       totalUsers: 'Total Users',
-      todayRequests: 'Today requests',
+      todayRequests: 'Today Requests',
       totalRequests: 'Total Requests',
-      todayCost: 'Today cost',
+      todayCost: 'Today Cost',
       totalCost: 'Total Cost',
       newUsersToday: 'New Users Today',
-      todayTokens: 'Today tokens',
-      totalTokens: 'Total tokens',
+      todayTokens: 'Today Tokens',
+      totalTokens: 'Total Tokens',
       input: 'Input',
       output: 'Output',
       cacheToday: 'Cache (Today)',
       performance: 'Performance',
-      avgResponse: 'Avg response',
+      avgResponse: 'Avg Response',
       averageTime: 'Average Time',
       active: 'active',
       ok: 'ok',
@@ -98,10 +49,7 @@ export default {
       standard: 'Standard',
       accountCost: 'Cost',
       noDataAvailable: 'No data available',
-      recentUsage: 'Recent usage',
-      acrossUsers: 'Tokens per day across {count} user | Tokens per day across {count} users',
-      otherUsers: 'Other ({count})',
-      tokensUnit: 'tokens',
+      recentUsage: 'Recent Usage',
       viewModelDistribution: 'Model Distribution',
       viewSpendingRanking: 'User Spending Ranking',
       spendingRankingTitle: 'User Spending Ranking',
@@ -156,7 +104,7 @@ export default {
       },
       imageStorage: {
         title: 'Async image object storage',
-        description: 'Enables the asynchronous image endpoints and offloads generated images to object storage, keeping only short links in Redis. Shares the S3 client with backups and takes effect on save. no restart needed.',
+        description: 'Enables the asynchronous image endpoints and offloads generated images to object storage, keeping only short links in Redis. Shares the S3 client with backups and takes effect on save — no restart needed.',
         enabled: 'Enable async image tasks',
         reuseBackupS3: 'Reuse the backup S3 configuration above (different bucket/prefix only)',
         bucket: 'Bucket',
@@ -222,7 +170,7 @@ export default {
       actions: {
         download: 'Download',
         downloadParts: 'Download Parts',
-        downloadPartsHint: 'Download every part in order and concatenate the gzip bytes: on Linux or macOS run cat payload.part-* > backup.sql.gz; on Windows run copy /b payload.part-000001+payload.part-000002 backup.sql.gz.',
+        downloadPartsHint: 'Download every part in order and concatenate the gzip bytes: on Linux/macOS run cat payload.part-* > backup.sql.gz; on Windows run copy /b payload.part-000001+payload.part-000002 backup.sql.gz.',
         partLabel: 'Part {index}',
         downloadFailed: 'Download URL is empty',
         restore: 'Restore',
@@ -247,7 +195,7 @@ export default {
           line2: 'Click "Create API token", set permission to "Object Read & Write"',
           line3: 'Recommended: restrict to specific bucket for better security',
           line4: 'After creation, you will see the Access Key ID and Secret Access Key',
-          warning: 'The Secret Access Key is only shown once. copy and save it immediately!'
+          warning: 'The Secret Access Key is only shown once — copy and save it immediately!'
         },
         step3: {
           title: 'Get the S3 Endpoint',
@@ -261,7 +209,7 @@ export default {
           fromStep2: 'Value from Step 2',
           unchecked: 'Unchecked'
         },
-        freeTier: 'R2 Free Tier: 10GB storage + 1M Class A requests + 10M Class B requests per month. more than enough for database backups.'
+        freeTier: 'R2 Free Tier: 10GB storage + 1M Class A requests + 10M Class B requests per month — more than enough for database backups.'
       }
     },
 
@@ -486,7 +434,6 @@ export default {
     // Users
     users: {
       title: 'User Management',
-      passwordCopied: 'Password copied',
       description: 'Manage users and their permissions',
       createUser: 'Create User',
       bulkLimits: {
@@ -547,6 +494,7 @@ export default {
       leaveEmptyToKeep: 'Leave empty to keep current password',
       generatePassword: 'Generate random password',
       copyPassword: 'Copy password',
+      passwordCopied: 'Password copied',
       creating: 'Creating...',
       updating: 'Updating...',
       form: {
@@ -667,7 +615,7 @@ export default {
       publicGroups: 'Public Groups (Default Available)',
       restrictPublicGroups: 'Restrict accessible public groups',
       restrictPublicGroupsHint: 'When on, this user may only use the public groups checked below. When off, every public group stays available.',
-      publicGroupsRestricted: 'Public groups (restricted)',
+      publicGroupsRestricted: 'Public Groups (Restricted)',
       defaultRate: 'Default Rate',
       customRate: 'Custom Rate',
       useDefaultRate: 'Use Default',
@@ -807,7 +755,7 @@ export default {
         saving: 'Saving...',
         cancel: 'Cancel',
         clearAll: 'Clear All (remove all limits)',
-        clearAllConfirm: 'Clear daily / weekly / monthly limits for ALL platforms? All platforms will become "unlimited" with no local undo. you must manually re-enter values before saving.',
+        clearAllConfirm: 'Clear daily / weekly / monthly limits for ALL platforms? All platforms will become "unlimited" with no local undo — you must manually re-enter values before saving.',
         reset: {
           button: 'Reset window',
           confirm: 'Reset the {window} usage for {platform} for this user? This is effective immediately.',
@@ -882,16 +830,16 @@ export default {
       accountsAvailable: 'Avail:',
       accountsRateLimited: 'Limited:',
       accountsTotal: 'Total:',
-      accountsUnit: '',
+      accountsUnit: 'accounts',
       rateAndAccounts: '{rate}x rate · {count} accounts',
       accountsCount: '{count} accounts',
       rateLabel: 'rate',
       accountFilters: {
         title: 'Account Filter Controls',
         oauthOnly: 'Only allow OAuth accounts',
-        oauthOnlyEnabled: 'Enabled. API Key accounts will be excluded',
+        oauthOnlyEnabled: 'Enabled — API Key accounts will be excluded',
         privacySetOnly: 'Only allow accounts with privacy protection set',
-        privacySetOnlyEnabled: 'Enabled. accounts with unset Privacy will be excluded',
+        privacySetOnlyEnabled: 'Enabled — accounts with unset Privacy will be excluded',
         disabled: 'Disabled'
       },
       form: {
@@ -912,13 +860,13 @@ export default {
         rpmLimitHint: 'Max requests per minute for each user in this group; 0 = unlimited. Once set, it takes over per-user rate limiting in this group (overrides the user-level rpm_limit fallback).',
         maxReasoningEffort: 'Max reasoning effort',
         maxReasoningEffortUnlimited: 'Unlimited (follow request)',
-        maxReasoningEffortHint: 'Limits explicit OpenAI reasoning effort requests only. For Composite groups, it applies only to requests resolved to OpenAI. Omitted effort stays omitted. The ceiling takes precedence over reasoning effort mappings.',
+        maxReasoningEffortHint: 'Limits explicit Anthropic and OpenAI reasoning effort requests. For Composite groups, it applies to the resolved target platform. Omitted effort stays omitted. The ceiling takes precedence over reasoning effort mappings.',
         maxReasoningEffortOverLimit: 'Over-limit access control',
         maxReasoningEffortOverLimitDowngrade: 'Automatically downgrade when over limit',
         maxReasoningEffortOverLimitDeny: 'Deny access',
         maxReasoningEffortOverLimitHint: 'Applies after a ceiling is set. Downgrade rewrites values above the ceiling to the ceiling. Deny rejects the request.',
         reasoningEffortMappings: 'Reasoning effort mappings',
-        reasoningEffortMappingsHint: 'Type and model can both be left empty to match every model. One type and model can hold multiple request mappings, for example prefix gpt mapping both high and xhigh to medium. Exact matches beat affixes, and longer affixes beat shorter ones.',
+        reasoningEffortMappingsHint: 'Type and model can both be left empty to match every model. One type and model can hold multiple request mappings, for example prefix gpt mapping both high and xhigh to medium. Choose Deny as the forwarded value to reject that request value. Exact matches beat affixes, and longer affixes beat shorter ones.',
         addReasoningEffortMapping: 'Add mapping',
         addReasoningEffortPair: 'Add request value',
         removeReasoningEffortMapping: 'Remove mapping',
@@ -932,6 +880,7 @@ export default {
         reasoningEffortModelPlaceholder: 'Empty = all / gpt / gpt-5.4',
         reasoningEffortFrom: 'Request value',
         reasoningEffortTo: 'Forwarded value',
+        reasoningEffortToDeny: 'Deny',
         reasoningEffortFromPlaceholder: 'Select A',
         reasoningEffortToPlaceholder: 'Select B',
         fromRequired: 'Select request value A',
@@ -1084,7 +1033,7 @@ export default {
       },
       modelPricing: {
         title: 'Per-model group pricing',
-        description: 'Overrides channel and built-in prices for matching models. Long-context tiers come from official presets, so do not enter custom intervals. Use per-request tiers such as realtime, tts, and stt for audio.',
+        description: 'Overrides channel and built-in prices for matching models. Long-context tiers come from official presets — do not enter custom intervals. Use per-request tiers such as realtime, tts, and stt for audio.',
         longContext: 'Enable long-context tier pricing',
         longContextHint: 'When checked, channel intervals or official preset tiers apply. Otherwise the first tier is used unless the account explicitly enables long-context billing.',
         add: 'Add model price'
@@ -1123,14 +1072,36 @@ export default {
         bufferRangeError: 'Safety buffer must be between 0 and 99.99',
         sumTooHigh: 'Min gross margin plus safety buffer must be less than 100%, otherwise every account would be excluded'
       },
-      modelsList: {
-        title: 'Custom /v1/models Model List',
-        hint: 'Only changes the /v1/models response. Whitelist model calls and account routing are unchanged.',
-        loading: 'Loading model list...',
-        empty: 'No displayable models',
+      modelAllowlist: {
+        title: 'Model Allowlist',
+        hint: 'When enabled, models outside the allowlist are rejected with 404 model_not_found, and model listing endpoints only show allowlisted models. Entries support exact model IDs and trailing * wildcards. Note: Claude Code probes with haiku-family models for titles/summaries and /messages/count_tokens is also allowlist-controlled, so make sure the small models you need are selected too.',
+        loading: 'Loading candidate models...',
+        empty: 'No candidate models; add custom entries below',
         selectedSummary: 'Selected {selected} / {total}',
         selectAll: 'Select all',
-        invertSelection: 'Invert'
+        invertSelection: 'Invert',
+        wildcardTag: 'wildcard',
+        customPlaceholder: 'Custom entry, e.g. claude-* or gpt-5.5-codex',
+        addCustom: 'Add',
+        emptySelectionError: 'The model allowlist is enabled; select or add at least one model entry',
+        errors: {
+          empty: 'Please enter a model entry',
+          invalidWildcard: 'Wildcard * is only allowed at the end of an entry',
+          duplicate: 'This entry already exists'
+        }
+      },
+      codexModelsManifest: {
+        title: 'Pinned Accounts for Model Lists',
+        hint: 'When enabled, ordinary model lists and Codex Model Manifest are discovered from the pinned accounts first, then merged and filtered using account mappings and the group model list. Rate-limited or overloaded pinned accounts are still used.',
+        enable: 'Fetch model lists with specific accounts',
+        enabledHint: 'Accounts are limited to OpenAI accounts bound to this group, at most 10.',
+        disabledHint: 'Disabled: ordinary lists use local mappings or defaults; Codex uses a local catalog when configured, otherwise scheduler discovery.',
+        accounts: 'Pinned accounts',
+        searchPlaceholder: 'Search accounts (OpenAI accounts in this group)',
+        searchEmpty: 'No matching accounts',
+        fallback: 'Fall back to the scheduler when all pinned accounts are unavailable',
+        fallbackHint: 'Off: return 503 / the upstream error. On: fall back to the existing scheduler path.',
+        selectAtLeastOne: 'Select at least one account after enabling pinned accounts'
       },
       compositeRoutes: {
         action: 'Routes',
@@ -1239,7 +1210,7 @@ export default {
         tooltipEdit: 'Select one or more groups of the same platform. After saving, current group accounts will be replaced with accounts from these groups (deduplicated).',
         selectPlaceholder: 'Select groups to copy accounts from...',
         hint: 'Multiple groups can be selected, accounts will be deduplicated',
-        hintEdit: 'Warning: This will replace all existing account bindings'
+        hintEdit: '⚠️ Warning: This will replace all existing account bindings'
       },
       modelRouting: {
         title: 'Model Routing',
@@ -1261,12 +1232,6 @@ export default {
         searchAccountPlaceholder: 'Search accounts...',
         accountsHint: 'Select accounts to prioritize for this model pattern'
       },
-      mcpXml: {
-        title: 'MCP XML Protocol Injection',
-        tooltip: 'When enabled, if the request contains MCP tools, an XML format call protocol prompt will be injected into the system prompt. Disable this to avoid interference with certain clients.',
-        enabled: 'Enabled',
-        disabled: 'Disabled'
-      },
       claudeMaxSimulation: {
         title: 'Claude Max Usage Simulation',
         tooltip:
@@ -1274,6 +1239,12 @@ export default {
         enabled: 'Enabled (simulate 1h cache)',
         disabled: 'Disabled',
         hint: 'Only token categories in usage billing logs are adjusted. No per-request mapping state is persisted.'
+      },
+      mcpXml: {
+        title: 'MCP XML Protocol Injection',
+        tooltip: 'When enabled, if the request contains MCP tools, an XML format call protocol prompt will be injected into the system prompt. Disable this to avoid interference with certain clients.',
+        enabled: 'Enabled',
+        disabled: 'Disabled'
       },
       supportedScopes: {
         title: 'Supported Model Families',
