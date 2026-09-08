@@ -17,7 +17,10 @@ describe('GroupsView Composite route options', () => {
 
     expect(source).toContain('import { buildCompositeRoutePlatformOptions } from "./groupsCompositeRoutes";')
     expect(source).toMatch(
-      /const compositeRoutePlatformOptions = computed\(\(\) =>\s*buildCompositeRoutePlatformOptions\(\)\);?/
+      /const\s+compositeRoutePlatformOptions\s*=\s*computed\(\(\)\s*=>\s*buildCompositeRoutePlatformOptions\(\)\s*\);/
+    )
+    expect(source).toMatch(
+      /:options="compositeRoutePlatformOptions"/
     )
   })
 })

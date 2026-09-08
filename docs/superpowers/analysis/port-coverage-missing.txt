@@ -486,7 +486,6 @@ MISSING   b171bb0e4 src/views/admin/GroupsView.vue { value: "deepseek", label: "
 MISSING   b171bb0e4 src/views/admin/GroupsView.vue { value: "kimi", label: "Kimi" },
 MISSING   b171bb0e4 src/views/admin/GroupsView.vue { value: "zhipu", label: "Zhipu GLM" },
 MISSING   b171bb0e4 src/views/admin/__tests__/GroupsView.compositePlatforms.spec.ts const options = source.slice(
-MISSING   b171bb0e4 src/views/admin/__tests__/GroupsView.compositePlatforms.spec.ts const source = readFileSync(resolve('src/views/admin/GroupsView.vue'), 'utf8')
 MISSING   b171bb0e4 src/views/admin/__tests__/GroupsView.compositePlatforms.spec.ts expect(options).toContain('{ value: "deepseek", label: "DeepSeek" }')
 MISSING   b171bb0e4 src/views/admin/__tests__/GroupsView.compositePlatforms.spec.ts expect(options).toContain('{ value: "kimi", label: "Kimi" }')
 MISSING   b171bb0e4 src/views/admin/__tests__/GroupsView.compositePlatforms.spec.ts expect(options).toContain('{ value: "zhipu", label: "Zhipu GLM" }')
@@ -600,6 +599,7 @@ MISSING   f3d949107 src/views/admin/GroupsView.vue group.long_context_pricing_en
 RELOCATED 0ae151a23 src/views/admin/__tests__/AccountsView.sparkShadow.spec.ts vi.restoreAllMocks()
 RELOCATED 0ae151a23 src/views/admin/__tests__/AccountsView.sparkShadow.spec.ts vi.useRealTimers()
 RELOCATED 1f2a87adb src/views/admin/GroupsView.vue ...CONCRETE_PLATFORM_OPTIONS,
+RELOCATED 1f2a87adb src/views/admin/GroupsView.vue CONCRETE_PLATFORM_OPTIONS,
 RELOCATED 1f2a87adb src/views/admin/__tests__/GroupsView.compositePlatforms.spec.ts expect(CONCRETE_PLATFORM_OPTIONS.map((option) => option.value)).toEqual(
 RELOCATED 22fc0cdbf src/views/admin/SettingsView.vue :aria-describedby="`openai-fast-policy-models-hint-${ruleIndex}`"
 RELOCATED 22fc0cdbf src/views/admin/SettingsView.vue :aria-labelledby="`openai-fast-policy-models-label-${ruleIndex}`"
