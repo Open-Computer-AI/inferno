@@ -4461,10 +4461,7 @@ import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/app";
 import { useOnboardingStore } from "@/stores/onboarding";
 import { adminAPI } from "@/api/admin";
-import {
-  CONCRETE_PLATFORM_OPTIONS,
-  GROUP_PLATFORM_OPTIONS,
-} from "@/constants/platforms";
+import { GROUP_PLATFORM_OPTIONS } from "@/constants/platforms";
 import { buildCompositeRoutePlatformOptions } from "./groupsCompositeRoutes";
 import type {
   AdminGroup,
