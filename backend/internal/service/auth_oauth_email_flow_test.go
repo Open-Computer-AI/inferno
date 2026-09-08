@@ -144,7 +144,6 @@ func newOAuthEmailFlowAuthService(
 		nil,
 		nil,
 		quotaRepo, // 替换原来的 nil
-		nil,       // orgService
 	)
 }
 

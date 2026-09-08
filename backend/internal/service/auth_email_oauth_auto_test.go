@@ -44,7 +44,6 @@ func newEmailOAuthAutoAuthService(
 		nil, // defaultSubAssigner — nil, assignSubscriptions early return
 		nil, // affiliateService — nil, bindOAuthAffiliate early return
 		quotaRepo,
-		nil, // orgService
 	)
 }
 

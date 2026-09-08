@@ -27,22 +27,22 @@ func defaultLoginAgreementDocuments() []LoginAgreementDocument {
 	return []LoginAgreementDocument{
 		{
 			ID:        "terms",
-			Title:     "Terms of Service",
+			Title:     "服务条款",
 			ContentMD: "",
 		},
 		{
 			ID:        "usage-policy",
-			Title:     "Usage Policy",
+			Title:     "使用政策",
 			ContentMD: "",
 		},
 		{
 			ID:        "supported-regions",
-			Title:     "Supported Countries and Regions",
+			Title:     "支持的国家和地区",
 			ContentMD: "",
 		},
 		{
 			ID:        "service-specific-terms",
-			Title:     "Service-Specific Terms",
+			Title:     "服务特定条款",
 			ContentMD: "",
 		},
 	}
@@ -321,9 +321,9 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		AliyunCaptchaSceneID:                settings[SettingKeyAliyunCaptchaSceneID],
 		AliyunCaptchaPrefix:                 settings[SettingKeyAliyunCaptchaPrefix],
 		AliyunCaptchaRegion:                 normalizeAliyunCaptchaRegion(settings[SettingKeyAliyunCaptchaRegion]),
-		SiteName:                            s.getStringOrDefault(settings, SettingKeySiteName, DefaultSiteName),
+		SiteName:                            s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
 		SiteLogo:                            settings[SettingKeySiteLogo],
-		SiteSubtitle:                        s.getStringOrDefault(settings, SettingKeySiteSubtitle, DefaultSiteSubtitle),
+		SiteSubtitle:                        s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
 		APIBaseURL:                          settings[SettingKeyAPIBaseURL],
 		ContactInfo:                         settings[SettingKeyContactInfo],
 		DocURL:                              settings[SettingKeyDocURL],

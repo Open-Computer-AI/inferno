@@ -2636,7 +2636,6 @@ CREATE TABLE IF NOT EXISTS user_affiliates (
 		options.defaultSubAssigner,
 		affiliateService,
 		nil,
-		nil, // orgService
 	)
 	userSvc := service.NewUserService(userRepo, nil, nil, nil)
 	var totpSvc *service.TotpService
@@ -2866,10 +2865,6 @@ func (s *oauthPendingFlowRefreshTokenCacheStub) StoreRefreshToken(context.Contex
 	return nil
 }
 
-func (s *oauthPendingFlowRefreshTokenCacheStub) PersistRefreshToken(context.Context, string, *service.RefreshTokenData, time.Duration) error {
-	return nil
-}
-
 func (s *oauthPendingFlowRefreshTokenCacheStub) GetRefreshToken(context.Context, string) (*service.RefreshTokenData, error) {
 	return nil, service.ErrRefreshTokenNotFound
 }
@@ -2904,10 +2899,6 @@ func (s *oauthPendingFlowRefreshTokenCacheStub) GetFamilyTokenHashes(context.Con
 
 func (s *oauthPendingFlowRefreshTokenCacheStub) IsTokenInFamily(context.Context, string, string) (bool, error) {
 	return false, nil
-}
-
-func (s *oauthPendingFlowRefreshTokenCacheStub) MarkRotated(context.Context, string, *service.RefreshTokenData, []byte, time.Time) (*service.RefreshRotationResult, error) {
-	return nil, service.ErrRefreshTokenNotFound
 }
 
 type oauthPendingFlowRedeemCodeRepo struct {

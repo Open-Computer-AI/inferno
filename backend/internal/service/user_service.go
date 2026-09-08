@@ -98,7 +98,6 @@ type UserListFilters struct {
 type UserUpdateFields struct {
 	Email        bool
 	Username     bool
-	AvatarSeed   bool
 	Notes        bool
 	PasswordHash bool
 	Role         bool
@@ -256,7 +255,6 @@ const (
 type UpdateProfileRequest struct {
 	Email                  *string  `json:"email"`
 	Username               *string  `json:"username"`
-	AvatarSeed             *string  `json:"avatar_seed"`
 	AvatarURL              *string  `json:"avatar_url"`
 	Concurrency            *int     `json:"concurrency"`
 	BalanceNotifyEnabled   *bool    `json:"balance_notify_enabled"`
@@ -525,11 +523,6 @@ func (s *UserService) updateProfile(ctx context.Context, userID int64, req Updat
 	if req.Username != nil {
 		user.Username = *req.Username
 		fields.Username = true
-	}
-
-	if req.AvatarSeed != nil {
-		user.AvatarSeed = strings.TrimSpace(*req.AvatarSeed)
-		fields.AvatarSeed = true
 	}
 
 	if req.AvatarURL != nil {
@@ -1283,7 +1276,7 @@ func saveNotifyVerifyCode(ctx context.Context, cache EmailCache, email, code str
 
 // sendNotifyVerifyEmail builds and sends the verification email.
 func (s *UserService) sendNotifyVerifyEmail(ctx context.Context, emailService *EmailService, userID int64, email, code, locale string) error {
-	siteName := DefaultSiteName
+	siteName := "Sub2API"
 	if s.settingRepo != nil {
 		if name, err := s.settingRepo.GetValue(ctx, SettingKeySiteName); err == nil && name != "" {
 			siteName = name

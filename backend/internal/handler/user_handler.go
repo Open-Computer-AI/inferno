@@ -78,7 +78,6 @@ type ChangePasswordRequest struct {
 // UpdateProfileRequest represents the update profile request payload
 type UpdateProfileRequest struct {
 	Username               *string  `json:"username"`
-	AvatarSeed             *string  `json:"avatar_seed"`
 	AvatarURL              *string  `json:"avatar_url"`
 	BalanceNotifyEnabled   *bool    `json:"balance_notify_enabled"`
 	BalanceNotifyThreshold *float64 `json:"balance_notify_threshold"`
@@ -176,7 +175,6 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 
 	svcReq := service.UpdateProfileRequest{
 		Username:               req.Username,
-		AvatarSeed:             req.AvatarSeed,
 		AvatarURL:              req.AvatarURL,
 		BalanceNotifyEnabled:   req.BalanceNotifyEnabled,
 		BalanceNotifyThreshold: req.BalanceNotifyThreshold,

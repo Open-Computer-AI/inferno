@@ -14,8 +14,6 @@ func paymentProviderConfigCurrency(providerKey string, cfg map[string]string) st
 		if err == nil {
 			return currency
 		}
-	case payment.TypeRazorpay:
-		return "INR"
 	}
 	return payment.DefaultPaymentCurrency
 }

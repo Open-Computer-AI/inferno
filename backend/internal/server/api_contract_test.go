@@ -734,10 +734,10 @@ func TestAPIContracts(t *testing.T) {
 						"login_agreement_mode": "modal",
 						"login_agreement_updated_at": "2026-03-31",
 						"login_agreement_documents": [
-						{"id": "terms", "title": "Terms of Service", "content_md": ""},
-						{"id": "usage-policy", "title": "Usage Policy", "content_md": ""},
-						{"id": "supported-regions", "title": "Supported Countries and Regions", "content_md": ""},
-						{"id": "service-specific-terms", "title": "Service-Specific Terms", "content_md": ""}
+							{"id": "terms", "title": "服务条款", "content_md": ""},
+							{"id": "usage-policy", "title": "使用政策", "content_md": ""},
+							{"id": "supported-regions", "title": "支持的国家和地区", "content_md": ""},
+							{"id": "service-specific-terms", "title": "服务特定条款", "content_md": ""}
 						],
 						"smtp_host": "smtp.example.com",
 						"smtp_port": 587,
@@ -1084,10 +1084,10 @@ func TestAPIContracts(t *testing.T) {
 						"login_agreement_mode": "modal",
 						"login_agreement_updated_at": "2026-03-31",
 						"login_agreement_documents": [
-						{"id": "terms", "title": "Terms of Service", "content_md": ""},
-						{"id": "usage-policy", "title": "Usage Policy", "content_md": ""},
-						{"id": "supported-regions", "title": "Supported Countries and Regions", "content_md": ""},
-						{"id": "service-specific-terms", "title": "Service-Specific Terms", "content_md": ""}
+							{"id": "terms", "title": "服务条款", "content_md": ""},
+							{"id": "usage-policy", "title": "使用政策", "content_md": ""},
+							{"id": "supported-regions", "title": "支持的国家和地区", "content_md": ""},
+							{"id": "service-specific-terms", "title": "服务特定条款", "content_md": ""}
 						],
 						"smtp_host": "",
 						"smtp_port": 587,
@@ -1163,9 +1163,9 @@ func TestAPIContracts(t *testing.T) {
 					"google_oauth_client_secret_configured": false,
 					"google_oauth_redirect_url": "",
 					"google_oauth_frontend_redirect_url": "/auth/oauth/callback",
-					"site_name": "Inferno",
+					"site_name": "Sub2API",
 					"site_logo": "",
-					"site_subtitle": "AI API Gateway",
+					"site_subtitle": "Subscription to API Conversion Platform",
 					"api_base_url": "",
 					"api_key_acl_trust_forwarded_ip": false,
 					"forwarded_client_ip_headers": [],
@@ -1476,7 +1476,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	settingRepo := newStubSettingRepo()
 	settingService := service.NewSettingService(settingRepo, cfg)
 
-	adminService := service.NewAdminService(userRepo, groupRepo, &accountRepo, proxyRepo, apiKeyRepo, redeemRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	adminService := service.NewAdminService(nil, userRepo, groupRepo, &accountRepo, proxyRepo, apiKeyRepo, redeemRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	authHandler := handler.NewAuthHandler(cfg, nil, userService, settingService, nil, redeemService, nil, nil)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
 	usageHandler := handler.NewUsageHandler(usageService, apiKeyService, nil, nil)
@@ -1786,6 +1786,10 @@ func (stubGroupRepo) Delete(ctx context.Context, id int64) error {
 }
 
 func (stubGroupRepo) DeleteCascade(ctx context.Context, id int64) ([]int64, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (stubGroupRepo) DeleteCascadeIfEmpty(ctx context.Context, id int64) ([]int64, error) {
 	return nil, errors.New("not implemented")
 }
 
@@ -2941,7 +2945,7 @@ var (
 	_ service.UserRepository             = (*stubUserRepo)(nil)
 	_ service.APIKeyRepository           = (*stubApiKeyRepo)(nil)
 	_ service.APIKeyCache                = (*stubApiKeyCache)(nil)
-	_ service.GroupRepository            = (*stubGroupRepo)(nil)
+	_ service.AdminGroupRepository       = (*stubGroupRepo)(nil)
 	_ service.UserSubscriptionRepository = (*stubUserSubscriptionRepo)(nil)
 	_ service.UsageLogRepository         = (*stubUsageLogRepo)(nil)
 	_ service.SettingRepository          = (*stubSettingRepo)(nil)

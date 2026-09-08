@@ -38,8 +38,6 @@ func RegisterPaymentRoutes(
 		{
 			orders.POST("", paymentHandler.CreateOrder)
 			orders.POST("/verify", paymentHandler.VerifyOrder)
-			orders.POST("/verify-razorpay", paymentHandler.VerifyRazorpayPayment)
-			orders.POST("/verify-razorpay-subscription", paymentHandler.VerifyRazorpaySubscriptionPayment)
 			orders.GET("/my", paymentHandler.GetMyOrders)
 			orders.GET("/:id", paymentHandler.GetOrder)
 			orders.POST("/:id/cancel", paymentHandler.CancelOrder)
@@ -68,7 +66,6 @@ func RegisterPaymentRoutes(
 		webhook.POST("/wxpay", webhookHandler.WxpayNotify)
 		webhook.POST("/stripe", webhookHandler.StripeWebhook)
 		webhook.POST("/airwallex", webhookHandler.AirwallexWebhook)
-		webhook.POST("/razorpay", webhookHandler.RazorpayWebhook)
 	}
 
 	// --- Admin payment endpoints (admin auth) ---

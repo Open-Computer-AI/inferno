@@ -11,7 +11,6 @@ type User struct {
 	Email          string
 	Username       string
 	Notes          string
-	AvatarSeed     string
 	AvatarURL      string
 	AvatarSource   string
 	AvatarMIME     string

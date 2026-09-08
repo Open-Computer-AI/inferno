@@ -31,11 +31,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
-	"github.com/Wei-Shaw/sub2api/ent/oauthauthorizationcode"
-	"github.com/Wei-Shaw/sub2api/ent/oauthclient"
-	"github.com/Wei-Shaw/sub2api/ent/oauthdeviceauthorization"
-	"github.com/Wei-Shaw/sub2api/ent/org"
-	"github.com/Wei-Shaw/sub2api/ent/orgmember"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
@@ -135,11 +130,6 @@ func checkColumn(t, c string) error {
 			group.Table:                         group.ValidColumn,
 			idempotencyrecord.Table:             idempotencyrecord.ValidColumn,
 			identityadoptiondecision.Table:      identityadoptiondecision.ValidColumn,
-			oauthauthorizationcode.Table:        oauthauthorizationcode.ValidColumn,
-			oauthclient.Table:                   oauthclient.ValidColumn,
-			oauthdeviceauthorization.Table:      oauthdeviceauthorization.ValidColumn,
-			org.Table:                           org.ValidColumn,
-			orgmember.Table:                     orgmember.ValidColumn,
 			paymentauditlog.Table:               paymentauditlog.ValidColumn,
 			paymentorder.Table:                  paymentorder.ValidColumn,
 			paymentproviderinstance.Table:       paymentproviderinstance.ValidColumn,
