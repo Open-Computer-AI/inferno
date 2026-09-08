@@ -8,45 +8,38 @@ MiniMax semantic delta from `31f550738c481c00cd6de9dd70d21ca5ab19f9d5`. The
 previous candidate's unrelated CreateAccountModal test churn is intentionally absent.
 This is cumulative changed-path evidence, not dynamic acceptance evidence.
 
-## Changed inferno-frontend paths
+## Changed inferno-frontend paths (relative to `inferno-frontend/src`)
 
-- `src/api/admin/channelMonitor.ts`
-- `src/api/admin/settings.ts`
-- `src/components/account/AccountUsageCell.vue`
-- `src/components/account/CnBaseUrlPresets.vue`
-- `src/components/account/CreateAccountModal.vue`
-- `src/components/account/EditAccountModal.vue`
-- `src/components/account/ModelWhitelistSelector.vue`
-- `src/components/account/credentialsBuilder.ts`
-- `src/components/admin/monitor/MonitorFiltersBar.vue`
-- `src/components/admin/monitor/MonitorFormDialog.vue`
-- `src/components/admin/monitor/MonitorTemplateManagerDialog.vue`
-- `src/components/user/monitor/MonitorCard.vue`
-- `src/components/user/monitor/ProviderIcon.vue`
-- `src/constants/channelMonitor.ts`
-- `src/constants/platforms.ts`
-- `src/i18n/locales/en/admin/accounts.ts`
-- `src/i18n/locales/en/admin/overview.ts`
-- `src/i18n/locales/en/dashboard.ts`
-- `src/i18n/locales/zh/admin/accounts.ts`
-- `src/i18n/locales/zh/admin/overview.ts`
-- `src/i18n/locales/zh/dashboard.ts`
-- `src/types/index.ts`
-- `src/utils/platformColors.ts`
-- `src/views/admin/ChannelsView.vue`
-
-The following immutable/product regression tests are restored from June and
-then receive only the required MiniMax-aware assertions where applicable:
-
-- `src/components/account/__tests__/AccountUsageCell.spec.ts`
-- `src/components/account/__tests__/BulkEditAccountModal.spec.ts`
-- `src/components/account/__tests__/CreateAccountModal.spec.ts`
-- `src/components/account/__tests__/credentialsBuilder.cnAdaptive.spec.ts`
-- `src/components/account/__tests__/credentialsBuilder.spec.ts`
-- `src/components/common/__tests__/PlatformTypeBadge.grok.spec.ts`
-- `src/constants/__tests__/platforms.spec.ts`
-- `src/views/admin/__tests__/GroupsView.compositePlatforms.spec.ts`
-- `src/views/admin/__tests__/channelPlatformOptions.spec.ts`
+- `api/admin/channelMonitor.ts`
+- `api/admin/settings.ts`
+- `components/account/AccountUsageCell.vue`
+- `components/account/CnBaseUrlPresets.vue`
+- `components/account/CreateAccountModal.vue`
+- `components/account/EditAccountModal.vue`
+- `components/account/ModelWhitelistSelector.vue`
+- `components/account/__tests__/AccountUsageCell.spec.ts`
+- `components/account/credentialsBuilder.ts`
+- `components/admin/monitor/MonitorFiltersBar.vue`
+- `components/admin/monitor/MonitorFormDialog.vue`
+- `components/admin/monitor/MonitorTemplateManagerDialog.vue`
+- `components/common/__tests__/PlatformTypeBadge.grok.spec.ts`
+- `components/user/monitor/MonitorCard.vue`
+- `components/user/monitor/ProviderIcon.vue`
+- `constants/__tests__/platforms.spec.ts`
+- `constants/channelMonitor.ts`
+- `constants/platforms.ts`
+- `i18n/locales/en/admin/accounts.ts`
+- `i18n/locales/en/admin/overview.ts`
+- `i18n/locales/en/dashboard.ts`
+- `i18n/locales/zh/admin/accounts.ts`
+- `i18n/locales/zh/admin/overview.ts`
+- `i18n/locales/zh/dashboard.ts`
+- `types/index.ts`
+- `utils/platformColors.ts`
+- `views/admin/ChannelsView.vue`
+- `views/admin/GroupsView.vue`
+- `views/admin/__tests__/GroupsView.compositePlatforms.spec.ts`
+- `views/admin/groupsCompositeRoutes.ts`
 
 ## Required proof
 
@@ -63,9 +56,9 @@ then receive only the required MiniMax-aware assertions where applicable:
 
 ## Cumulative changed-files inventory
 
-The exact cumulative inventory is the 140 paths emitted by:
-`git diff --name-only 9b1673a10aaa9e5f96c8a1233cdd5fb531a78c2a..HEAD`.
+The exact product inventory is the 30 paths emitted by:
+`git diff --name-only 9b1673a10aaa9e5f96c8a1233cdd5fb531a78c2a HEAD -- inferno-frontend/src`.
 The evaluator MUST record and validate the current shared HEAD at evaluation time,
 confirm it is on `port/inferno-minimax-20260908`, and verify that this command emits
-exactly 140 paths. This manifest intentionally does not assert a stale or
-self-referential final SHA.
+exactly 30 paths after stripping the `inferno-frontend/src/` prefix. This manifest
+intentionally does not assert a stale or self-referential final SHA.
