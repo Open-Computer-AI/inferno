@@ -3057,29 +3057,13 @@ const editApiKey = ref('')
 // account_mode 决定额度/余额监控路径，api_protocol 决定转发端点与格式；
 // 二者均可修正（早期创建的账号可能存错默认值），切换时重置 base_url 预置。
 const isCNApiKeyAccount = computed(
-<<<<<<< inferno-frontend/src/components/account/EditAccountModal.vue
-  () =>
-    props.account?.type === 'apikey' &&
-    (props.account.platform === 'kimi' ||
-      props.account.platform === 'zhipu' ||
-      props.account.platform === 'deepseek' || props.account.platform === 'minimax')
-)
-// CnBaseUrlPresets 的 platform prop 是平台字面量联合类型，模板里不能写
-// `as` 断言（其中的 `|` 会被 eslint 误判为 Vue2 filter 语法），经此 computed 传递。
-const cnPresetPlatform = computed<'kimi' | 'zhipu' | 'deepseek' | 'minimax'>(() => {
-  const platform = props.account?.platform
-  if (platform === 'kimi' || platform === 'zhipu' || platform === 'deepseek' || platform === 'minimax') {
-    return platform
-=======
   () => props.account?.type === 'apikey' && isCNProviderPlatform(props.account.platform)
-)
 // CnBaseUrlPresets 的 platform prop 是平台字面量联合类型，模板里不能写
 // `as` 断言（其中的 `|` 会被 eslint 误判为 Vue2 filter 语法），经此 computed 传递。
 const cnPresetPlatform = computed<CnProviderPlatform>(() => {
   const platform = props.account?.platform
   if (isCNProviderPlatform(platform ?? '')) {
     return platform as CnProviderPlatform
->>>>>>> /tmp/upfile
   }
   return 'kimi'
 })
