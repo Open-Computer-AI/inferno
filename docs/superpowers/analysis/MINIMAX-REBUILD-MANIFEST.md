@@ -39,6 +39,7 @@ after stripping the `inferno-frontend/src/` prefix.
 - `utils/platformColors.ts`
 - `views/admin/ChannelsView.vue`
 - `views/admin/GroupsView.vue`
+- `views/admin/groupsCompositeRoutes.ts`
 - `views/admin/__tests__/ChannelMonitorView.grok.spec.ts`
 - `views/admin/__tests__/GroupsView.compositePlatforms.spec.ts`
 
