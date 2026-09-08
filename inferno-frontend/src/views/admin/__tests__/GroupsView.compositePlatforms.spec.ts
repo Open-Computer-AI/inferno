@@ -15,11 +15,13 @@ describe('GroupsView Composite route options', () => {
     expect(values).toContain('kimi')
     expect(values).toContain('zhipu')
     expect(values).toContain('deepseek')
+    expect(values).toContain('minimax')
 
     const labels = Object.fromEntries(CONCRETE_PLATFORM_OPTIONS.map((o) => [o.value, o.label]))
     expect(labels.kimi).toBe('Kimi')
     expect(labels.zhipu).toBe('Zhipu GLM')
     expect(labels.deepseek).toBe('DeepSeek')
+    expect(labels.minimax).toBe('MiniMax')
   })
 
   it('derives the composite route options from the catalog rather than a literal', () => {
