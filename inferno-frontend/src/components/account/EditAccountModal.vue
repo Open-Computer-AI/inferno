@@ -2993,13 +2993,13 @@ const isCNApiKeyAccount = computed(
     props.account?.type === 'apikey' &&
     (props.account.platform === 'kimi' ||
       props.account.platform === 'zhipu' ||
-      props.account.platform === 'deepseek')
+      props.account.platform === 'deepseek' || props.account.platform === 'minimax')
 )
 // CnBaseUrlPresets 的 platform prop 是平台字面量联合类型，模板里不能写
 // `as` 断言（其中的 `|` 会被 eslint 误判为 Vue2 filter 语法），经此 computed 传递。
-const cnPresetPlatform = computed<'kimi' | 'zhipu' | 'deepseek'>(() => {
+const cnPresetPlatform = computed<'kimi' | 'zhipu' | 'deepseek' | 'minimax'>(() => {
   const platform = props.account?.platform
-  if (platform === 'kimi' || platform === 'zhipu' || platform === 'deepseek') {
+  if (platform === 'kimi' || platform === 'zhipu' || platform === 'deepseek' || platform === 'minimax') {
     return platform
   }
   return 'kimi'
@@ -3548,7 +3548,7 @@ const defaultBaseUrl = computed(() => {
   if (
     props.account?.platform === 'kimi' ||
     props.account?.platform === 'zhipu' ||
-    props.account?.platform === 'deepseek'
+    props.account?.platform === 'deepseek' || props.account?.platform === 'minimax'
   ) {
     return defaultCNBaseUrl(props.account.platform, editAccountMode.value, editApiProtocol.value)
   }
