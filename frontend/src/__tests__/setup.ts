@@ -94,5 +94,7 @@ config.global.stubs = {
   // 可以在这里添加全局 stub
 }
 
-// 设置全局测试超时
-vi.setConfig({ testTimeout: 10000 })
+// Keep the shared runtime timeout aligned with vitest.config.ts. Large
+// source-discovery and locale-compilation tests legitimately exceed 10s on
+// constrained runners after dependency upgrades.
+vi.setConfig({ testTimeout: 30000, hookTimeout: 30000 })
