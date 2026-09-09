@@ -2015,5 +2015,154 @@ re-litigated.
   reachable." Flagging the absence of a judgement call explicitly, since a
   quiet cycle should not read the same as an unreviewed one.
 
-**Last reviewed upstream SHA: `baeac1f3de21d37b129405f092ef86c24b3f203d`**
-(2026-08-15 13:40:21 UTC, "chore: sync VERSION to 0.1.177 [skip ci]").
+### 2026-08-29 — fifth sync, following Runbook v2 (merge model), automated
+
+**44 commits behind.** Range `e866ff6ec` (2026-08-28) .. `ac18c588c`
+(2026-08-29, new last-reviewed SHA).
+
+**Log gap found and corrected.** This file's last dated entry was still
+"2026-08-16 — fourth sync" / SHA `baeac1f3d`, but the repo's own history shows
+a much larger reconcile actually landed on 2026-08-28 (`1c0447259` "Merge
+upstream/main (473 commits) into inferno-redesign", preceded by `c49d08101`
+declaring D8/D9 and the collision map, and followed by `f395c6465` adopting
+Runbook v2 itself — the section above this log). That reconcile's outcome was
+never appended here. `git merge-base HEAD upstream/main` (`e866ff6ec`) is the
+trustworthy record of what was actually merged, so this entry treats that as
+its starting point rather than the stale `baeac1f3d` line.
+
+**Clone was shallow; unshallowed first** (`git fetch --unshallow`) per Runbook
+v2 step 1, before trusting the commit count.
+
+**Recovery point:** tag `pre-reconcile-2026-08-29` at old HEAD (`15b10148a`).
+Worked in a separate worktree, branch `sync/reconcile-2026-08-29`.
+
+**Collision map:** we changed 219 files under `backend/`, `deploy/`, `docs/`
+since the base; upstream changed 70; **3 overlap** —
+`backend/internal/handler/dto/{mappers,types}.go`,
+`backend/internal/repository/usage_log_repo_query.go`. All three merged with
+**zero conflicts**: upstream's new reasoning-effort plumbing landed around our
+D-ledger code without touching the same lines.
+
+**Merge: 0 conflicts.** `git merge upstream/main --no-edit` — clean.
+
+**Gate 5:** `check-divergence.sh` exits 0 — 219 files differ against the new
+`merge-base` (= `upstream/main` tip, since HEAD is now a descendant), all 219
+covered by 228 DECLARED lines. Nothing stale to prune, nothing undeclared.
+
+**Backend gate:** `go build ./...` clean. `go vet ./internal/...` clean.
+`go test ./internal/...` — every package `ok`.
+
+**Frontend gate:** `pnpm install`, `npm run typecheck` 0 errors,
+`node scripts/june-lint.mjs` 899 violation(s) across 289 converted file(s) —
+**identical to the 899-across-287 pre-reconcile baseline**, diffed the two
+runs directly; only the file count moved, from two of this cycle's own edits
+entering lint scope for the first time with zero violations of their own. Not
+this reconcile's debt; not fixed, not hidden. `npm run test:run` 234 files /
+1663 tests green (pre-reconcile baseline: 233/1657 — the +1 file / +6 tests
+are exactly the new/extended specs below, nothing dropped). `npm run build`
+succeeded, only the pre-existing >500kB chunk warnings.
+
+#### API contract diff (Runbook v2 step 7)
+
+`git diff e866ff6ec..upstream/main` restricted to
+`inferno-frontend/src/{api,stores,composables,utils,types}`, plus the Go DTOs
+behind the 3 collision files above.
+
+**Ported (3 files, all additive, none wired into a view):**
+
+1. `AdminUsageLog.upstream_reasoning_effort` — new optional field
+   (`backend/internal/handler/dto/types.go`): the effort actually forwarded
+   upstream when group policy or model-family remapping changed it from what
+   the client requested. Added to `inferno-frontend/src/types/index.ts`
+   verbatim.
+2. `accountsAPI.getUpstreamBillingRatesWithEtag` — new admin endpoint
+   (`GET /admin/accounts/upstream-billing-rates`, ETag-conditional,
+   deliberately thinner than the full account list). Ported the type
+   (`UpstreamBillingRatesResponse` / `UpstreamBillingRateSnapshotItem`) and
+   the API client function into `inferno-frontend/src/api/admin/accounts.ts`,
+   matching the precedent set for `accountUsageRefresh.ts`'s
+   `buildGrokUsageRefreshKey` on 2026-08-15: the file is a live,
+   heavily-consumed module, so one more unwired export is safe and inert.
+3. `formatReasoningEffortMapping` / `reasoningEffortValuesEqual` — new
+   presentation helpers alongside the existing `formatReasoningEffort` in
+   `frontend/src/utils/format.ts`. Ported verbatim into
+   `inferno-frontend/src/utils/format.ts`, plus its new spec file.
+
+**Deliberately not wired into any view.** `UsageTable.vue`, `UsageView.vue`
+(admin and user) and `AccountsView.vue` are all still unconverted Tailwind
+screens on the views/components ignore list (confirmed by grep: none carries
+a single June token). Displaying the new field is that screen's conversion
+work, not this port's — recorded as owed cross-file work, same shape as the
+2026-08-15 `buildGrokUsageRefreshKey` entry.
+
+**`ReasoningEffort`'s meaning changed; no port needed for the shift itself.**
+Upstream's `UsageLog.ReasoningEffort` used to mean "the effective/forwarded
+effort"; it now means "the client-requested effort" (mapping-hidden, like
+`Model`), with the forwarded value moved to the new `UpstreamReasoningEffort`
+field above. Purely a backend computation change — the TS field stays
+`string | null` either way, so nothing to edit for the meaning change alone.
+
+#### Behaviour changes re-applied by hand (the "logic, not styling" limit)
+
+Two upstream changes outside the `src/{api,...}` scope were real bug fixes
+hiding inside otherwise-ignored `components/`/`views/` files, not pure
+restyling — re-applied to our equivalents per the port policy's "components/
+views skip rule, and its limit":
+
+1. **Promo code silently dropped on OAuth signup.** `EmailOAuthButtons.vue`
+   and `LinuxDoOAuthSection.vue` threaded `aff_code` into the OAuth start
+   params but never `promo_code`, so a user who typed a promo code into
+   `RegisterView.vue` and then signed up via Google/GitHub/LinuxDo lost it.
+   `RegisterView.vue` is a real, June-converted screen with a live
+   `formData.promo_code` — not a dead-view false positive. Added a
+   `promoCode` prop plus wiring to both components (styling untouched — the
+   Email variant is already June, the LinuxDo one is still pristine Tailwind
+   and stays that way) and passed `formData.promo_code` at both call sites.
+   Matches upstream's own scope exactly: only Email + LinuxDo got this fix
+   upstream too, not Wechat/Oidc — checked, upstream hasn't touched those
+   either.
+2. **Recharge-rate preview hardcoded "CNY".** `payment.rechargeRatePreview`
+   read "Current rate: 1 CNY = {usd} USD" regardless of the selected payment
+   method's actual currency. A real bug for Inferno specifically — D5 added
+   Razorpay/INR as a first-class path, so an Indian customer recharging via
+   Razorpay saw a CNY rate that was never theirs. Parameterized the string on
+   `{currency}` in both `en` and `zh` `misc.ts`, and threaded
+   `selectedCurrency` (already computed in `PaymentView.vue`) through at the
+   one call site.
+
+Both came with upstream's own spec updates; ported those too
+(`EmailOAuthButtons.spec.ts`, `OAuthLoginSections.spec.ts`,
+`PaymentView.spec.ts`) rather than writing new assertions from scratch.
+
+#### Skipped, with reasons
+
+- `frontend/src/i18n/locales/en/admin/accounts.ts`'s new `zhipuTeam` block
+  (Zhipu team-plan Organization/Project ID help text) — unrelated to this
+  cycle's reasoning-effort/promo-code work, and its sole consumer
+  (`CreateAccountModal.vue` / `EditAccountModal.vue`) is explicitly excluded
+  from conversion (part 05: "a project rather than a pass"). No i18n key
+  without a consumer to add it for.
+- Backend-only changes verified but not ported (no client-visible contract
+  change): `composite_platform.go`, `gateway_handler*.go`,
+  `openai_chat_completions.go`, `openai_gateway_handler.go`'s WS
+  close-attribution rework — all gateway/proxy-path plumbing for the new
+  `RequestedReasoningEffort` context value and WS error classification, not
+  admin/user SPA-facing endpoints. Confirmed nothing under
+  `inferno-frontend/src/api` reads any of them directly (the two DTO fields
+  they feed are covered above).
+- `dashboard.ts`'s `requestedReasoningEffort` locale key — belongs to the
+  same unconverted `UsageView.vue` / `UsageTable.vue` wiring as the
+  type/util port above; adding the key without a consumer would be inert on
+  its own, and untranslated in `zh` besides (upstream's diff was `en`-only
+  for this key). Deferred with the rest of that screen's conversion.
+
+#### Land
+
+Merge is clean and the branch stays a strict descendant of `inferno-redesign`
+(`git merge-base --is-ancestor inferno-redesign HEAD` succeeds) — the PR
+should land by fast-forward. Not pushing or merging it in this run: per the
+daily routine's standing instructions, only a human merges, gate-green or
+not.
+
+**Last reviewed upstream SHA: `ac18c588c81821b3c4fd4f2c2457dd9a3e341737`**
+(2026-08-29 09:12:05 +08:00, "Merge PR #6165").

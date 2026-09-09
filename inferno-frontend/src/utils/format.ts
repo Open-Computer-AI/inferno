@@ -297,7 +297,7 @@ export function formatReasoningEffort(effort: string | null | undefined): string
 
 export function reasoningEffortValuesEqual(
   left: string | null | undefined,
-  right: string | null | undefined,
+  right: string | null | undefined
 ): boolean {
   const a = normalizeReasoningEffortKey(left)
   const b = normalizeReasoningEffortKey(right)
@@ -308,7 +308,7 @@ export function reasoningEffortValuesEqual(
 /** Requested vs forwarded effort for usage export; one value when they match. */
 export function formatReasoningEffortMapping(
   requested: string | null | undefined,
-  forwarded: string | null | undefined,
+  forwarded: string | null | undefined
 ): string {
   const requestedLabel = formatReasoningEffort(requested)
   const forwardedLabel = formatReasoningEffort(forwarded)
