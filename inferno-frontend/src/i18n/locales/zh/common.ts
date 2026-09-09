@@ -6,6 +6,7 @@ export default {
     creating: '创建中...',
     clear: '清除',
     required: '必填',
+    'field-control': '输入',
     tryAgain: '请重试',
     personalRateTooltip: '个人倍率覆盖',
     justNow: '刚刚',
