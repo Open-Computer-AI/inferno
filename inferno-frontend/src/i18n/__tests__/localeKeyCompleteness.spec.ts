@@ -22,7 +22,7 @@ function collectStaticSourceKeys(source: string): string[] {
   const translationCalls = /(?:\bi18n(?:\.global)?\.t|\$t|\bt)\s*\(\s*(['"`])([^'"`\r\n]+)\1/g
   for (const match of source.matchAll(translationCalls)) {
     const key = match[2]
-    if (!key.endsWith('.')) keys.add(key)
+    if (!key.endsWith('.') && !key.includes('${')) keys.add(key)
   }
 
   const keyReferences = /(?:keypath|titleKey|descriptionKey)\s*[:=]\s*(['"`])([^'"`\r\n]+)\1/g
