@@ -2017,3 +2017,59 @@ re-litigated.
 
 **Last reviewed upstream SHA: `baeac1f3de21d37b129405f092ef86c24b3f203d`**
 (2026-08-15 13:40:21 UTC, "chore: sync VERSION to 0.1.177 [skip ci]").
+
+### 2026-09-03 — daily reconcile check, 0 drift
+
+Ran Runbook v2 step 1. Repo clone was shallow (`git rev-parse
+--is-shallow-repository` true); unshallowed first (`git fetch --unshallow`)
+per the step's warning, then added the `upstream` remote
+(`https://github.com/Wei-Shaw/sub2api.git`, absent in this session) and
+fetched `upstream/main` fresh.
+
+`git rev-list --count HEAD..upstream/main` = **0**.
+`git merge-base HEAD upstream/main` == `git rev-parse upstream/main` ==
+`5097b31457e6dc9f49e5f5c9c72b925ce79543b3` ("chore: sync VERSION to 0.2.0
+[skip ci]", 2026-09-02 03:24:57 UTC). `git merge-base --is-ancestor
+upstream/main HEAD` confirms it by ancestry, not only by watermark — the
+distinction that mattered on 2026-09-02 (see `d044f85e3`, which this branch
+already carries). Nothing has shipped upstream since that merge landed.
+
+This SHA is already the ledger's live watermark: `node
+scripts/upstream-daily.mjs` (no flag) independently reports "0 commit(s)
+across 0 day(s)" and "upstream/main is an ancestor of HEAD — backend and the
+frontend/ mirror are current" against
+`docs/superpowers/analysis/upstream-watch.json`'s existing `lastSeen`. Ran
+`--record` anyway to advance `lastSeenAt` from `2026-09-02` to `2026-09-03`
+so the watermark reflects that today's check ran, even though `lastSeen`
+itself is unchanged. **This JSON file, not the prose line below, is now the
+live-checked reviewed-SHA record** — the prose line is carried forward for
+continuity with the pre-2026-08-28 log format; it was already stale before
+today (last hand-updated 2026-08-15) while the branch's actual merge-base
+advanced past it multiple times since (most recently to `5097b3145` via
+`d044f85e3`, 2026-09-02).
+
+Ran gate 5 anyway, since a clean merge-base is not proof the tree is
+healthy: `./inferno-frontend/scripts/check-divergence.sh` — `divergence:
+base 5097b3145 · 226 file(s) differ · 228 declared` / `all divergence
+declared`, exit 0. No undeclared drift. Also ran `npm run typecheck`
+(`vue-tsc --noEmit`, zero output after the banner) as an extra sanity check
+since it's cheap; did not run `june-lint`/`test:run`/`build`, since steps
+2-8 of the runbook (which is where those gates live) do not apply when step
+1 measures zero — no merge, no port, no code change to gate. (`june-lint`
+currently reports 1370 violations across 308 converted files, up from 845/270
+on 2026-08-16; this is the ongoing June-conversion debt tracked by
+`debt-ledger.mjs`/`conversion-status.mjs`, unrelated to and unaffected by
+today's zero-drift upstream check — noted here only so it isn't mistaken for
+something this reconcile broke.)
+
+No merge, no port, no code change under `backend/`, `frontend/`, `deploy/`
+or `docs/` outside this log entry and the watermark file. Four earlier
+reconcile-day PRs (#16, #17, #18, #20) are still open, unmerged drafts —
+this entry does not depend on or supersede them; it reconfirms zero drift
+against the actually-current `inferno-redesign` tip, which already carries
+work past all four (including `d044f85e3`'s direct-push merge to
+upstream `0.2.0`).
+
+**Last reviewed upstream SHA: `5097b31457e6dc9f49e5f5c9c72b925ce79543b3`**
+(2026-09-02 03:24:57 UTC, "chore: sync VERSION to 0.2.0 [skip ci]") — also
+recorded machine-readably in `docs/superpowers/analysis/upstream-watch.json`.
