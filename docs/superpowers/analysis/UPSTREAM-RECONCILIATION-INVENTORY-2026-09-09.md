@@ -42,7 +42,7 @@ Scope: exact final-tree reconciliation. `.github/**` is intentionally excluded. 
 
 ### Ported in this final remainder
 
-- Added the existing production-wide Inferno static i18n key-resolution test (`inferno-frontend/src/i18n/__tests__/keyResolution.spec.ts`) to `FRONTEND_CRITICAL_VITEST` in the root Makefile. This preserves the upstream final-state requirement that statically referenced locale keys are a mandatory build/test gate while using Inferno’s stronger existing full-path scanner.
+- Added an Inferno-native locale completeness test (`inferno-frontend/src/i18n/__tests__/localeKeyCompleteness.spec.ts`) to `FRONTEND_CRITICAL_VITEST`. It preserves the upstream final-state gate and checks double- and single-quoted `t`, `$t`, `i18n.t`, metadata/keypath references, `<i18n-t>`, English/Chinese schema equality, non-empty locale leaves, and all static production references.
 
 ## Deploy exceptions reviewed
 
