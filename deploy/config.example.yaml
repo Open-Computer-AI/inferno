@@ -1024,13 +1024,6 @@ default:
 # OAuth Backing Key / OAuth 代理密钥
 # =============================================================================
 # Group policy for OAuth-bearer inference.
-oauth_backing_key:
-  group_name: ""
-
-# =============================================================================
-# OAuth Backing Key / OAuth 代理密钥
-# =============================================================================
-# Group policy for OAuth-bearer inference.
 #
 # An OAuth access token has no api_keys row of its own, but the gateway needs
 # one: usage_logs.api_key_id is NOT NULL with an ON DELETE CASCADE foreign key,
