@@ -5,65 +5,71 @@
       <div class="fixed inset-0 z-[9998]" @click="emit('close')"></div>
       <div
         ref="menuRef"
-        class="action-menu-content fixed z-[9999] w-52 overflow-y-auto overscroll-contain rounded-xl bg-white shadow-lg ring-1 ring-black/5 dark:bg-dark-800"
+        class="action-menu-content am-menu overflow-y-auto overscroll-contain"
         :style="menuStyle"
+        role="menu"
+        :aria-label="t('admin.accounts.moreActions')"
         @click.stop
+        @mousedown.stop
+        @keydown="onMenuKeydown"
       >
-        <div class="py-1">
-          <template v-if="account">
-            <button @click="$emit('test', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700">
-              <Icon name="play" size="sm" class="text-green-500" :stroke-width="2" />
-              {{ t('admin.accounts.testConnection') }}
+        <template v-if="account">
+          <div class="am-group">
+            <button type="button" role="menuitem" class="am-item" @click="$emit('test', account); $emit('close')">
+              <Icon name="play" size="sm" aria-hidden="true" />
+              <span>{{ t('admin.accounts.testConnection') }}</span>
             </button>
-            <button @click="$emit('stats', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700">
-              <Icon name="chart" size="sm" class="text-indigo-500" />
-              {{ t('admin.accounts.viewStats') }}
+            <button type="button" role="menuitem" class="am-item" @click="$emit('stats', account); $emit('close')">
+              <Icon name="chart" size="sm" aria-hidden="true" />
+              <span>{{ t('admin.accounts.viewStats') }}</span>
             </button>
-            <button @click="$emit('schedule', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700">
-              <Icon name="clock" size="sm" class="text-orange-500" />
-              {{ t('admin.scheduledTests.schedule') }}
+            <button type="button" role="menuitem" class="am-item" @click="$emit('schedule', account); $emit('close')">
+              <Icon name="clock" size="sm" aria-hidden="true" />
+              <span>{{ t('admin.scheduledTests.schedule') }}</span>
             </button>
-            <button v-if="canDuplicate" @click="$emit('duplicate', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700">
-              <Icon name="copy" size="sm" class="text-sky-500" />
-              {{ t('admin.accounts.duplicateAccount') }}
+          </div>
+
+          <div v-if="showChangeStateGroup" class="am-group">
+            <button v-if="canDuplicate" type="button" role="menuitem" class="am-item" @click="$emit('duplicate', account); $emit('close')">
+              <Icon name="copy" size="sm" aria-hidden="true" />
+              <span>{{ t('admin.accounts.duplicateAccount') }}</span>
             </button>
-            <!-- 影子账号不持凭据:重授权/刷新 token 对其无效(后端拒绝),故隐藏(外审 G4)。 -->
-            <template v-if="(account.type === 'oauth' || account.type === 'setup-token') && !isShadow">
-              <button @click="$emit('reauth', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-blue-600 hover:bg-gray-100 dark:hover:bg-dark-700">
-                <Icon name="link" size="sm" />
-                {{ t('admin.accounts.reAuthorize') }}
-              </button>
-              <button @click="$emit('refresh-token', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-purple-600 hover:bg-gray-100 dark:hover:bg-dark-700">
-                <Icon name="refresh" size="sm" />
-                {{ t('admin.accounts.refreshToken') }}
-              </button>
-            </template>
-            <button v-if="isOpenAIOAuthParent" @click="$emit('create-spark-shadow', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-amber-600 hover:bg-gray-100 dark:hover:bg-dark-700">
-              <Icon name="sparkles" size="sm" />
-              {{ t('admin.accounts.createSparkShadow') }}
+            <button v-if="isOpenAIOAuthParent" type="button" role="menuitem" class="am-item" @click="$emit('create-spark-shadow', account); $emit('close')">
+              <Icon name="sparkles" size="sm" aria-hidden="true" />
+              <span>{{ t('admin.accounts.createSparkShadow') }}</span>
             </button>
-            <button v-if="supportsPrivacy" @click="$emit('set-privacy', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-emerald-600 hover:bg-gray-100 dark:hover:bg-dark-700">
-              <Icon name="shield" size="sm" />
-              {{ t('admin.accounts.setPrivacy') }}
+            <button v-if="supportsPrivacy" type="button" role="menuitem" class="am-item" @click="$emit('set-privacy', account); $emit('close')">
+              <Icon name="shield" size="sm" aria-hidden="true" />
+              <span>{{ t('admin.accounts.setPrivacy') }}</span>
             </button>
-            <div v-if="hasRecoverableState" class="my-1 border-t border-gray-100 dark:border-dark-700"></div>
-            <button v-if="hasRecoverableState" @click="$emit('recover-state', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-emerald-600 hover:bg-gray-100 dark:hover:bg-dark-700">
-              <Icon name="sync" size="sm" />
-              {{ t('admin.accounts.recoverState') }}
+            <button v-if="hasRecoverableState" type="button" role="menuitem" class="am-item" @click="$emit('recover-state', account); $emit('close')">
+              <Icon name="sync" size="sm" aria-hidden="true" />
+              <span>{{ t('admin.accounts.recoverState') }}</span>
             </button>
-            <button v-if="hasQuotaLimit" @click="$emit('reset-quota', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-teal-600 hover:bg-gray-100 dark:hover:bg-dark-700">
-              <Icon name="refresh" size="sm" />
-              {{ t('admin.accounts.resetQuota') }}
+            <button v-if="hasQuotaLimit" type="button" role="menuitem" class="am-item" @click="$emit('reset-quota', account); $emit('close')">
+              <Icon name="refresh" size="sm" aria-hidden="true" />
+              <span>{{ t('admin.accounts.resetQuota') }}</span>
             </button>
-          </template>
-        </div>
+          </div>
+
+          <div v-if="showReauthGroup" class="am-group">
+            <button type="button" role="menuitem" class="am-item" @click="$emit('reauth', account); $emit('close')">
+              <Icon name="link" size="sm" aria-hidden="true" />
+              <span>{{ t('admin.accounts.reAuthorize') }}</span>
+            </button>
+            <button type="button" role="menuitem" class="am-item" @click="$emit('refresh-token', account); $emit('close')">
+              <Icon name="refresh" size="sm" aria-hidden="true" />
+              <span>{{ t('admin.accounts.refreshToken') }}</span>
+            </button>
+          </div>
+        </template>
       </div>
     </div>
   </Teleport>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onUnmounted } from 'vue'
+import { computed, nextTick, ref, watch, onUnmounted } from 'vue'
 import { useResizeObserver, useWindowSize } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@/components/icons'
@@ -142,6 +148,44 @@ const hasQuotaLimit = computed(() => {
   )
 })
 
+const showChangeStateGroup = computed(() =>
+  canDuplicate.value || isOpenAIOAuthParent.value || supportsPrivacy.value || hasRecoverableState.value || hasQuotaLimit.value
+)
+const showReauthGroup = computed(() => {
+  if (!props.account) return false
+  return (props.account.type === 'oauth' || props.account.type === 'setup-token') && !isShadow.value
+})
+
+const getMenuItems = (): HTMLButtonElement[] => {
+  if (!menuRef.value) return []
+  return Array.from(menuRef.value.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]'))
+}
+
+const onMenuKeydown = (event: KeyboardEvent) => {
+  const items = getMenuItems()
+  if (items.length === 0) return
+  const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement)
+
+  switch (event.key) {
+    case 'ArrowDown':
+      event.preventDefault()
+      items[(currentIndex + 1 + items.length) % items.length]?.focus()
+      break
+    case 'ArrowUp':
+      event.preventDefault()
+      items[(currentIndex - 1 + items.length) % items.length]?.focus()
+      break
+    case 'Home':
+      event.preventDefault()
+      items[0]?.focus()
+      break
+    case 'End':
+      event.preventDefault()
+      items[items.length - 1]?.focus()
+      break
+  }
+}
+
 const handleKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Escape') emit('close')
 }
@@ -151,6 +195,7 @@ watch(
   (visible) => {
     if (visible) {
       window.addEventListener('keydown', handleKeydown)
+      nextTick(() => getMenuItems()[0]?.focus())
     } else {
       window.removeEventListener('keydown', handleKeydown)
     }
@@ -162,3 +207,73 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
 })
 </script>
+
+<style scoped>
+.am-menu {
+  position: fixed;
+  z-index: 9999;
+  width: 236px;
+  padding: 4px;
+  border: 1px solid var(--popover-border);
+  border-radius: var(--r-md);
+  background: var(--popover);
+  box-shadow: var(--shadow-md);
+}
+
+.am-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.am-group + .am-group {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.am-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: var(--fs-md);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.am-item:hover,
+.am-item:focus-visible {
+  background: var(--sidebar-accent);
+}
+
+.am-item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.am-item :deep(svg) {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  transition: color var(--motion-hover);
+}
+
+.am-item:hover :deep(svg),
+.am-item:focus-visible :deep(svg) {
+  color: var(--foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .am-item,
+  .am-item :deep(svg) {
+    transition: none;
+  }
+}
+</style>

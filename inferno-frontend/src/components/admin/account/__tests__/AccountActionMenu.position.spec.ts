@@ -149,4 +149,38 @@ describe('AccountActionMenu viewport positioning', () => {
 
     expect(wrapper.emitted('close')).toHaveLength(2)
   })
+
+  it('keeps the production anchorRect API while exposing June menu semantics', async () => {
+    await mountMenu()
+    const menu = getMenu()
+    const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
+
+    expect(menu.getAttribute('role')).toBe('menu')
+    expect(menu.getAttribute('aria-label')).toBe('admin.accounts.moreActions')
+    expect(items.length).toBeGreaterThan(3)
+    expect(items.every(item => item.type === 'button')).toBe(true)
+    expect(items.every(item => item.getAttribute('role') === 'menuitem')).toBe(true)
+    expect(document.activeElement).toBe(items[0])
+    expect(menu.querySelectorAll('.am-group').length).toBe(3)
+    expect(menu.querySelectorAll('.am-group + .am-group').length).toBe(2)
+  })
+
+  it('supports wrapped ArrowUp/ArrowDown and Home/End navigation', async () => {
+    await mountMenu()
+    const menu = getMenu()
+    const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
+
+    items[0].focus()
+    menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+    expect(document.activeElement).toBe(items.at(-1))
+
+    menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    expect(document.activeElement).toBe(items[0])
+
+    menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
+    expect(document.activeElement).toBe(items.at(-1))
+
+    menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
+    expect(document.activeElement).toBe(items[0])
+  })
 })
