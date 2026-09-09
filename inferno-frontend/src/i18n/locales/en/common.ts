@@ -6,6 +6,7 @@ export default {
     creating: 'Creating...',
     clear: 'Clear',
     required: 'Required',
+    'field-control': 'Input',
     tryAgain: 'Please try again',
     personalRateTooltip: 'Personal rate override',
     justNow: 'just now',

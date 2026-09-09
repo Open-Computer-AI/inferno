@@ -19,13 +19,13 @@ function flattenLeafKeys(value: unknown, prefix = ''): string[] {
 function collectStaticSourceKeys(source: string): string[] {
   const keys = new Set<string>()
 
-  const translationCalls = /(?:\bi18n\.t|\$t|\bt)\s*\(\s*(['"])([^'"\r\n]+)\1/g
+  const translationCalls = /(?:\bi18n(?:\.global)?\.t|\$t|\bt)\s*\(\s*(['"`])([^'"`\r\n]+)\1/g
   for (const match of source.matchAll(translationCalls)) {
     const key = match[2]
     if (!key.endsWith('.')) keys.add(key)
   }
 
-  const keyReferences = /(?:keypath|titleKey|descriptionKey)\s*[:=]\s*(['"])([^'"\r\n]+)\1/g
+  const keyReferences = /(?:keypath|titleKey|descriptionKey)\s*[:=]\s*(['"`])([^'"`\r\n]+)\1/g
   for (const match of source.matchAll(keyReferences)) keys.add(match[2])
 
   const i18nTKeypaths = /<i18n-t\b[^>]*\bkeypath\s*=\s*(['"])([^'"\r\n]+)\1/gi
