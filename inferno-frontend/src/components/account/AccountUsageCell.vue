@@ -1292,6 +1292,7 @@ interface UsageWindowBar {
   label: string
   percent: number
   resetsAt: string | null
+  estimatedTotalCost?: number | null
   /**
    * Regression fix (see build report, "WindowStats is fetched, typed, and
    * silently dropped"): per-window requests/tokens/cost as it arrives on

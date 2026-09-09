@@ -30,7 +30,7 @@ describe('MetricCell', () => {
       },
     })
     expect(wrapper.find('strong').classes().join(' ')).not.toMatch(/red/)
-    expect(wrapper.find('strong').classes().join(' ')).toMatch(/gray|dark/)
+    expect(wrapper.find('strong').attributes('class')).toContain('var(--muted-foreground)')
   })
 
   it('maps warning and critical health states to distinct colors', () => {
