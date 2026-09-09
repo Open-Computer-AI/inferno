@@ -41,36 +41,31 @@ go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13
 npm install -g pnpm
 ```
 
-## 三、CI/CD 流水线
+## Three: Local validation and release process
 
-### GitHub Actions Workflows
-
-| Workflow | 触发条件 | 检查内容 |
-|----------|----------|----------|
-| **backend-ci.yml** | push, pull_request | 单元测试 + 集成测试 + golangci-lint v2.13 |
-| **security-scan.yml** | push, pull_request, 每周一 | govulncheck + gosec + pnpm audit |
-| **release.yml** | tag `v*` | 构建发布（PR 不触发） |
-
-### CI 要求
-
-- Go 版本必须是 **1.27.0**：三个 workflow 都用 `go-version-file: backend/go.mod` 取版本，随后硬断言 `go version | grep -q 'go1.27.0'`。升级 Go 时要同时改 `backend/go.mod`、`backend-ci.yml`（两处）、`release.yml`、`security-scan.yml` 里的这句断言，**以及三个 Dockerfile 里的 Go 构建镜像**（`Dockerfile` / `deploy/Dockerfile` 的 `ARG GOLANG_IMAGE`、`backend/Dockerfile` 的 `FROM golang:`）。前者漏了 CI 会在版本校验步骤直接失败；**后者漏了 CI 不会报，而是等到有人用这些 Dockerfile 构建时才失败**（`go.mod requires go >= X (running Y; GOTOOLCHAIN=local)`）。
-- 前端使用 `pnpm install --frozen-lockfile`，必须提交 `pnpm-lock.yaml`
-
-### 本地测试命令
+Inferno does not use GitHub Actions as a gate. Run the equivalent checks locally and record exact command output before a PR or release:
 
 ```bash
-# 后端单元测试
-cd backend && go test -tags=unit ./...
-
-# 后端集成测试
-cd backend && go test -tags=integration ./...
-
-# 代码质量检查
+# Backend tests and lint
+cd backend && go test ./...
 cd backend && golangci-lint run ./...
 
-# 前端依赖安装（必须用 pnpm）
-cd frontend && pnpm install
+# Backend vulnerability analysis
+cd backend && govulncheck ./...
+
+# Inferno frontend dependencies, audit, lint, types, and critical tests
+cd inferno-frontend && pnpm install --frozen-lockfile
+cd inferno-frontend && pnpm audit --audit-level high
+cd inferno-frontend && pnpm run lint:check
+cd inferno-frontend && pnpm run typecheck
+make test-frontend-critical
+
+# Full repository gate and production build
+make test
+make build
 ```
+
+The Go version must match `backend/go.mod`. When it changes, update all three Docker build images: `Dockerfile`, `deploy/Dockerfile`, and `backend/Dockerfile`. Frontend dependency changes must include the matching `pnpm-lock.yaml` update.
 
 ## 四、常见坑点 & 解决方案
 
