@@ -35,10 +35,11 @@ describe('admin platform filters derive from the shared catalog', () => {
 
   it('uses both catalogs on the groups page', () => {
     // Groups own a platform (composite included) but route to concrete targets,
-    // so this view is the one place that legitimately needs both.
+    // so this view is the one place that legitimately needs the group catalog
+    // and the concrete-route helper.
     const source = read('views/admin/GroupsView.vue')
     expect(source).toContain('GROUP_PLATFORM_OPTIONS')
-    expect(source).toContain('CONCRETE_PLATFORM_OPTIONS')
+    expect(source).toContain('buildCompositeRoutePlatformOptions')
   })
 
   it.each(CONCRETE_CONSUMERS)('uses the concrete catalog in %s', (path) => {

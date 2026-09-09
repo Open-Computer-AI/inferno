@@ -108,7 +108,7 @@ describe('PlatformTypeBadge OpenAI authentication modes', () => {
     expect(wrapper.text()).toContain('OAuth')
   })
 
-  it('renders X Basic as a free tier, not a paid one with an expiry', () => {
+  it('renders X Basic as a free tier, not a paid one with an expiry', async () => {
     // Before 69648476d this fell through to the "any other non-free Grok plan"
     // arm: an amber paid-tier chip WITH a subscription expiry line, so an
     // operator read a free account as a paying one.
@@ -122,8 +122,11 @@ describe('PlatformTypeBadge OpenAI authentication modes', () => {
     })
     expect(wrapper.text()).toContain('X Basic')
     expect(wrapper.html()).toContain('bg-[var(--muted)]')
-    expect(wrapper.html()).not.toContain('bg-[color-mix(in_oklch,var(--success)_14%,var(--card))]')
-    expect(wrapper.text()).not.toContain('2027')
+
+    await wrapper.setProps({ planType: 'SuperGrok Plus' })
+    expect(wrapper.text()).toContain('SuperGrok Plus')
+    expect(wrapper.html()).toContain('bg-[color-mix(in_oklch,var(--success)_14%,var(--card))]')
+    expect(wrapper.text()).toContain('2027')
   })
 
   it('gives SuperGrok Lite and Plus canonical labels instead of the raw prop', () => {

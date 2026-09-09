@@ -33,7 +33,7 @@
 	                    {{ localText("展示形式", "Display mode") }}
 	                  </label>
 	                  <div class="grid grid-cols-2 gap-2 rounded-[var(--r-md)] bg-[var(--surface-subtle)] p-1                    ">
-<Button
+<AppButton
                       type="button"
                       :variant="form.login_agreement_mode === 'modal' ? 'solid' : 'ghost'"
                       size="sm"
@@ -47,8 +47,8 @@
                     >
                       <Icon name="shield" size="sm" />
                       {{ localText("弹窗", "Modal") }}
-                    </Button>
-                    <Button
+                    </AppButton>
+                    <AppButton
                       type="button"
                       :variant="form.login_agreement_mode === 'checkbox' ? 'solid' : 'ghost'"
                       size="sm"
@@ -62,7 +62,7 @@
                     >
                       <Icon name="checkCircle" size="sm" />
                       {{ localText("复选框", "Checkbox") }}
-                    </Button>
+                    </AppButton>
                   </div>
                   <p class="mt-1.5 text-xs text-[var(--muted-foreground)] text-[var(--muted-foreground)]">
                     {{
@@ -103,7 +103,7 @@
                       }}
                     </p>
                   </div>
-                  <Button
+                  <AppButton
                     type="button"
                     variant="solid"
                     size="sm"
@@ -111,7 +111,7 @@
                   >
                     <Icon name="plus" size="sm" />
                     {{ localText("添加文档", "Add document") }}
-                  </Button>
+                  </AppButton>
                 </div>
 
                 <div class="mt-4 space-y-3">
@@ -144,7 +144,7 @@
                           </p>
                         </div>
                       </div>
-                      <Button
+                      <AppButton
                         type="button"
                         variant="danger"
                         size="xs"
@@ -156,7 +156,7 @@
                         @click="removeLoginAgreementDocument(index)"
                       >
                         <Icon name="trash" size="sm" />
-                      </Button>
+                      </AppButton>
                     </div>
 
                     <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -212,13 +212,13 @@
 <script lang="ts">
 import { defineComponent } from 'vue'
 import Icon from '@/components/icons/Icon.vue'
-import Button from '@/components/common/Button.vue'
+import AppButton from '@/components/common/Button.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import { useSettingsPageBindings } from './settingsPageBindings'
 
 export default defineComponent({
   name: 'AdminAgreementSettingsPage',
-  components: { Button, Icon, Toggle },
+  components: { AppButton, Icon, Toggle },
   setup() {
     return useSettingsPageBindings()
   },

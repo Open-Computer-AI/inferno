@@ -153,6 +153,8 @@
                             ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'
                             : value === 'deepseek'
                               ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400'
+                              : value === 'minimax'
+                                ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
                               : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
               ]"
             >
@@ -4027,6 +4029,8 @@
                                 ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'
                                 : group.platform === 'deepseek'
                                   ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400'
+                                  : group.platform === 'minimax'
+                                    ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
                                   : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
                   ]"
                 >
@@ -4457,10 +4461,7 @@ import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/app";
 import { useOnboardingStore } from "@/stores/onboarding";
 import { adminAPI } from "@/api/admin";
-import {
-  CONCRETE_PLATFORM_OPTIONS,
-  GROUP_PLATFORM_OPTIONS,
-} from "@/constants/platforms";
+import { GROUP_PLATFORM_OPTIONS } from "@/constants/platforms";
 import type {
   AdminGroup,
   CompositeModelRoute,
@@ -4514,6 +4515,7 @@ import {
 } from "./groupsModelsList";
 import { createModelsListCandidatesTracker } from "./groupsModelsListCandidates";
 import { normalizeSupportedModelScopesForPlatform } from "./groupsSupportedModelScopes";
+import { buildCompositeRoutePlatformOptions } from "./groupsCompositeRoutes";
 import {
   isProfitControlPlatform,
   profitPercentToDecimal,
@@ -4812,7 +4814,9 @@ const platformFilterOptions = computed(() => [
 ]);
 
 // Routes inside a composite group target concrete platforms, never composite itself.
-const compositeRoutePlatformOptions = computed(() => [...CONCRETE_PLATFORM_OPTIONS]);
+const compositeRoutePlatformOptions = computed(() =>
+  buildCompositeRoutePlatformOptions()
+);
 
 const compositeRouteEndpointOptions = computed(() => [
   { value: "any", label: t("admin.groups.compositeRoutes.endpoints.any") },
