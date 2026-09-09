@@ -84,14 +84,21 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { platformLabel } from '@/utils/platformColors'
-import type { AdminGroup, GroupPlatform } from '@/types'
+import type { Group, GroupPlatform } from '@/types'
 import Checkbox from '@/components/common/Checkbox.vue'
+import { useAuthStore } from '@/stores'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
+
+type SelectableGroup = Group & {
+  account_count?: number
+  rate_limited_account_count?: number
+}
 
 interface Props {
   modelValue: number[]
-  groups: AdminGroup[]
+  groups: SelectableGroup[]
   platform?: GroupPlatform // Optional platform filter
   mixedScheduling?: boolean // For antigravity accounts: allow anthropic/gemini groups
   searchable?: boolean | 'auto'
@@ -115,7 +122,9 @@ const isSearchable = computed(() => {
 // "some groups are hidden" check, so the hidden count is real rather than
 // re-derived from a different filter path.
 const platformFilteredGroups = computed(() => {
-  let result: AdminGroup[] = props.groups
+  let result: SelectableGroup[] = authStore.isSimpleMode
+    ? props.groups.filter((group) => group.platform !== 'composite')
+    : props.groups
   if (props.platform) {
     if (props.platform === 'antigravity' && props.mixedScheduling) {
       result = result.filter(
@@ -151,20 +160,20 @@ const footerText = computed(() => {
   return t('common.groupSelectorPlatformHint')
 })
 
-const capacityRatio = (group: AdminGroup): number => {
+const capacityRatio = (group: SelectableGroup): number => {
   const total = group.account_count || 0
   if (total <= 0) return 0
   const limited = group.rate_limited_account_count || 0
   return Math.min(1, limited / total)
 }
 
-const capacityPct = (group: AdminGroup): number => Math.round(capacityRatio(group) * 100)
+const capacityPct = (group: SelectableGroup): number => Math.round(capacityRatio(group) * 100)
 
 // Colour is state (how constrained the group is right now), never category.
-const capacityColor = (group: AdminGroup): string =>
+const capacityColor = (group: SelectableGroup): string =>
   capacityRatio(group) > 0.8 ? 'var(--s2a-attn)' : 'var(--brand)'
 
-const capacityLabel = (group: AdminGroup): string => {
+const capacityLabel = (group: SelectableGroup): string => {
   const total = group.account_count || 0
   if (total <= 0) return t('common.groupCapacityEmpty')
   const limited = group.rate_limited_account_count || 0

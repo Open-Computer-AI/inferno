@@ -87,7 +87,14 @@
           :percent="primaryWindow.percent"
           :label="primaryWindow.label"
           :trailing="barTrailing(primaryWindow)"
-        />
+        >
+          <span
+            v-if="primaryWindow.estimatedTotalCost != null"
+            :data-estimated-total-cost="primaryWindow.estimatedTotalCost"
+          >
+            {{ t('admin.accounts.usageWindow.estimatedTotalCost', { cost: primaryWindow.estimatedTotalCost.toFixed(2) }) }}
+          </span>
+        </CapacityBar>
         <button
           v-if="otherWindows.length"
           type="button"
@@ -1039,6 +1046,20 @@ interface GrokQuotaBarInfo {
   utilization: number
   resetsAt: string | null
   windowStats?: WindowStats | null
+  estimatedTotalCost?: number | null
+}
+
+const estimateTotalCost = (utilization: number, cost: number | undefined): number | null => {
+  if (
+    !Number.isFinite(utilization) ||
+    !Number.isFinite(cost) ||
+    utilization <= 0 ||
+    (cost ?? 0) <= 0
+  ) {
+    return null
+  }
+  const estimate = ((cost as number) * 100) / utilization
+  return Number.isFinite(estimate) && estimate > 0 ? estimate : null
 }
 
 const grokBilling = computed(() => usageInfo.value?.grok_billing || null)
@@ -1271,6 +1292,7 @@ interface UsageWindowBar {
   label: string
   percent: number
   resetsAt: string | null
+  estimatedTotalCost?: number | null
   /**
    * Regression fix (see build report, "WindowStats is fetched, typed, and
    * silently dropped"): per-window requests/tokens/cost as it arrives on
@@ -1309,7 +1331,15 @@ const openAIWindows = computed<UsageWindowBar[]>(() => {
     windows.push({ key: 'five_hour', label: t('admin.accounts.usageWindow.fiveHour'), percent: usageInfo.value.five_hour.utilization, resetsAt: usageInfo.value.five_hour.resets_at, windowStats: usageInfo.value.five_hour.window_stats })
   }
   if (usageInfo.value?.seven_day) {
-    windows.push({ key: 'seven_day', label: t('admin.accounts.usageWindow.sevenDay'), percent: usageInfo.value.seven_day.utilization, resetsAt: usageInfo.value.seven_day.resets_at, windowStats: usageInfo.value.seven_day.window_stats })
+    const sevenDay = usageInfo.value.seven_day
+    windows.push({
+      key: 'seven_day',
+      label: t('admin.accounts.usageWindow.sevenDay'),
+      percent: sevenDay.utilization,
+      resetsAt: sevenDay.resets_at,
+      windowStats: sevenDay.window_stats,
+      estimatedTotalCost: estimateTotalCost(sevenDay.utilization, sevenDay.window_stats?.cost)
+    })
   }
   return windows
 })
@@ -1487,7 +1517,12 @@ const formatWindowStats = (stats: WindowStats) => {
 // appended after the reset time on the same footer line, not a new bar.
 const expandedFoot = (w: UsageWindowBar) => {
   const reset = resetsLabel(w.resetsAt, w.percent)
-  return w.windowStats ? `${reset} · ${formatWindowStats(w.windowStats)}` : reset
+  const parts = [reset]
+  if (w.windowStats) parts.push(formatWindowStats(w.windowStats))
+  if (w.estimatedTotalCost != null) {
+    parts.push(t('admin.accounts.usageWindow.estimatedTotalCost', { cost: w.estimatedTotalCost.toFixed(2) }))
+  }
+  return parts.join(' · ')
 }
 
 const requestParentBatchUsage = (options?: { force?: boolean }) => {

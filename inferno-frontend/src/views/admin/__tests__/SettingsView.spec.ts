@@ -143,6 +143,7 @@ vi.mock("@/composables/useClipboard", () => ({
 
 vi.mock("@/utils/apiError", () => ({
   extractApiErrorMessage: () => "error",
+  extractI18nErrorMessage: () => "error",
 }));
 
 vi.mock("vue-i18n", async () => {
@@ -620,6 +621,16 @@ async function openUsersTab(wrapper: ReturnType<typeof mountView>) {
   await flushPromises();
 }
 
+async function openFeaturesTab(wrapper: ReturnType<typeof mountView>) {
+  const featuresTabButton = wrapper
+    .findAll(".settings-sidebar__item")
+    .find((node) => node.text().includes("admin.settings.tabs.features"));
+
+  expect(featuresTabButton).toBeDefined();
+  await featuresTabButton?.trigger("click");
+  await flushPromises();
+}
+
 describe("admin SettingsView email domain quota copy", () => {
   it("documents the email domain quota and empty-whitelist behavior in both locales", () => {
     expect(zhCommon.auth.emailDomainRegistrationLimit).toContain("主流邮箱");
@@ -639,6 +650,53 @@ describe("admin SettingsView email domain quota copy", () => {
     expect(zhQuotaHint).toContain("关闭时非白名单域名直接拒绝");
     expect(enQuotaHint).toContain("one account");
     expect(enQuotaHint).toContain("When disabled");
+  });
+});
+
+describe("admin SettingsView channel monitor privacy controls", () => {
+  beforeEach(() => {
+    getSettings.mockReset();
+    updateSettings.mockReset();
+    getSettings.mockResolvedValue({
+      ...baseSettingsResponse,
+      channel_monitor_enabled: true,
+      channel_monitor_mode: "v2",
+      channel_monitor_hide_user_ranking: true,
+    });
+    updateSettings.mockImplementation(async (payload) => ({
+      ...baseSettingsResponse,
+      ...payload,
+    }));
+  });
+
+  it("loads and saves the V2 hide-user-ranking toggle", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await openFeaturesTab(wrapper);
+
+    const featureCard = wrapper
+      .findAll(".settings-surface")
+      .find((node) => node.text().includes("admin.settings.features.channelMonitor.title"));
+    expect(featureCard).toBeDefined();
+
+    const rankingRow = featureCard!
+      .findAll("div.flex.items-start.justify-between")
+      .find((node) => node.text().includes("admin.settings.features.channelMonitor.hideUserRanking"));
+    expect(rankingRow).toBeDefined();
+    const toggle = rankingRow!.get(".toggle-stub");
+    expect(toggle).toBeDefined();
+    expect((toggle!.element as HTMLInputElement).checked).toBe(true);
+
+    await toggle!.setValue(false);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel_monitor_mode: "v2",
+        channel_monitor_hide_user_ranking: false,
+      }),
+    );
   });
 });
 
