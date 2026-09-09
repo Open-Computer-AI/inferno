@@ -4,7 +4,7 @@
     :title="title || undefined"
   >
     <div
-      v-if="state"
+      v-if="resolvedState"
       class="mt-1 h-2 w-2 shrink-0 rounded-full"
       :class="dotClass"
       aria-hidden="true"
@@ -56,18 +56,25 @@ const detailParts = computed(() => {
     .filter(Boolean)
 })
 
+const missingValue = computed(() => {
+  const value = (props.value || '').trim()
+  return value === '' || value === '-' || value === '—'
+})
+
+const resolvedState = computed(() => (missingValue.value ? undefined : props.state))
+
 const stateClass = computed(() => {
-  if (!props.state) return 'text-[var(--foreground)] dark:text-white'
-  if (props.state === 'healthy') return 'text-[var(--success)] text-[var(--success)]'
-  if (props.state === 'warning') return 'text-[var(--warning)] text-[var(--warning)]'
-  if (props.state === 'critical') return 'text-[var(--destructive)] text-[var(--destructive)]'
+  if (!resolvedState.value) return missingValue.value ? 'text-[var(--muted-foreground)]' : 'text-[var(--foreground)] dark:text-white'
+  if (resolvedState.value === 'healthy') return 'text-[var(--success)]'
+  if (resolvedState.value === 'warning') return 'text-[var(--warning)]'
+  if (resolvedState.value === 'critical') return 'text-[var(--destructive)]'
   return 'text-[var(--muted-foreground)] dark:text-[var(--muted-foreground)]'
 })
 
 const dotClass = computed(() => {
-  if (props.state === 'healthy') return 'bg-[color-mix(in_oklch,var(--success)_14%,var(--card))]'
-  if (props.state === 'warning') return 'bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))]'
-  if (props.state === 'critical') return 'bg-[var(--destructive-soft)]'
+  if (resolvedState.value === 'healthy') return 'bg-[color-mix(in_oklch,var(--success)_14%,var(--card))]'
+  if (resolvedState.value === 'warning') return 'bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))]'
+  if (resolvedState.value === 'critical') return 'bg-[var(--destructive-soft)]'
   return 'bg-[var(--brand-tint)] dark:bg-[var(--surface-subtle)]'
 })
 </script>
