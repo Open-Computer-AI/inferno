@@ -488,3 +488,21 @@ the matching reset window, and fall back to legacy snapshots only when needed.
 Focused quota/headroom/scheduler parity tests, Go vet, and diff checks passed.
 The later client-cancel response-affinity fix was already present via an earlier
 candidate port and was skipped.
+
+### Gemini keepalive and adjacent provider-adaptation audit
+
+The Gemini keepalive test stabilization (`8f6bbb59c` → `4f5c3aa74`) is
+promoted. It changes only the ordinary-client idle duration from 1.2 seconds to
+2.2 seconds and documents why the extra margin is needed when the configured
+keepalive interval is one second. Focused Gemini SSE tests, Go vet, and diff
+checks passed; no production streaming code changed.
+
+The neighboring Antigravity SSE-comment production fix (`f79b8bf96`) is skipped
+because the candidate already carries the local adaptation `4f90603df`. The
+bare-model thinking-variant fix (`0f4d8acaa`) is likewise already represented by
+`353870b5e`, with `8aa1e5de0` and `24305a78` preserving the candidate's empty
+mapping fallback and reasoning propagation. Finally, the DeepSeek Responses
+tool-output image fix (`881ab1b0c`) is already represented by `6bfb6f6cb` and
+`a25d80d83`, including parallel media batches. These upstream blobs were not
+replayed because their files overlap custom provider routing and request-body
+logic in the candidate.
