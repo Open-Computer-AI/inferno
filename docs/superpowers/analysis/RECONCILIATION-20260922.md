@@ -30,6 +30,14 @@ The latest backend audit also closed eight rows as `SKIP (already represented)`:
 candidate commits; the exact paths and focused-test evidence are in
 `BACKEND-LOW-RISK-DISPOSITIONS-20260922.tsv`.
 
+Post-image full backend unit gate (`go test -tags=unit ./...`) is otherwise
+green: all packages passed except the four baseline image-model tests
+`TestOpenAIImagesResponsesDriverAndImageModels`,
+`TestOpenAIImagesRejectedDriverDoesNotCoolImageModel`,
+`TestGPTImage25PricingDoesNotUseLegacyImageRates`, and
+`TestGPTImage25UsagePreservesImageInputTokens`. The same four failures were
+reproduced before the image lane; no new failure class appeared.
+
 A follow-up backend block closed six more rows as `SKIP (already represented)`:
 `fdc2ec17e`, `5e4958c88`, `af90a9bd1`, `62198286e`, `e9e3c46cb`, and
 `4c1f920d5`. These cover pricing reload, mapped-model scheduling, delegation,
