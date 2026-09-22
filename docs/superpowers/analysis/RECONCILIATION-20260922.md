@@ -462,3 +462,12 @@ The Antigravity SSE separator fix (`8447bdd36`) is skipped because the
 candidate already contains the blank-line suppression and the exact regression
 test. The isolated replay conflicted only on duplicate comments/test formatting;
 no stream code was changed.
+
+### Canonical Codex quota-window lane
+
+The scheduler quota fix (`db76cc4e4` → `3966e9564`) is promoted. Headroom and
+reset weighting now prefer canonical Codex 5-hour/7-day fields, pair usage with
+the matching reset window, and fall back to legacy snapshots only when needed.
+Focused quota/headroom/scheduler parity tests, Go vet, and diff checks passed.
+The later client-cancel response-affinity fix was already present via an earlier
+candidate port and was skipped.
