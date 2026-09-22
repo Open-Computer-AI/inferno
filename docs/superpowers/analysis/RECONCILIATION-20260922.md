@@ -254,3 +254,15 @@ still in progress. Focused handler/service Cyber/OpenAIWS/HTTPBridge/Passthrough
 tests passed, as did `go vet ./internal/handler ./internal/service` and
 `git diff --check`. The full source/path/evidence row is in
 `docs/superpowers/analysis/GATEWAY-WS-DISPOSITIONS-20260922.tsv`.
+
+### June/custom GroupsView lane
+
+The Codex-manifest edit-state fix (`b1ce821c4` → `5a51306a1`) is promoted as
+a hand-merge because `frontend/src/views/admin/GroupsView.vue` is locally
+customized. Direct `v-model` was replaced with explicit `model-value` and
+`Object.assign`, preserving the reactive object identity across consecutive
+child updates. The upstream regression test was adapted with the candidate's
+existing group-allowlist API mock (`2162e6c43`); the focused GroupsView,
+CodexManifestAccountsField, and duplicate suites passed 10/10, and
+`vue-tsc --noEmit` passed. The merge wrapper `65246e69d` is recorded as a
+skip because it adds no behavior beyond `b1ce821c4`.
