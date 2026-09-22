@@ -288,6 +288,13 @@ func (s *AntigravityGatewayService) handleGeminiStreamingResponse(c *gin.Context
 				continue
 			}
 
+			// The data branch already writes the SSE event separator. Forwarding the
+			// upstream blank separator as well would produce three newlines between
+			// events, which breaks clients that split frames on "\n\n".
+			if trimmed == "" {
+				continue
+			}
+
 			cw.Fprintf("%s\n", line)
 
 		case <-intervalCh:
