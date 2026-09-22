@@ -416,3 +416,13 @@ the `count_tokens` path now enforces the same four-cache-control-block ceiling
 as the other outbound paths. Focused OAuth normalization and count-token tests,
 Go vet, and diff checks passed. DeepSeek vision behavior was not replayed here
 because candidate port `b3a1578ad` already represents it.
+
+### Group peak-rate validation lane
+
+The structured peak-rate error fix (`ab3b398b5` → `238e724ff`) is promoted,
+with test fixture adaptation `61122334b` for the candidate's required base and
+peak multipliers. Create/update validation now returns a structured HTTP 400
+(`INVALID_PEAK_RATE_CONFIG`) without changing normalization or persistence.
+Focused admin-group tests, Go vet, and diff checks passed. The OAuth 429
+fallback-disabled behavior and DeepSeek vision behavior were already present in
+earlier candidate ports and were not replayed.
