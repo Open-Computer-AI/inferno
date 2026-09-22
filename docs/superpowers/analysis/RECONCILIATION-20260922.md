@@ -318,3 +318,25 @@ No partial schema/UI/backend feature was promoted. The full lane needs one
 design pass over usage-log inserts, account validation, all gateway response
 paths, migration/runtime verification, and the admin account/usage UI before
 it can be safely accepted.
+
+### Grok settings clarification lane
+
+The narrow settings clarification (`32bf3d0f3`) is promoted as `d4d38f0eb`.
+The backend default was already `true`; the patch corrects the misleading
+comment and updates the English/Chinese admin hints to say that cross-client
+mapping is enabled by default. Service tests, vet, locale compilation/key
+collision tests (8/8), Vue typecheck, and diff checks passed.
+
+The adjacent frontend audit found no additional code to promote for the
+Turnstile loading placeholder (`a16070ccf`), registration password
+confirmation (`017cc62e4`), onboarding shadow removal (`3aeab296d`), or Gemini
+monitor user role (`c7343d2aa`): equivalent candidate patches are already
+present. The pinned model-list locale/backend bundle (`cb3103397`) remains a
+hand-merge item after backend contract parity.
+
+### Payment/redeem safety deferred
+
+`7a70de401` is not represented by the candidate: it changes the admin redeem
+handler and payment fulfillment/rate-limit path. It is tracked as a separate
+serial lane because it affects payment safety and must be tested end to end;
+it is not mixed into the settings or shared frontend mirror lanes.
