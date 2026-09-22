@@ -7,7 +7,7 @@ the candidate worktree only; the protected baseline is never edited.
 
 | role | ref | value |
 |---|---|---|
-| candidate worktree | `port/inferno-selective-upstream-20260922` | `05da43ff86820b89cc5b01e476806858ee9c283c` (functional tip; this ledger update follows) |
+| candidate worktree | `port/inferno-selective-upstream-20260922` | `eb6008f2464f92a450992a5a1c50d08dc9425af` (functional tip; this ledger update follows) |
 | protected baseline | `baseline/gpt-live-working-20260922` | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
 | upstream | `upstream/main` | `1c0a69c0ceddb2fd21581c17ab09f6c500b89ba1` |
 | rollback tag | `checkpoint/pre-reconciliation-8aa1e5de0` | candidate HEAD before this run |
@@ -52,6 +52,14 @@ of this lane and are reserved for the June-surface review.
 The safe frontend mirror lane `df64b5f368` is promoted as `05da43ff8`. It only
 changes account action-menu viewport positioning and its tests; 27 focused
 Vitest tests, Vue typecheck, and diff checks passed.
+
+The serial gateway/WS lanes are now promoted and cross-referenced in
+`GATEWAY-WS-DISPOSITIONS-20260922.tsv`: model-not-found failover (`4bfeeafb0`),
+later-turn quota recovery (`0697c857e`), and the ordered execution-scope
+cluster (`07d807db4`, `67a8f705b`, `e73fc94f`, `f7f3479f`, `ee514e763`,
+`eb6008f24`). The cluster passed its scope/isolation/preemption tests, the
+`openai_ws_v2` package, `go vet`, and diff checks. A rollback tag was created
+before the cluster at `checkpoint/pre-ws-execution-scope-20260922`.
 
 ## Current inventory
 
