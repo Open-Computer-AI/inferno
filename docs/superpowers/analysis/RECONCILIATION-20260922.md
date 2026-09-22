@@ -242,3 +242,15 @@ behavior. The isolated probe of `db8692d67` remains skipped because it conflicts
 in `backend/internal/service/ratelimit_cn_providers.go` and assumes the
 upstream OpenCodeGo `applyCNProviderReactive429` predecessor behavior. Neither
 that quota-403 behavior nor the OpenCode-Go-only pieces changed the candidate.
+
+### Gateway/WS cyber-policy lane
+
+The serial cyber-policy recording fix (`2da31290a1` → `b090e2aff`) is promoted
+after an isolated cherry-pick onto the current WS execution-scope candidate.
+It centralizes cyber-policy marking for both `error` and `response.failed`
+event shapes across ingress, WS v2, the HTTP bridge, and passthrough paths,
+and preserves the per-logical-turn recorded guard while account failover is
+still in progress. Focused handler/service Cyber/OpenAIWS/HTTPBridge/Passthrough
+tests passed, as did `go vet ./internal/handler ./internal/service` and
+`git diff --check`. The full source/path/evidence row is in
+`docs/superpowers/analysis/GATEWAY-WS-DISPOSITIONS-20260922.tsv`.
