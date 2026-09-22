@@ -387,3 +387,13 @@ supported Claude path while preventing unsupported providers from receiving an
 invalid request shape. Focused sanitizer/beta/context-management tests, Go vet,
 and diff checks passed; no OAuth, GPT Live, sideband, account, schema, or
 container state changed.
+
+### OpenAI stream-failure diagnostics lane
+
+The stream diagnostics fix (`6aabbdf54` → `1ad15e41d`) is promoted. When an
+OpenAI Responses stream emits `response.failed` after semantic output, both
+native and passthrough handlers retain the terminal event and record the
+upstream request ID/error for operations diagnostics. The existing no-replay
+boundary is unchanged, so the gateway does not switch accounts or duplicate
+partial output. Focused dual-path regression tests, Go vet, and diff checks
+passed; no OAuth, schema, or runtime state changed.
