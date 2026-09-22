@@ -15,6 +15,11 @@ June before it counts as arrived. Only the automatic half had a process.
 probe, not by trusting the merge. Nearly every item below is a UI gap against
 endpoints our own backend already serves.
 
+**Current selective-reconciliation addition (2026-09-23):** candidate commit
+`d48ee03b0` adds paginated user redemption history end-to-end. The June page
+uses the existing native pager; the legacy no-query API array response remains
+available. This feature is verified and is not one of the remaining TODOs below.
+
 **Rules for every item:** hand-merge, never `cp` (see the 2026-08-11 incident in
 INFERNO-BUILD.md). June tokens — except where our copy of a file is still literal
 Tailwind, e.g. `utils/platformColors.ts`, where a verbatim merge is correct.

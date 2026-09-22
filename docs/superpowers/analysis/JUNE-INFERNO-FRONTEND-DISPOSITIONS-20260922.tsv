@@ -1,7 +1,7 @@
 # June Inferno frontend dispositions — 2026-09-22
 
 Lane: `lane/june-inferno-frontend-20260922`; base `7f840c188d99b03c5583236807197dfce1779c5d`; candidate `port/inferno-selective-upstream-20260922`.
-All rows below are limited to `inferno-frontend/**`; shared frontend, backend, API/type, router/i18n, design-system, lockfile, and generated paths were not changed by this lane.
+The original June rows below are limited to `inferno-frontend/**`; shared frontend, backend, API/type, design-system, lockfile, and generated paths were not changed by that lane. The final redemption-history row records only the June path slice of its bounded cross-surface candidate commit.
 
 Columns: upstream source SHA | candidate commit SHA | disposition | affected paths | evidence
 source_sha	candidate_sha	disposition	affected_paths	evidence
@@ -16,3 +16,4 @@ b9d0728687ba815b44f9297c87285cc163d5a335	e67948d39	TAKE	inferno-frontend/src/vie
 d03c42d7986cad7170d9e4751852287e84ec3374	e67948d39	TAKE	inferno-frontend/src/views/auth/RegisterView.vue;	June focused Vitest, vue-tsc, build, and diff checks passed in isolated lane
 6c8ad0bd4a05914065c4cd22800e6624eac32b73	e67948d39	TAKE	inferno-frontend/src/views/auth/RegisterView.vue;inferno-frontend/src/views/auth/__tests__/RegisterView.spec.ts;	June focused Vitest, vue-tsc, build, and diff checks passed in isolated lane
 a16070ccf62200674d51ad2fb3ae58ba50b013d3	32a9c0ddb	TAKE	inferno-frontend/src/components/TurnstileWidget.vue;inferno-frontend/src/components/__tests__/TurnstileWidget.spec.ts;	June focused Vitest, ESLint, vue-tsc, build, and diff checks passed in isolated lane
+a9ed2189895fa89c7760701a6d7d63622ab63d3f	d48ee03b0bc5f37e66a2ebd3a491252355548218	TAKE (June adapter)	inferno-frontend/src/api/redeem.ts;inferno-frontend/src/api/__tests__/redeem.spec.ts;inferno-frontend/src/i18n/locales/en/dashboard.ts;inferno-frontend/src/i18n/locales/zh/dashboard.ts;inferno-frontend/src/views/user/RedeemView.vue;inferno-frontend/src/views/user/__tests__/RedeemView.pagination.spec.ts	June view uses its existing native Pagination component and design-system styling; API/view tests passed 4/4, vue-tsc and focused ESLint passed. No design-system tokens, dependencies, or generated files changed; production build remains in the final serial gate.

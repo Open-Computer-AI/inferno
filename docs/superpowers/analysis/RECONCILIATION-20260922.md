@@ -7,10 +7,10 @@ the candidate worktree only; the protected baseline is never edited.
 
 | role | ref | value |
 |---|---|---|
-| candidate worktree | `port/inferno-selective-upstream-20260922` | `4f5c3aa74b40ba4ab3105f78de49cc2b601c615b` (latest code checkpoint; subsequent commits are ledger-only) |
+| candidate worktree | `port/inferno-selective-upstream-20260922` | `d48ee03b0bc5f37e66a2ebd3a491252355548218` (redemption-pagination code checkpoint; subsequent commits are ledger-only) |
 | protected baseline | `baseline/gpt-live-working-20260922` | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
 | upstream | `upstream/main` | `1c0a69c0ceddb2fd21581c17ab09f6c500b89ba1` |
-| rollback tag | `checkpoint/pre-reconciliation-8aa1e5de0` | candidate HEAD before this run |
+| rollback tag | `checkpoint/redeem-history-pagination-20260923` | passing code checkpoint before subsequent ledger-only updates |
 
 The candidate was clean before this checkpoint. The protected baseline has
 pre-existing untracked runtime artifacts; they are intentionally left alone.
@@ -166,6 +166,7 @@ The upstream inventory JSON used for this checkpoint was generated with
 | `3fc08745a` | **TAKE** | `backend/internal/handler/model_plaza_handler.go`, `backend/internal/service/api_key_service.go` and focused visibility tests | Promoted as `8a71f145`; focused model-plaza/API-key visibility tests, `gofmt`, `go vet ./...`, and the isolated lane full backend suite passed. |
 | `b8d52fad3` | **TAKE (bounded hand-merge)** | Backend reasoning-effort pricing contract, repository persistence, billing/account-stat calculations, channel/admin DTOs, and effort normalization | Promoted as `6987ec29`; the full upstream patch did not apply cleanly because its frontend pricing/admin and provider-forwarding portions cross local product surfaces. The bounded backend merge passed focused service/repository/handler tests, `go vet ./...`, and `git diff --check`; its dependent `e47255715` forwarding portion is recorded separately as `24305a78`. |
 | `e47255715` | **TAKE (bounded hand-merge)** | Backend final-effort propagation through Gemini, native Anthropic, fallback, media, and usage-billing paths plus focused pricing tests | Promoted as `24305a78`; native Anthropic conflicts were resolved against the candidate's existing six-argument builder and returned sanitized body, preserving local sideband behavior. Focused native/fallback/Gemini/image tests and `go vet ./...` passed. The upstream OpenCode-Go session-header extension was intentionally not imported. |
+| `a9ed21898` | **TAKE (bounded consumer-led hand-merge)** | Backend history handler/repository/service and tests; shared frontend API/view/locales; June frontend API/view/locales/test | Promoted as `d48ee03b0`. No-query requests retain the legacy array; explicit page/page_size requests use the existing pagination service path. Repository order is stable across ties (`used_at DESC, id DESC`). June UI uses its native `Pagination.vue`. Mirror tests 14/14, June tests 4/4, Go handler/service/repository suites, both frontend typechecks, and changed-file ESLint passed. DB integration test compiled but was not executed; source dependency bumps and unrelated admin test fixtures were excluded. |
 | `1a32b91eb` | **TAKE (June surface)** | `inferno-frontend/src/components/common/Pagination.vue`, `Pagination.jump.spec.ts` | Promoted in June commit `de9df9d0e`; this is separate from the shared `frontend/**` pagination promotion above. June focused Vitest and typecheck passed in isolation. |
 | `130ba634a` | **TAKE (June surface)** | `inferno-frontend/src/composables/{useClipboard.ts,__tests__/useClipboard.spec.ts}` | Promoted in `de9df9d0e`; June focused Vitest and typecheck passed in isolation. |
 | `98321a054` | **TAKE (June surface)** | `inferno-frontend/src/components/payment/{AmountInput.vue,__tests__/AmountInput.spec.ts}` | Promoted in `de9df9d0e`; June focused Vitest and typecheck passed in isolation. |
@@ -197,10 +198,11 @@ Vue typecheck passed, `git diff --check` passed, and a conflict-marker review
 was clean. The production build remains a serial gate because both frontend
 surfaces emit the shared embedded `backend/internal/web/dist` output.
 
-The pagination source was handled separately above. The batch-image
-fix/revert pair was deferred because the candidate already has the fixed
-runtime behavior, and mixed/customized frontend commits remain reserved for
-the June product lane rather than being copied into the mirror.
+The numeric pagination-jump source was handled separately above and is already
+represented on both frontend surfaces. The batch-image fix/revert pair was
+deferred because the candidate already has the fixed runtime behavior, and
+mixed/customized frontend commits remain reserved for the June product lane
+rather than being copied into the mirror.
 
 After that mirror batch, three bounded shared-frontend fixes were promoted:
 deleted-user filtering in the admin subscription assignment search
@@ -525,15 +527,13 @@ consumers and recorded without duplicate replay:
 - The client-version fallback behavior from `2d37088bd` is present in the
   candidate's local reliability surface.
 
-Two changes are intentionally deferred for consumer-led work. Redemption
-pagination (`a9ed21898`) has paginated service/repository support but the public
-handler and RedeemView still use the legacy array contract, so it must be
-finished as one backend/frontend lane. The plugin errcheck test cleanup
-(`647714353`) targets test files removed by the candidate's newer plugin host
-contract. Content-audit engine defaults (`1bfe0d372`) likewise do not match the
-candidate's June RiskControl surface. Release-number and CI-only commits are
-not runtime functional ports and remain outside this branch until a release
-cut is explicitly planned.
+Redemption pagination (`a9ed21898`) is no longer deferred: it is integrated
+as candidate commit `d48ee03b0` across the handler, API client, mirror UI, and
+June UI, with the no-query legacy array response preserved. The plugin errcheck
+test cleanup (`647714353`) targets test files removed by the candidate's newer
+plugin host contract. Content-audit engine defaults (`1bfe0d372`) likewise do
+not match the candidate's June RiskControl surface. Release-number and CI-only
+commits remain outside this branch until a release cut is explicitly planned.
 
 The final-reasoning-effort billing change (`e47255715`) remains promoted as
 local port `24305a78`; this audit reconfirmed that the candidate retains the
