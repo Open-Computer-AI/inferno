@@ -397,3 +397,13 @@ upstream request ID/error for operations diagnostics. The existing no-replay
 boundary is unchanged, so the gateway does not switch accounts or duplicate
 partial output. Focused dual-path regression tests, Go vet, and diff checks
 passed; no OAuth, schema, or runtime state changed.
+
+### Codex agent-message bridge lane
+
+The Responses-to-Chat bridge fix (`df8eceba0` → `b5dbb2ee9`) is promoted. It
+preserves textual Codex `agent_message` items as ordered user messages, so
+multi-agent task envelopes and replies survive conversion to a Chat
+Completions-only upstream; media-only agent messages remain omitted. Focused
+bridge tests, Go vet, and diff checks passed. The related live-account model
+picker (`f88d62ad2`) remains deferred because its upstream file path conflicts
+with the candidate's custom model-catalog implementation.
