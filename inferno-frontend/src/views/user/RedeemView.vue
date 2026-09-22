@@ -336,6 +336,15 @@
             </p>
           </div>
         </div>
+        <Pagination
+          v-if="historyTotal > 0"
+          :page="historyPage"
+          :total="historyTotal"
+          :page-size="historyPageSize"
+          :page-size-options="[20, 50, 100]"
+          @update:page="fetchHistory"
+          @update:pageSize="handleHistoryPageSizeChange"
+        />
       </div>
     </div>
   </AppLayout>
@@ -349,6 +358,7 @@ import { useAppStore } from '@/stores/app'
 import { useSubscriptionStore } from '@/stores/subscriptions'
 import { redeemAPI, authAPI, type RedeemHistoryItem } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import Pagination from '@/components/common/Pagination.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { formatDateTime } from '@/utils/format'
 
@@ -375,6 +385,11 @@ const errorMessage = ref('')
 // History data
 const history = ref<RedeemHistoryItem[]>([])
 const loadingHistory = ref(false)
+const historyPage = ref(1)
+const historyPageSize = ref(20)
+const historyTotal = ref(0)
+let historyRequest = 0
+let loadedHistoryPageSize = 20
 const contactInfo = ref('')
 
 // Helper functions for history display
@@ -420,15 +435,31 @@ const formatHistoryValue = (item: RedeemHistoryItem) => {
   }
 }
 
-const fetchHistory = async () => {
+const fetchHistory = async (page = 1) => {
+  const request = ++historyRequest
+  const pageSize = historyPageSize.value
   loadingHistory.value = true
   try {
-    history.value = await redeemAPI.getHistory()
+    const result = await redeemAPI.getHistory(page, pageSize)
+    if (request !== historyRequest) return
+    history.value = result.items
+    historyTotal.value = result.total
+    historyPage.value = page
+    historyPageSize.value = pageSize
+    loadedHistoryPageSize = pageSize
   } catch (error) {
+    if (request !== historyRequest) return
+    historyPageSize.value = loadedHistoryPageSize
+    appStore.showError(t('redeem.historyLoadFailed'))
     console.error('Failed to fetch history:', error)
   } finally {
-    loadingHistory.value = false
+    if (request === historyRequest) loadingHistory.value = false
   }
+}
+
+const handleHistoryPageSizeChange = (pageSize: number) => {
+  historyPageSize.value = pageSize
+  fetchHistory(1)
 }
 
 const handleRedeem = async () => {
