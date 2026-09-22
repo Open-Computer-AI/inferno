@@ -31,6 +31,11 @@ Candidate commit `be4b6e798` takes upstream DateRangePicker dismissal fix
 existing close path for Cancel, outside click, Escape, and re-toggle; its
 regression test was added without changing the June component.
 
+Candidate commit `db2f13cb3` takes upstream BaseDialog scroll-lock fix
+`9d5c8d961` into the mirror. June already derives the body lock from its open
+dialog-token set, so only matching regression tests were added there; no June
+runtime change was necessary.
+
 **Rules for every item:** hand-merge, never `cp` (see the 2026-08-11 incident in
 INFERNO-BUILD.md). June tokens — except where our copy of a file is still literal
 Tailwind, e.g. `utils/platformColors.ts`, where a verbatim merge is correct.
