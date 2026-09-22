@@ -534,3 +534,9 @@ contract. Content-audit engine defaults (`1bfe0d372`) likewise do not match the
 candidate's June RiskControl surface. Release-number and CI-only commits are
 not runtime functional ports and remain outside this branch until a release
 cut is explicitly planned.
+
+The final-reasoning-effort billing change (`e47255715`) is also skipped as
+already represented by local port `24305a78`. The candidate retains the
+reasoning value through its custom Gemini/Anthropic forwarding and usage paths,
+with focused reasoning/pricing tests passing; replaying the upstream 12-file
+patch would overwrite those narrower compatibility surfaces.
