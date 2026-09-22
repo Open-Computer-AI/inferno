@@ -107,7 +107,11 @@ type Group struct {
 	RequirePrivacySet           bool // 调度时仅允许 privacy 已成功设置的账号（OpenAI/Antigravity/Anthropic/Gemini）
 	DefaultMappedModel          string
 	MessagesDispatchModelConfig OpenAIMessagesDispatchModelConfig
+	// ModelsListConfig is the legacy display-only /v1/models configuration.
+	// Keep it separate from ModelAllowlist: the latter gates requests, while
+	// this field preserves existing Inferno behavior and stored data.
 	ModelsListConfig            GroupModelsListConfig
+	ModelAllowlist              GroupModelAllowlist
 	// CodexModelsManifestConfig 开启后，该分组的 Codex /models manifest 请求只用
 	// 固定账号列表拉取并合并，不经过调度器（仅 openai 平台）。
 	CodexModelsManifestConfig GroupCodexModelsManifestConfig

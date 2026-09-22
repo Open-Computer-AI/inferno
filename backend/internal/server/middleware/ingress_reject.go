@@ -28,7 +28,6 @@ const (
 	IngressRejectGroupUnassigned        IngressRejectReason = "group_unassigned"
 	IngressRejectInvalidAuthRateLimited IngressRejectReason = "invalid_auth_rate_limited"
 	IngressRejectAPIKeyAuthOverloaded   IngressRejectReason = "api_key_auth_overloaded"
-
 	// OAuth-bearer admission failures on the /v1 inference chain
 	// (OAuthOrAPIKeyAuth). They are separate reasons rather than reuses of
 	// IngressRejectInvalidAPIKey because the whole operator-side complaint the
@@ -47,6 +46,7 @@ const (
 	IngressRejectOAuthBackingKeyExpired        IngressRejectReason = "oauth_backing_key_expired"
 	IngressRejectOAuthBackingKeyQuotaExhausted IngressRejectReason = "oauth_backing_key_quota_exhausted"
 	IngressRejectOAuthSubscriptionNotFound     IngressRejectReason = "oauth_subscription_not_found"
+	IngressRejectModelNotAllowed        IngressRejectReason = "model_not_allowed"
 )
 
 const ingressRejectReasonContextKey = "ingress_reject_reason"
