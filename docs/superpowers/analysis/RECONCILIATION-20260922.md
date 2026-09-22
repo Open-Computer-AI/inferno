@@ -334,9 +334,19 @@ monitor user role (`c7343d2aa`): equivalent candidate patches are already
 present. The pinned model-list locale/backend bundle (`cb3103397`) remains a
 hand-merge item after backend contract parity.
 
-### Payment/redeem safety deferred
+### Payment/redeem safety lane
 
-`7a70de401` is not represented by the candidate: it changes the admin redeem
-handler and payment fulfillment/rate-limit path. It is tracked as a separate
-serial lane because it affects payment safety and must be tested end to end;
-it is not mixed into the settings or shared frontend mirror lanes.
+`7a70de401` was kept separate from the settings/frontend lanes because it
+changes the admin redeem handler and payment fulfillment/rate-limit path. It is
+now promoted only after its serial payment-safety tests passed.
+
+The payment lane is now promoted as `a5cd2f2ac` plus the candidate-specific
+test adaptation `230e770e9`. Trusted payment/admin fulfillment bypasses only
+the public redeem failure counter, while code/type/amount/status/user checks
+fail closed before crediting. Focused service/admin tests and vet passed. The
+candidate's existing `redeemMaxFailedAttempts=30` policy was preserved; only
+the upstream tests' stale constant name was adapted.
+
+The OpenCode session-forwarding merge wrapper (`620eb3fd0`) is skipped because
+candidate `b2906435e` already contains the exact new helper/test blobs and
+forwarding calls. No duplicate replay is needed.
