@@ -7,7 +7,7 @@ the candidate worktree only; the protected baseline is never edited.
 
 | role | ref | value |
 |---|---|---|
-| candidate worktree | `port/inferno-selective-upstream-20260922` | `c50447e7edc3995078f086560a84484022645c69` |
+| candidate worktree | `port/inferno-selective-upstream-20260922` | `49720bb4181d3ed386ef0fa37c2cafcc3c4b28c0` |
 | protected baseline | `baseline/gpt-live-working-20260922` | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
 | upstream | `upstream/main` | `1c0a69c0ceddb2fd21581c17ab09f6c500b89ba1` |
 | rollback tag | `checkpoint/pre-reconciliation-8aa1e5de0` | candidate HEAD before this run |
@@ -84,3 +84,18 @@ completion claim:
 The upstream inventory JSON used for this checkpoint was generated with
 `upstream-daily.mjs --no-fetch` and had SHA-256
 `797d33b6519dc4dfaed026c19924020d92a2f96e6df3ac972d284c1af44ff883`.
+
+## Integrated / disposition ledger (current)
+
+| upstream source | disposition | affected paths | evidence / rationale |
+|---|---|---|---|
+| `7b4de8b6a` | **TAKE** | `backend/internal/service/content_moderation.go`, `content_moderation_input.go`, `content_moderation_reminder_test.go` | Cherry-picked as `49720bb4`; focused reminder-keyword tests and full `cd backend && go test ./...` passed. This closes a moderation bypass where reminder tags could evade keyword checks. |
+| `18d483c2a` | **TAKE (already present)** | `backend/internal/repository/custom_group_usage_rollup_repo.go`, `usage_log_repo_group_summary_test.go` | Candidate files are byte-identical to the upstream commit tree; a no-commit cherry-pick produced no changes. Existing rollup-tail behavior was verified by the focused repository test. |
+| `b252821c5` | **TAKE (already present)** | `backend/internal/service/account_usage_service.go`, `account_usage_service_batch_test.go` | Candidate files are byte-identical to the upstream commit tree; a no-commit cherry-pick produced no changes. Existing batch usage behavior was verified by the focused service test. |
+| `647714353` | **SKIP** | `backend/internal/repository/plugin_kv_store_test.go`, `backend/internal/service/plugin_host_services_test.go` | Test-only errcheck cleanup targets files deleted intentionally in the candidate. A scratch cherry-pick produced modify/delete conflicts; restoring those tests would reintroduce a removed surface without runtime value. |
+
+The next serial lane is the OpenCode/reasoning-effort/billing dependency group.
+The isolated probe of `e47255715` was not promoted: it conflicts in the native
+Anthropic forwarding files and depends on the upstream OpenCode builder and
+account changes. It remains unintegrated until that dependency group is
+reviewed as a unit.
