@@ -7,11 +7,11 @@ the candidate worktree only; the protected baseline is never edited.
 
 | role | ref | value |
 |---|---|---|
-| candidate worktree | `port/inferno-selective-upstream-20260922` | `29ddd9009` (proxy-expiry boundary code checkpoint; subsequent commits are ledger-only) |
+| candidate worktree | `port/inferno-selective-upstream-20260922` | `2c0cf2319` (CC Switch Antigravity URL code checkpoint; subsequent commits are ledger-only) |
 | protected baseline | `baseline/gpt-live-working-20260922` | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
 | upstream | `upstream/main` | `20a94fbb567b62208751292ed7786b24a7e7c0fe` |
-| code checkpoint tag | `checkpoint/proxy-expiry-boundary-20260923` | proxy-expiry boundary code checkpoint |
-| rollback tag | `checkpoint/pre-proxy-expiry-boundary-20260923` | immediate pre-proxy-expiry checkpoint; earlier ImageUpload, BaseDialog, DateRangePicker, Select, and redemption checkpoints remain in history |
+| code checkpoint tag | `checkpoint/ccswitch-antigravity-url-20260923` | CC Switch Antigravity URL code checkpoint |
+| rollback tag | `checkpoint/pre-ccswitch-antigravity-url-20260923` | immediate pre-CC Switch checkpoint; earlier proxy-expiry, ImageUpload, BaseDialog, DateRangePicker, Select, and redemption checkpoints remain in history |
 
 The candidate is clean at this checkpoint. The protected baseline has
 pre-existing untracked runtime artifacts; they are intentionally left alone.
@@ -21,8 +21,8 @@ at `1c0a69c0c`, the refreshed review scan adds 86 newly reachable non-empty
 commits: 54 `MERGE`, 20 `REBUILD`, 3 `VERBATIM`, and 9 `NEW`. The 126 raw
 commits in the graph range include empty merge wrappers; those are intentionally
 omitted. The 86 rows are listed in
-`docs/superpowers/analysis/UPSTREAM-DELTA-20260923.tsv`; 79 remain in `review`
-after resolving six UI fixes as `TAKE` and their duplicate merge resolution
+`docs/superpowers/analysis/UPSTREAM-DELTA-20260923.tsv`; 78 remain in `review`
+after resolving seven UI fixes as `TAKE` and their duplicate merge resolution
 as `SKIP`. This remains inventory progress, not a completion claim.
 
 The paired image-backfill/security lane is now promoted as candidate commits
@@ -590,3 +590,17 @@ and Vue typechecks passed, both sequential production builds passed, and diff
 checks were clean. No backend, API, OAuth, dependency, or generated files
 changed. Rollback point is tagged
 `checkpoint/pre-proxy-expiry-boundary-20260923`.
+
+### CC Switch Antigravity URL lane (2026-09-23)
+
+Upstream `d054ee9af` is promoted as candidate commit `2c0cf2319` on both
+frontend surfaces. Only the Antigravity endpoint join trims trailing slashes;
+the configured homepage value remains unchanged. Both existing + new CC Switch
+suites passed 14/14, both ESLint and Vue typechecks passed, both sequential
+production builds passed, and diff checks were clean.
+
+This candidate intentionally matches the `d054ee9af` post-image, not current
+`upstream/main`: the separate Codex `/v1` endpoint change (`fabdfb8a5`) and
+merge wrapper (`ba5737fe1`) remain `review` rows in the delta inventory. They
+are not part of this Antigravity-specific port. Rollback point is tagged
+`checkpoint/pre-ccswitch-antigravity-url-20260923`.

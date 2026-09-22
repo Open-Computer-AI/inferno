@@ -44,6 +44,11 @@ Candidate commit `29ddd9009` also takes proxy expiry boundary fix `9612a70c7`
 on both surfaces. An active proxy at the expiry instant now displays the
 expired label while the backend status update is still pending.
 
+Candidate commit `2c0cf2319` takes only the Antigravity CC Switch endpoint
+slash fix `d054ee9af` on both surfaces; the configured homepage remains
+unchanged. The separate Codex `/v1` endpoint update (`fabdfb8a5`) and its merge
+wrapper (`ba5737fe1`) remain under review rather than being bundled here.
+
 **Rules for every item:** hand-merge, never `cp` (see the 2026-08-11 incident in
 INFERNO-BUILD.md). June tokens — except where our copy of a file is still literal
 Tailwind, e.g. `utils/platformColors.ts`, where a verbatim merge is correct.
