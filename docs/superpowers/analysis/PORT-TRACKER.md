@@ -20,6 +20,13 @@ endpoints our own backend already serves.
 uses the existing native pager; the legacy no-query API array response remains
 available. This feature is verified and is not one of the remaining TODOs below.
 
+Candidate commit `188a6d99d` completes the June adaptation of upstream API-key
+bulk editing (`58f461b08` / mirror commit `e2819aa49`). It reuses the existing
+per-key update endpoint, limits selection to visible rows, and keeps June's
+checkbox and server-error presentation; no backend route or schema was added.
+The June critical frontend manifest, typecheck, changed-file lint, and isolated
+production build passed.
+
 Candidate commit `9de6bf46c` also takes upstream Select fixes `a985de062c` and
 `0e1329b520`: non-searchable popovers receive keyboard focus, and changing
 results resets the highlight to the first enabled option. The June Select keeps

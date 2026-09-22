@@ -7,7 +7,7 @@ the candidate worktree only; the protected baseline is never edited.
 
 | role | ref | value |
 |---|---|---|
-| candidate worktree | `port/inferno-selective-upstream-20260922` | `6bd673dbe` (announcement fetch ownership checkpoint on mirror and June frontends) |
+| candidate worktree | `port/inferno-selective-upstream-20260922` | `188a6d99d` (June API-key bulk-edit adaptation; announcement and mirror checkpoints remain in history) |
 | protected baseline | `baseline/gpt-live-working-20260922` | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
 | upstream | `upstream/main` | `20a94fbb567b62208751292ed7786b24a7e7c0fe` |
 | code checkpoint tag | `checkpoint/announcements-fetch-generation-20260923` | announcement fetch ownership code checkpoint; earlier lane tags remain in history |
@@ -390,7 +390,12 @@ The self-contained bulk-edit feature (`58f461b08` → `e2819aa49`) is promoted.
 It batches existing per-key updates through the user KeysView, adds the modal,
 API helper, dashboard copy, and focused tests, and requires no backend route or
 schema change. The isolated API/modal/KeysView suites passed 32/32; Vue
-typecheck and diff checks passed.
+typecheck and diff checks passed. The June adaptation is now promoted as
+`188a6d99d`: it uses June's Checkbox and server-detail error convention, scopes
+selection to visible rows, and clears it on filter/page/sort changes. The June
+critical manifest passed 201/201, changed-file ESLint and `vue-tsc --noEmit`
+passed, and the production build passed with output redirected outside the
+candidate checkout. No backend/API route or schema changes were needed.
 
 ### Backup/migration serialization lane
 
