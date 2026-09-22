@@ -506,3 +506,31 @@ tool-output image fix (`881ab1b0c`) is already represented by `6bfb6f6cb` and
 `a25d80d83`, including parallel media batches. These upstream blobs were not
 replayed because their files overlap custom provider routing and request-body
 logic in the candidate.
+
+### Consumer-led audit of adjacent upstream fixes
+
+Several later upstream fixes were audited against the candidate's actual
+consumers and recorded without duplicate replay:
+
+- Strict Chat developer-role normalization (`18bfa4bf2`) is already present via
+  local port `d6d7902bc`; the shared raw Chat file has additional candidate
+  model-alias/transport behavior.
+- DeepSeek thinking-mode `reasoning_content` preservation (`bcc73f8d4`) is
+  already present in the broader local reliability port `58469421a`, including
+  placeholder/cache-hit tests.
+- Paused OAuth accounts remain refreshable via `a8feab50d`, and group usage
+  aggregation is already included in local batch `51cc4c3a0`.
+- Public response-model aliases are represented by `715ef62be`, with later
+  candidate-specific mapping/failover behavior in the same files.
+- The client-version fallback behavior from `2d37088bd` is present in the
+  candidate's local reliability surface.
+
+Two changes are intentionally deferred for consumer-led work. Redemption
+pagination (`a9ed21898`) has paginated service/repository support but the public
+handler and RedeemView still use the legacy array contract, so it must be
+finished as one backend/frontend lane. The plugin errcheck test cleanup
+(`647714353`) targets test files removed by the candidate's newer plugin host
+contract. Content-audit engine defaults (`1bfe0d372`) likewise do not match the
+candidate's June RiskControl surface. Release-number and CI-only commits are
+not runtime functional ports and remain outside this branch until a release
+cut is explicitly planned.
