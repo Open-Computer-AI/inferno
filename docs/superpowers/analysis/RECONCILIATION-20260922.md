@@ -9,11 +9,19 @@ the candidate worktree only; the protected baseline is never edited.
 |---|---|---|
 | candidate worktree | `port/inferno-selective-upstream-20260922` | `d48ee03b0bc5f37e66a2ebd3a491252355548218` (redemption-pagination code checkpoint; subsequent commits are ledger-only) |
 | protected baseline | `baseline/gpt-live-working-20260922` | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
-| upstream | `upstream/main` | `1c0a69c0ceddb2fd21581c17ab09f6c500b89ba1` |
+| upstream | `upstream/main` | `20a94fbb567b62208751292ed7786b24a7e7c0fe` |
 | rollback tag | `checkpoint/redeem-history-pagination-20260923` | passing code checkpoint before subsequent ledger-only updates |
 
 The candidate was clean before this checkpoint. The protected baseline has
 pre-existing untracked runtime artifacts; they are intentionally left alone.
+
+The upstream ref was refreshed on 2026-09-23. Relative to the prior inventory
+at `1c0a69c0c`, the refreshed review scan adds 86 newly reachable non-empty
+commits: 54 `MERGE`, 20 `REBUILD`, 3 `VERBATIM`, and 9 `NEW`. The 126 raw
+commits in the graph range include empty merge wrappers; those are intentionally
+omitted. The 86 rows are listed in
+`docs/superpowers/analysis/UPSTREAM-DELTA-20260923.tsv`; all start at `review`,
+so this is inventory progress, not a completion claim.
 
 The paired image-backfill/security lane is now promoted as candidate commits
 `3f73489ed`, `83f567559`, and `71b47700d`. The source-to-candidate mapping is
