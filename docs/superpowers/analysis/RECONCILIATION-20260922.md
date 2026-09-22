@@ -7,7 +7,7 @@ the candidate worktree only; the protected baseline is never edited.
 
 | role | ref | value |
 |---|---|---|
-| candidate worktree | `port/inferno-selective-upstream-20260922` | `eda124f91c4d222df250babc3da1741ef6848b4e` |
+| candidate worktree | `port/inferno-selective-upstream-20260922` | `24305a78a3b9b6da8be8e9edcb6c279e65da1238` |
 | protected baseline | `baseline/gpt-live-working-20260922` | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
 | upstream | `upstream/main` | `1c0a69c0ceddb2fd21581c17ab09f6c500b89ba1` |
 | rollback tag | `checkpoint/pre-reconciliation-8aa1e5de0` | candidate HEAD before this run |
@@ -101,6 +101,7 @@ The upstream inventory JSON used for this checkpoint was generated with
 | `38cfd7e2d` | **TAKE** | `backend/internal/handler/admin/{account_data.go,proxy_data.go,proxy_handler.go}`, `backend/internal/service/{admin_proxy.go,admin_service.go}` and focused tests | Promoted as `e5c2b50e`; focused proxy handler/service tests, `gofmt`, `go vet ./...`, and the isolated lane full backend suite passed. |
 | `3fc08745a` | **TAKE** | `backend/internal/handler/model_plaza_handler.go`, `backend/internal/service/api_key_service.go` and focused visibility tests | Promoted as `8a71f145`; focused model-plaza/API-key visibility tests, `gofmt`, `go vet ./...`, and the isolated lane full backend suite passed. |
 | `b8d52fad3` | **TAKE (bounded hand-merge)** | Backend reasoning-effort pricing contract, repository persistence, billing/account-stat calculations, channel/admin DTOs, and effort normalization | Promoted as `6987ec29`; the full upstream patch did not apply cleanly because its frontend pricing/admin and provider-forwarding portions cross local product surfaces. The bounded backend merge passed focused service/repository/handler tests, `go vet ./...`, and `git diff --check`; `e47255715` remains the serial provider-forwarding dependency. |
+| `e47255715` | **TAKE (bounded hand-merge)** | Backend final-effort propagation through Gemini, native Anthropic, fallback, media, and usage-billing paths plus focused pricing tests | Promoted as `24305a78`; native Anthropic conflicts were resolved against the candidate's existing six-argument builder and returned sanitized body, preserving local sideband behavior. Focused native/fallback/Gemini/image tests and `go vet ./...` passed. The upstream OpenCode-Go session-header extension was intentionally not imported. |
 | `1a32b91eb` | **TAKE (June surface)** | `inferno-frontend/src/components/common/Pagination.vue`, `Pagination.jump.spec.ts` | Promoted in June commit `de9df9d0e`; this is separate from the shared `frontend/**` pagination promotion above. June focused Vitest and typecheck passed in isolation. |
 | `130ba634a` | **TAKE (June surface)** | `inferno-frontend/src/composables/{useClipboard.ts,__tests__/useClipboard.spec.ts}` | Promoted in `de9df9d0e`; June focused Vitest and typecheck passed in isolation. |
 | `98321a054` | **TAKE (June surface)** | `inferno-frontend/src/components/payment/{AmountInput.vue,__tests__/AmountInput.spec.ts}` | Promoted in `de9df9d0e`; June focused Vitest and typecheck passed in isolation. |
@@ -154,14 +155,12 @@ Higher-risk account-selection/admin and larger payment/sidebar rewrites remain
 deferred for serial review because they overlap OAuth, GPT-Live, or customized
 product surfaces.
 
-The bounded backend reasoning-effort contract from `b8d52fad3` is now promoted
-as `6987ec29`. This deliberately excludes the upstream frontend pricing/admin
-patches and provider-forwarding work; those surfaces still require serial
-review against the local OAuth, sideband, and June-product behavior. The
-isolated probe of `e47255715` was not promoted: it conflicts in the native
-Anthropic forwarding files and depends on the finalized effort contract. The
-isolated probe of `db8692d67` likewise conflicts in
-`backend/internal/service/ratelimit_cn_providers.go` because it assumes the
+The bounded backend reasoning-effort contract from `b8d52fad3` is promoted as
+`6987ec29`, and its final-effort propagation dependency `e47255715` is promoted
+as `24305a78`. These bounded merges deliberately exclude the upstream frontend
+pricing/admin patch and OpenCode-Go session-header extension; those surfaces
+still require serial review against the local OAuth, sideband, and June-product
+behavior. The isolated probe of `db8692d67` remains skipped because it conflicts
+in `backend/internal/service/ratelimit_cn_providers.go` and assumes the
 upstream OpenCodeGo `applyCNProviderReactive429` predecessor behavior. Neither
-probe changed the candidate; both remain unintegrated until the dependency
-group is reviewed as a unit.
+that quota-403 behavior nor the OpenCode-Go-only pieces changed the candidate.
