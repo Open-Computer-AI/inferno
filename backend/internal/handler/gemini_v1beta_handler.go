@@ -60,6 +60,17 @@ func (h *GatewayHandler) GeminiV1BetaListModels(c *gin.Context) {
 		return filtered
 	}
 
+	// The legacy custom native list applies only to the native Gemini route.
+	// Model allowlists own model-list responses when enabled, and the forced
+	// Antigravity route must continue to use its dynamically discovered models.
+	if forcePlatform != service.PlatformAntigravity &&
+		(apiKey.Group == nil || !apiKey.Group.ModelAllowlistEnabled()) {
+		if models, ok := customGeminiModelsList(apiKey.Group); ok {
+			c.JSON(http.StatusOK, models)
+			return
+		}
+	}
+
 	agModelIDs, err := h.geminiCompatService.AntigravityGeminiModelIDs(c.Request.Context(), apiKey.GroupID, forcePlatform != service.PlatformAntigravity)
 	if err != nil {
 		googleError(c, http.StatusServiceUnavailable, "Unable to list Antigravity models")
@@ -108,6 +119,17 @@ func (h *GatewayHandler) GeminiV1BetaListModels(c *gin.Context) {
 		}
 	}
 	writeUpstreamResponse(c, res)
+}
+
+func customGeminiModelsList(group *service.Group) (gemini.ModelsListResponse, bool) {
+	if group == nil || !group.CustomModelsListEnabled() {
+		return gemini.ModelsListResponse{}, false
+	}
+	models := make([]gemini.Model, 0, len(group.ModelsListConfig.Models))
+	for _, modelID := range group.ModelsListConfig.Models {
+		models = append(models, gemini.FallbackModel(modelID))
+	}
+	return gemini.ModelsListResponse{Models: models}, true
 }
 
 // mergeGeminiModelLists keeps native metadata when both sources advertise a model.
