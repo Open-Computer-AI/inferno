@@ -30,6 +30,12 @@ The latest backend audit also closed eight rows as `SKIP (already represented)`:
 candidate commits; the exact paths and focused-test evidence are in
 `BACKEND-LOW-RISK-DISPOSITIONS-20260922.tsv`.
 
+A follow-up backend block closed six more rows as `SKIP (already represented)`:
+`fdc2ec17e`, `5e4958c88`, `af90a9bd1`, `62198286e`, `e9e3c46cb`, and
+`4c1f920d5`. These cover pricing reload, mapped-model scheduling, delegation,
+gateway admission/error responses, proxy attribution, queue/timeout handling,
+and raw-stream behavior already carried by later candidate commits.
+
 ## Current inventory
 
 The current `upstream-daily.mjs --no-fetch` report covers the watermark window
