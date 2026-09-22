@@ -7,13 +7,28 @@ the candidate worktree only; the protected baseline is never edited.
 
 | role | ref | value |
 |---|---|---|
-| candidate worktree | `port/inferno-selective-upstream-20260922` | `aed0883ffb9caae130eba4a90078e313b7cbf2ab` (functional tip; this ledger update follows) |
+| candidate worktree | `port/inferno-selective-upstream-20260922` | `71b47700d463cd8341fd0e84524ac670fe509c62` (functional tip; this ledger update follows) |
 | protected baseline | `baseline/gpt-live-working-20260922` | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
 | upstream | `upstream/main` | `1c0a69c0ceddb2fd21581c17ab09f6c500b89ba1` |
 | rollback tag | `checkpoint/pre-reconciliation-8aa1e5de0` | candidate HEAD before this run |
 
 The candidate was clean before this checkpoint. The protected baseline has
 pre-existing untracked runtime artifacts; they are intentionally left alone.
+
+The paired image-backfill/security lane is now promoted as candidate commits
+`3f73489ed`, `83f567559`, and `71b47700d`. The source-to-candidate mapping is
+recorded in `IMAGE-BACKFILL-DISPOSITIONS-20260922.tsv`. The image account toggle
+was retained; unrelated request-ID UI context was omitted because the candidate
+does not contain that state/helper contract. Backend image, URL-validator, and
+HTTP-upstream focused tests passed; the two account-modal test files passed
+81 tests and Vue typecheck passed. ESLint remains an environment blocker only:
+the candidate dependency tree lacks the `vue-eslint-parser` symlink.
+
+The latest backend audit also closed eight rows as `SKIP (already represented)`:
+`a10ff1255`, `5fb5dfb34`, `222181efd`, `a77423066`, `9ad386569`, `01bd9b71a`,
+`81fd85300`, and `9dc4c40bf`. Their behavior is already present in later
+candidate commits; the exact paths and focused-test evidence are in
+`BACKEND-LOW-RISK-DISPOSITIONS-20260922.tsv`.
 
 ## Current inventory
 
