@@ -7,7 +7,7 @@ the candidate worktree only; the protected baseline is never edited.
 
 | role | ref | value |
 |---|---|---|
-| candidate worktree | `port/inferno-selective-upstream-20260922` | `60e0a5e3e2968564d09edd24e79da54c221884ea` |
+| candidate worktree | `port/inferno-selective-upstream-20260922` | `32a9c0ddb` |
 | protected baseline | `baseline/gpt-live-working-20260922` | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
 | upstream | `upstream/main` | `1c0a69c0ceddb2fd21581c17ab09f6c500b89ba1` |
 | rollback tag | `checkpoint/pre-reconciliation-8aa1e5de0` | candidate HEAD before this run |
@@ -97,6 +97,20 @@ The upstream inventory JSON used for this checkpoint was generated with
 | `8e34ca5e3` | **TAKE (already present)** | `backend/internal/repository/account_repo.go`, `account_repo_integration_test.go`, `account_repo_temp_unsched_test.go`, `backend/internal/service/token_refresh_service_candidates_test.go` | An isolated no-commit cherry-pick against the candidate produced no working-tree changes, confirming the behavior is already represented without a duplicate commit. Focused repository OAuth-refresh candidate tests and service refresh-candidate test passed (exit 0). |
 | `18bfa4bf2` | **TAKE (already present)** | `backend/internal/service/openai_chat_roles.go`, `openai_chat_roles_test.go`, `openai_gateway_chat_completions_raw.go` | Candidate already contains the behavior via local commit `d6d7902bc`; an isolated no-commit cherry-pick produced no working-tree changes. Focused strict-developer-role tests passed with `go test -tags unit ./internal/service -run 'TestForwardAsChatCompletions_StrictDeveloperRole|TestNormalizeStrictChatDeveloperRoles' -count=1` (exit 0). |
 | `1a32b91eb` | **TAKE** | `frontend/src/components/common/Pagination.vue`, `frontend/src/components/common/__tests__/Pagination.jump.spec.ts` | Promoted as `6c35936b`; isolated cherry-pick applied cleanly, `git diff --check` passed, and focused Vitest passed: 1 file / 4 tests. The temporary scratch worktree used the existing candidate dependency tree; no lockfiles changed. |
+| `c7343d2aa` | **TAKE** | `backend/internal/service/channel_monitor_checker.go`, `channel_monitor_checker_body_test.go` | Promoted as `dba38137`; focused Gemini monitor tests passed in the isolated lane, and candidate-side handler tests passed. Full service-suite image-model failures reproduce at the pre-backend checkpoint and are not touched by this change. |
+| `38cfd7e2d` | **TAKE** | `backend/internal/handler/admin/{account_data.go,proxy_data.go,proxy_handler.go}`, `backend/internal/service/{admin_proxy.go,admin_service.go}` and focused tests | Promoted as `e5c2b50e`; focused proxy handler/service tests, `gofmt`, `go vet ./...`, and the isolated lane full backend suite passed. |
+| `3fc08745a` | **TAKE** | `backend/internal/handler/model_plaza_handler.go`, `backend/internal/service/api_key_service.go` and focused visibility tests | Promoted as `8a71f145`; focused model-plaza/API-key visibility tests, `gofmt`, `go vet ./...`, and the isolated lane full backend suite passed. |
+| `1a32b91eb` | **TAKE (June surface)** | `inferno-frontend/src/components/common/Pagination.vue`, `Pagination.jump.spec.ts` | Promoted in June commit `de9df9d0e`; this is separate from the shared `frontend/**` pagination promotion above. June focused Vitest and typecheck passed in isolation. |
+| `130ba634a` | **TAKE (June surface)** | `inferno-frontend/src/composables/{useClipboard.ts,__tests__/useClipboard.spec.ts}` | Promoted in `de9df9d0e`; June focused Vitest and typecheck passed in isolation. |
+| `98321a054` | **TAKE (June surface)** | `inferno-frontend/src/components/payment/{AmountInput.vue,__tests__/AmountInput.spec.ts}` | Promoted in `de9df9d0e`; June focused Vitest and typecheck passed in isolation. |
+| `f8e5a0d94` | **TAKE (June surface)** | `inferno-frontend/src/components/admin/channel/{ModelTagInput.vue,__tests__/ModelTagInput.keyboard.spec.ts}` | Promoted in `de9df9d0e`; June focused Vitest and typecheck passed in isolation. |
+| `406be7c51` | **TAKE (June surface)** | `inferno-frontend/src/stores/{subscriptions.ts,__tests__/subscriptions.clear.spec.ts}` | Promoted in `e67948d3`; June focused Vitest and typecheck passed in isolation. |
+| `6a4938bdf` | **TAKE (June surface)** | `inferno-frontend/src/stores/announcements.ts`, `announcements.markAll.spec.ts` | Promoted in `e67948d3`; June focused Vitest and typecheck passed in isolation. |
+| `21532add4` | **TAKE (June surface)** | `inferno-frontend/src/views/admin/order/OrderList.vue` | Promoted in `e67948d3`; June focused Vitest and typecheck passed in isolation. |
+| `b9d072868` | **TAKE (June surface)** | `inferno-frontend/src/views/model-plaza/ModelPlaza.vue` | Promoted in `e67948d3`; June focused Vitest and typecheck passed in isolation. |
+| `d03c42d79` | **TAKE (June surface)** | `inferno-frontend/src/views/auth/RegisterView.vue` | Promoted in `e67948d3`; June focused Vitest and typecheck passed in isolation. |
+| `6c8ad0bd4` | **TAKE (June surface)** | `inferno-frontend/src/views/auth/RegisterView.vue`, related registration visibility test | Promoted in `e67948d3`; June focused Vitest and typecheck passed in isolation. |
+| `a16070ccf` | **TAKE (June surface)** | `inferno-frontend/src/components/TurnstileWidget.vue`, `TurnstileWidget.spec.ts` | Promoted in `32a9c0dd`; June focused Vitest, ESLint, Vue typecheck, and build passed in isolation. |
 
 ### Frontend mirror lane
 
@@ -117,6 +131,23 @@ The pagination source was handled separately above. The batch-image
 fix/revert pair was deferred because the candidate already has the fixed
 runtime behavior, and mixed/customized frontend commits remain reserved for
 the June product lane rather than being copied into the mirror.
+
+### June product lane
+
+The isolated `lane/june-inferno-frontend-20260922` was promoted in three
+bounded commits: `de9df9d0e`, `e67948d39`, and `32a9c0ddb`. The exact
+source-to-candidate mapping is recorded in
+`docs/superpowers/analysis/JUNE-INFERNO-FRONTEND-DISPOSITIONS-20260922.tsv`.
+All changes are confined to `inferno-frontend/**`; no shared API/types,
+router/i18n, design-system, backend, lockfile, or generated paths changed.
+
+The isolated lane passed 34 focused tests across 7 files, ESLint on touched
+files, Vue typecheck, `vue-tsc -b && vite build`, conversion-status, behavior
+parity, and `git diff --check`. June lint still reports the inherited 1,401
+violations across 313 converted files; its category totals did not change.
+Higher-risk account-selection/admin and larger payment/sidebar rewrites remain
+deferred for serial review because they overlap OAuth, GPT-Live, or customized
+product surfaces.
 
 The next serial lane is the OpenCode/reasoning-effort/billing dependency group.
 The isolated probe of `e47255715` was not promoted: it conflicts in the native

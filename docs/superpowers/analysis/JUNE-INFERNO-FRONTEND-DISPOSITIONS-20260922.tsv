@@ -1,0 +1,18 @@
+# June Inferno frontend dispositions — 2026-09-22
+
+Lane: `lane/june-inferno-frontend-20260922`; base `7f840c188d99b03c5583236807197dfce1779c5d`; candidate `port/inferno-selective-upstream-20260922`.
+All rows below are limited to `inferno-frontend/**`; shared frontend, backend, API/type, router/i18n, design-system, lockfile, and generated paths were not changed by this lane.
+
+Columns: upstream source SHA | candidate commit SHA | disposition | affected paths | evidence
+source_sha	candidate_sha	disposition	affected_paths	evidence
+1a32b91eb21c022fb8a02bc35bdf707211fcf462	de9df9d0e	TAKE	inferno-frontend/src/components/common/Pagination.vue;inferno-frontend/src/components/common/__tests__/Pagination.jump.spec.ts;	June focused Vitest, vue-tsc, build, and diff checks passed in isolated lane
+130ba634adbd16aca2303945f0a8fdcbbfef235f	de9df9d0e	TAKE	inferno-frontend/src/composables/useClipboard.ts;inferno-frontend/src/composables/__tests__/useClipboard.spec.ts;	June focused Vitest, vue-tsc, build, and diff checks passed in isolated lane
+98321a054ed41c65058966d1d7d705d93dfe902e	de9df9d0e	TAKE	inferno-frontend/src/components/payment/AmountInput.vue;inferno-frontend/src/components/payment/__tests__/AmountInput.spec.ts;	June focused Vitest, vue-tsc, build, and diff checks passed in isolated lane
+f8e5a0d94f811fad399d02bdd97aeefc7dc1a284	de9df9d0e	TAKE	inferno-frontend/src/components/admin/channel/ModelTagInput.vue;inferno-frontend/src/components/admin/channel/__tests__/ModelTagInput.keyboard.spec.ts;	June focused Vitest, vue-tsc, build, and diff checks passed in isolated lane
+406be7c51888cf8067eb9ceb30dfd340d7eef51b	e67948d39	TAKE	inferno-frontend/src/stores/subscriptions.ts;inferno-frontend/src/stores/__tests__/subscriptions.clear.spec.ts;	June focused Vitest, vue-tsc, build, and diff checks passed in isolated lane
+6a4938bdfb23606a0d319205ca54cd9a357e5cc0	e67948d39	TAKE	inferno-frontend/src/stores/announcements.ts;inferno-frontend/src/stores/__tests__/announcements.markAll.spec.ts;	June focused Vitest, vue-tsc, build, and diff checks passed in isolated lane
+21532add46331a54d03493871abafc6c9662f309	e67948d39	TAKE	inferno-frontend/src/views/admin/order/OrderList.vue;	June focused Vitest, vue-tsc, build, and diff checks passed in isolated lane
+b9d0728687ba815b44f9297c87285cc163d5a335	e67948d39	TAKE	inferno-frontend/src/views/model-plaza/ModelPlaza.vue;	June focused Vitest, vue-tsc, build, and diff checks passed in isolated lane
+d03c42d7986cad7170d9e4751852287e84ec3374	e67948d39	TAKE	inferno-frontend/src/views/auth/RegisterView.vue;	June focused Vitest, vue-tsc, build, and diff checks passed in isolated lane
+6c8ad0bd4a05914065c4cd22800e6624eac32b73	e67948d39	TAKE	inferno-frontend/src/views/auth/RegisterView.vue;inferno-frontend/src/views/auth/__tests__/RegisterView.spec.ts;	June focused Vitest, vue-tsc, build, and diff checks passed in isolated lane
+a16070ccf62200674d51ad2fb3ae58ba50b013d3	32a9c0ddb	TAKE	inferno-frontend/src/components/TurnstileWidget.vue;inferno-frontend/src/components/__tests__/TurnstileWidget.spec.ts;	June focused Vitest, ESLint, vue-tsc, build, and diff checks passed in isolated lane
