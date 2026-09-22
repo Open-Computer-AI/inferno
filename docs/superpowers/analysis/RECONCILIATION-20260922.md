@@ -443,3 +443,8 @@ the candidate's custom `PlatformTypeBadge.vue`; applying it blindly could alter
 Grok/Antigravity labels. The OpenCode mapped-test-model fix (`7c008bd8c`) is
 also deferred because the candidate no longer has the upstream account-test
 function/file shape. Both require consumer-led adaptation before promotion.
+
+The MiniMax monitor allowlist change (`5968fd0ed`) is also deferred: the
+candidate lacks the `MonitorProviderMiniMax` constant and provider foundation,
+so applying the two allowlist entries alone would not compile. A full provider
+surface audit is required before any MiniMax monitor integration.
