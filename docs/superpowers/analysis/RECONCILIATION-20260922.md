@@ -7,7 +7,7 @@ the candidate worktree only; the protected baseline is never edited.
 
 | role | ref | value |
 |---|---|---|
-| candidate worktree | `port/inferno-selective-upstream-20260922` | `71b47700d463cd8341fd0e84524ac670fe509c62` (functional tip; this ledger update follows) |
+| candidate worktree | `port/inferno-selective-upstream-20260922` | `5a6c593af7550195fc8bf2c27224641e95da1723` (functional tip; this ledger update follows) |
 | protected baseline | `baseline/gpt-live-working-20260922` | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
 | upstream | `upstream/main` | `1c0a69c0ceddb2fd21581c17ab09f6c500b89ba1` |
 | rollback tag | `checkpoint/pre-reconciliation-8aa1e5de0` | candidate HEAD before this run |
@@ -35,6 +35,11 @@ A follow-up backend block closed six more rows as `SKIP (already represented)`:
 `4c1f920d5`. These cover pricing reload, mapped-model scheduling, delegation,
 gateway admission/error responses, proxy attribution, queue/timeout handling,
 and raw-stream behavior already carried by later candidate commits.
+
+The backend half of `28f673e4c` is promoted as `5a6c593af`: native Gemini
+custom-model-list handling was hand-merged around the candidate's allowlist and
+forced-Antigravity ordering. Its frontend GroupsView/locale changes remain out
+of this lane and are reserved for the June-surface review.
 
 ## Current inventory
 
