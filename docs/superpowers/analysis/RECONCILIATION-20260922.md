@@ -276,3 +276,15 @@ keeps manual editing and clearing semantics intact. Create/edit/helper tests
 passed 90/90, `vue-tsc --noEmit` passed, and `git diff --check` passed. No
 backend, OAuth, WebSocket, June `inferno-frontend`, design-system, or lockfile
 paths changed.
+
+### Codex ultrafast service-tier lane
+
+The mixed ultrafast capability (`126ac24c8` → `1cbbddc04`) is promoted as a
+bounded lane. It adds `service_tier=ultrafast` validation, GPT-5.6 Sol catalog
+and routing hints, the matching 2x billing multiplier, policy/settings support,
+and shared usage/localization display. Backend service/admin/handler tests and
+the four touched frontend suites (36 tests) passed; `vue-tsc --noEmit` and
+`git diff --check` passed. It does not touch OAuth, GPT Live, sideband,
+WebSocket execution scope, the June `inferno-frontend`, schema, or lockfiles.
+The merge wrapper `c42d78e2` is recorded as a skip because it contributes no
+independent patch.
