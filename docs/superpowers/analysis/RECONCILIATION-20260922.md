@@ -7,7 +7,7 @@ the candidate worktree only; the protected baseline is never edited.
 
 | role | ref | value |
 |---|---|---|
-| candidate worktree | `port/inferno-selective-upstream-20260922` | `0213e4fe923c9538efc6d29f8c9efdcb2393bab0` (latest docs checkpoint; code checkpoint `4f5c3aa74`) |
+| candidate worktree | `port/inferno-selective-upstream-20260922` | `4f5c3aa74b40ba4ab3105f78de49cc2b601c615b` (latest code checkpoint; subsequent commits are ledger-only) |
 | protected baseline | `baseline/gpt-live-working-20260922` | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
 | upstream | `upstream/main` | `1c0a69c0ceddb2fd21581c17ab09f6c500b89ba1` |
 | rollback tag | `checkpoint/pre-reconciliation-8aa1e5de0` | candidate HEAD before this run |
