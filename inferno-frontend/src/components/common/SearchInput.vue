@@ -58,11 +58,13 @@ const scheduleSearch = (value: string) => {
   }, props.debounceMs)
 }
 
-const onInput = (event: Event) => {
-  const value = (event.target as HTMLInputElement).value
-  emit('update:modelValue', value)
-  scheduleSearch(value)
-}
+const searchValue = computed({
+  get: () => props.modelValue,
+  set: (value: string) => {
+    emit('update:modelValue', value)
+    scheduleSearch(value)
+  }
+})
 
 // Clearing is not a debounced edit, it is a direct reset: cancel whatever
 // was pending and search immediately, so a stale in-flight query can never
@@ -85,12 +87,11 @@ onBeforeUnmount(() => clearTimeout(timer))
 
       <input
         ref="inputRef"
+        v-model="searchValue"
         type="text"
         class="srch__input"
-        :value="modelValue"
         :placeholder="placeholder"
         :data-has-clear="hasValue ? '' : undefined"
-        @input="onInput"
       />
 
       <!-- Real button, not a bare glyph: needs an accessible name and a hit
