@@ -351,6 +351,14 @@ The OpenCode session-forwarding merge wrapper (`620eb3fd0`) is skipped because
 candidate `b2906435e` already contains the exact new helper/test blobs and
 forwarding calls. No duplicate replay is needed.
 
+### API-key bulk-edit lane
+
+The self-contained bulk-edit feature (`58f461b08` → `e2819aa49`) is promoted.
+It batches existing per-key updates through the user KeysView, adds the modal,
+API helper, dashboard copy, and focused tests, and requires no backend route or
+schema change. The isolated API/modal/KeysView suites passed 32/32; Vue
+typecheck and diff checks passed.
+
 ### Backup/migration serialization lane
 
 The backup lock fix (`95023e7d4` → `fe7743709`) is promoted. The dumper now
