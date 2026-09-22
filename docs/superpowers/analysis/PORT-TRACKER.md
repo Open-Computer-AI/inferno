@@ -40,6 +40,10 @@ Candidate commit `1150cf285` takes upstream ImageUpload read-cancellation fix
 `24f4736f6` on both surfaces. June retains its `AppButton` and design-system
 markup, with the existing props and emitted event unchanged.
 
+Candidate commit `29ddd9009` also takes proxy expiry boundary fix `9612a70c7`
+on both surfaces. An active proxy at the expiry instant now displays the
+expired label while the backend status update is still pending.
+
 **Rules for every item:** hand-merge, never `cp` (see the 2026-08-11 incident in
 INFERNO-BUILD.md). June tokens — except where our copy of a file is still literal
 Tailwind, e.g. `utils/platformColors.ts`, where a verbatim merge is correct.
