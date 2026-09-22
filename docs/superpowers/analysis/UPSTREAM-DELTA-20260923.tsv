@@ -12,7 +12,7 @@ f744375a4	2026-09-11	MERGE	review	5	0	0	fix(openai): preserve GPT-5.5 requests c
 69d49744c	2026-09-13	MERGE	review	2	0	0	fix(antigravity): address code review feedback on schema cleaner	backend/internal/pkg/antigravity/schema_cleaner.go;backend/internal/pkg/antigravity/schema_cleaner_test.go
 7511e4de5	2026-09-13	MERGE	review	1	0	0	fix(streaming): drop Anthropic ping keepalives before OpenAI conversion	backend/internal/service/gateway_forward_as_chat_completions.go
 a985de062	2026-09-13	REBUILD	TAKE	0	2	0	fix(ui): focus non-searchable select dropdowns	frontend/src/components/common/Select.vue;frontend/src/components/common/__tests__/Select.keyboard.spec.ts
-7dace2fec	2026-09-13	REBUILD	review	0	2	0	fix(ui): discard unapplied date ranges on dismissal	frontend/src/components/common/DateRangePicker.vue;frontend/src/components/common/__tests__/DateRangePicker.dismiss.spec.ts
+7dace2fec	2026-09-13	REBUILD	TAKE	0	2	0	fix(ui): discard unapplied date ranges on dismissal	frontend/src/components/common/DateRangePicker.vue;frontend/src/components/common/__tests__/DateRangePicker.dismiss.spec.ts
 0e1329b52	2026-09-14	REBUILD	TAKE	0	2	0	fix(ui): reset select highlight when search results change	frontend/src/components/common/Select.vue;frontend/src/components/common/__tests__/Select.searchHighlight.spec.ts
 1e231ee2a	2026-09-15	MERGE	review	1	0	0	fix(antigravity): resolve golangci-lint errors in schema cleaner tests	backend/internal/pkg/antigravity/schema_cleaner_test.go
 0952ce341	2026-09-17	MERGE	review	2	0	0	fix(apicompat): include streamed arguments in function_call_arguments.done	backend/internal/pkg/apicompat/anthropic_to_responses_response.go;backend/internal/pkg/apicompat/anthropic_to_responses_stream_test.go

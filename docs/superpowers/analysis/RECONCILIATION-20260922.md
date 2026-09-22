@@ -7,10 +7,10 @@ the candidate worktree only; the protected baseline is never edited.
 
 | role | ref | value |
 |---|---|---|
-| candidate worktree | `port/inferno-selective-upstream-20260922` | `9de6bf46c6edfdb144304c5ae455224cab8532b5` (Select keyboard-behavior code checkpoint; subsequent commits are ledger-only) |
+| candidate worktree | `port/inferno-selective-upstream-20260922` | `be4b6e798264fbf60d41f8a59e79278ceffcca8c` (DateRangePicker dismissal code checkpoint; subsequent commits are ledger-only) |
 | protected baseline | `baseline/gpt-live-working-20260922` | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
 | upstream | `upstream/main` | `20a94fbb567b62208751292ed7786b24a7e7c0fe` |
-| rollback tag | `checkpoint/pre-select-keyboard-20260923` | immediate pre-Select checkpoint; earlier `checkpoint/redeem-history-pagination-20260923` remains in history |
+| rollback tag | `checkpoint/pre-date-range-dismissal-20260923` | immediate pre-DateRangePicker checkpoint; earlier Select and redemption checkpoints remain in history |
 
 The candidate is clean at this checkpoint. The protected baseline has
 pre-existing untracked runtime artifacts; they are intentionally left alone.
@@ -20,8 +20,8 @@ at `1c0a69c0c`, the refreshed review scan adds 86 newly reachable non-empty
 commits: 54 `MERGE`, 20 `REBUILD`, 3 `VERBATIM`, and 9 `NEW`. The 126 raw
 commits in the graph range include empty merge wrappers; those are intentionally
 omitted. The 86 rows are listed in
-`docs/superpowers/analysis/UPSTREAM-DELTA-20260923.tsv`; 83 remain in `review`
-after resolving two Select fixes as `TAKE` and their duplicate merge resolution
+`docs/superpowers/analysis/UPSTREAM-DELTA-20260923.tsv`; 82 remain in `review`
+after resolving three UI fixes as `TAKE` and their duplicate merge resolution
 as `SKIP`. This remains inventory progress, not a completion claim.
 
 The paired image-backfill/security lane is now promoted as candidate commits
@@ -190,6 +190,7 @@ The upstream inventory JSON used for this checkpoint was generated with
 | `a985de062c` | **TAKE (mirror + June hand-merge)** | `frontend/src/components/common/Select.vue`, its keyboard tests, and `inferno-frontend/src/components/common/Select.vue` plus June keyboard tests | Promoted as `9de6bf46c`; non-searchable opening now transfers focus to the `tabindex=-1` listbox while searchable mode keeps focus in the input. The June implementation retains its own markup. Mirror and June focused suites passed 17/17 each; changed-file ESLint, both Vue typechecks, both production builds, and `git diff --check` passed. |
 | `0e1329b520` | **TAKE (mirror + June hand-merge)** | `frontend/src/components/common/Select.vue`, its search-highlight tests, and `inferno-frontend/src/components/common/Select.vue` plus June search-highlight tests | Promoted with `9de6bf46c`; while open, changed results reset the keyboard highlight to the first enabled option and scroll it into view. Empty-result, remote-result, disabled-row, and reopen behavior are covered. The same focused tests, lint, typechecks, builds, and diff check passed. |
 | `974a819ba1` | **SKIP (duplicate merge resolution)** | `frontend/src/components/common/Select.vue`, `frontend/src/components/common/__tests__/Select.keyboard.spec.ts` | Its first-parent patch is the same keyboard-focus change from `a985de062c`; its merged tree combines that with `0e1329b520`. No unique behavior remains beyond the two separately recorded TAKEs. |
+| `7dace2fecb` | **TAKE (mirror; June already represented)** | `frontend/src/components/common/DateRangePicker.vue`, its dismissal test, and `inferno-frontend/src/components/common/__tests__/DateRangePicker.dismiss.spec.ts` | Promoted as `be4b6e798`; mirror restores the applied props after dismissal with a post-flush watcher. June already discarded drafts through its existing `close()` on Cancel/outside/Escape/re-toggle, so only June regression coverage was added. DateRangePicker suites passed 6/6 on each surface; changed-file ESLint, both Vue typechecks, both sequential production builds, and `git diff --check` passed. |
 
 The full 40-character backend source/candidate mapping, including the quota-
 403 skip and the reasoning/billing hand-merge dependency, is recorded in

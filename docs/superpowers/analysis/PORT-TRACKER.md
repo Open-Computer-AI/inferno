@@ -26,6 +26,11 @@ results resets the highlight to the first enabled option. The June Select keeps
 its own presentation. Mirror and June focused suites, lint, typechecks, and
 production builds passed; merge wrapper `974a819ba1` adds no unique behavior.
 
+Candidate commit `be4b6e798` takes upstream DateRangePicker dismissal fix
+`7dace2fecb` into the mirror. June already discards unapplied drafts through its
+existing close path for Cancel, outside click, Escape, and re-toggle; its
+regression test was added without changing the June component.
+
 **Rules for every item:** hand-merge, never `cp` (see the 2026-08-11 incident in
 INFERNO-BUILD.md). June tokens — except where our copy of a file is still literal
 Tailwind, e.g. `utils/platformColors.ts`, where a verbatim merge is correct.
