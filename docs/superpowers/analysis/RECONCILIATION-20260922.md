@@ -266,3 +266,13 @@ existing group-allowlist API mock (`2162e6c43`); the focused GroupsView,
 CodexManifestAccountsField, and duplicate suites passed 10/10, and
 `vue-tsc --noEmit` passed. The merge wrapper `65246e69d` is recorded as a
 skip because it adds no behavior beyond `b1ce821c4`.
+
+### Account expiry preset lane
+
+The independent account-expiry preset change (`00eabe8ab` → `5bcb2f796`) is
+promoted after an isolated cherry-pick. It adds one-month/one-year calendar
+presets to the shared create/edit account modals, clamps month-end dates, and
+keeps manual editing and clearing semantics intact. Create/edit/helper tests
+passed 90/90, `vue-tsc --noEmit` passed, and `git diff --check` passed. No
+backend, OAuth, WebSocket, June `inferno-frontend`, design-system, or lockfile
+paths changed.
