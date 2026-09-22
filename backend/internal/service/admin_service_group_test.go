@@ -973,12 +973,14 @@ func TestAdminService_CreateGroup_InvalidPeakRateReturnsBadRequest(t *testing.T)
 	svc := &adminServiceImpl{groupRepo: repo}
 
 	_, err := svc.CreateGroup(context.Background(), &CreateGroupInput{
-		Name:             "subscription-group",
-		Platform:         PlatformOpenAI,
-		SubscriptionType: SubscriptionTypeSubscription,
-		PeakRateEnabled:  true,
-		PeakStart:        "20:00",
-		PeakEnd:          "08:30",
+		Name:               "subscription-group",
+		Platform:           PlatformOpenAI,
+		SubscriptionType:   SubscriptionTypeSubscription,
+		RateMultiplier:     1,
+		PeakRateEnabled:    true,
+		PeakStart:          "20:00",
+		PeakEnd:            "08:30",
+		PeakRateMultiplier: testPtrFloat64(3),
 	})
 
 	require.ErrorContains(t, err, "peak_end")
