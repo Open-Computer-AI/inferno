@@ -426,3 +426,12 @@ peak multipliers. Create/update validation now returns a structured HTTP 400
 Focused admin-group tests, Go vet, and diff checks passed. The OAuth 429
 fallback-disabled behavior and DeepSeek vision behavior were already present in
 earlier candidate ports and were not replayed.
+
+### EasyPay upstream-type validation lane
+
+The EasyPay mapping fix (`c3b3072a6` → `317288c25`) is promoted. Provider
+`upstreamType` values may now contain periods (for example `usdt.trc20`), while
+local method types remain strict and slash-containing values are still rejected.
+Backend validator/refund tests and 12 focused payment-dialog tests passed; the
+only frontend output was the existing Browserslist freshness warning. Payment
+fulfillment and stored credentials were not changed.
