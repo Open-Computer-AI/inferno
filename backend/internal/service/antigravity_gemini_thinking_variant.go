@@ -108,6 +108,16 @@ func resolveGeminiThinkingVariant(account *Account, requestedModel string, body 
 	if len(mapping) == 0 {
 		return "", false
 	}
+	// An explicitly empty credentials.model_mapping keeps the local baseline's
+	// normal getMappedModel fallback. GetModelMapping may expand that empty map
+	// to Antigravity's runtime defaults, but those defaults must not make this
+	// resolver invent a thinking-tier route the account did not configure.
+	if account.Credentials != nil {
+		raw, _ := account.Credentials["model_mapping"].(map[string]any)
+		if len(raw) == 0 {
+			return "", false
+		}
+	}
 	// 裸名本身已有"真正的"映射 → 尊重现有配置，不做推导。判定分两层：
 	//   1. 映射目标不是自己（如 gemini-3.8-flash → gemini-3.8-flash-tiered）：用户明确指定了目标；
 	//   2. 映射目标是自己（原样透传）：仅当这条是用户亲手写进 credentials.model_mapping 的才尊重。
