@@ -7,7 +7,7 @@ the candidate worktree only; the protected baseline is never edited.
 
 | role | ref | value |
 |---|---|---|
-| candidate worktree | `port/inferno-selective-upstream-20260922` | `401fbbc9a0bde2acd46e74f035d0a0bcb66f74a1` |
+| candidate worktree | `port/inferno-selective-upstream-20260922` | `6c35936bf23bfbbd5d1218c9a8e57f8542382b36` |
 | protected baseline | `baseline/gpt-live-working-20260922` | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
 | upstream | `upstream/main` | `1c0a69c0ceddb2fd21581c17ab09f6c500b89ba1` |
 | rollback tag | `checkpoint/pre-reconciliation-8aa1e5de0` | candidate HEAD before this run |
@@ -96,6 +96,7 @@ The upstream inventory JSON used for this checkpoint was generated with
 | `e009ea303` | **HAND-MERGE / TAKE** | `backend/internal/repository/http_upstream.go`, `http_upstream_http2_keepalive_test.go`, `http_upstream_http2_ping_test.go` | Promoted as `1ed0ba3a`; preserved local OpenAI transport compatibility while adding upstream’s mode-specific 15s OpenAI versus 10s/5s long-stream keepalive behavior and ping-frame coverage. Focused HTTP/2 suite passed. |
 | `8e34ca5e3` | **TAKE (already present)** | `backend/internal/repository/account_repo.go`, `account_repo_integration_test.go`, `account_repo_temp_unsched_test.go`, `backend/internal/service/token_refresh_service_candidates_test.go` | An isolated no-commit cherry-pick against the candidate produced no working-tree changes, confirming the behavior is already represented without a duplicate commit. Focused repository OAuth-refresh candidate tests and service refresh-candidate test passed (exit 0). |
 | `18bfa4bf2` | **TAKE (already present)** | `backend/internal/service/openai_chat_roles.go`, `openai_chat_roles_test.go`, `openai_gateway_chat_completions_raw.go` | Candidate already contains the behavior via local commit `d6d7902bc`; an isolated no-commit cherry-pick produced no working-tree changes. Focused strict-developer-role tests passed with `go test -tags unit ./internal/service -run 'TestForwardAsChatCompletions_StrictDeveloperRole|TestNormalizeStrictChatDeveloperRoles' -count=1` (exit 0). |
+| `1a32b91eb` | **TAKE** | `frontend/src/components/common/Pagination.vue`, `frontend/src/components/common/__tests__/Pagination.jump.spec.ts` | Promoted as `6c35936b`; isolated cherry-pick applied cleanly, `git diff --check` passed, and focused Vitest passed: 1 file / 4 tests. The temporary scratch worktree used the existing candidate dependency tree; no lockfiles changed. |
 
 The next serial lane is the OpenCode/reasoning-effort/billing dependency group.
 The isolated probe of `e47255715` was not promoted: it conflicts in the native
