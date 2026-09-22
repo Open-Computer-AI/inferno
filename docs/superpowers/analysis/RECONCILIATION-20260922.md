@@ -7,7 +7,7 @@ the candidate worktree only; the protected baseline is never edited.
 
 | role | ref | value |
 |---|---|---|
-| candidate worktree | `port/inferno-selective-upstream-20260922` | `5fa22eaf617a4c681bb4556a535e821e109f0674` (latest promoted WS test checkpoint; this ledger update follows) |
+| candidate worktree | `port/inferno-selective-upstream-20260922` | `0213e4fe923c9538efc6d29f8c9efdcb2393bab0` (latest docs checkpoint; code checkpoint `4f5c3aa74`) |
 | protected baseline | `baseline/gpt-live-working-20260922` | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
 | upstream | `upstream/main` | `1c0a69c0ceddb2fd21581c17ab09f6c500b89ba1` |
 | rollback tag | `checkpoint/pre-reconciliation-8aa1e5de0` | candidate HEAD before this run |
@@ -535,8 +535,8 @@ candidate's June RiskControl surface. Release-number and CI-only commits are
 not runtime functional ports and remain outside this branch until a release
 cut is explicitly planned.
 
-The final-reasoning-effort billing change (`e47255715`) is also skipped as
-already represented by local port `24305a78`. The candidate retains the
-reasoning value through its custom Gemini/Anthropic forwarding and usage paths,
-with focused reasoning/pricing tests passing; replaying the upstream 12-file
-patch would overwrite those narrower compatibility surfaces.
+The final-reasoning-effort billing change (`e47255715`) remains promoted as
+local port `24305a78`; this audit reconfirmed that the candidate retains the
+reasoning value through its custom Gemini/Anthropic forwarding and usage paths.
+The focused reasoning/pricing tests passed again, and replaying the upstream
+12-file patch would overwrite those narrower compatibility surfaces.
