@@ -11,9 +11,9 @@ f744375a4	2026-09-11	MERGE	review	5	0	0	fix(openai): preserve GPT-5.5 requests c
 5d781ee6b	2026-09-12	MERGE	review	2	0	0	fix(antigravity): handle prefixItems and ensure array schema has valid items fallback	backend/internal/pkg/antigravity/schema_cleaner.go;backend/internal/pkg/antigravity/schema_cleaner_test.go
 69d49744c	2026-09-13	MERGE	review	2	0	0	fix(antigravity): address code review feedback on schema cleaner	backend/internal/pkg/antigravity/schema_cleaner.go;backend/internal/pkg/antigravity/schema_cleaner_test.go
 7511e4de5	2026-09-13	MERGE	review	1	0	0	fix(streaming): drop Anthropic ping keepalives before OpenAI conversion	backend/internal/service/gateway_forward_as_chat_completions.go
-a985de062	2026-09-13	REBUILD	review	0	2	0	fix(ui): focus non-searchable select dropdowns	frontend/src/components/common/Select.vue;frontend/src/components/common/__tests__/Select.keyboard.spec.ts
+a985de062	2026-09-13	REBUILD	TAKE	0	2	0	fix(ui): focus non-searchable select dropdowns	frontend/src/components/common/Select.vue;frontend/src/components/common/__tests__/Select.keyboard.spec.ts
 7dace2fec	2026-09-13	REBUILD	review	0	2	0	fix(ui): discard unapplied date ranges on dismissal	frontend/src/components/common/DateRangePicker.vue;frontend/src/components/common/__tests__/DateRangePicker.dismiss.spec.ts
-0e1329b52	2026-09-14	REBUILD	review	0	2	0	fix(ui): reset select highlight when search results change	frontend/src/components/common/Select.vue;frontend/src/components/common/__tests__/Select.searchHighlight.spec.ts
+0e1329b52	2026-09-14	REBUILD	TAKE	0	2	0	fix(ui): reset select highlight when search results change	frontend/src/components/common/Select.vue;frontend/src/components/common/__tests__/Select.searchHighlight.spec.ts
 1e231ee2a	2026-09-15	MERGE	review	1	0	0	fix(antigravity): resolve golangci-lint errors in schema cleaner tests	backend/internal/pkg/antigravity/schema_cleaner_test.go
 0952ce341	2026-09-17	MERGE	review	2	0	0	fix(apicompat): include streamed arguments in function_call_arguments.done	backend/internal/pkg/apicompat/anthropic_to_responses_response.go;backend/internal/pkg/apicompat/anthropic_to_responses_stream_test.go
 e74c690ac	2026-09-17	MERGE	review	5	0	0	fix(openai): keep transport heartbeats outside semantic output	backend/internal/service/openai_capacity_shed_test.go;backend/internal/service/openai_gateway_passthrough.go;backend/internal/service/openai_visible_ttft_test.go;backend/internal/service/openai_ws_http_bridge.go;backend/internal/service/openai_ws_http_bridge_test.go
@@ -84,7 +84,7 @@ de6388aec	2026-09-22	MERGE	review	1	0	0	Merge pull request #5443 from llissery/f
 b0e32fe5b	2026-09-22	MERGE	review	1	0	0	Merge pull request #7427 from xlplbo/fix/openai-legacy-scheduler-decision	backend/internal/service/openai_account_scheduler.go
 ba5737fe1	2026-09-22	VERBATIM	review	0	1	0	Merge pull request #7322 from ouchihao/codex/bug-ccswitch-antigravity-slash	frontend/src/utils/ccswitchImport.ts
 fa9f104a9	2026-09-22	MERGE	review	1	0	0	Merge pull request #7169 from HuntercodeT/fix/gemini-mixed-model-listing	backend/internal/service/gateway_service.go
-974a819ba	2026-09-22	REBUILD	review	0	1	0	Merge pull request #7108 from ouchihao/codex/bug-select-keyboard-focus	frontend/src/components/common/Select.vue
+974a819ba	2026-09-22	REBUILD	SKIP	0	1	0	Merge pull request #7108 from ouchihao/codex/bug-select-keyboard-focus	frontend/src/components/common/Select.vue
 b12a187d4	2026-09-22	MERGE	review	1	0	0	Merge pull request #7097 from MHJoy99/contrib/upstream-5203-ping-filter	backend/internal/service/gateway_forward_as_chat_completions.go
 583398d18	2026-09-22	MERGE	review	1	0	0	Merge pull request #7303 from little-greenbean/fix/upstream-response-close-lifecycle	backend/internal/repository/http_upstream.go
 e26abaef7	2026-09-22	MERGE	review	2	0	0	Merge pull request #6473 from cxx-cod/pr/openai-stream-terminal-eof	backend/internal/service/openai_gateway_passthrough.go;backend/internal/service/openai_gateway_response_handling.go

@@ -20,6 +20,12 @@ endpoints our own backend already serves.
 uses the existing native pager; the legacy no-query API array response remains
 available. This feature is verified and is not one of the remaining TODOs below.
 
+Candidate commit `9de6bf46c` also takes upstream Select fixes `a985de062c` and
+`0e1329b520`: non-searchable popovers receive keyboard focus, and changing
+results resets the highlight to the first enabled option. The June Select keeps
+its own presentation. Mirror and June focused suites, lint, typechecks, and
+production builds passed; merge wrapper `974a819ba1` adds no unique behavior.
+
 **Rules for every item:** hand-merge, never `cp` (see the 2026-08-11 incident in
 INFERNO-BUILD.md). June tokens — except where our copy of a file is still literal
 Tailwind, e.g. `utils/platformColors.ts`, where a verbatim merge is correct.
