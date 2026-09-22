@@ -44,7 +44,7 @@ cb2bb6084	2026-09-19	REBUILD	review	0	2	0	fix(users): wait for group configurati
 f3a2dcabb	2026-09-19	NEW	review	0	2	0	fix(users): ignore superseded balance history requests	frontend/src/components/admin/user/UserBalanceHistoryModal.vue;frontend/src/components/admin/user/__tests__/UserBalanceHistoryModal.spec.ts
 cd2a4357c	2026-09-19	NEW	review	0	2	0	fix(groups): reject negative custom rates before adding	frontend/src/components/admin/group/GroupRateMultipliersModal.vue;frontend/src/components/admin/group/__tests__/GroupRateMultipliersModal.spec.ts
 1411b7eb7	2026-09-20	MERGE	review	2	0	0	fix(gateway): recognize Baseten reasoning budget errors	backend/internal/service/gateway_request.go;backend/internal/service/gateway_thinking_budget_test.go
-fabdfb8a5	2026-09-20	REBUILD	review	0	4	0	fix(frontend): ensure Codex base URLs include /v1	frontend/src/components/keys/UseKeyModal.vue;frontend/src/components/keys/__tests__/UseKeyModal.spec.ts;frontend/src/utils/__tests__/ccswitchImport.spec.ts;frontend/src/utils/ccswitchImport.ts
+fabdfb8a5	2026-09-20	REBUILD	TAKE	0	4	0	fix(frontend): ensure Codex base URLs include /v1	frontend/src/components/keys/UseKeyModal.vue;frontend/src/components/keys/__tests__/UseKeyModal.spec.ts;frontend/src/utils/__tests__/ccswitchImport.spec.ts;frontend/src/utils/ccswitchImport.ts
 63c079d87	2026-09-20	MERGE	review	2	0	0	fix(account): preserve settings on OAuth reauth	backend/internal/handler/admin/account_handler.go;backend/internal/handler/admin/account_handler_long_context_billing_test.go
 158234720	2026-09-20	REBUILD	review	0	2	0	fix(payment): trim callback base URL trailing slashes	frontend/src/components/payment/PaymentProviderDialog.vue;frontend/src/components/payment/__tests__/PaymentProviderDialog.spec.ts
 23a1d3818	2026-09-20	REBUILD	review	0	2	0	fix(pricing): parse scientific notation in token bounds	frontend/src/components/admin/channel/IntervalRow.vue;frontend/src/components/admin/channel/__tests__/IntervalRow.spec.ts
@@ -82,7 +82,7 @@ b717ac7f0	2026-09-22	MERGE	review	0	0	1	Merge pull request #7289 from wucm667/fi
 de6388aec	2026-09-22	MERGE	review	1	0	0	Merge pull request #5443 from llissery/fix/vertex-429-cooldown	backend/internal/service/gemini_messages_compat_service.go
 65f086d2d	2026-09-22	MERGE	review	1	0	0	Merge pull request #7479 from lzfxxx/fix/opencode-commandcode-cf1010	backend/internal/service/openai_gateway_passthrough.go
 b0e32fe5b	2026-09-22	MERGE	review	1	0	0	Merge pull request #7427 from xlplbo/fix/openai-legacy-scheduler-decision	backend/internal/service/openai_account_scheduler.go
-ba5737fe1	2026-09-22	VERBATIM	review	0	1	0	Merge pull request #7322 from ouchihao/codex/bug-ccswitch-antigravity-slash	frontend/src/utils/ccswitchImport.ts
+ba5737fe1	2026-09-22	VERBATIM	SKIP	0	1	0	Merge pull request #7322 from ouchihao/codex/bug-ccswitch-antigravity-slash	frontend/src/utils/ccswitchImport.ts
 fa9f104a9	2026-09-22	MERGE	review	1	0	0	Merge pull request #7169 from HuntercodeT/fix/gemini-mixed-model-listing	backend/internal/service/gateway_service.go
 974a819ba	2026-09-22	REBUILD	SKIP	0	1	0	Merge pull request #7108 from ouchihao/codex/bug-select-keyboard-focus	frontend/src/components/common/Select.vue
 b12a187d4	2026-09-22	MERGE	review	1	0	0	Merge pull request #7097 from MHJoy99/contrib/upstream-5203-ping-filter	backend/internal/service/gateway_forward_as_chat_completions.go

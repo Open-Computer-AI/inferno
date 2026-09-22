@@ -44,10 +44,18 @@ Candidate commit `29ddd9009` also takes proxy expiry boundary fix `9612a70c7`
 on both surfaces. An active proxy at the expiry instant now displays the
 expired label while the backend status update is still pending.
 
-Candidate commit `2c0cf2319` takes only the Antigravity CC Switch endpoint
-slash fix `d054ee9af` on both surfaces; the configured homepage remains
-unchanged. The separate Codex `/v1` endpoint update (`fabdfb8a5`) and its merge
-wrapper (`ba5737fe1`) remain under review rather than being bundled here.
+Candidate commit `2c0cf2319` takes the Antigravity CC Switch endpoint slash fix
+`d054ee9af` on both surfaces; the configured homepage remains unchanged.
+Candidate commit `9f516a89e` separately takes the Codex `/v1` endpoint fix
+`fabdfb8a5` on both surfaces: Codex/Codex WS config gets exactly one `/v1`,
+Claude config gets the root URL, and CC Switch OpenAI import URLs get exactly
+one `/v1`. The local unsupported-platform removals and June presentation were
+preserved. Focused tests passed 35/35 per surface; changed-file ESLint,
+typechecks, and both production builds passed.
+
+Upstream merge wrapper `ba5737fe1` is the Antigravity PR #7322 merge, not a
+Codex `/v1` wrapper. Its first-parent change is fully represented by the
+separate `d054ee9af` TAKE, so the wrapper is recorded as a duplicate `SKIP`.
 
 **Rules for every item:** hand-merge, never `cp` (see the 2026-08-11 incident in
 INFERNO-BUILD.md). June tokens — except where our copy of a file is still literal
