@@ -112,6 +112,10 @@ The upstream inventory JSON used for this checkpoint was generated with
 | `6c8ad0bd4` | **TAKE (June surface)** | `inferno-frontend/src/views/auth/RegisterView.vue`, related registration visibility test | Promoted in `e67948d3`; June focused Vitest and typecheck passed in isolation. |
 | `a16070ccf` | **TAKE (June surface)** | `inferno-frontend/src/components/TurnstileWidget.vue`, `TurnstileWidget.spec.ts` | Promoted in `32a9c0dd`; June focused Vitest, ESLint, Vue typecheck, and build passed in isolation. |
 
+The full 40-character backend source/candidate mapping, including the quota-
+403 skip and the reasoning/billing hand-merge dependency, is recorded in
+`docs/superpowers/analysis/BACKEND-LOW-RISK-DISPOSITIONS-20260922.tsv`.
+
 ### Frontend mirror lane
 
 The isolated `lane/frontend-mirror-audit-20260922` was promoted as the
