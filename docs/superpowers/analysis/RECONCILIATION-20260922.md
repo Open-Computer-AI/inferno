@@ -367,6 +367,16 @@ lifecycle and discards ambiguous SQL sessions on lock/unlock failure. Focused
 repository tests, repository/server vet, and diff checks passed; no schema,
 data, inference, OAuth, or container state was changed.
 
+### Codex allowed-tools lane
+
+The allowed-tools preservation fix (`2e31d8b70` → `9c955035e`) is promoted.
+It treats `tool_choice.type=allowed_tools` as a selection policy, preserving
+the caller's restriction for upstream validation and collecting/re-writing the
+referenced function names alongside existing aliases. Focused Codex/tool-choice
+tests, Go vet, and diff checks passed. The related Astra Ultra metadata fix
+(`2db78bd3d`) remains deferred because it conflicts with the candidate's custom
+Codex metadata/model-manifest contract; no upstream metadata was overwritten.
+
 ### Claude thinking-binding beta lane
 
 The Claude compatibility fix (`7ae031209` → `682abb5c2`) is promoted. It adds
