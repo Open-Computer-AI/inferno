@@ -7,7 +7,7 @@ the candidate worktree only; the protected baseline is never edited.
 
 | role | ref | value |
 |---|---|---|
-| candidate worktree | `port/inferno-selective-upstream-20260922` | `eb6008f2464f92a450992a5a1c50d08dc9425af` (functional tip; this ledger update follows) |
+| candidate worktree | `port/inferno-selective-upstream-20260922` | `5fa22eaf617a4c681bb4556a535e821e109f0674` (latest promoted WS test checkpoint; this ledger update follows) |
 | protected baseline | `baseline/gpt-live-working-20260922` | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
 | upstream | `upstream/main` | `1c0a69c0ceddb2fd21581c17ab09f6c500b89ba1` |
 | rollback tag | `checkpoint/pre-reconciliation-8aa1e5de0` | candidate HEAD before this run |
@@ -254,6 +254,23 @@ still in progress. Focused handler/service Cyber/OpenAIWS/HTTPBridge/Passthrough
 tests passed, as did `go vet ./internal/handler ./internal/service` and
 `git diff --check`. The full source/path/evidence row is in
 `docs/superpowers/analysis/GATEWAY-WS-DISPOSITIONS-20260922.tsv`.
+
+### Follow-up WS close-order test lane
+
+The test-only upstream fix (`d2e319b2a` → `5fa22eaf6`) is promoted. The
+same-thread Codex preemption test now keeps reading until the asynchronous
+close frame arrives, so an in-flight response cannot make the test report a
+false failure; the different-thread non-preemption assertion is unchanged.
+The two focused WS tests, `go vet ./internal/service`, and `git diff --check`
+passed. No runtime, OAuth, account-routing, billing, or container state was
+changed.
+
+The Antigravity attribution source (`be4a4990f`) is skipped as already
+represented. The candidate's `stripClaudeAttribution` implementation already
+handles both string and block system prompts and leaves user/tool literals
+untouched. The isolated cherry-pick conflicted because the candidate has
+stronger local attribution coverage and an intentional mixed-tool routing
+implementation; no local provider behavior was overwritten.
 
 ### June/custom GroupsView lane
 
