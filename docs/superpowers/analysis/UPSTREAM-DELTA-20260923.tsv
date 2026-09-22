@@ -25,7 +25,7 @@ c12d0131c	2026-09-15	MERGE	review	2	0	0	fix(gateway): list mixed antigravity mod
 24f4736f6	2026-09-18	REBUILD	TAKE	0	2	0	fix(upload): cancel superseded image reads	frontend/src/components/common/ImageUpload.vue;frontend/src/components/common/__tests__/ImageUpload.readOrder.spec.ts
 9612a70c7	2026-09-18	NEW	TAKE	0	2	0	fix(proxies): label newly expired proxies correctly	frontend/src/utils/__tests__/proxyExpiry.boundary.spec.ts;frontend/src/utils/proxyExpiry.ts
 d054ee9af	2026-09-18	NEW	TAKE	0	2	0	fix(ccswitch): trim trailing slashes before Antigravity path	frontend/src/utils/__tests__/ccswitchImport.antigravityUrl.spec.ts;frontend/src/utils/ccswitchImport.ts
-7b282c4f1	2026-09-18	REBUILD	review	0	2	0	fix(announcements): ignore superseded fetch results	frontend/src/stores/__tests__/announcements.fetch.spec.ts;frontend/src/stores/announcements.ts
+7b282c4f1	2026-09-18	REBUILD	TAKE	0	2	0	fix(announcements): ignore superseded fetch results	frontend/src/stores/__tests__/announcements.fetch.spec.ts;frontend/src/stores/announcements.ts
 37238c098	2026-09-18	MERGE	review	2	0	0	fix(openai): honor error.status when classifying in-stream failures	backend/internal/service/openai_access_state_failover_test.go;backend/internal/service/openai_gateway_passthrough.go
 f7280213f	2026-09-19	MERGE	review	2	0	0	fix(proxies): skip expiry writes from stale snapshots	backend/internal/repository/proxy_expiry_renewal_integration_test.go;backend/internal/repository/proxy_repo.go
 4ccdead2a	2026-09-19	MERGE	review	3	0	0	fix(proxies): skip inactive fallback targets	backend/internal/repository/proxy_inactive_backup_integration_test.go;backend/internal/service/proxy_fallback.go;backend/internal/service/proxy_fallback_test.go

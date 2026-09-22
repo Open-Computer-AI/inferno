@@ -7,11 +7,11 @@ the candidate worktree only; the protected baseline is never edited.
 
 | role | ref | value |
 |---|---|---|
-| candidate worktree | `port/inferno-selective-upstream-20260922` | `9f516a89e` (Codex `/v1` endpoint code checkpoint; docs record the integrated frontend lanes) |
+| candidate worktree | `port/inferno-selective-upstream-20260922` | `6bd673dbe` (announcement fetch ownership checkpoint on mirror and June frontends) |
 | protected baseline | `baseline/gpt-live-working-20260922` | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
 | upstream | `upstream/main` | `20a94fbb567b62208751292ed7786b24a7e7c0fe` |
-| code checkpoint tag | `checkpoint/codex-v1-endpoint-20260923` | Codex `/v1` endpoint code checkpoint; earlier lane tags remain in history |
-| rollback tag | `checkpoint/pre-codex-v1-endpoint-20260923` | immediate pre-Codex checkpoint; earlier proxy-expiry, ImageUpload, BaseDialog, DateRangePicker, Select, redemption, and Antigravity checkpoints remain in history |
+| code checkpoint tag | `checkpoint/announcements-fetch-generation-20260923` | announcement fetch ownership code checkpoint; earlier lane tags remain in history |
+| rollback tag | `checkpoint/pre-announcements-race-20260923` | immediate pre-announcement checkpoint; earlier Codex, Antigravity, proxy-expiry, ImageUpload, BaseDialog, DateRangePicker, Select, and redemption checkpoints remain in history |
 
 The candidate is clean at this checkpoint. The protected baseline has
 pre-existing untracked runtime artifacts; they are intentionally left alone.
@@ -21,8 +21,8 @@ at `1c0a69c0c`, the refreshed review scan adds 86 newly reachable non-empty
 commits: 54 `MERGE`, 20 `REBUILD`, 3 `VERBATIM`, and 9 `NEW`. The 126 raw
 commits in the graph range include empty merge wrappers; those are intentionally
 omitted. The 86 rows are listed in
-`docs/superpowers/analysis/UPSTREAM-DELTA-20260923.tsv`; 76 remain in `review`
-after resolving eight UI fixes as `TAKE` and two duplicate merge wrappers as
+`docs/superpowers/analysis/UPSTREAM-DELTA-20260923.tsv`; 75 remain in `review`
+after resolving nine UI fixes as `TAKE` and two duplicate merge wrappers as
 `SKIP`. This remains inventory progress, not a completion claim.
 
 The paired image-backfill/security lane is now promoted as candidate commits
@@ -614,3 +614,18 @@ The related upstream merge wrapper `ba5737fe1` is for Antigravity PR #7322, not
 the Codex `/v1` fix. Its first-parent diff is already represented by the
 separate `d054ee9af` TAKE, so it is recorded as a duplicate `SKIP`. Immediate
 rollback point is tagged `checkpoint/pre-codex-v1-endpoint-20260923`.
+
+### Announcement fetch ownership lane (2026-09-23)
+
+Upstream `7b282c4f1` is promoted as mirror commit `af3498a15` and June adapter
+`6bd673dbe`. `App.vue` resets the store on logout, starts a delayed forced fetch
+on fresh login, and also fetches on visibility/route changes; a request from an
+older session or refresh could otherwise repopulate popups or clear the new
+session's loading/throttle state. A per-request generation now owns success,
+error, and `finally` writes, and `reset()` invalidates outstanding generations.
+Each surface's fetch/read suite passed 9/9, changed-file ESLint and both Vue
+typechecks passed, and both isolated production builds passed. Build output had
+the existing Browserslist and chunking warnings only. The mirror and June lanes
+were independently implemented and tested; June's disjoint commit was rebased
+onto the mirror commit before fast-forward consolidation. No API/backend,
+dependency, generated, or visual-design files changed.

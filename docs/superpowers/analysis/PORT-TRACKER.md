@@ -57,6 +57,13 @@ Upstream merge wrapper `ba5737fe1` is the Antigravity PR #7322 merge, not a
 Codex `/v1` wrapper. Its first-parent change is fully represented by the
 separate `d054ee9af` TAKE, so the wrapper is recorded as a duplicate `SKIP`.
 
+Announcement fetch ownership fix `7b282c4f1` is promoted on both surfaces:
+mirror commit `af3498a15` and June adapter `6bd673dbe`. Generation tokens stop
+stale fetches from restoring announcements/popups or changing the active
+session's throttle/loading state after reset or a newer forced refresh. Both
+focused suites passed 9/9; changed-file ESLint, Vue typechecks, production
+builds, and diff checks passed.
+
 **Rules for every item:** hand-merge, never `cp` (see the 2026-08-11 incident in
 INFERNO-BUILD.md). June tokens — except where our copy of a file is still literal
 Tailwind, e.g. `utils/platformColors.ts`, where a verbatim merge is correct.
