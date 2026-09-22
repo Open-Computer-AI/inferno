@@ -76,6 +76,12 @@ function addModel() {
   inputValue.value = ''
 }
 
+function handleTab(event: KeyboardEvent) {
+  if (!inputValue.value.trim()) return
+  event.preventDefault()
+  addModel()
+}
+
 function removeModel(idx: number) {
   const newModels = [...props.models]
   newModels.splice(idx, 1)
@@ -122,7 +128,7 @@ function handlePaste(e: ClipboardEvent) {
         class="mti__input"
         :placeholder="models.length === 0 ? placeholder : ''"
         @keydown.enter.prevent="addModel"
-        @keydown.tab.prevent="addModel"
+        @keydown.tab="handleTab"
         @keydown.delete="handleBackspace"
         @paste="handlePaste"
         @blur="addModel"

@@ -106,8 +106,12 @@ function pickPreset(amount: number) {
 }
 
 function onInput(event: Event) {
-  const val = (event.target as HTMLInputElement).value
-  if (!AMOUNT_PATTERN.test(val)) return
+  const input = event.target as HTMLInputElement
+  const val = input.value
+  if (!AMOUNT_PATTERN.test(val)) {
+    input.value = customText.value
+    return
+  }
   customText.value = val
   if (val === '') {
     emit('update:modelValue', null)
