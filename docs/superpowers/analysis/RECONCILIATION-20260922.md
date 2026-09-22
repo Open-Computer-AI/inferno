@@ -659,3 +659,30 @@ The incremental delta now has 11 TAKE rows, 73 unresolved review rows, and 2
 duplicate-wrapper SKIPs. No production build or deployment was run for these
 narrow changes; only the documented focused checks were run. The existing
 Browserslist age warning remains informational.
+
+### Second independent UI/backend batch (2026-09-23)
+
+Two more unrelated UI bugs were ported independently to both surfaces, alongside
+one contained backend quota-query fix. Candidate commits: `35352e755`
+(mirror group-replacement errors), `3e4403f13` (June group-replacement errors),
+`e7475d861` (mirror monitor-picker race), `dc3b93b27` (June monitor-picker
+race), and `e556d2d94` (Grok quota cooldown query).
+
+- Upstream `50f79e11f`: group-replacement API failures now display useful errors
+  and remain retryable. Mirror matches the source commit byte-for-byte; June
+  uses its native component and API-error convention. Focused tests passed 4/4
+  on each surface; both ESLint and Vue typechecks passed.
+- Upstream `4d5a4ab0e`: stale monitor-template responses cannot replace current
+  picker results/errors/loading. Mirror matches the source commit byte-for-byte;
+  June uses a native adaptation. Focused tests passed 5/5 on each surface; both
+  ESLint and Vue typechecks passed.
+- Upstream `d4e8ddb0c`: the admin Grok quota query uses the established manual
+  token-probe path to remain available during scheduler cooldowns. Credentials
+  and proxy state remain validated; no gateway request path changed. Unit-tagged
+  Grok quota tests and both ordinary/unit-tagged Go vet passed, and source files
+  match upstream byte-for-byte.
+
+Consolidated candidate verification passed 17/17 mirror tests and 13/13 June
+tests, both Vue typechecks/lints, focused moderation and Grok Go tests, vet, and
+diff checks. The incremental delta now has 14 TAKE rows, 70 unresolved review
+rows, and 2 duplicate-wrapper SKIPs. No production build or deployment was run.
