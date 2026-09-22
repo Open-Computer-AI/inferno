@@ -435,3 +435,11 @@ local method types remain strict and slash-containing values are still rejected.
 Backend validator/refund tests and 12 focused payment-dialog tests passed; the
 only frontend output was the existing Browserslist freshness warning. Payment
 fulfillment and stored credentials were not changed.
+
+### Deferred account-label/test surfaces
+
+The OpenAI plan-label change (`8f2cba0c2`) is deferred because it conflicts in
+the candidate's custom `PlatformTypeBadge.vue`; applying it blindly could alter
+Grok/Antigravity labels. The OpenCode mapped-test-model fix (`7c008bd8c`) is
+also deferred because the candidate no longer has the upstream account-test
+function/file shape. Both require consumer-led adaptation before promotion.
