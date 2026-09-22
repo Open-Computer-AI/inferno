@@ -407,3 +407,12 @@ Completions-only upstream; media-only agent messages remain omitted. Focused
 bridge tests, Go vet, and diff checks passed. The related live-account model
 picker (`f88d62ad2`) remains deferred because its upstream file path conflicts
 with the candidate's custom model-catalog implementation.
+
+### Claude OAuth cache-control lane
+
+The cache-control preservation fix (`a4edda36d` → `f8dc71cdd`) is promoted.
+Claude OAuth normalization no longer strips client/system cache anchors, while
+the `count_tokens` path now enforces the same four-cache-control-block ceiling
+as the other outbound paths. Focused OAuth normalization and count-token tests,
+Go vet, and diff checks passed. DeepSeek vision behavior was not replayed here
+because candidate port `b3a1578ad` already represents it.
