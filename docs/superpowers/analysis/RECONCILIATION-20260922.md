@@ -350,3 +350,11 @@ the upstream tests' stale constant name was adapted.
 The OpenCode session-forwarding merge wrapper (`620eb3fd0`) is skipped because
 candidate `b2906435e` already contains the exact new helper/test blobs and
 forwarding calls. No duplicate replay is needed.
+
+### Backup/migration serialization lane
+
+The backup lock fix (`95023e7d4` → `fe7743709`) is promoted. The dumper now
+holds the migrations advisory lock for the complete streaming `pg_dump`/`psql`
+lifecycle and discards ambiguous SQL sessions on lock/unlock failure. Focused
+repository tests, repository/server vet, and diff checks passed; no schema,
+data, inference, OAuth, or container state was changed.
