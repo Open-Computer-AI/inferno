@@ -448,3 +448,12 @@ The MiniMax monitor allowlist change (`5968fd0ed`) is also deferred: the
 candidate lacks the `MonitorProviderMiniMax` constant and provider foundation,
 so applying the two allowlist entries alone would not compile. A full provider
 surface audit is required before any MiniMax monitor integration.
+
+### GPT-5.5 compact-default lane
+
+The compact-model default change (`489968fd7` → `af3a930a6`) is promoted, with
+candidate-surface cleanup `af67f6a7a`. Backend defaults, config examples, and
+all Compose fallbacks now agree on GPT-5.5 for `/responses/compact`; unrelated
+image-model environment settings from the upstream context were intentionally
+excluded. Config default tests, Go vet, consistency checks, and diff checks
+passed.
