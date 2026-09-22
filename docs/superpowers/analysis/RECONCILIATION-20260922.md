@@ -7,7 +7,7 @@ the candidate worktree only; the protected baseline is never edited.
 
 | role | ref | value |
 |---|---|---|
-| candidate worktree | `port/inferno-selective-upstream-20260922` | `11f50eb9bd052595c8131c1fe57d3183099c1a77` (functional tip; this ledger update follows) |
+| candidate worktree | `port/inferno-selective-upstream-20260922` | `86c12166ae61d3811c46fbe41cb60d049db84c3e` (functional tip; this ledger update follows) |
 | protected baseline | `baseline/gpt-live-working-20260922` | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
 | upstream | `upstream/main` | `1c0a69c0ceddb2fd21581c17ab09f6c500b89ba1` |
 | rollback tag | `checkpoint/pre-reconciliation-8aa1e5de0` | candidate HEAD before this run |
@@ -98,6 +98,10 @@ The upstream inventory JSON used for this checkpoint was generated with
 | `18bfa4bf2` | **TAKE (already present)** | `backend/internal/service/openai_chat_roles.go`, `openai_chat_roles_test.go`, `openai_gateway_chat_completions_raw.go` | Candidate already contains the behavior via local commit `d6d7902bc`; an isolated no-commit cherry-pick produced no working-tree changes. Focused strict-developer-role tests passed with `go test -tags unit ./internal/service -run 'TestForwardAsChatCompletions_StrictDeveloperRole|TestNormalizeStrictChatDeveloperRoles' -count=1` (exit 0). |
 | `1a32b91eb` | **TAKE** | `frontend/src/components/common/Pagination.vue`, `frontend/src/components/common/__tests__/Pagination.jump.spec.ts` | Promoted as `6c35936b`; isolated cherry-pick applied cleanly, `git diff --check` passed, and focused Vitest passed: 1 file / 4 tests. The temporary scratch worktree used the existing candidate dependency tree; no lockfiles changed. |
 | `d03c42d79` | **TAKE** | `frontend/src/components/modelPlaza/PlazaModelPricingTable.vue` | Promoted as `11f50eb9`; isolated cherry-pick applied cleanly with one presentational `table-fixed` → `table-auto` change. Focused plaza tests passed: 2 files / 33 tests; Vue typecheck and `git diff --check` passed. ESLint was not runnable because the scratch dependency tree lacks the `vue-eslint-parser` symlink; no lockfiles or June files changed. |
+| `1cab4d8c2` | **TAKE** | `backend/internal/service/pricing_service.go` | Promoted as `918b35b9`; isolated cherry-pick applied cleanly. `TestPricingHotReload_*` passed in the isolated and candidate worktrees; `gofmt -d` and `go vet ./...` passed. No schema, gateway, OAuth, sideband, or account-auth paths changed. |
+| `c76db386c` | **TAKE** | `frontend/src/views/admin/SubscriptionsView.vue`, `frontend/src/views/admin/__tests__/SubscriptionsView.userUsageLink.spec.ts` | Promoted as `fad3efd4b`; isolated cherry-pick applied cleanly. Focused Vitest passed 4/4 and Vue typecheck passed; no June files or lockfiles changed. |
+| `fe36f4a91` | **TAKE** | `frontend/src/views/auth/RegisterView.vue`, `frontend/src/views/auth/__tests__/RegisterView.spec.ts` | Promoted as `86c12166a`; isolated cherry-pick applied cleanly. Focused Vitest passed 11/11 and Vue typecheck passed; existing password-confirmation behavior was preserved. |
+| `55a95d4c6` | **DEFER / HAND-MERGE** | `frontend/src/i18n/locales/{en,zh}/dashboard.ts`, `frontend/src/utils/keyGroupProviders.ts`, `frontend/src/views/user/KeysView.vue`, `frontend/src/views/user/__tests__/KeysView.spec.ts` | Isolated focused tests passed 18/18, but Vue typecheck failed because the source introduces `minimax` in `Record<GroupPlatform, ...>` while the candidate's `GroupPlatform` union does not declare `minimax`. Left isolated; no shared type widening was assumed. |
 | `c7343d2aa` | **TAKE** | `backend/internal/service/channel_monitor_checker.go`, `channel_monitor_checker_body_test.go` | Promoted as `dba38137`; focused Gemini monitor tests passed in the isolated lane, and candidate-side handler tests passed. Full service-suite image-model failures reproduce at the pre-backend checkpoint and are not touched by this change. |
 | `38cfd7e2d` | **TAKE** | `backend/internal/handler/admin/{account_data.go,proxy_data.go,proxy_handler.go}`, `backend/internal/service/{admin_proxy.go,admin_service.go}` and focused tests | Promoted as `e5c2b50e`; focused proxy handler/service tests, `gofmt`, `go vet ./...`, and the isolated lane full backend suite passed. |
 | `3fc08745a` | **TAKE** | `backend/internal/handler/model_plaza_handler.go`, `backend/internal/service/api_key_service.go` and focused visibility tests | Promoted as `8a71f145`; focused model-plaza/API-key visibility tests, `gofmt`, `go vet ./...`, and the isolated lane full backend suite passed. |
@@ -138,6 +142,20 @@ The pagination source was handled separately above. The batch-image
 fix/revert pair was deferred because the candidate already has the fixed
 runtime behavior, and mixed/customized frontend commits remain reserved for
 the June product lane rather than being copied into the mirror.
+
+After that mirror batch, three bounded shared-frontend fixes were promoted:
+deleted-user filtering in the admin subscription assignment search
+(`c76db386c` → `fad3efd4b`), registration promo-code flash prevention
+(`fe36f4a91` → `86c12166a`), and the plaza pricing table width fix above.
+The provider-filtered API-key groups change (`55a95d4c6`) remains isolated:
+its runtime tests pass, but the candidate's declared `GroupPlatform` union
+does not yet include the new `minimax` entry required by the source mapping.
+That contract mismatch must be reconciled before any promotion.
+
+The independent backend pricing hot-reload fix (`1cab4d8c2` → `918b35b9`)
+was also promoted after isolated and candidate `TestPricingHotReload_*`,
+`gofmt`, and `go vet ./...` checks passed. It does not touch the gateway,
+OAuth, sideband, schema, or account-auth surfaces.
 
 ### June product lane
 
