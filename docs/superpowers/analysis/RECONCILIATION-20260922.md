@@ -7,7 +7,7 @@ the candidate worktree only; the protected baseline is never edited.
 
 | role | ref | value |
 |---|---|---|
-| candidate worktree | `port/inferno-selective-upstream-20260922` | `f90fc9a44abcda800ccae2cec2e7456bb0df2694` |
+| candidate worktree | `port/inferno-selective-upstream-20260922` | `6987ec29dfbebe7ac9ad2b33825bdebec4c97b39` |
 | protected baseline | `baseline/gpt-live-working-20260922` | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
 | upstream | `upstream/main` | `1c0a69c0ceddb2fd21581c17ab09f6c500b89ba1` |
 | rollback tag | `checkpoint/pre-reconciliation-8aa1e5de0` | candidate HEAD before this run |
@@ -100,6 +100,7 @@ The upstream inventory JSON used for this checkpoint was generated with
 | `c7343d2aa` | **TAKE** | `backend/internal/service/channel_monitor_checker.go`, `channel_monitor_checker_body_test.go` | Promoted as `dba38137`; focused Gemini monitor tests passed in the isolated lane, and candidate-side handler tests passed. Full service-suite image-model failures reproduce at the pre-backend checkpoint and are not touched by this change. |
 | `38cfd7e2d` | **TAKE** | `backend/internal/handler/admin/{account_data.go,proxy_data.go,proxy_handler.go}`, `backend/internal/service/{admin_proxy.go,admin_service.go}` and focused tests | Promoted as `e5c2b50e`; focused proxy handler/service tests, `gofmt`, `go vet ./...`, and the isolated lane full backend suite passed. |
 | `3fc08745a` | **TAKE** | `backend/internal/handler/model_plaza_handler.go`, `backend/internal/service/api_key_service.go` and focused visibility tests | Promoted as `8a71f145`; focused model-plaza/API-key visibility tests, `gofmt`, `go vet ./...`, and the isolated lane full backend suite passed. |
+| `b8d52fad3` | **TAKE (bounded hand-merge)** | Backend reasoning-effort pricing contract, repository persistence, billing/account-stat calculations, channel/admin DTOs, and effort normalization | Promoted as `6987ec29`; the full upstream patch did not apply cleanly because its frontend pricing/admin and provider-forwarding portions cross local product surfaces. The bounded backend merge passed focused service/repository/handler tests, `go vet ./...`, and `git diff --check`; `e47255715` remains the serial provider-forwarding dependency. |
 | `1a32b91eb` | **TAKE (June surface)** | `inferno-frontend/src/components/common/Pagination.vue`, `Pagination.jump.spec.ts` | Promoted in June commit `de9df9d0e`; this is separate from the shared `frontend/**` pagination promotion above. June focused Vitest and typecheck passed in isolation. |
 | `130ba634a` | **TAKE (June surface)** | `inferno-frontend/src/composables/{useClipboard.ts,__tests__/useClipboard.spec.ts}` | Promoted in `de9df9d0e`; June focused Vitest and typecheck passed in isolation. |
 | `98321a054` | **TAKE (June surface)** | `inferno-frontend/src/components/payment/{AmountInput.vue,__tests__/AmountInput.spec.ts}` | Promoted in `de9df9d0e`; June focused Vitest and typecheck passed in isolation. |
@@ -153,10 +154,13 @@ Higher-risk account-selection/admin and larger payment/sidebar rewrites remain
 deferred for serial review because they overlap OAuth, GPT-Live, or customized
 product surfaces.
 
-The next serial lane is the OpenCode/reasoning-effort/billing dependency group.
-The isolated probe of `e47255715` was not promoted: it conflicts in the native
-Anthropic forwarding files and depends on the upstream OpenCode builder and
-account changes. The isolated probe of `db8692d67` likewise conflicts in
+The bounded backend reasoning-effort contract from `b8d52fad3` is now promoted
+as `6987ec29`. This deliberately excludes the upstream frontend pricing/admin
+patches and provider-forwarding work; those surfaces still require serial
+review against the local OAuth, sideband, and June-product behavior. The
+isolated probe of `e47255715` was not promoted: it conflicts in the native
+Anthropic forwarding files and depends on the finalized effort contract. The
+isolated probe of `db8692d67` likewise conflicts in
 `backend/internal/service/ratelimit_cn_providers.go` because it assumes the
 upstream OpenCodeGo `applyCNProviderReactive429` predecessor behavior. Neither
 probe changed the candidate; both remain unintegrated until the dependency
