@@ -36,6 +36,10 @@ Candidate commit `db2f13cb3` takes upstream BaseDialog scroll-lock fix
 dialog-token set, so only matching regression tests were added there; no June
 runtime change was necessary.
 
+Candidate commit `1150cf285` takes upstream ImageUpload read-cancellation fix
+`24f4736f6` on both surfaces. June retains its `AppButton` and design-system
+markup, with the existing props and emitted event unchanged.
+
 **Rules for every item:** hand-merge, never `cp` (see the 2026-08-11 incident in
 INFERNO-BUILD.md). June tokens — except where our copy of a file is still literal
 Tailwind, e.g. `utils/platformColors.ts`, where a verbatim merge is correct.

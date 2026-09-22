@@ -7,11 +7,11 @@ the candidate worktree only; the protected baseline is never edited.
 
 | role | ref | value |
 |---|---|---|
-| candidate worktree | `port/inferno-selective-upstream-20260922` | `db2f13cb3` (BaseDialog scroll-lock code checkpoint; subsequent commits are ledger-only) |
+| candidate worktree | `port/inferno-selective-upstream-20260922` | `1150cf285` (ImageUpload read-cancellation code checkpoint; subsequent commits are ledger-only) |
 | protected baseline | `baseline/gpt-live-working-20260922` | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
 | upstream | `upstream/main` | `20a94fbb567b62208751292ed7786b24a7e7c0fe` |
-| code checkpoint tag | `checkpoint/base-dialog-scroll-lock-20260923` | BaseDialog scroll-lock code checkpoint |
-| rollback tag | `checkpoint/pre-base-dialog-scroll-lock-20260923` | immediate pre-BaseDialog checkpoint; earlier DateRangePicker, Select, and redemption checkpoints remain in history |
+| code checkpoint tag | `checkpoint/image-upload-read-order-20260923` | ImageUpload read-cancellation code checkpoint |
+| rollback tag | `checkpoint/pre-image-upload-read-order-20260923` | immediate pre-ImageUpload checkpoint; earlier BaseDialog, DateRangePicker, Select, and redemption checkpoints remain in history |
 
 The candidate is clean at this checkpoint. The protected baseline has
 pre-existing untracked runtime artifacts; they are intentionally left alone.
@@ -21,8 +21,8 @@ at `1c0a69c0c`, the refreshed review scan adds 86 newly reachable non-empty
 commits: 54 `MERGE`, 20 `REBUILD`, 3 `VERBATIM`, and 9 `NEW`. The 126 raw
 commits in the graph range include empty merge wrappers; those are intentionally
 omitted. The 86 rows are listed in
-`docs/superpowers/analysis/UPSTREAM-DELTA-20260923.tsv`; 81 remain in `review`
-after resolving four UI fixes as `TAKE` and their duplicate merge resolution
+`docs/superpowers/analysis/UPSTREAM-DELTA-20260923.tsv`; 80 remain in `review`
+after resolving five UI fixes as `TAKE` and their duplicate merge resolution
 as `SKIP`. This remains inventory progress, not a completion claim.
 
 The paired image-backfill/security lane is now promoted as candidate commits
@@ -567,3 +567,14 @@ both sequential production builds, and `git diff --check` passed. Existing
 build warnings were unchanged. No backend, API, database, OAuth, dependency,
 deployment, or June runtime files were changed. Rollback point is tagged
 `checkpoint/pre-base-dialog-scroll-lock-20260923`.
+
+### ImageUpload read-order lane (2026-09-23)
+
+Upstream `24f4736f6` is promoted as candidate commit `1150cf285` on both
+frontend surfaces. A newer selection aborts its predecessor before validating
+the replacement; removal and unmount also abort the active reader. The June
+adaptation preserves its `AppButton` styling and the component's public
+props/event contract. Both focused suites passed 5/5, both ESLint and Vue
+typechecks passed, both sequential production builds passed, and diff checks
+were clean. No backend, API, OAuth, dependency, or generated files changed.
+Rollback point is tagged `checkpoint/pre-image-upload-read-order-20260923`.
