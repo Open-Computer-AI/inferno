@@ -457,3 +457,8 @@ all Compose fallbacks now agree on GPT-5.5 for `/responses/compact`; unrelated
 image-model environment settings from the upstream context were intentionally
 excluded. Config default tests, Go vet, consistency checks, and diff checks
 passed.
+
+The Antigravity SSE separator fix (`8447bdd36`) is skipped because the
+candidate already contains the blank-line suppression and the exact regression
+test. The isolated replay conflicted only on duplicate comments/test formatting;
+no stream code was changed.
