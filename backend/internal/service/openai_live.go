@@ -37,7 +37,7 @@ var liveObserverStoreRetryInterval = time.Second
 
 var (
 	chatGPTLiveCallsURL        = "https://chatgpt.com/backend-api/codex/realtime/calls?intent=quicksilver&architecture=avas"
-	chatGPTLiveSidebandBaseURL = "wss://chatgpt.com/backend-api/codex"
+	chatGPTLiveSidebandBaseURL = "wss://api.openai.com/v1/live"
 )
 
 type liveFrameConn interface {
@@ -229,6 +229,8 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 			IPAddress:             identity.IPAddress,
 			InboundEndpoint:       identity.InboundEndpoint,
 			AttestationCiphertext: attestationCiphertext,
+			UpstreamSessionID:     created.UpstreamSessionID,
+			UpstreamThreadID:      created.UpstreamThreadID,
 		}
 		mappingTTL := s.liveMaxSessionDuration() + 5*time.Minute
 		if saveErr := store.SaveLiveCall(ctx, record, mappingTTL); saveErr != nil {
@@ -302,7 +304,7 @@ func (s *OpenAIGatewayService) createUpstreamLiveCall(
 	upstreamReq.Header.Set("Content-Type", "application/json")
 	upstreamReq.Header.Set("Accept", "application/sdp")
 	upstreamReq.Header.Set(liveAttestationHeader, attestation)
-	applyLiveUpstreamIdentityHeaders(upstreamReq.Header)
+	upstreamSessionID, upstreamThreadID := applyLiveUpstreamIdentityHeaders(upstreamReq.Header, "", "")
 
 	resp, err := s.doOpenAIUpstream(upstreamReq, resolveAccountProxyURL(account), account)
 	if err != nil {
@@ -330,9 +332,11 @@ func (s *OpenAIGatewayService) createUpstreamLiveCall(
 		return nil, err
 	}
 	return &LiveCallCreated{
-		SDP:      responseBody,
-		CallID:   callID,
-		Location: resp.Header.Get("Location"),
+		SDP:               responseBody,
+		CallID:            callID,
+		Location:          resp.Header.Get("Location"),
+		UpstreamSessionID: upstreamSessionID,
+		UpstreamThreadID:  upstreamThreadID,
 	}, nil
 }
 
@@ -399,18 +403,27 @@ func liveCallIDFromLocation(location string) (string, error) {
 	return callID, nil
 }
 
-func applyLiveUpstreamIdentityHeaders(headers http.Header) {
+func applyLiveUpstreamIdentityHeaders(headers http.Header, sessionID, threadID string) (string, string) {
 	headers.Set("OpenAI-Alpha", "quicksilver=v2")
 	ensureCodexIdentityHeaders(headers)
 	enforceCodexIdentityHeaders(headers)
-	if strings.TrimSpace(headers.Get("session-id")) == "" {
-		headers.Set("session-id", uuid.NewString())
+	if strings.TrimSpace(sessionID) == "" {
+		sessionID = strings.TrimSpace(headers.Get("session-id"))
 	}
-	if strings.TrimSpace(headers.Get("thread-id")) == "" {
-		headers.Set("thread-id", uuid.NewString())
+	if sessionID == "" {
+		sessionID = uuid.NewString()
 	}
+	if strings.TrimSpace(threadID) == "" {
+		threadID = strings.TrimSpace(headers.Get("thread-id"))
+	}
+	if threadID == "" {
+		threadID = uuid.NewString()
+	}
+	headers.Set("session-id", sessionID)
+	headers.Set("thread-id", threadID)
 	// Realtime/Live 不使用 Responses 的实验头。
 	headers.Del("OpenAI-Beta")
+	return sessionID, threadID
 }
 
 func (s *OpenAIGatewayService) liveSidebandHeaders(
@@ -434,7 +447,7 @@ func (s *OpenAIGatewayService) liveSidebandHeaders(
 		return nil, err
 	}
 	headers.Set(liveAttestationHeader, attestation)
-	applyLiveUpstreamIdentityHeaders(headers)
+	applyLiveUpstreamIdentityHeaders(headers, record.UpstreamSessionID, record.UpstreamThreadID)
 	return headers, nil
 }
 
@@ -451,8 +464,14 @@ func (s *OpenAIGatewayService) dialLiveSideband(ctx context.Context, record *Liv
 		return nil, err
 	}
 	target := strings.TrimRight(chatGPTLiveSidebandBaseURL, "/") + "/" + url.PathEscape(record.CallID)
-	conn, status, _, err := s.getOpenAIWSPassthroughDialer().Dial(ctx, target, headers, resolveAccountProxyURL(account))
+	conn, status, responseHeaders, err := s.getOpenAIWSPassthroughDialer().Dial(ctx, target, headers, resolveAccountProxyURL(account))
 	if err != nil {
+		var handshakeErr *openAIWSHandshakeError
+		var responseBody []byte
+		if errors.As(err, &handshakeErr) && handshakeErr != nil {
+			responseBody = handshakeErr.Body
+		}
+		logLiveUpstreamFailure(ctx, account.ID, status, responseHeaders, responseBody)
 		return nil, fmt.Errorf("dial live sideband (status %d): %w", status, err)
 	}
 	raw, ok := conn.(liveFrameConn)

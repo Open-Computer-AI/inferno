@@ -336,8 +336,8 @@ concluding anything is broken.
 ```bash
 cd inferno-frontend/scripts/seed
 for f in seed-dashboard seed-year seed-models seed-ops seed-ops-dense seed-alert-events seed-users; do
-  docker cp $f.sql sub2api-postgres:/tmp/
-  docker exec sub2api-postgres psql -U sub2api -d sub2api -q -f /tmp/$f.sql
+  docker cp $f.sql inferno-local-postgres:/tmp/
+  docker exec inferno-local-postgres psql -U sub2api -d sub2api -q -f /tmp/$f.sql
 done
 ```
 
@@ -347,7 +347,7 @@ Seeded so far: a year of dashboard daily/hourly, per-model usage, dense ops
 traffic + error logs + hourly metrics, 24 alert events across the full P0–P3
 ramp and all three statuses, and 11 users with 30 days of usage.
 
-Local dev login: `admin@sub2api.local` / `36232e0cd5be929e4004e4ca025b100e`.
+Local dev login: use the active admin account configured in the local database. Do not store credentials in this goal document.
 
 ---
 

@@ -5,7 +5,10 @@ description: Bring up the Inferno local stack (Postgres, Redis, Go backend, Vite
 
 # Inferno local stack
 
-Brings up the 4 pieces and logs in. **Do not use `docker compose up inferno`** — see Gotcha 1.
+Brings up the current local Inferno admin/runtime pieces and logs in. The
+canonical local database containers are `inferno-local-postgres` and
+`inferno-local-redis`; the historical `sub2api-*` local containers were
+removed.
 
 ```bash
 skills/inferno-local-stack/scripts/up.sh          # start everything
@@ -15,19 +18,19 @@ skills/inferno-local-stack/scripts/down.sh        # stop everything
 
 | Piece | Where | Port |
 |---|---|---|
-| Postgres | container `sub2api-postgres` | **5433** (host) |
-| Redis | container `sub2api-redis` | **6380** (host) |
-| Go backend | native `go run ./cmd/server` | **8080** |
-| Frontend | native `pnpm run dev` (Vite) | **3000** ← use this |
+| Postgres | container `inferno-local-postgres` | **15432** (host) |
+| Redis | container `inferno-local-redis` | **16379** (host) |
+| Inferno gateway | native local binary | **18080** |
+| Admin frontend | native `pnpm run dev` (Vite) | **4174** |
 
-Open **http://localhost:3000**, not 8080. Credentials are in `deploy/.env`
-and the script prints them.
+Open **http://127.0.0.1:4174/admin/accounts**. Do not store or print local
+credentials from `deploy/.env`.
 
 ## Logging in (browser)
 
 The login is **two-step** and has three traps. Follow exactly:
 
-1. Go to `http://localhost:3000/login`.
+1. Go to `http://127.0.0.1:4174/login`.
 2. **Type** the email — do not use `form_input`. See Gotcha 5.
 3. Press Return. The password field appears.
 4. **Clear the field first** (`cmd+a`), then type the password. Chrome
@@ -78,6 +81,10 @@ The admin there is `admin@opencomputer.local`; set a known local password by
 copying a bcrypt hash from the `sub2api` database rather than resetting anything
 on the VM.
 
+The commands in this section are explicitly remote-only: `oc-internal` still
+uses its own container name on that machine. Do not run those `docker exec`
+commands against the local `inferno-local-*` stack.
+
 **Count accounts through the API, not `SELECT count(*)`.** The table keeps
 soft-deleted rows (`deleted_at IS NOT NULL`) that the backend filters out: 23
 rows, 11 live. Counting rows once had me report 14 Anthropic accounts when
@@ -86,8 +93,8 @@ there are 2.
 ## Querying the database
 
 ```bash
-docker exec sub2api-postgres psql -U sub2api -d sub2api -c '\dt'
-docker exec sub2api-postgres psql -U sub2api -d sub2api -Atc 'SELECT count(*) FROM channels;'
+docker exec inferno-local-postgres psql -U sub2api -d sub2api -c '\dt'
+docker exec inferno-local-postgres psql -U sub2api -d sub2api -Atc 'SELECT count(*) FROM channels;'
 ```
 
 A fresh install is **empty** — 0 channels, 0 accounts, 0 pricing rows. It can
@@ -101,9 +108,9 @@ looks like. Do not use it to answer "is anything mispriced in prod".
    "JavaScript heap out of memory". The host has plenty. Build natively
    (`cd inferno-frontend && pnpm run build`) or just use the Vite dev server,
    which is what `up.sh` does.
-2. **Postgres and Redis publish no host ports** by default — the compose file
-   deliberately keeps them internal. `up.sh` layers a scratch override that
-   maps 5433/6380. Never edit `deploy/docker-compose.local.yml` to do this.
+2. **Use only the canonical local ports** — Postgres is `15432` and Redis is
+   `16379`. Do not use the removed `5433`/`6380` mapping or the old local
+   `sub2api-*` container names.
 3. **`go run` does not serve the frontend.** The embed is behind the release
    build tag, so `http://localhost:8080/` returns 404 while the API on
    `:8080/api/v1/...` works fine. Use the Vite dev server on :3000; it proxies
