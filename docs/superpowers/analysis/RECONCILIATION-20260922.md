@@ -295,3 +295,26 @@ model-allowlist, and asynchronous `allow_live` behavior; applying it wholesale
 fails at a customized GroupsView hunk. Its exact paths and rationale are
 recorded in the frontend disposition manifest; only the narrow reactive
 binding fix from `b1ce821c4` is currently promoted.
+
+### Pinned-manifest/search wrapper audit
+
+The pinned-account merge wrapper (`c4e6dcfd8`) is skipped: its non-migration
+payload is byte-for-byte represented by candidate `c0d48976e`, while migration
+`234_group_codex_models_manifest_config.sql` is already present from
+`f185d110c`. Replaying the wrapper would overwrite later local/Astra/Ultrafast
+changes in the generated Ent, Codex service, and customized GroupsView files.
+The search-capability wrapper (`eba6ea563`) is likewise already represented;
+its service logic and metadata regression test are present, with the test blob
+identical and focused Codex/search tests passing.
+
+### Upstream request-ID feature deferred
+
+The broad usage-log/upstream-header feature (`de27905e8`) and its follow-up
+(`708b85a6a`) remain a deliberate serial hand-merge item. The candidate has the
+232/233 migration files but not the upstream `upstream_request_id.go` module or
+the feature's 62-file wiring; its current gateway/usage request-ID handling is
+custom. An isolated cherry-pick of `708b85a6a` conflicts on the missing module.
+No partial schema/UI/backend feature was promoted. The full lane needs one
+design pass over usage-log inserts, account validation, all gateway response
+paths, migration/runtime verification, and the admin account/usage UI before
+it can be safely accepted.
