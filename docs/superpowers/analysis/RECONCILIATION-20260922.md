@@ -634,3 +634,28 @@ the existing Browserslist and chunking warnings only. The mirror and June lanes
 were independently implemented and tested; June's disjoint commit was rebased
 onto the mirror commit before fast-forward consolidation. No API/backend,
 dependency, generated, or visual-design files changed.
+
+### Independent mirror, June, and backend lanes (2026-09-23)
+
+Three isolated worktrees shared candidate base `50c77824b66dcd8f26de6c9add71661d3c395a7c`
+and changed disjoint paths. They were reviewed and integrated as candidate
+commits `65c3d708d` (mirror), `e62af6756` (June adapter), and `da0be0021`
+(backend); the protected baseline was not changed.
+
+- Upstream `6b09c74e3` preserves numeric custom-attribute values as strings in
+  the mirror and June UI. Mirror source files match upstream byte-for-byte;
+  June uses a separate native adaptation. Mirror Vitest passed 4/4 together
+  with pagination, June Vitest passed 4/4, and both surfaces passed changed-file
+  ESLint, Vue typecheck, and diff checks.
+- Upstream `66843cc95` skips only trailing Anthropic system messages when
+  locating the latest user message. It remains strict for assistant/tool-ended
+  sequences. Backend source files match upstream byte-for-byte; focused Go
+  tests, `go vet ./internal/service`, gofmt, and diff checks passed.
+- The previously integrated pagination fix `1a32b91eb` is byte-for-byte
+  identical on the mirror files and now has its missing mirror disposition
+  row. Candidate tests passed 4/4; the June port remains recorded separately.
+
+The incremental delta now has 11 TAKE rows, 73 unresolved review rows, and 2
+duplicate-wrapper SKIPs. No production build or deployment was run for these
+narrow changes; only the documented focused checks were run. The existing
+Browserslist age warning remains informational.
