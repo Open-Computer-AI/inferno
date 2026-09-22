@@ -366,3 +366,14 @@ holds the migrations advisory lock for the complete streaming `pg_dump`/`psql`
 lifecycle and discards ambiguous SQL sessions on lock/unlock failure. Focused
 repository tests, repository/server vet, and diff checks passed; no schema,
 data, inference, OAuth, or container state was changed.
+
+### Claude thinking-binding beta lane
+
+The Claude compatibility fix (`7ae031209` → `682abb5c2`) is promoted. It adds
+the `thinking-binding-controls-2026-08-01` beta to the Claude Code mimicry set
+and removes `thinking.block_binding` from requests when the final beta header
+does not advertise that capability. This keeps the field available for the
+supported Claude path while preventing unsupported providers from receiving an
+invalid request shape. Focused sanitizer/beta/context-management tests, Go vet,
+and diff checks passed; no OAuth, GPT Live, sideband, account, schema, or
+container state changed.
