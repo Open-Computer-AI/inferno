@@ -16,7 +16,7 @@ import (
 
 var channelModelPricingTimePricingColumns = []string{
 	"id", "channel_id", "platform", "models", "billing_mode", "input_price", "output_price",
-	"cache_write_price", "cache_write_1h_price", "cache_read_price", "fast_multiplier", "flex_multiplier", "image_input_price", "image_output_price",
+	"cache_write_price", "cache_write_1h_price", "cache_read_price", "fast_multiplier", "flex_multiplier", "reasoning_effort_multipliers", "image_input_price", "image_output_price",
 	"per_request_price", "time_pricing", "created_at", "updated_at",
 }
 
@@ -33,7 +33,7 @@ func newChannelModelPricingTimePricingRepo(t *testing.T) (*channelRepository, sq
 func modelPricingTimePricingRow(timePricing any) *sqlmock.Rows {
 	return sqlmock.NewRows(channelModelPricingTimePricingColumns).AddRow(
 		int64(11), int64(7), "openai", `["gpt-5"]`, service.BillingModeToken,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, timePricing,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, timePricing,
 		time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC), time.Date(2026, 8, 17, 1, 0, 0, 0, time.UTC),
 	)
 }
