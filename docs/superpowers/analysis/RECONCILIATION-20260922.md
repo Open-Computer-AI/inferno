@@ -288,3 +288,10 @@ the four touched frontend suites (36 tests) passed; `vue-tsc --noEmit` and
 WebSocket execution scope, the June `inferno-frontend`, schema, or lockfiles.
 The merge wrapper `c42d78e2` is recorded as a skip because it contributes no
 independent patch.
+
+The broader GroupsView/toggle refactor (`f3bbb9531`) remains deferred for
+hand-merge. It removes 471 lines and crosses locally customized model-list,
+model-allowlist, and asynchronous `allow_live` behavior; applying it wholesale
+fails at a customized GroupsView hunk. Its exact paths and rationale are
+recorded in the frontend disposition manifest; only the narrow reactive
+binding fix from `b1ce821c4` is currently promoted.
