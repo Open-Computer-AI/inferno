@@ -686,3 +686,40 @@ Consolidated candidate verification passed 17/17 mirror tests and 13/13 June
 tests, both Vue typechecks/lints, focused moderation and Grok Go tests, vet, and
 diff checks. The incremental delta now has 14 TAKE rows, 70 unresolved review
 rows, and 2 duplicate-wrapper SKIPs. No production build or deployment was run.
+
+### Third independent frontend batch (2026-09-23)
+
+Four more upstream UI fixes were ported to the mirror and June surfaces in the
+isolated batch based on candidate `60f67f4f3`. Candidate commits are
+`2b0647698` / `996c243e5` (IME search, mirror / June),
+`c8d9034aa` / `9e569cbca` (balance-history request ownership),
+`d70db46e5` / `46e96562a` (clearing custom-attribute hints), and
+`6807ce44c` / `cbd058394` (integer RPM validation).
+
+- Upstream `7bf3d0b58`: IME text is applied and searched only after composition
+  commits. Mirror is byte-identical to upstream; June uses computed `v-model`
+  so Vue owns IME handling while retaining its clear, cancelable debounce, and
+  pending-indicator behavior. Focused suites passed 3/3 and 4/4.
+- Upstream `f3a2dcabb`: stale balance-history responses/errors/finally blocks
+  cannot overwrite the current dialog state. Mirror is byte-identical to
+  upstream; June invalidates request generations on dialog visibility changes
+  and unmount. Focused suites passed 5/5 on each surface.
+- Upstream `26c09b7de`: cleared description/placeholder hints are sent as
+  explicit empty strings, allowing the existing update API to clear stored
+  values. Mirror is byte-identical to upstream; June preserves the same API
+  contract. Focused suites passed 5/5 on each surface.
+- Upstream `3b0bb60ea`: non-integer RPM overrides are blocked by both the Add
+  button and handler while integer zero remains valid. Mirror is byte-identical
+  to upstream; June uses its native component. Focused suites passed 5/5 on
+  each surface.
+
+Consolidated changed-area Vitest passed 31/31 mirror and 32/32 June tests; full
+Vitest passed 300 files / 2,160 tests on the mirror and 306 files / 2,175 tests
+on June. Both Vue typechecks passed. Changed-file ESLint passed in the isolated
+implementation lanes; a redundant scratch-tree lint attempt was blocked by its
+missing `vue-eslint-parser` module link. The scratch-only auto-install side
+effects on lockfiles were restored, and no dependency files are included.
+The incremental upstream delta now has 18 TAKE rows, 66 unresolved review rows,
+and 2 duplicate-wrapper SKIPs. No backend, schema, OAuth, container, deployment,
+or production build changes were made; the aged Browserslist warning remains
+informational.
