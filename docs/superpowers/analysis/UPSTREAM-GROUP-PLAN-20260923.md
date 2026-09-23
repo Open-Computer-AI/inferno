@@ -52,11 +52,17 @@ consumers still decide the disposition.
 - `57b7dbdc8` + `c19204289` — affiliate offline withdrawal: user/quota selection, 8-decimal validation, ledger action labeling, and persisted idempotency keys for uncertain retries; nullable historical rebate/order rows render safely.
 - `a9ff66338` + `8f8358cc6` — monthly backup archives: selected days/month-end, finite or forever retention, explicit archived-copy delete confirmation, and zero retention values survive load/save.
 - `b8d52fad3` — per-reasoning-effort billing multipliers adapted across channel pricing, account-stat overrides, group pricing, model-plaza disclosure, and the shared June pricing editor. The map round-trips through the existing backend contract; empty values clear, while unknown keys and non-positive/non-finite values block submission.
+- `63c079d87` — OAuth reauthorization preservation is already equivalent in the candidate: existing non-auth credentials are merged before stored credentials are sanitized, with `model_mapping` and `account_id` preserved while auth material is refreshed. Confirmed by `TestApplyOAuthCredentialsPreservesExistingNonAuthCredentials`; no duplicate patch was needed.
+- `7f18f3e9a` — adapted the user API-key modal's stale-request protection to June. It reloads when the selected user changes, clears previous rows immediately, and only lets the latest request update rows/loading/error state. Four regression cases cover failed switch, late response, stale `finally`, and switching while open.
 
-Integration verification at the 2026-09-23 checkpoint: the full June suite
-passed (2,227 tests across 314 files), the production frontend build passed,
-and the billing slice passed focused tests, June typecheck, changed-file ESLint,
-static i18n-key check, and `git diff --check`. The build reports existing
+Integration verification at the 2026-09-23 checkpoint before the API-key-modal
+slice: the full June suite passed (2,227 tests across 314 files), the production
+frontend build passed, and the billing slice passed focused tests, June
+typecheck, changed-file ESLint, static i18n-key check, and `git diff --check`.
+After the API-key-modal slice, the full June suite passed (2,232 tests across
+315 files), June typecheck passed, and its focused four-test suite, changed-file
+ESLint, static i18n-key check, and `git diff --check` passed. The second full
+production build passed. The build reports existing
 dynamic/static import and large-chunk warnings. The full lint command previously
 reported 11 errors in unrelated legacy files; no unrelated files were changed
 to silence them.
