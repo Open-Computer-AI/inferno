@@ -187,6 +187,13 @@ import AdminPaymentSettingsPage from "@/components/admin/settings/AdminPaymentSe
 import AdminEmailSettingsPage from "@/components/admin/settings/AdminEmailSettingsPage.vue";
 import { SETTINGS_VIEW_CONTEXT } from "@/components/admin/settings/settingsViewContext";
 import {
+  SITE_BILLING_MODES,
+  SITE_BILLING_MODE_I18N_KEYS,
+  billingModeToSettings,
+  resolveSiteBillingMode,
+  type SiteBillingMode,
+} from "@/utils/siteBillingMode";
+import {
   isSettingsSectionKey,
   type SettingsSectionKey,
 } from "@/components/admin/settings/settingsRegistry";
@@ -293,6 +300,14 @@ const ollamaCloudUsageSaving = ref(false);
 const ollamaCloudUsageForm = reactive({
   enabled: false,
   interval_minutes: 60,
+  debounce_minutes: 1,
+});
+
+const opencodeGoUsageLoading = ref(true);
+const opencodeGoUsageSaving = ref(false);
+const opencodeGoUsageForm = reactive({
+  enabled: false,
+  interval_minutes: 15,
   debounce_minutes: 1,
 });
 
@@ -911,6 +926,7 @@ const form = reactive<SettingsForm>({
   backend_mode_enabled: false,
   hide_ccs_import_button: false,
   payment_enabled: false,
+  subscription_enabled: true,
   risk_control_enabled: false,
   cyber_session_block_enabled: false,
   cyber_session_block_ttl_seconds: 3600,
@@ -1119,6 +1135,10 @@ const form = reactive<SettingsForm>({
   // 只读展示：自动同步任务写入的官方最新稳定版，不参与提交（提交载荷按字段显式构造）
   openai_codex_client_version_synced: "",
   openai_codex_version_auto_sync_enabled: true,
+  claude_code_client_version: "",
+  // 只读展示：自动同步任务写入的官方最新稳定版，不参与提交
+  claude_code_client_version_synced: "",
+  claude_code_version_auto_sync_enabled: true,
   // codex_cli_only 加固
   min_codex_version: "",
   max_codex_version: "",
@@ -1152,6 +1172,20 @@ const form = reactive<SettingsForm>({
   // Allow user view error requests
   allow_user_view_error_requests: false,
 });
+
+const siteBillingModeOptions = computed(() =>
+  SITE_BILLING_MODES.map((mode) => ({
+    value: mode,
+    label: t(`admin.settings.features.siteBillingMode.options.${SITE_BILLING_MODE_I18N_KEYS[mode]}`),
+  })),
+);
+const siteBillingMode = computed<SiteBillingMode>({
+  get: () => resolveSiteBillingMode(form),
+  set: (mode) => Object.assign(form, billingModeToSettings(mode)),
+});
+const siteBillingModeHint = computed(() =>
+  t(`admin.settings.features.siteBillingMode.hints.${SITE_BILLING_MODE_I18N_KEYS[siteBillingMode.value]}`),
+);
 
 // 人机验证 UI 状态：单卡片「总开关 + 服务商单选」，落库仍是三个独立
 // enabled 键（与上游一致），由下面的映射保证同一时间至多一家启用。
@@ -2103,6 +2137,14 @@ const codexSyncedVersionLabel = computed(() => {
   });
 });
 
+const claudeSyncedVersionLabel = computed(() => {
+  const synced = form.claude_code_client_version_synced?.trim();
+  if (!synced) return "";
+  return t("admin.settings.gatewayForwarding.claudeCodeVersionSyncedValue", {
+    version: synced,
+  });
+});
+
 async function loadSettings() {
   loading.value = true;
   loadFailed.value = false;
@@ -2715,6 +2757,10 @@ async function saveSettings() {
         form.openai_codex_client_version?.trim() || "",
       openai_codex_version_auto_sync_enabled:
         form.openai_codex_version_auto_sync_enabled,
+      claude_code_client_version:
+        form.claude_code_client_version?.trim() || "",
+      claude_code_version_auto_sync_enabled:
+        form.claude_code_version_auto_sync_enabled,
       min_codex_version: form.min_codex_version?.trim() || "",
       max_codex_version: form.max_codex_version?.trim() || "",
       codex_cli_only_allow_app_server_clients:
@@ -2730,6 +2776,7 @@ async function saveSettings() {
       ),
       // Payment configuration
       payment_enabled: form.payment_enabled,
+      subscription_enabled: form.subscription_enabled,
       risk_control_enabled: form.risk_control_enabled,
       cyber_session_block_enabled: form.cyber_session_block_enabled,
       cyber_session_block_ttl_seconds:
@@ -3159,6 +3206,37 @@ async function saveOllamaCloudUsageSettings() {
     );
   } finally {
     ollamaCloudUsageSaving.value = false;
+  }
+}
+
+async function loadOpenCodeGoUsageSettings() {
+  opencodeGoUsageLoading.value = true;
+  try {
+    Object.assign(
+      opencodeGoUsageForm,
+      await adminAPI.accounts.getOpenCodeGoUsageSettings(),
+    );
+  } catch (_error: unknown) {
+    // Keep the fail-safe disabled defaults when this optional setting cannot be loaded.
+  } finally {
+    opencodeGoUsageLoading.value = false;
+  }
+}
+
+async function saveOpenCodeGoUsageSettings() {
+  opencodeGoUsageSaving.value = true;
+  try {
+    const updated = await adminAPI.accounts.updateOpenCodeGoUsageSettings({
+      ...opencodeGoUsageForm,
+    });
+    Object.assign(opencodeGoUsageForm, updated);
+    appStore.showSuccess(t("admin.settings.opencodeGoUsage.saved"));
+  } catch (error: unknown) {
+    appStore.showError(
+      extractApiErrorMessage(error, t("admin.settings.opencodeGoUsage.saveFailed")),
+    );
+  } finally {
+    opencodeGoUsageSaving.value = false;
   }
 }
 
@@ -3920,6 +3998,7 @@ onMounted(() => {
   loadAdminApiKey();
   loadUpstreamBillingProbeSettings();
   loadOllamaCloudUsageSettings();
+  loadOpenCodeGoUsageSettings();
   loadOverloadCooldownSettings();
   loadRateLimit429CooldownSettings();
   loadPanelRateLimitSettings();
@@ -4303,6 +4382,9 @@ watch(
  */
 provide(SETTINGS_VIEW_CONTEXT, {
 DEFAULT_WEB_SEARCH_QUOTA_LIMIT,
+  siteBillingMode,
+  siteBillingModeOptions,
+  siteBillingModeHint,
   activeSettingsDescription,
   activeSettingsTitle,
   activeTab,
@@ -4366,6 +4448,7 @@ DEFAULT_WEB_SEARCH_QUOTA_LIMIT,
   codexFingerprintNoRequired,
   codexFingerprintRows,
   codexSyncedVersionLabel,
+  claudeSyncedVersionLabel,
   codexWhitelistRows,
   commitForwardedClientIpHeaderDraft,
   commitRegistrationEmailSuffixWhitelistDraft,
@@ -4430,6 +4513,7 @@ DEFAULT_WEB_SEARCH_QUOTA_LIMIT,
   loadBetaPolicySettings,
   loadFailed,
   loadOllamaCloudUsageSettings,
+  loadOpenCodeGoUsageSettings,
   loadOverloadCooldownSettings,
   loadPanelRateLimitSettings,
   loadProviders,
@@ -4461,6 +4545,9 @@ DEFAULT_WEB_SEARCH_QUOTA_LIMIT,
   ollamaCloudUsageForm,
   ollamaCloudUsageLoading,
   ollamaCloudUsageSaving,
+  opencodeGoUsageForm,
+  opencodeGoUsageLoading,
+  opencodeGoUsageSaving,
   onAffiliateSearchInput,
   onAffiliateUserSearchInput,
   openAIAdvancedSchedulerWeightFields,
@@ -4528,6 +4615,7 @@ DEFAULT_WEB_SEARCH_QUOTA_LIMIT,
   router,
   saveBetaPolicySettings,
   saveOllamaCloudUsageSettings,
+  saveOpenCodeGoUsageSettings,
   saveOverloadCooldownSettings,
   savePanelRateLimitSettings,
   saveRateLimit429CooldownSettings,

@@ -3,9 +3,53 @@
 package repository
 
 import (
+	"encoding/json"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"time"
 )
+
+func (s *ProxyExpirySuite) TestSweepProxyFallbackClearsNetworkBoundUsageSnapshots() {
+	for _, tc := range []struct {
+		name   string
+		mode   string
+		backup bool
+	}{
+		{name: "direct fallback", mode: service.FallbackModeDirect},
+		{name: "backup proxy fallback", mode: service.FallbackModeProxy, backup: true},
+	} {
+		s.Run(tc.name, func() {
+			now := time.Now()
+			past := now.Add(-time.Hour)
+			var backupID *int64
+			var target *int64
+			if tc.backup {
+				future := now.Add(24 * time.Hour)
+				backup := s.mkProxy("usage-snapshot-backup", service.FallbackModeNone, &future, nil)
+				backupID = &backup
+				target = &backup
+			}
+			source := s.mkProxy("usage-snapshot-source", tc.mode, &past, backupID)
+			account := s.mkAccountWithProxy(source)
+			_, err := s.tx.ExecContext(s.ctx, `UPDATE accounts SET type='apikey',platform='opencode_go',extra='{"upstream_billing_probe":{"status":"ok"},"ollama_cloud_usage_snapshot":{"status":"ok"},"opencode_go_usage_auto_refresh":true,"opencode_go_usage_snapshot":{"status":"ok"},"keep_me":true}'::jsonb WHERE id=$1`, account)
+			s.Require().NoError(err)
+
+			changed, err := s.repo.sweepOneExpiredProxy(s.ctx, service.Proxy{ID: source, Status: service.StatusActive, ExpiresAt: &past, FallbackMode: tc.mode, BackupProxyID: backupID}, now, target, true)
+			s.Require().NoError(err)
+			s.Equal([]int64{account}, changed)
+
+			var raw []byte
+			s.Require().NoError(scanSingleRow(s.ctx, s.tx, `SELECT extra FROM accounts WHERE id=$1`, []any{account}, &raw))
+			var extra map[string]any
+			s.Require().NoError(json.Unmarshal(raw, &extra))
+			s.NotContains(extra, "upstream_billing_probe")
+			s.NotContains(extra, "ollama_cloud_usage_snapshot")
+			s.NotContains(extra, "opencode_go_usage_snapshot")
+			s.Equal(true, extra["opencode_go_usage_auto_refresh"])
+			s.Equal(true, extra["keep_me"])
+			s.Equal(target, s.accountProxyID(account))
+		})
+	}
+}
 
 // Reproduce the ordering deterministically without sleeps: scan snapshot,
 // administrator edit, then the per-proxy transaction consuming that snapshot.

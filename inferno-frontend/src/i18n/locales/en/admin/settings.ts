@@ -48,6 +48,21 @@ export default {
         dark: 'Dark',
       },
       features: {
+        siteBillingMode: {
+          title: 'Site Billing Mode',
+          description: 'Controls which purchase options users see. Defaults to "Recharge & Subscription".',
+          label: 'Purchase options',
+          options: {
+            rechargeAndSubscription: 'Recharge & Subscription',
+            rechargeOnly: 'Recharge only',
+            subscriptionOnly: 'Subscription only',
+          },
+          hints: {
+            rechargeAndSubscription: 'Users can both top up their balance and buy subscription plans.',
+            rechargeOnly: 'Hides subscription surfaces; existing subscription billing and redeem-code subscriptions are unaffected.',
+            subscriptionOnly: 'The purchase page only offers subscription plans and balance top-up orders are rejected. Redeem codes and other balance credits are unaffected.',
+          },
+        },
         channelMonitor: {
           title: 'Channel Monitor',
           description: 'Choose either V1 active probes or V2 passive usage monitoring. When disabled, both background jobs stop and the user entry is hidden.',
@@ -493,6 +508,18 @@ export default {
         saved: 'Ollama Cloud usage refresh settings saved',
         saveFailed: 'Failed to save Ollama Cloud usage refresh settings'
       },
+      opencodeGoUsage: {
+        title: 'OpenCode Go Usage Refresh',
+        description: 'Refresh usage windows reported by the upstream OpenCode Go account for individually opted-in accounts. Disabled by default.',
+        enabled: 'Enable global automatic refresh',
+        enabledHint: 'Only accounts with their own automatic refresh switch enabled are refreshed. Manual refresh remains available.',
+        intervalMinutes: 'Max wait while requests continue (minutes)',
+        intervalHint: 'Range: 5–1440 minutes. When continuous requests keep sliding the debounce, force a refresh after this wait.',
+        debounceMinutes: 'Quiet period after last request (minutes)',
+        debounceHint: 'Range: 1–60 minutes, and must be less than the refresh interval. Refresh after the latest model request has been quiet for this long.',
+        saved: 'OpenCode Go usage refresh settings saved',
+        saveFailed: 'Failed to save OpenCode Go usage refresh settings'
+      },
       gatewayForwarding: {
         title: 'Request Forwarding',
         description: 'Control how requests are forwarded to upstream OAuth accounts',
@@ -558,6 +585,12 @@ export default {
         openaiCodexVersionAutoSync: 'Auto-sync Codex version',
         openaiCodexVersionAutoSyncHint: 'Fetches the latest stable client version from the official repository every 6 hours, so you never need to upgrade this service just to keep the version current. When disabled, only the version above or the built-in default is used.',
         openaiCodexVersionSyncedValue: 'Currently synced: {version}',
+        claudeCodeClientVersion: 'Claude Code client version',
+        claudeCodeClientVersionPlaceholder: 'Leave empty to follow auto-sync',
+        claudeCodeClientVersionHint: 'The client version this gateway declares upstream when impersonating the official Claude Code CLI. Leave empty to use the auto-synced latest official release; setting a value pins it and stops following auto-sync. The SUB2API_CLAUDE_CLI_VERSION environment variable or built-in version is used only when neither the manual nor synced value is valid.',
+        claudeCodeVersionAutoSync: 'Auto-sync Claude Code version',
+        claudeCodeVersionAutoSyncHint: 'Fetches the latest Claude Code client version from the official release channel every hour, so you never need to upgrade this service just to keep the version current. When disabled, fetching stops but the previously synced version remains available. The manual version above always takes priority.',
+        claudeCodeVersionSyncedValue: 'Currently synced: {version}',
         codexHardeningTitle: "Codex Settings",
         codexClientRestrictionTitle: "Codex client restriction",
         codexHardeningDesc:

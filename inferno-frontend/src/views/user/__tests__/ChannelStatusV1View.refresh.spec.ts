@@ -28,6 +28,10 @@ const mountView = () => shallowMount(ChannelStatusV1View, {
           <button class="refresh" @click="$emit('refresh')">Refresh</button>
           <button class="disable" @click="autoRefresh.setEnabled(false)">Disable</button>
         </div>`
+      },
+      MonitorCardGrid: {
+        props: ['countdownSeconds'],
+        template: '<output data-test="countdown">{{ countdownSeconds }}</output>'
       }
     }
   }
@@ -72,6 +76,19 @@ describe('channel monitor refresh interval', () => {
     await vi.advanceTimersByTimeAsync(121000)
 
     expect(list.mock.calls.length).toBeGreaterThan(1)
+  })
+
+  it('resets the countdown to the selected interval after manual refresh', async () => {
+    wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('.interval').trigger('click')
+    expect(wrapper.get('[data-test="countdown"]').text()).toBe('120')
+
+    await wrapper.get('.refresh').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="countdown"]').text()).toBe('120')
   })
 
 })

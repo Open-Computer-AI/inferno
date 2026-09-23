@@ -12,6 +12,12 @@ function pressTab(input: Element, shiftKey = false) {
   return event
 }
 
+function pressKey(input: Element, key: string, isComposing = false) {
+  const event = new KeyboardEvent('keydown', { key, isComposing, bubbles: true, cancelable: true })
+  input.dispatchEvent(event)
+  return event
+}
+
 describe('model tag keyboard navigation', () => {
   it.each([false, true])('allows leaving an empty input with Tab (shift: %s)', (shift) => {
     const wrapper = mount(ModelTagInput, { props: { models: ['gpt-4o'] } })
@@ -35,5 +41,24 @@ describe('model tag keyboard navigation', () => {
     expect(wrapper.emitted('update:models')).toEqual([[['gpt-4o', 'gpt-4.1']]])
     expect((input.element as HTMLInputElement).value).toBe('')
     expect(pressTab(input.element).defaultPrevented).toBe(false)
+  })
+
+  it('does not commit or remove tags during IME composition', async () => {
+    const wrapper = mount(ModelTagInput, { props: { models: ['gpt-4o'] } })
+    const input = wrapper.get('.mti__input')
+    await input.setValue('候')
+
+    expect(pressKey(input.element, 'Enter', true).defaultPrevented).toBe(false)
+    expect(pressKey(input.element, 'Tab', true).defaultPrevented).toBe(false)
+    expect(pressKey(input.element, 'Backspace', true).defaultPrevented).toBe(false)
+    expect(wrapper.emitted('update:models')).toBeUndefined()
+  })
+
+  it('removes the last tag with Backspace only when the draft is empty', async () => {
+    const wrapper = mount(ModelTagInput, { props: { models: ['gpt-4o'] } })
+    const input = wrapper.get('.mti__input')
+    expect(pressKey(input.element, 'Backspace').defaultPrevented).toBe(false)
+    await nextTick()
+    expect(wrapper.emitted('update:models')).toEqual([[[]]])
   })
 })

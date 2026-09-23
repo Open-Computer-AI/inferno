@@ -676,6 +676,86 @@ describe('UseKeyModal', () => {
     expect(models['gpt-5.6'].name).toBe('GPT-5.6 (Sol)')
   })
 
+  it('renders GPT-6 aliases with the supported OpenCode reasoning variants', async () => {
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-test',
+        baseUrl: 'https://example.com/v1',
+        platform: 'openai'
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /><slot name="footer" /></div>'
+          },
+          Icon: {
+            template: '<span />'
+          }
+        }
+      }
+    })
+
+    const opencodeTab = wrapper.findAll('button').find((button) =>
+      button.text().includes('keys.useKeyModal.cliTabs.opencode')
+    )
+    expect(opencodeTab).toBeDefined()
+    await opencodeTab!.trigger('click')
+    await nextTick()
+
+    const models = JSON.parse(wrapper.find('pre code').text()).provider.openai.models
+    for (const model of ['gpt-6', 'gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna']) {
+      expect(models[model]).toBeDefined()
+      expect(models[model].limit).toEqual({ context: 1050000, output: 128000 })
+      expect(models[model].variants).toHaveProperty('max')
+    }
+    expect(models['gpt-6-sol'].variants).toHaveProperty('none')
+    expect(models['gpt-6-luna'].variants).toHaveProperty('none')
+  })
+
+  it('limits the standard Anthropic OpenCode config to Claude Opus 5.5', async () => {
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-test',
+        baseUrl: 'https://example.com/v1',
+        platform: 'anthropic'
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /><slot name="footer" /></div>'
+          },
+          Icon: {
+            template: '<span />'
+          }
+        }
+      }
+    })
+
+    const opencodeTab = wrapper.findAll('button').find((button) =>
+      button.text().includes('keys.useKeyModal.cliTabs.opencode')
+    )
+    expect(opencodeTab).toBeDefined()
+    await opencodeTab!.trigger('click')
+    await nextTick()
+
+    const models = JSON.parse(wrapper.find('pre code').text()).provider.anthropic.models
+    expect(models['claude-opus-5-5']).toMatchObject({
+      name: 'Claude Opus 5.5',
+      limit: { context: 1000000, output: 128000 },
+      options: { thinking: { type: 'adaptive' }, effort: 'medium' }
+    })
+    expect(models['claude-opus-5-5'].variants).toEqual({
+      low: { effort: 'low' },
+      medium: { effort: 'medium' },
+      high: { effort: 'high' },
+      xhigh: { effort: 'xhigh' },
+      max: { effort: 'max' }
+    })
+    expect(Object.keys(models)).toEqual(['claude-opus-5-5'])
+  })
+
   it('renders Claude Fable 5 OpenCode config with adaptive thinking', async () => {
     const wrapper = mount(UseKeyModal, {
       props: {

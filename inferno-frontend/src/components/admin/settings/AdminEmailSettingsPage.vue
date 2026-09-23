@@ -33,7 +33,7 @@
                   {{ t("admin.settings.smtp.description") }}
                 </p>
               </div>
-              <Button
+              <BaseButton
                 type="button"
                 @click="testSmtpConnection"
                 :disabled="testingSmtp || loadFailed"
@@ -46,7 +46,7 @@
                     ? t("admin.settings.smtp.testing")
                     : t("admin.settings.smtp.testConnection")
                 }}
-              </Button>
+              </BaseButton>
             </div>
             <div class="space-y-6 p-6">
               <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
@@ -192,7 +192,7 @@
                     "
                   />
                 </div>
-                <Button
+                <BaseButton
                   type="button"
                   @click="sendTestEmail"
                   :disabled="
@@ -206,7 +206,7 @@
                       ? t("admin.settings.testEmail.sending")
                       : t("admin.settings.testEmail.sendTestEmail")
                   }}
-                </Button>
+                </BaseButton>
               </div>
             </div>
           </div>
@@ -343,7 +343,7 @@
                         t('admin.settings.quotaNotify.emailPlaceholder')
                       "
                     />
-                    <Button
+                    <BaseButton
                       @click="form.account_quota_notify_emails.splice(index, 1)"
                       variant="ghost"
                       size="xs"
@@ -351,16 +351,16 @@
                       :aria-label="t('common.delete')"
                     >
                       <Icon name="x" size="xs" class="h-4 w-4" />
-                    </Button>
+                    </BaseButton>
                   </div>
-                  <Button
+                  <BaseButton
                     @click="addQuotaNotifyEmail"
                     variant="secondary"
                     size="sm"
                     type="button"
                   >
                     + {{ t("admin.settings.quotaNotify.addEmail") }}
-                  </Button>
+                  </BaseButton>
                 </div>
                 <p class="mt-1 text-xs text-[var(--muted-foreground)] text-[var(--muted-foreground)]">
                   {{ t("admin.settings.quotaNotify.emailsHint") }}
@@ -375,7 +375,7 @@
 <script lang="ts">
 import { defineComponent } from 'vue'
 import Icon from '@/components/icons/Icon.vue'
-import Button from '@/components/common/Button.vue'
+import BaseButton from '@/components/common/Button.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import EmailTemplateEditor from '@/views/admin/settings/EmailTemplateEditor.vue'
 import { useSettingsPageBindings } from './settingsPageBindings'
@@ -384,7 +384,7 @@ export default defineComponent({
   name: 'AdminEmailSettingsPage',
   components: {
     EmailTemplateEditor,
-    Button,
+    BaseButton,
     Icon,
     Toggle,
   },

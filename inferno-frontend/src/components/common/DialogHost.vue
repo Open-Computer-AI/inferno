@@ -16,7 +16,7 @@
     v-else-if="request?.kind === 'prompt'"
     :key="request.id"
     :show="true"
-    :title="request.options.title || t('common.field-control')"
+    :title="request.options.title || t('common.prompt')"
     :message="request.options.message"
     :default-value="request.options.defaultValue"
     :placeholder="request.options.placeholder"

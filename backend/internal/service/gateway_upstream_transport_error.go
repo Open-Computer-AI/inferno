@@ -56,8 +56,10 @@ func (s *GatewayService) handleUpstreamTransportError(ctx context.Context, c *gi
 		return err
 	}
 
-	// Transport attempt left local validation; count Ollama Cloud activity.
+	// Transport attempt left local validation; count usage activity for providers
+	// whose refresh cadence is driven by account last_used_at.
 	scheduleOllamaCloudUsageActivity(s.deferredService, account)
+	scheduleOpenCodeGoUsageActivity(s.deferredService, account)
 
 	if classifyUpstreamTransportError(err).Persistent {
 		s.tempUnscheduleTransportError(ctx, account, safeErr)

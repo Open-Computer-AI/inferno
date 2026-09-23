@@ -1,18 +1,37 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 
-const { updateAccountMock, checkMixedChannelRiskMock, authIsSimpleMode } = vi.hoisted(() => ({
+const {
+  updateAccountMock,
+  checkMixedChannelRiskMock,
+  getOpenCodeGoUsageMock,
+  setOpenCodeGoUsageAutoRefreshMock,
+  refreshOpenCodeGoUsageMock,
+  syncUpstreamModelsMock,
+  showErrorMock,
+  showSuccessMock,
+  showWarningMock,
+  authIsSimpleMode
+} = vi.hoisted(() => ({
   updateAccountMock: vi.fn(),
   checkMixedChannelRiskMock: vi.fn(),
+  getOpenCodeGoUsageMock: vi.fn(),
+  setOpenCodeGoUsageAutoRefreshMock: vi.fn(),
+  refreshOpenCodeGoUsageMock: vi.fn(),
+  syncUpstreamModelsMock: vi.fn(),
+  showErrorMock: vi.fn(),
+  showSuccessMock: vi.fn(),
+  showWarningMock: vi.fn(),
   authIsSimpleMode: { value: true }
 }))
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
-    showError: vi.fn(),
-    showSuccess: vi.fn(),
-    showInfo: vi.fn()
+    showError: showErrorMock,
+    showSuccess: showSuccessMock,
+    showInfo: vi.fn(),
+    showWarning: showWarningMock
   })
 }))
 
@@ -28,7 +47,11 @@ vi.mock('@/api/admin', () => ({
   adminAPI: {
     accounts: {
       update: updateAccountMock,
-      checkMixedChannelRisk: checkMixedChannelRiskMock
+      checkMixedChannelRisk: checkMixedChannelRiskMock,
+      getOpenCodeGoUsage: getOpenCodeGoUsageMock,
+      setOpenCodeGoUsageAutoRefresh: setOpenCodeGoUsageAutoRefreshMock,
+      refreshOpenCodeGoUsage: refreshOpenCodeGoUsageMock,
+      syncUpstreamModels: syncUpstreamModelsMock
     },
     settings: {
       getWebSearchEmulationConfig: vi.fn().mockResolvedValue({ enabled: false, providers: [] }),
@@ -166,6 +189,29 @@ function buildAccount() {
   } as any
 }
 
+function buildOpenCodeAccount() {
+  return {
+    ...buildAccount(),
+    id: 8,
+    name: 'OpenCode Go',
+    platform: 'opencode_go',
+    opencode_go_usage: {
+      account_id: 8,
+      eligible: true,
+      auto_refresh_enabled: false,
+      snapshot: {
+        status: 'ok',
+        fetched_at: '2026-07-22T12:00:00Z',
+        data: {
+          rolling: { percent: 12, resets_at: '2099-07-22T17:00:00Z' },
+          weekly: { percent: 34, resets_at: '2099-07-29T00:00:00Z' },
+          monthly: { percent: 56, resets_at: '2099-08-01T00:00:00Z' }
+        }
+      }
+    }
+  } as any
+}
+
 function buildOpenAISparkShadowAccount() {
   const account = buildAccount()
   return {
@@ -290,7 +336,7 @@ function buildOpenAISetupTokenAccount() {
   } as any
 }
 
-function mountModal(account = buildAccount()) {
+function mountModal(account = buildAccount(), renderGroupSelector = false) {
   return mount(EditAccountModal, {
     props: {
       show: true,
@@ -304,7 +350,7 @@ function mountModal(account = buildAccount()) {
         Select: SelectStub,
         Icon: true,
         ProxySelector: true,
-        GroupSelector: GroupSelectorStub,
+        GroupSelector: renderGroupSelector ? false : GroupSelectorStub,
         ModelWhitelistSelector: ModelWhitelistSelectorStub
       }
     }
@@ -312,8 +358,232 @@ function mountModal(account = buildAccount()) {
 }
 
 describe('EditAccountModal', () => {
+  afterEach(() => vi.useRealTimers())
+
   beforeEach(() => {
     authIsSimpleMode.value = true
+    getOpenCodeGoUsageMock.mockReset()
+    setOpenCodeGoUsageAutoRefreshMock.mockReset()
+    refreshOpenCodeGoUsageMock.mockReset()
+    syncUpstreamModelsMock.mockReset()
+    showErrorMock.mockReset()
+    showSuccessMock.mockReset()
+    showWarningMock.mockReset()
+  })
+
+  it('does not render OpenCode Go controls for a non-eligible account', () => {
+    const account = buildOpenCodeAccount()
+    account.opencode_go_usage.eligible = false
+
+    const wrapper = mountModal(account)
+
+    expect(wrapper.find('[data-testid="opencode-go-usage-settings"]').exists()).toBe(false)
+    expect(getOpenCodeGoUsageMock).not.toHaveBeenCalled()
+  })
+
+  it('reports OpenCode Go refresh errors without emitting an account update', async () => {
+    refreshOpenCodeGoUsageMock.mockRejectedValueOnce({
+      response: { data: { code: 'OPENCODE_GO_USAGE_REFRESH_RATE_LIMITED' } }
+    })
+    const wrapper = mountModal(buildOpenCodeAccount())
+
+    await wrapper.get('[data-testid="opencode-go-refresh"]').trigger('click')
+    await flushPromises()
+
+    expect(refreshOpenCodeGoUsageMock).toHaveBeenCalledWith(8)
+    expect(showErrorMock).toHaveBeenCalledWith('admin.accounts.opencodeGo.refreshFailed')
+    expect(wrapper.emitted('updated')).toBeUndefined()
+  })
+
+  it('reports OpenCode Go auto-refresh toggle errors and keeps the prior state', async () => {
+    setOpenCodeGoUsageAutoRefreshMock.mockRejectedValueOnce(new Error('toggle failed'))
+    const wrapper = mountModal(buildOpenCodeAccount())
+    const toggle = wrapper.get('[data-testid="opencode-go-auto-refresh"]')
+
+    await toggle.trigger('click')
+    await flushPromises()
+
+    expect(setOpenCodeGoUsageAutoRefreshMock).toHaveBeenCalledWith(8, true)
+    expect(showErrorMock).toHaveBeenCalledWith('toggle failed')
+    expect(toggle.attributes('aria-checked')).toBe('false')
+  })
+
+  it('keeps the sync result and warns when some upstream model metadata is partial', async () => {
+    syncUpstreamModelsMock.mockResolvedValue({
+      models: ['gemini-2.5-pro'],
+      warnings: [{ code: 'upstream_model_metadata_partial', message: 'some metadata missing' }]
+    })
+    const wrapper = mountModal(buildAntigravityAccount())
+    const syncButton = wrapper
+      .findAll('button')
+      .find(button => button.text().includes('admin.accounts.syncUpstreamModels'))
+
+    expect(syncButton).toBeDefined()
+    await syncButton!.trigger('click')
+    await flushPromises()
+
+    expect(syncUpstreamModelsMock).toHaveBeenCalledWith(3)
+    expect(showSuccessMock).toHaveBeenCalledWith('admin.accounts.syncUpstreamModelsSuccess')
+    expect(showWarningMock).toHaveBeenCalledWith('admin.accounts.syncUpstreamModelsMetadataPartial')
+  })
+
+  it('preserves OpenCode Zen mode, adaptive endpoints, and protocol rules on edit', async () => {
+    const account = buildOpenCodeAccount()
+    account.credentials = {
+      api_key: 'sk-opencode',
+      account_mode: 'zen',
+      api_protocol: 'adaptive',
+      base_url: 'https://opencode.ai/zen/v1',
+      api_base_urls: {
+        chat_completions: 'https://opencode.ai/zen/v1',
+        anthropic: 'https://opencode.ai/zen',
+        responses: 'https://opencode.ai/zen/v1'
+      },
+      protocol_rules: [
+        { pattern: 'gpt-*', protocol: 'responses' },
+        { pattern: 'claude-*', protocol: 'anthropic' }
+      ]
+    }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+
+    const wrapper = mountModal(account)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toMatchObject({
+      account_mode: 'zen',
+      api_protocol: 'adaptive',
+      base_url: 'https://opencode.ai/zen/v1',
+      api_base_urls: {
+        chat_completions: 'https://opencode.ai/zen/v1',
+        anthropic: 'https://opencode.ai/zen',
+        responses: 'https://opencode.ai/zen/v1'
+      },
+      protocol_rules: [
+        { pattern: 'gpt-*', protocol: 'responses' },
+        { pattern: 'claude-*', protocol: 'anthropic' }
+      ]
+    })
+  })
+
+  it('defaults legacy OpenCode accounts without a mode to GO when edited', async () => {
+    const account = buildOpenCodeAccount()
+    account.credentials = {
+      api_key: 'sk-opencode',
+      api_protocol: 'adaptive',
+      base_url: 'https://relay.example.com/v1',
+      api_base_urls: { chat_completions: 'https://relay.example.com/v1' }
+    }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+
+    const wrapper = mountModal(account)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toMatchObject({
+      account_mode: 'go',
+      api_protocol: 'adaptive',
+      base_url: 'https://relay.example.com/v1',
+      api_base_urls: { chat_completions: 'https://relay.example.com/v1' }
+    })
+  })
+
+  it('sets one-month and one-year expiry presets relative to now', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2028-02-29T12:34:00'))
+    const account = buildAccount()
+    account.expires_at = new Date('2030-06-15T09:00:00').getTime() / 1000
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+    const input = wrapper.get<HTMLInputElement>('input[type="datetime-local"]')
+
+    for (const [label, expected] of [
+      ['payment.oneMonth', '2028-03-29T12:34'],
+      ['payment.oneYear', '2029-02-28T12:34']
+    ]) {
+      const button = wrapper.findAll('button').find(candidate => candidate.text() === label)!
+      await button.trigger('click')
+      expect(input.element.value).toBe(expected)
+      expect(updateAccountMock).not.toHaveBeenCalled()
+    }
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.expires_at).toBe(
+      new Date('2029-02-28T12:34:00').getTime() / 1000
+    )
+  })
+
+  it('lets an assigned inactive group be removed and reselected without exposing other inactive groups', async () => {
+    authIsSimpleMode.value = false
+    const account = buildAccount()
+    const activeGroup = {
+      id: 1,
+      name: 'Active group',
+      platform: 'openai',
+      status: 'active',
+      rate_multiplier: 1
+    }
+    const inactiveGroup = { ...activeGroup, id: 2, name: 'Paused group', status: 'inactive' }
+    account.group_ids = [1, 2]
+    account.groups = [
+      { ...activeGroup, name: 'Outdated name' },
+      inactiveGroup,
+      inactiveGroup,
+      { ...inactiveGroup, id: 3, name: 'Unassigned paused group' }
+    ]
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+
+    const wrapper = mountModal(account, true)
+    await wrapper.setProps({ groups: [activeGroup] as any })
+    const selector = wrapper.get('[data-tour="account-form-groups"]')
+    expect(selector.text()).toContain('Active group')
+    expect(selector.text()).toContain('Paused group')
+    expect(selector.text()).not.toContain('Outdated name')
+    expect(selector.text()).not.toContain('Unassigned paused group')
+
+    const paused = selector.findAll('.grpsel__row').find(row => row.text().includes('Paused group'))!
+    await paused.trigger('click')
+    expect(paused.attributes('data-selected')).toBeUndefined()
+    await paused.trigger('click')
+    expect(paused.attributes('data-selected')).toBe('true')
+    await paused.trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock.mock.calls[0]?.[1]?.group_ids).toEqual([1])
+    expect(account.group_ids).toEqual([1, 2])
+  })
+
+  it('persists request-ID header changes while preserving other extra settings', async () => {
+    const account = buildAccount()
+    account.extra = { openai_compact_mode: 'force_on' }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+
+    await wrapper.get('[data-testid="upstream-request-id-header"]').setValue(' X-Oneapi-Request-Id ')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toMatchObject({
+      openai_compact_mode: 'force_on',
+      upstream_request_id_header: 'X-Oneapi-Request-Id'
+    })
+  })
+
+  it('persists and clears the OpenAI image URL conversion setting', async () => {
+    const account = buildAccount()
+    account.extra = { images_url_to_b64_json: true }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+
+    const toggle = wrapper.get('[data-testid="openai-images-url-to-b64-json-toggle"]')
+    expect(toggle.attributes('aria-checked')).toBe('true')
+    await toggle.trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('images_url_to_b64_json')
   })
 
   it('reopening the same account rehydrates the OpenAI whitelist from props', async () => {
@@ -1090,6 +1360,28 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.openai_capabilities).toEqual([
       'chat_completions'
+    ])
+  })
+
+  it('preserves the Seedance endpoint capability when editing an OpenAI API key account', async () => {
+    const account = buildAccount()
+    account.credentials.openai_capabilities = ['chat_completions', 'seedance']
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    const seedanceCheckbox = wrapper.get<HTMLInputElement>(
+      '[data-testid="openai-endpoint-capability-seedance"]'
+    )
+    expect(seedanceCheckbox.element.checked).toBe(true)
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.openai_capabilities).toEqual([
+      'chat_completions',
+      'seedance'
     ])
   })
 

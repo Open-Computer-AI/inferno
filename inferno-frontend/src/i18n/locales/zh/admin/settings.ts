@@ -48,6 +48,21 @@ export default {
         dark: '深色',
       },
       features: {
+        siteBillingMode: {
+          title: '站点类型',
+          description: '决定用户端提供哪些购买方式。默认「充值 & 订阅」。',
+          label: '购买方式',
+          options: {
+            rechargeAndSubscription: '充值 & 订阅',
+            rechargeOnly: '仅充值',
+            subscriptionOnly: '仅订阅',
+          },
+          hints: {
+            rechargeAndSubscription: '用户端同时提供余额充值与订阅套餐。',
+            rechargeOnly: '隐藏用户端订阅入口；已有订阅计费与兑换码发放的订阅不受影响。',
+            subscriptionOnly: '购买页只提供订阅套餐，并拒绝余额充值订单；兑换码和其他余额入账不受影响。',
+          },
+        },
         channelMonitor: {
           title: '渠道监控',
           description: '启用后在 V1 主动探测与 V2 被动用量监控中二选一。关闭后两种模式的后台任务均停止，用户端入口隐藏。',
@@ -486,6 +501,18 @@ export default {
         saved: 'Ollama Cloud 用量刷新设置已保存',
         saveFailed: '保存 Ollama Cloud 用量刷新设置失败'
       },
+      opencodeGoUsage: {
+        title: 'OpenCode Go 用量刷新',
+        description: '刷新上游 OpenCode Go 账号上报的用量窗口；默认关闭，仅对单独开启的账号生效。',
+        enabled: '启用全局自动刷新',
+        enabledHint: '仅刷新账号自身也开启自动刷新的账号。手动刷新不受影响。',
+        intervalMinutes: '请求持续时的最长等待（分钟）',
+        intervalHint: '范围 5–1440 分钟。请求持续不断导致 debounce 一直后移时，最晚在此时间强制刷新。',
+        debounceMinutes: '请求安静等待（分钟）',
+        debounceHint: '范围 1–60 分钟，且必须小于刷新间隔。最后一次模型请求安静满此时长后再抓取用量。',
+        saved: 'OpenCode Go 用量刷新设置已保存',
+        saveFailed: '保存 OpenCode Go 用量刷新设置失败'
+      },
       gatewayForwarding: {
         title: '请求转发行为',
         description: '控制请求转发到上游 OAuth 账号时的行为',
@@ -551,6 +578,12 @@ export default {
         openaiCodexVersionAutoSync: '自动同步 Codex 版本号',
         openaiCodexVersionAutoSyncHint: '每 6 小时从官方仓库获取最新稳定版客户端版本号，无需为了跟版本而升级本服务。关闭后仅使用上方手填版本或内置版本。',
         openaiCodexVersionSyncedValue: '当前同步到：{version}',
+        claudeCodeClientVersion: 'Claude Code 客户端版本号',
+        claudeCodeClientVersionPlaceholder: '留空则跟随自动同步',
+        claudeCodeClientVersionHint: '网关伪装为官方 Claude Code CLI 时对上游声明的客户端版本号。留空表示使用自动同步到的官方最新版本；填写后固定为该版本，不再跟随同步。仅在手填值和同步值均不可用时，才回退到环境变量 SUB2API_CLAUDE_CLI_VERSION 或内置版本。',
+        claudeCodeVersionAutoSync: '自动同步 Claude Code 版本号',
+        claudeCodeVersionAutoSyncHint: '每小时从官方发布渠道获取最新版本的 Claude Code 客户端版本号，无需为了跟版本而升级本服务。关闭后停止获取新版本，已同步的版本仍可使用；上方手填版本始终优先。',
+        claudeCodeVersionSyncedValue: '当前同步到：{version}',
         codexHardeningTitle: 'Codex 设置',
         codexClientRestrictionTitle: 'Codex 客户端限制',
         codexHardeningDesc:
@@ -772,6 +805,7 @@ export default {
         providerWxpay: '微信官方',
         providerStripe: 'Stripe',
         providerAirwallex: 'Airwallex',
+        providerRazorpay: 'Razorpay',
         typeDisabled: '类型已禁用',
         enableTypesFirst: '请先在上方启用至少一种服务商',
         easypayRedirect: '跳转',
@@ -811,6 +845,9 @@ export default {
         field_countryCode: '国家/地区代码',
         field_currency: '支付币种',
         field_accountId: 'Airwallex 账户 ID',
+        field_keyId: 'Key ID',
+        field_keySecret: 'Key Secret',
+        razorpayWebhookHint: '将此 URL 配置为 Razorpay Webhook 端点，并启用 payment.captured、payment.failed 和 order.paid 事件：',
         field_airwallexApiBaseHint: '必须和 API Key 所属环境一致：沙箱/测试密钥使用 https://api-demo.airwallex.com/api/v1，生产密钥使用 https://api.airwallex.com/api/v1。环境混用会返回 credentials_invalid / Access Denied。',
         field_paymentCurrencyHint: '默认 CNY。Stripe 和 Airwallex 可按账户支持从下拉项选择 HKD、USD 等币种；微信、支付宝、易支付仍按 CNY。',
         field_accountIdHint: '不涉及多账户、组织级密钥或连接账户收款时可以不填；单账户 Scoped API Key 会默认使用所选账户。',

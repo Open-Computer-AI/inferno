@@ -1008,7 +1008,7 @@ const requestErrorTone = computed<CardTone>(() =>
             ]"
             :show-details="!props.fullscreen"
             :details-label="t('admin.ops.requestDetails.details')"
-            @open-details="openDetails({ title: t('admin.ops.ttftLabel'), sort: 'duration_desc' })"
+            @open-details="openDetails({ title: t('admin.ops.ttftLabel'), kind: 'success', sort: 'ttft_desc' })"
           />
         </div>
 

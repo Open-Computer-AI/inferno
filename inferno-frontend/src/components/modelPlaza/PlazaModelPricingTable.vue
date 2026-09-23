@@ -318,7 +318,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { formatScaled } from '@/utils/pricing'
+import { formatScaled, resolveIntervalPrices } from '@/utils/pricing'
 import { platformAccentColor, platformBadgeLightClass, platformLabel } from '@/utils/platformColors'
 import {
   BILLING_MODE_TOKEN,
@@ -329,6 +329,13 @@ import {
 } from '@/constants/channel'
 import type { PlazaModel, PlazaTimePricingPeriod } from '@/api/modelPlaza'
 import type { UserPricingInterval } from '@/api/channels'
+
+type PricingIntervalWithMultipliers = UserPricingInterval & {
+  input_multiplier?: number | null
+  output_multiplier?: number | null
+  cache_write_multiplier?: number | null
+  cache_read_multiplier?: number | null
+}
 
 function reasoningEffortMultipliers(model: PlazaModel): [string, number][] {
   const multipliers = model.pricing?.reasoning_effort_multipliers
@@ -513,23 +520,29 @@ function formatTimeWindow(p: PlazaTimePricingPeriod): string {
 }
 
 /** 上下文档位按下限升序展示(后端已升序,此处兜底)。 */
-function sortByContext(intervals: UserPricingInterval[]): UserPricingInterval[] {
+function sortByContext(intervals: PricingIntervalWithMultipliers[]): PricingIntervalWithMultipliers[] {
   return [...intervals].sort((a, b) => a.min_tokens - b.min_tokens)
 }
 
 /** token 模式的阶梯定价(内联进输入/输出/缓存列)。 */
-function tokenIntervals(m: PlazaModel): UserPricingInterval[] {
-  return sortByContext(m.pricing?.intervals ?? [])
+function tokenIntervals(m: PlazaModel): PricingIntervalWithMultipliers[] {
+  return sortByContext(m.pricing?.intervals ?? []).map((iv) => resolveIntervalPrices(iv, m.pricing!))
 }
 
 /** 官方阶梯(后端按目录规则合成,不受分组开关影响)。 */
-function officialIntervals(m: PlazaModel): UserPricingInterval[] {
+function officialIntervals(m: PlazaModel): PricingIntervalWithMultipliers[] {
   return sortByContext(m.official_pricing?.intervals ?? [])
 }
 
 /** 任一档带缓存价才按档渲染缓存列;否则沿用平价的写入/读取两行。 */
-function hasTierCachePricing(intervals: UserPricingInterval[]): boolean {
-  return intervals.some((iv) => iv.cache_write_price != null || iv.cache_write_1h_price != null || iv.cache_read_price != null)
+function hasTierCachePricing(intervals: PricingIntervalWithMultipliers[]): boolean {
+  return intervals.some((iv) =>
+    iv.cache_write_price != null ||
+    iv.cache_write_1h_price != null ||
+    iv.cache_read_price != null ||
+    iv.cache_write_multiplier != null ||
+    iv.cache_read_multiplier != null
+  )
 }
 
 /** 档位说明:整单按档计价,或(平台旧规则)仅超出部分按档计价。 */

@@ -1,3 +1,5 @@
+import type { UserPricingInterval } from '@/api/channels'
+
 /**
  * formatScaled formats a per-token (or per-request) USD price scaled by `scale`.
  *
@@ -21,4 +23,44 @@ export function formatScaled(value: number | null, scale: number, minFractionDig
     }
   }
   return `$${s}`
+}
+
+type PricingIntervalWithMultipliers = UserPricingInterval & {
+  input_multiplier?: number | null
+  output_multiplier?: number | null
+  cache_write_multiplier?: number | null
+  cache_read_multiplier?: number | null
+}
+
+type TokenPrices = Pick<
+  UserPricingInterval,
+  'input_price' | 'output_price' | 'cache_write_price' | 'cache_write_1h_price' | 'cache_read_price'
+>
+
+/**
+ * Resolve a tier that supplies only multipliers against the model's base
+ * prices. Explicit tier prices, including zero, always take precedence.
+ */
+export function resolveIntervalPrices(
+  iv: PricingIntervalWithMultipliers,
+  base: TokenPrices
+): PricingIntervalWithMultipliers {
+  const price = (
+    absolute: number | null | undefined,
+    multiplier: number | null | undefined,
+    fallback: number | null | undefined
+  ) => absolute ?? (fallback == null ? null : fallback * (multiplier ?? 1))
+
+  return {
+    ...iv,
+    input_price: price(iv.input_price, iv.input_multiplier, base.input_price),
+    output_price: price(iv.output_price, iv.output_multiplier, base.output_price),
+    cache_write_price: price(iv.cache_write_price, iv.cache_write_multiplier, base.cache_write_price),
+    // An explicit cache-write price applies to both durations unless 1h is overridden.
+    cache_write_1h_price:
+      iv.cache_write_1h_price ??
+      iv.cache_write_price ??
+      price(null, iv.cache_write_multiplier, base.cache_write_1h_price),
+    cache_read_price: price(iv.cache_read_price, iv.cache_read_multiplier, base.cache_read_price)
+  }
 }

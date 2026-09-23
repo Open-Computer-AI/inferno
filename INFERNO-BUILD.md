@@ -139,11 +139,11 @@ does **not** prove any of it matches its prototype. For the 13 on the right, the
 only evidence of fidelity is the building agent's own report of the numbers it
 implemented.
 
-`SWARM-REGISTRY.md` defines the gate as three steps — lint, typecheck, and
+The June prototype-fidelity gate is three steps — lint, typecheck, and
 "mounted in SpecimenView.vue with computed styles asserted in a real browser
 against the measurements the prototype prints". Steps 1 and 2 ran on every wave.
-Step 3 ran on nothing after the first four components. The checks that did run
-were real command output, which is precisely what made the gap easy to miss.
+Step 3 ran on nothing after the first four components. This is a historical
+June-design fidelity finding, not an upstream-parity status signal.
 
 **The verification pass, in order:**
 
@@ -618,9 +618,16 @@ display path after a component was extracted; a commit whose i18n landed 16/16
 while its feature landed 10/38; a billing mode whose constant existed but whose
 entire UI did not; and two hardening commits that landed 5/39 and 0/6.
 
-# Manifest discipline (non-negotiable)
+# Reconciliation ledger discipline (non-negotiable)
 
-**A port and its COMMIT-MANIFEST.md row change land in the SAME commit.**
+**A port and its behavior-level disposition in
+`docs/superpowers/analysis/RECONCILIATION.md` land in the SAME commit.** That
+file is the single live source of truth for the current candidate, upstream
+snapshot, completed backend behavior, June work still pending, and verification.
+The old per-commit manifest is archived at
+`docs/superpowers/analysis/archive/2026-09-23/COMMIT-MANIFEST.md` only because
+legacy frontend audit scripts consume its historical rows; it is not current
+completion status.
 
 On 2026-08-30 `26be82cc8` was ported twice. The first port (`7afe8e832`,
 08-29) did not touch the manifest, so the row still read TODO. The next
@@ -628,9 +635,8 @@ session took the row at face value, re-applied the same upstream commit, and
 spent the merge fighting its own earlier work -- the four per-tier multiplier
 inputs ended up in the file twice and had to be deduplicated.
 
-The manifest is the only record of what has been taken. A port that does not
-update it is not finished, however good the code is. Before starting any row,
-confirm no commit in `upstream/main..HEAD` already claims that hash:
+For historical manifest rows, before using an audit script, confirm no commit
+in `upstream/main..HEAD` already claims that hash:
 
     git log --format='%h %s' upstream/main..HEAD | grep <hash>
 
@@ -838,10 +844,9 @@ insertion, not a copy):
    `model_pricing` field, which `vue-tsc` correctly rejected once the type
    became non-optional. Added `long_context_pricing_enabled: false,
    model_pricing: [],` to the factory's inert defaults. `SpecimenView.vue`
-   is nominally orchestrator-only per `SWARM-REGISTRY.md`'s no-worker-touch
-   list, but that rule guards against parallel workers colliding on it, not
-   against fixing contract fallout during reconciliation -- flagging the
-   edit here rather than doing it silently.
+   was orchestrator-owned during that historical parallel wave to prevent edit
+   collisions; that did not prohibit fixing contract fallout, and the edit was
+   recorded here rather than done silently.
 
 ## Skipped, with reasons
 

@@ -1654,7 +1654,10 @@ const openaiPassthroughEnabled = ref(false)
 // Codex namespace 工具摊平兼容开关（仅 OAuth），缺省关闭即原样保留
 const openaiFlattenNamespacesEnabled = ref(false)
 const openAILongContextBillingEnabled = ref(false)
-const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>([
+// Seedance is an Ark-only endpoint capability.  Keep the June UI compatible
+// with older shared type declarations until the API/type surface is refreshed.
+type InfernoOpenAIEndpointCapability = OpenAIEndpointCapability | 'seedance'
+const openAIEndpointCapabilities = ref<InfernoOpenAIEndpointCapability[]>([
   'chat_completions',
   'embeddings'
 ])
@@ -1741,10 +1744,11 @@ const openAITextEndpointCapabilityLabel = computed(() => {
   return t('admin.accounts.openai.capabilityTextAuto')
 })
 const openAIEndpointCapabilityOptions = computed<
-  Array<{ value: OpenAIEndpointCapability; label: string }>
+  Array<{ value: InfernoOpenAIEndpointCapability; label: string }>
 >(() => [
   { value: 'chat_completions', label: openAITextEndpointCapabilityLabel.value },
-  { value: 'embeddings', label: t('admin.accounts.openai.capabilityEmbeddings') }
+  { value: 'embeddings', label: t('admin.accounts.openai.capabilityEmbeddings') },
+  { value: 'seedance', label: 'Seedance (Ark)' }
 ])
 const openAITextGenerationCapabilityEnabled = computed(() =>
   openAIEndpointCapabilities.value.includes('chat_completions')
@@ -1753,13 +1757,13 @@ const openAIResponsesModeApplicable = computed(
   () => !enableOpenAIEndpointCapabilities.value || openAITextGenerationCapabilityEnabled.value
 )
 
-const normalizeOpenAIEndpointCapabilities = (values: OpenAIEndpointCapability[]) => {
-  const allowed: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings']
+const normalizeOpenAIEndpointCapabilities = (values: InfernoOpenAIEndpointCapability[]) => {
+  const allowed: InfernoOpenAIEndpointCapability[] = ['chat_completions', 'embeddings', 'seedance']
   const selected = allowed.filter((value) => values.includes(value))
-  return selected.length > 0 ? selected : allowed
+  return selected.length > 0 ? selected : ['chat_completions', 'embeddings'] as InfernoOpenAIEndpointCapability[]
 }
 
-const toggleOpenAIEndpointCapability = (capability: OpenAIEndpointCapability) => {
+const toggleOpenAIEndpointCapability = (capability: InfernoOpenAIEndpointCapability) => {
   if (openAIEndpointCapabilities.value.includes(capability)) {
     if (openAIEndpointCapabilities.value.length <= 1) {
       return
@@ -1949,7 +1953,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
 
   if (applyOpenAIEndpointCapabilities) {
     credentials.openai_capabilities =
-      openAIEndpointCapabilities.value.length === 2
+      openAIEndpointCapabilities.value.length === 2 && !openAIEndpointCapabilities.value.includes('seedance')
         ? null
         : [...openAIEndpointCapabilities.value]
     credentialsChanged = true

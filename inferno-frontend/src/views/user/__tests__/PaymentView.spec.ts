@@ -333,6 +333,34 @@ describe('PaymentView recharge rate preview', () => {
   })
 })
 
+describe('PaymentView checkout help text', () => {
+  it('renders Markdown while sanitizing administrator-provided HTML', async () => {
+    routeState.path = '/purchase'
+    routeState.query = {}
+    getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture({
+      help_text: '**Payment help** <img src=x onerror=alert(1)> [unsafe](javascript:alert(1))',
+    }))
+    window.localStorage.clear()
+
+    const wrapper = shallowMount(PaymentView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          Teleport: true,
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    const help = wrapper.get('.markdown-body')
+    expect(help.find('strong').text()).toBe('Payment help')
+    expect(help.html().toLowerCase()).not.toContain('onerror')
+    expect(help.html().toLowerCase()).not.toContain('javascript:')
+    wrapper.unmount()
+  })
+})
+
 describe('PaymentView subscription confirmation amounts', () => {
   it('shows converted CNY pay amount using the subscription rate, not the balance multiplier', async () => {
     const wrapper = await mountSubscriptionConfirm({

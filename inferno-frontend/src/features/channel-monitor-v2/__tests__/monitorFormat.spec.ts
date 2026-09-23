@@ -106,6 +106,21 @@ describe('monitorFormat accuracy', () => {
     expect(healthScoreClass({ ...health, score: null }, 'overall', 0)).toBe('health-unknown')
   })
 
+  it('treats TTFT without first-token samples as unknown even if coarse state is healthy', () => {
+    const health: MonitorHealth = {
+      overall: 'healthy',
+      error_rate: 'healthy',
+      ttft: 'healthy',
+      cache: 'healthy',
+      score: 100,
+      error_rate_score: 100,
+      ttft_score: null,
+      cache_score: 100,
+      minimum_sample: 20,
+    }
+    expect(healthScoreClass(health, 'ttft', 100)).toBe('health-unknown')
+  })
+
   it('maps health states for status dots', () => {
     expect(healthStateClass('healthy')).toBe('health-healthy')
     expect(healthStateClass(undefined)).toBe('health-unknown')

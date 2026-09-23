@@ -234,6 +234,14 @@ export default {
     },
 
     riskControl: {
+      engine: '审计引擎',
+      activeEngine: '当前生效引擎：{engine}',
+      engineUnavailable: '当前引擎没有可用 Key，API 审计不可用；失败请求按现有策略放行。',
+      typeSafeNotice: 'TypeSafe AI 仅审文字，图片不外发也不审核。阈值为待校准初值；公共拦截、通知、封禁策略不会随引擎切换而关闭。',
+      typeSafeThresholds: '默认阈值与 OpenAI 一致，但两者分数含义不同。请结合实际审核结果调整各类别阈值。',
+      auditSource: '审计来源',
+      skippedImages: '未审图片：{count}',
+      legacyAuditSource: 'OpenAI（历史记录未保存审核模型版本）',
       title: '风控中心',
       description: '配置内容审计策略并查看审核记录',
       loadFailed: '加载风控中心失败',
@@ -664,6 +672,41 @@ export default {
 
     // Subscriptions Management
     subscriptions: {
+      batchAssign: {
+        enable: '批量分配订阅',
+        hint: '搜索并添加多个用户，统一分配所选分组和有效期。每次最多 100 人。',
+        selected: '已添加 {count} 位用户',
+        removeUser: '移除 {email}',
+        result: '分配完成：成功 {success} 人，失败 {failed} 人',
+        retryHint: '已移除成功项，可检查失败原因后重新提交剩余用户。'
+      },
+      bulk: {
+        extend: '批量调整有效期',
+        reset_quota: '批量重置配额',
+        revoke: '批量撤销',
+        restore: '批量恢复',
+        selected: '已选择 {count} 条订阅',
+        selectSubscription: '选择订阅 #{id}',
+        clearSelection: '清空选择',
+        selectionHint: '当前页选择，翻页或筛选会清空，最多 100 条。各操作仅处理适用状态的订阅。',
+        selectionLimit: '每次最多操作 100 条订阅',
+        selectionRequired: '请至少选择一条订阅',
+        confirmTargets: '本次将处理以下 {count} 条订阅',
+        groupFallback: '分组 #{id}',
+        extendHint: '正整数延长，负整数缩短，最多调整 36500 天。已过期订阅从当前时间起延长，不能缩短；缩短后的到期时间必须在未来。',
+        invalidDays: '请输入 -36500 到 36500 之间的非零整数天数',
+        resetWindows: '选择要重置的配额窗口',
+        resetHint: '所选窗口的用量将归零，并从今天开始重新计算。',
+        selectWindow: '请至少选择一个配额窗口',
+        revokeHint: '撤销后这些订阅将无法继续使用，可稍后在已撤销列表中恢复。',
+        restoreHint: '恢复后将重新启用这些订阅。原有效期已结束的订阅将显示为已过期。',
+        confirm: '确认执行',
+        retry: '重试原操作',
+        retryHint: '暂未确认操作结果。重试会继续原操作，避免重复处理。也可关闭后重新选择相同订阅和参数重试。',
+        requestFailed: '批量操作请求失败，请重试',
+        result: '处理完成：成功 {success} 条，失败 {failed} 条',
+        itemFailed: '操作失败'
+      },
       title: '订阅管理',
       description: '管理用户订阅和配额限制',
       assignSubscription: '分配订阅',

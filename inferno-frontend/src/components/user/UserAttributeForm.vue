@@ -108,6 +108,7 @@ const emit = defineEmits<Emits>()
 const loading = ref(false)
 const attributes = ref<UserAttributeDefinition[]>([])
 const localValues = ref<UserAttributeValuesMap>({})
+let requestVersion = 0
 
 const loadAttributes = async () => {
   loading.value = true
@@ -122,9 +123,11 @@ const loadAttributes = async () => {
 
 const loadUserValues = async () => {
   if (!props.userId) return
+  const version = ++requestVersion
 
   try {
     const values = await adminAPI.userAttributes.getUserAttributeValues(props.userId)
+    if (version !== requestVersion) return
     const valuesMap: UserAttributeValuesMap = {}
     values.forEach(v => {
       valuesMap[v.attribute_id] = v.value
@@ -180,12 +183,11 @@ watch(() => props.modelValue, (newVal) => {
   }
 }, { immediate: true })
 
-watch(() => props.userId, (newUserId) => {
+watch(() => props.userId, (newUserId, _, onCleanup) => {
+  onCleanup(() => { requestVersion++ })
+  localValues.value = {}
   if (newUserId) {
     loadUserValues()
-  } else {
-    // Reset for new user
-    localValues.value = {}
   }
 }, { immediate: true })
 

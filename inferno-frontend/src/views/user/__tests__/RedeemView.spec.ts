@@ -139,4 +139,75 @@ describe('user redemption history pagination', () => {
     expect(showError).toHaveBeenCalledWith('redeem.historyLoadFailed')
     wrapper.unmount()
   })
+
+  it('keeps a successful redemption successful when refreshing the profile fails', async () => {
+    refreshUser.mockRejectedValueOnce(new Error('profile refresh failed'))
+    const wrapper = mountRedeemView()
+    await flushPromises()
+
+    await wrapper.get('#code').setValue('NEW-CODE')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(showWarning).toHaveBeenCalledWith('redeem.userRefreshFailed')
+    expect(showSuccess).toHaveBeenCalledWith('redeem.codeRedeemSuccess')
+    expect(showError).not.toHaveBeenCalledWith('redeem.redeemFailed')
+    wrapper.unmount()
+  })
+
+  it('hides history pagination when there are no rows to page through', async () => {
+    getHistory.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20, pages: 0 })
+    const wrapper = mountRedeemView()
+    await flushPromises()
+    expect(wrapper.findComponent(PaginationStub).exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('finishes normally without a warning when profile refresh succeeds', async () => {
+    const wrapper = mountRedeemView()
+    await flushPromises()
+    await wrapper.get('#code').setValue('NEW-CODE')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(refreshUser).toHaveBeenCalledOnce()
+    expect(showWarning).not.toHaveBeenCalled()
+    expect(showError).not.toHaveBeenCalled()
+    expect(showSuccess).toHaveBeenCalledWith('redeem.codeRedeemSuccess')
+    expect((wrapper.get('#code').element as HTMLInputElement).value).toBe('')
+    wrapper.unmount()
+  })
+
+  it('preserves successful subscription redemption when subscription refresh fails', async () => {
+    redeem.mockResolvedValue({ type: 'subscription', value: 20, message: 'Redeemed' })
+    fetchSubscriptions.mockRejectedValueOnce(new Error('subscription refresh failed'))
+    const wrapper = mountRedeemView()
+    await flushPromises()
+    await wrapper.get('#code').setValue('NEW-CODE')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(fetchSubscriptions).toHaveBeenCalledWith(true)
+    expect(showWarning).toHaveBeenCalledWith('redeem.subscriptionRefreshFailed')
+    expect(showError).not.toHaveBeenCalled()
+    expect(showSuccess).toHaveBeenCalledWith('redeem.codeRedeemSuccess')
+    wrapper.unmount()
+  })
+
+  it('keeps the redemption code and reports failure when the redemption request fails', async () => {
+    redeem.mockRejectedValueOnce({ response: { data: { detail: 'Invalid code' } } })
+    const wrapper = mountRedeemView()
+    await flushPromises()
+    await wrapper.get('#code').setValue(' INVALID-CODE ')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(showError).toHaveBeenCalledWith('redeem.redeemFailed')
+    expect(wrapper.text()).toContain('Invalid code')
+    expect((wrapper.get('#code').element as HTMLInputElement).value).toBe(' INVALID-CODE ')
+    expect(refreshUser).not.toHaveBeenCalled()
+    expect(fetchSubscriptions).not.toHaveBeenCalled()
+    expect(showSuccess).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
 })

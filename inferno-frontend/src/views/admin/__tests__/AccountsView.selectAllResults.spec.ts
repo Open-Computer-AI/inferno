@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import AccountsView from '../AccountsView.vue'
@@ -10,6 +10,7 @@ const {
   getUpstreamBillingProbeSettings,
   getAllProxies,
   getAllGroups,
+  batchRefresh,
   showError
 } = vi.hoisted(() => ({
   listAccounts: vi.fn(),
@@ -18,6 +19,7 @@ const {
   getUpstreamBillingProbeSettings: vi.fn(),
   getAllProxies: vi.fn(),
   getAllGroups: vi.fn(),
+  batchRefresh: vi.fn(),
   showError: vi.fn()
 }))
 
@@ -30,7 +32,7 @@ vi.mock('@/api/admin', () => ({
       getUpstreamBillingProbeSettings,
       batchDelete: vi.fn(),
       batchClearError: vi.fn(),
-      batchRefresh: vi.fn(),
+      batchRefresh,
       bulkUpdate: vi.fn()
     },
     proxies: {
@@ -79,13 +81,15 @@ const makeAccounts = (count: number) => Array.from({ length: count }, (_, index)
 
 const AccountBulkActionsBarStub = {
   props: ['selectedIds', 'totalResults', 'selectingAll', 'allResultsSelected'],
-  emits: ['select-all-results', 'select-page', 'clear'],
+  emits: ['select-all-results', 'select-page', 'clear', 'refresh-token'],
   template: `
     <div>
       <span data-test="selected-count">{{ selectedIds.length }}</span>
+      <span data-test="selected-ids">{{ selectedIds.join(',') }}</span>
       <span data-test="total-results">{{ totalResults }}</span>
       <span data-test="all-results-selected">{{ String(allResultsSelected) }}</span>
       <button data-test="select-page" @click="$emit('select-page')">select page</button>
+      <button data-test="refresh-token" @click="$emit('refresh-token')">refresh token</button>
       <button data-test="select-all-results" @click="$emit('select-all-results')">select all</button>
       <button data-test="clear" @click="$emit('clear')">clear</button>
     </div>
@@ -134,6 +138,8 @@ const mountView = () => mount(AccountsView, {
   }
 })
 
+afterEach(() => vi.restoreAllMocks())
+
 describe('admin AccountsView select all filtered results', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -143,6 +149,7 @@ describe('admin AccountsView select all filtered results', () => {
     getUpstreamBillingProbeSettings.mockReset()
     getAllProxies.mockReset()
     getAllGroups.mockReset()
+    batchRefresh.mockReset()
     showError.mockReset()
 
     listWithEtag.mockResolvedValue({
@@ -224,5 +231,29 @@ describe('admin AccountsView select all filtered results', () => {
     expect(wrapper.get('[data-test="selected-count"]').text()).toBe('20')
     expect(wrapper.get('[data-test="all-results-selected"]').text()).toBe('false')
     expect(showError).toHaveBeenCalledWith('admin.accounts.bulkActions.selectAllFailed')
+  })
+
+  it('keeps only failed account IDs selected after a partial token refresh', async () => {
+    const accounts = makeAccounts(3)
+    listAccounts.mockResolvedValue({ items: accounts, total: 3, page: 1, page_size: 20, pages: 1 })
+    batchRefresh.mockResolvedValue({
+      success: 1,
+      failed: 2,
+      errors: [{ account_id: 2 }, { account_id: 3 }]
+    })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="select-page"]').trigger('click')
+    expect(wrapper.get('[data-test="selected-ids"]').text()).toBe('1,2,3')
+
+    await wrapper.get('[data-test="refresh-token"]').trigger('click')
+    await flushPromises()
+
+    expect(batchRefresh).toHaveBeenCalledWith([1, 2, 3])
+    expect(wrapper.get('[data-test="selected-ids"]').text()).toBe('2,3')
+    expect(showError).toHaveBeenCalledWith('admin.accounts.bulkActions.partialSuccess')
+    expect(listAccounts.mock.calls.every(([, , filters]) => filters.lite === '1')).toBe(true)
   })
 })

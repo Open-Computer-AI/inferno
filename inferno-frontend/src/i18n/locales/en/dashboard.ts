@@ -116,6 +116,19 @@ export default {
     nameLabel: 'Name',
     namePlaceholder: 'My API Key',
     groupLabel: 'Group',
+    providerLabel: 'Provider',
+    providers: {
+      anthropic: 'Anthropic',
+      openai: 'OpenAI',
+      domestic: 'Chinese AI',
+      other: 'Other'
+    },
+    providerHints: {
+      anthropic: 'Choose an available Anthropic / Claude group',
+      openai: 'Choose an available OpenAI / GPT group',
+      domestic: 'Includes DeepSeek, Kimi and Zhipu GLM',
+      other: 'Includes Gemini, Grok, Antigravity and composite groups'
+    },
     selectGroup: 'Select a group',
     statusLabel: 'Status',
     selectStatus: 'Select status',
@@ -765,6 +778,7 @@ export default {
     codeRedeemSuccess: 'Code redeemed successfully!',
     failedToRedeem: 'Failed to redeem code. Please check the code and try again.',
     subscriptionRefreshFailed: 'Redeemed successfully, but failed to refresh subscription status.',
+    userRefreshFailed: 'Redeemed successfully, but failed to refresh account information.',
     pleaseEnterCode: 'Please enter a redeem code',
     historyLoadFailed: 'Failed to load redemption history.'
   },

@@ -187,11 +187,18 @@ const formatDateToString = (date: Date): string => {
   return `${year}-${month}-${day}`
 }
 
-const today = computed(() => formatDateToString(new Date()))
+// Refresh this key when the picker opens so a mounted page crossing midnight
+// recalculates presets and date bounds without introducing a wall-clock timer.
+const calendarDay = ref(formatDateToString(new Date()))
+const today = computed(() => {
+  calendarDay.value
+  return formatDateToString(new Date())
+})
 
 // Tomorrow's date, used to cap manual field edits so a user in a timezone behind the
 // server can still reach "today" there. Preserved from the pre-rewrite component.
 const tomorrow = computed(() => {
+  calendarDay.value
   const d = new Date()
   d.setDate(d.getDate() + 1)
   return formatDateToString(d)
@@ -410,6 +417,7 @@ const toggle = () => {
   if (isOpen.value) {
     close()
   } else {
+    calendarDay.value = formatDateToString(new Date())
     isOpen.value = true
   }
 }

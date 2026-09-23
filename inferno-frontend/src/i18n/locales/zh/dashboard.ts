@@ -116,6 +116,19 @@ export default {
     nameLabel: '名称',
     namePlaceholder: '我的 API 密钥',
     groupLabel: '分组',
+    providerLabel: '厂商',
+    providers: {
+      anthropic: 'Anthropic',
+      openai: 'OpenAI',
+      domestic: '国产模型',
+      other: '其他'
+    },
+    providerHints: {
+      anthropic: '选择 Anthropic / Claude 的可用分组',
+      openai: '选择 OpenAI / GPT 的可用分组',
+      domestic: '包含 DeepSeek、Kimi 和智谱 GLM',
+      other: '包含 Gemini、Grok、Antigravity 和 Composite 分组'
+    },
     selectGroup: '选择分组',
     statusLabel: '状态',
     selectStatus: '选择状态',
@@ -769,6 +782,7 @@ export default {
     codeRedeemSuccess: '兑换成功！',
     failedToRedeem: '兑换失败，请检查兑换码后重试。',
     subscriptionRefreshFailed: '兑换成功，但订阅状态刷新失败。',
+    userRefreshFailed: '兑换成功，但账户信息刷新失败。',
     pleaseEnterCode: '请输入兑换码',
     historyLoadFailed: '加载兑换记录失败。'
   },
@@ -777,6 +791,36 @@ export default {
   profile: {
     title: '个人设置',
     description: '管理您的账户信息和设置',
+    settings: {
+      groups: {
+        account: '账户',
+        security: '安全',
+        notifications: '通知',
+        signInMethods: '登录方式'
+      },
+      sidebarTitle: '个人资料',
+      actions: {
+        change: '更改',
+        edit: '编辑',
+        manage: '管理',
+        close: '关闭'
+      },
+      emailFallback: '账户邮箱',
+      memberSince: '注册于 {date}',
+      memberSinceUnknown: '注册时间 —',
+      usernameDescription: '显示在发票和账户活动中',
+      avatarLabel: '头像',
+      avatarDescription: '与此账户同步的生成式图案，或您上传的图片',
+      passwordDescription: '使用强密码保护您的账户',
+      securityDescription: '两种方式可以同时启用。',
+      signInMethodsDescription: '关联其他供应商或管理现有登录方式',
+      notificationsDisabled: '管理员尚未启用低余额通知。',
+      notSet: '未设置',
+      status: {
+        on: '开启',
+        off: '关闭'
+      }
+    },
     accountBalance: '账户余额',
     concurrencyLimit: '并发限制',
     rpmLimit: 'RPM 限制',
@@ -915,6 +959,9 @@ export default {
       description: '仅支持上传头像图片；静态图片会自动压缩到 20KB 以内后再保存。',
       uploadAction: '上传图片',
       uploadHint: '上传图片时会自动压缩静态图片到 20KB 以内，GIF 需自行控制在 20KB 以内',
+      generatedHint: '使用与此账户同步的生成式图案头像，或上传您自己的图片。',
+      refreshAction: '刷新',
+      refreshSuccess: '生成式头像已刷新',
       uploadRequired: '请先上传头像图片',
       saveSuccess: '头像已更新',
       deleteSuccess: '头像已删除',

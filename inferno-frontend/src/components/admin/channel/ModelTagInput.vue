@@ -76,8 +76,14 @@ function addModel() {
   inputValue.value = ''
 }
 
+function handleEnter(event: KeyboardEvent) {
+  if (event.isComposing) return
+  event.preventDefault()
+  addModel()
+}
+
 function handleTab(event: KeyboardEvent) {
-  if (!inputValue.value.trim()) return
+  if (event.isComposing || !inputValue.value.trim()) return
   event.preventDefault()
   addModel()
 }
@@ -88,7 +94,8 @@ function removeModel(idx: number) {
   emit('update:models', newModels)
 }
 
-function handleBackspace() {
+function handleBackspace(event: KeyboardEvent) {
+  if (event.isComposing) return
   if (inputValue.value === '' && props.models.length > 0) {
     removeModel(props.models.length - 1)
   }
@@ -127,7 +134,7 @@ function handlePaste(e: ClipboardEvent) {
         type="text"
         class="mti__input"
         :placeholder="models.length === 0 ? placeholder : ''"
-        @keydown.enter.prevent="addModel"
+        @keydown.enter="handleEnter"
         @keydown.tab="handleTab"
         @keydown.delete="handleBackspace"
         @paste="handlePaste"

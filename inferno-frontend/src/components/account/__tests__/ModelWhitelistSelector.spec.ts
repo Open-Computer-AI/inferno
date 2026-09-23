@@ -153,6 +153,26 @@ describe('ModelWhitelistSelector', () => {
     expect(showSuccess).not.toHaveBeenCalled()
   })
 
+  it('exposes upstream sync for OpenCode Go and reports partial capability metadata', async () => {
+    syncUpstreamModels.mockResolvedValue({
+      models: ['gpt-5.6-sol'],
+      warnings: [{ code: 'upstream_model_metadata_partial', message: 'some metadata missing' }]
+    })
+    const wrapper = mountSelector({ platform: 'opencode_go', accountId: 46 })
+    const syncButton = wrapper
+      .findAll('button')
+      .find(button => button.text() === 'admin.accounts.syncUpstreamModels')
+
+    expect(syncButton).toBeDefined()
+    await syncButton!.trigger('click')
+    await flushPromises()
+
+    expect(syncUpstreamModels).toHaveBeenCalledWith(46)
+    expect(wrapper.emitted('update:modelValue')).toEqual([[['gpt-5.6-sol']]])
+    expect(showWarning).toHaveBeenCalledWith('admin.accounts.syncUpstreamModelsMetadataPartial')
+    expect(showSuccess).toHaveBeenCalledWith('admin.accounts.syncUpstreamModelsSuccess')
+  })
+
   it('reports a successful preview so account creation can persist metadata', async () => {
     syncUpstreamModelsPreview.mockResolvedValue({
       models: ['x-preview-f-free'],

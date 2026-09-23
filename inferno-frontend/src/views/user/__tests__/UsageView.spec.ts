@@ -14,6 +14,7 @@ const {
   showWarning,
   showSuccess,
   showInfo,
+  appStoreState,
 } = vi.hoisted(() => ({
   query: vi.fn(),
   getStats: vi.fn(),
@@ -25,6 +26,7 @@ const {
   showWarning: vi.fn(),
   showSuccess: vi.fn(),
   showInfo: vi.fn(),
+  appStoreState: { cachedPublicSettings: null as null | Record<string, unknown> },
 }))
 
 const messages: Record<string, string> = {
@@ -83,7 +85,7 @@ vi.mock('@/api', () => ({
 }))
 
 vi.mock('@/stores/app', () => ({
-  useAppStore: () => ({ showError, showWarning, showSuccess, showInfo }),
+  useAppStore: () => ({ ...appStoreState, showError, showWarning, showSuccess, showInfo }),
 }))
 
 vi.mock('vue-i18n', async () => {
@@ -163,6 +165,7 @@ describe('user UsageView', () => {
     showWarning.mockReset()
     showSuccess.mockReset()
     showInfo.mockReset()
+    appStoreState.cachedPublicSettings = null
 
     query.mockResolvedValue({ items: [usageLog], total: 1, pages: 1 })
     getStats.mockResolvedValue({
@@ -209,6 +212,16 @@ describe('user UsageView', () => {
     }))
     expect(list).toHaveBeenCalledWith(1, 100)
     expect(getAvailable).toHaveBeenCalled()
+  })
+
+  it('hides the billing-type filter when subscriptions are disabled', async () => {
+    appStoreState.cachedPublicSettings = { subscription_enabled: false }
+
+    const wrapper = mountUsageView()
+    await flushPromises()
+
+    expect(wrapper.findAll('label').some((label) => label.text() === 'Billing type')).toBe(false)
+    wrapper.unmount()
   })
 
   it('loads API-key filter options beyond the first page', async () => {

@@ -477,8 +477,14 @@ const handleRedeem = async () => {
 
     redeemResult.value = result
 
-    // Refresh user data to get updated balance/concurrency
-    await authStore.refreshUser()
+    // A redeemed code is already committed remotely; a profile refresh failure
+    // must not turn that successful redemption into a false error.
+    try {
+      await authStore.refreshUser()
+    } catch (error) {
+      console.error('Failed to refresh user after redeem:', error)
+      appStore.showWarning(t('redeem.userRefreshFailed'))
+    }
 
     // If subscription type, immediately refresh subscription status
     if (result.type === 'subscription') {

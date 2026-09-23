@@ -279,6 +279,48 @@ export default {
           OLLAMA_CLOUD_USAGE_REFRESH_RATE_LIMITED: 'Refresh is limited. Try again in {retry_after_seconds} seconds.'
         }
       },
+      opencodeGo: {
+        accountMode: {
+          zen: 'Zen',
+          zenDesc: 'Pay-as-you-go gateway. Consumes account credits, billed per token.',
+          go: 'GO',
+          goDesc: 'Subscription gateway, rate-limited by 5-hour / weekly / monthly usage windows.',
+        },
+        protocolRules: {
+          title: 'Model protocol routing',
+          hint: 'In adaptive mode, each model is sent to a native upstream protocol. Use an exact ID or a trailing * glob (e.g. grok-*, qwen*). The first matching rule wins; unmatched models use Chat Completions.',
+          patternPlaceholder: 'grok-* or deepseek-v4-flash',
+          add: 'Add rule',
+          remove: 'Remove rule',
+          restoreDefaults: 'Restore defaults',
+          fallback: 'Unmatched models → Chat Completions (/v1/chat/completions)',
+        },
+        title: 'OpenCode Go usage',
+        panelHint: 'Usage windows reported by the upstream OpenCode Go account. Refreshed on demand or automatically when enabled.',
+        notRefreshed: 'Not refreshed',
+        refreshNow: 'Refresh usage',
+        autoRefresh: 'Automatic usage refresh',
+        autoRefreshHint: 'Runs only when the account switch and the global switch are both enabled.',
+        rolling: '5 hour',
+        rollingShort: '5h',
+        weekly: 'Week',
+        weeklyShort: '7d',
+        monthly: 'Month',
+        monthlyShort: '1m',
+        status: 'Status',
+        updatedAt: 'Updated',
+        ok: 'Current',
+        unauthorized: 'Session expired',
+        failed: 'Refresh failed',
+        windowWithReset: '{percent} used, resets {reset}',
+        loadFailed: 'Failed to load OpenCode Go usage settings',
+        autoRefreshFailed: 'Failed to update automatic usage refresh',
+        refreshSuccess: 'OpenCode Go usage refreshed',
+        refreshFailed: 'Failed to refresh OpenCode Go usage',
+        errors: {
+          OPENCODE_GO_USAGE_REFRESH_RATE_LIMITED: 'Refresh is limited. Try again in {retry_after_seconds} seconds.'
+        }
+      },
       upstreamBilling: {
         trustWarning: 'This rate is declared by the upstream site for the current API key. Sub2API cannot verify that it matches actual charges. The upstream site or an intermediary may return forged, stale, or modified data. Verify it against bills, balance changes, and actual usage.',
         autoProbe: 'Automatically probe upstream declared rate',
@@ -575,6 +617,14 @@ export default {
       apiKeyRequired: 'API Key *',
       apiKeyPlaceholder: 'sk-ant-api03-...',
       apiKeyHint: 'Your Claude Console API Key',
+      upstreamRequestIdHeader: 'Upstream ID',
+      upstreamRequestIdHeaderPlaceholder: 'Leave empty to record nothing',
+      upstreamRequestIdHeaderHelp: {
+        intro: 'Name of the response header in which the direct upstream declares its request ID. The value is recorded in the "Upstream ID" column of the usage log; leave empty to record nothing.',
+        examplesTitle: 'Common values',
+        sub2apiNote: 'Matches the request ID column of its usage log',
+        official: '{platform} official API'
+      },
       // OpenAI specific hints
       openai: {
         baseUrlHint: 'Leave default for official OpenAI API',
@@ -619,6 +669,9 @@ export default {
         responsesModeForceChatCompletions: 'Force Chat Completions',
         responsesModeTextDisabledHint:
           'Not applicable when the Responses / Chat Completions endpoint is not enabled.',
+        imagesUrlToB64Json: 'Image result URL to base64',
+        imagesUrlToB64JsonDesc:
+          'Only applies to non-streaming Images responses of OpenAI API Key accounts. When an upstream image item has a url but no b64_json, the gateway downloads the url and fills b64_json with its base64 content (url is kept) for clients built on the official API; the response is returned unchanged if the download fails.',
         endpointCapabilities: 'Endpoint capabilities',
         endpointCapabilitiesDesc:
           'Used by account routing. The text endpoint follows the Responses API support setting above and is shown as Responses, Chat Completions, or auto mode; Embeddings independently controls /v1/embeddings.',
@@ -628,6 +681,7 @@ export default {
         capabilityChatCompletions: 'Chat Completions',
         capabilityChatCompletionsAuto: 'Chat Completions (auto probe)',
         capabilityEmbeddings: 'Embeddings',
+        capabilitySeedance: 'Seedance',
         responsesStatusAutoSupported: 'Auto probe: Responses',
         responsesStatusAutoUnsupported: 'Auto probe: Chat Completions',
         responsesStatusAutoUnknown: 'Auto probe: unknown',
@@ -771,6 +825,7 @@ export default {
       syncUpstreamModelsLoading: 'Syncing upstream...',
       syncUpstreamModelsSuccess: 'Synced {count} new model(s) from upstream ({total} upstream total)',
       syncUpstreamModelsMetadataIncomplete: 'Model IDs were synced, but capability metadata is incomplete and was not updated.',
+      syncUpstreamModelsMetadataPartial: 'Some model capability metadata was updated; other models still have incomplete capabilities.',
       syncUpstreamModelsNoChanges: 'All {count} upstream model(s) are already in the whitelist',
       syncUpstreamModelsEmpty: 'Upstream returned no models to sync',
       syncUpstreamModelsFailed: 'Failed to sync upstream models',
@@ -844,6 +899,30 @@ export default {
       grokClientToolCache: {
         title: 'Client Tool Cache (May Change Automatic Tool Selection)',
         hint: 'For detected Grok Free OAuth accounts, this is enabled by default for client function tools such as Codex and Trae. Turn it off to opt out if the automatic tool-selection behavior is not acceptable.'
+      },
+      grokMediaEligibility: {
+        title: 'Media Generation Eligibility',
+        hint: 'Controls whether this Grok OAuth account may be selected for image and video generation.',
+        auto: 'Automatic detection',
+        enabled: 'Force enable',
+        disabled: 'Force disable',
+        current: 'Current decision:',
+        eligible: 'Eligible',
+        ineligible: 'Not eligible',
+        loading: 'Loading eligibility…',
+        loadFailed: 'Unable to load media eligibility',
+        autoHint: 'Automatic detection only clears the manual override; it does not trigger a media request.',
+        forceEnableWarning: 'Force enable bypasses automatic eligibility checks. Use only for accounts confirmed to support image/video generation.',
+        partialSave: 'Other account settings may have been saved, but media eligibility was not updated. Please retry.',
+        reasons: {
+          eligible: 'Paid entitlement confirmed',
+          billing_inconclusive: 'Billing information inconclusive',
+          billing_forbidden: 'Billing endpoint forbidden',
+          billing_free_tier: 'Free tier account',
+          billing_unobserved: 'Billing not observed yet',
+          override_enabled: 'Manually forced enabled',
+          override_disabled: 'Manually forced disabled'
+        }
       },
       autoPauseOnExpired: 'Auto Pause On Expired',
       autoPauseOnExpiredDesc: 'When enabled, the account will auto pause scheduling after it expires',
@@ -1554,6 +1633,12 @@ export default {
       openaiQuotaReset: {
         count: 'Credits',
         reset: 'Reset',
+        points: 'Codex points',
+        pointsUnlimited: 'Unlimited',
+        pointsAvailable: 'Available',
+        pointsTooltip: 'Click to refresh Codex points',
+        pointsUpdatedAt: 'Updated {time}',
+        pointsCachePersistFailed: 'Live Codex points loaded, but the saved snapshot could not be updated.',
         countTooltipLoad: 'Click to load the available reset-credit count',
         countTooltipRefresh: 'Click to refresh the available reset-credit count',
         resetTooltipReady: 'Consume 1 reset credit to immediately restore the window',
@@ -1581,6 +1666,31 @@ export default {
         },
         confirmTitle: 'Confirm Weekly Limit Reset',
         confirmMessage: 'This will consume 1 reset credit to immediately restore the current window ({count} remaining). This action cannot be undone. Continue?'
+      },
+      openaiReferral: {
+        available: 'Invites left',
+        invite: 'Invite user',
+        fromAccount: 'Inviting account:',
+        personal: 'Invite a friend',
+        workspace: 'Invite a coworker',
+        email: 'Recipient email',
+        consent: 'I have this person’s consent to send them an invitation.',
+        send: 'Send invitation',
+        sending: 'Sending…',
+        sent: 'Invitation sent to {email}',
+        queryHint: 'Click to query remaining invitations',
+        checkedAt: 'Checked: {time}. Click to refresh.',
+        unavailable: 'Invitations are unavailable. Eligibility requirements may not be met, or the limit has been reached.',
+        invalidEmail: 'Enter one valid email address.',
+        rejected: 'The invitation was rejected. Check the email and offer eligibility.',
+        alreadyInvited: 'An invitation already exists for this email. Check its status in Codex.',
+        rateLimited: 'The invitation rate or capacity limit has been reached. Try again later.',
+        sendUnknown: 'The invitation outcome is unknown. Check its status in Codex before deciding whether to retry.',
+        programChanged: 'The account’s referral program changed. Refresh eligibility before sending.',
+        consentRequired: 'Confirm that you have the recipient’s consent first.',
+        shadowHint: 'Send invitations from the parent account.',
+        cacheFailed: 'Live capacity was fetched, but the cache could not be saved. Query again.',
+        refreshFailed: 'The invitation was sent, but remaining capacity could not be refreshed. Query again.'
       },
       tier: {
         free: 'Free',

@@ -350,6 +350,35 @@ describe('PlazaModelPricingTable', () => {
     expect(text).toContain('$15.00')
   })
 
+  it('multiplier-only token tiers inherit base prices before display', () => {
+    const multiplierOnlyInterval = {
+      min_tokens: 272000,
+      max_tokens: null,
+      tier_label: '>272K',
+      input_price: null,
+      output_price: null,
+      cache_write_price: null,
+      cache_read_price: null,
+      input_multiplier: 2,
+      output_multiplier: 1.5,
+      cache_write_multiplier: 2,
+      cache_read_multiplier: 2,
+      per_request_price: null
+    }
+    const model = tokenModel({
+      pricing: {
+        ...tokenModel().pricing!,
+        intervals: [multiplierOnlyInterval]
+      }
+    })
+
+    const cells = mountTable([model], 1).findAll('tbody td')
+    expect(cells[1].text()).toContain('$6.00')
+    expect(cells[2].text()).toContain('$22.50')
+    expect(cells[3].text()).toContain('$7.50')
+    expect(cells[3].text()).toContain('$0.60')
+  })
+
   it('生图独立倍率开启时,按图价格 × 独立倍率,不乘分组倍率;倍率列展示独立倍率', () => {
     const model = tokenModel({
       name: 'gpt-image-2',

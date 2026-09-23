@@ -1676,6 +1676,91 @@
             </div>
           </div>
 
+          <!-- OpenCode Go Usage Settings -->
+          <div class="settings-surface" data-testid="opencode-go-usage-global-settings">
+            <div class="border-b border-[var(--border-subtle)] px-6 py-4">
+              <h2 class="text-lg font-[var(--fw-medium)] text-[var(--foreground)]">
+                {{ t("admin.settings.opencodeGoUsage.title") }}
+              </h2>
+              <p class="mt-1 text-sm text-[var(--muted-foreground)]">
+                {{ t("admin.settings.opencodeGoUsage.description") }}
+              </p>
+            </div>
+            <div class="space-y-5 p-6">
+              <div v-if="opencodeGoUsageLoading" class="flex items-center gap-2 text-[var(--muted-foreground)]">
+                <div class="h-4 w-4 animate-spin rounded-full border-b-2 border-[var(--brand-line)]"></div>
+                {{ t("common.loading") }}
+              </div>
+              <template v-else>
+                <div class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="font-[var(--fw-medium)] text-[var(--foreground)]">
+                      {{ t("admin.settings.opencodeGoUsage.enabled") }}
+                    </label>
+                    <p class="text-sm text-[var(--muted-foreground)]">
+                      {{ t("admin.settings.opencodeGoUsage.enabledHint") }}
+                    </p>
+                  </div>
+                  <Toggle
+                    v-model="opencodeGoUsageForm.enabled"
+                    :aria-label="t('admin.settings.opencodeGoUsage.enabled')"
+                    data-testid="opencode-go-usage-global-enabled"
+                  />
+                </div>
+                <div v-if="opencodeGoUsageForm.enabled" class="space-y-4 border-t border-[var(--border-subtle)] pt-4">
+                  <div>
+                    <label class="mb-2 block text-sm font-[var(--fw-medium)] text-[var(--body-copy)]" for="opencode-go-usage-debounce">
+                      {{ t("admin.settings.opencodeGoUsage.debounceMinutes") }}
+                    </label>
+                    <input
+                      id="opencode-go-usage-debounce"
+                      v-model.number="opencodeGoUsageForm.debounce_minutes"
+                      type="number"
+                      min="1"
+                      max="60"
+                      class="field-control w-32"
+                      data-testid="opencode-go-usage-global-debounce"
+                      @keydown.enter.prevent="saveOpenCodeGoUsageSettings"
+                    />
+                    <p class="mt-1.5 text-xs text-[var(--muted-foreground)]">
+                      {{ t("admin.settings.opencodeGoUsage.debounceHint") }}
+                    </p>
+                  </div>
+                  <div>
+                    <label class="mb-2 block text-sm font-[var(--fw-medium)] text-[var(--body-copy)]" for="opencode-go-usage-interval">
+                      {{ t("admin.settings.opencodeGoUsage.intervalMinutes") }}
+                    </label>
+                    <input
+                      id="opencode-go-usage-interval"
+                      v-model.number="opencodeGoUsageForm.interval_minutes"
+                      type="number"
+                      min="5"
+                      max="1440"
+                      class="field-control w-32"
+                      data-testid="opencode-go-usage-global-interval"
+                      @keydown.enter.prevent="saveOpenCodeGoUsageSettings"
+                    />
+                    <p class="mt-1.5 text-xs text-[var(--muted-foreground)]">
+                      {{ t("admin.settings.opencodeGoUsage.intervalHint") }}
+                    </p>
+                  </div>
+                </div>
+                <div class="flex justify-end border-t border-[var(--border-subtle)] pt-4">
+                  <AppButton
+                    type="button"
+                    variant="solid"
+                    :loading="opencodeGoUsageSaving"
+                    :disabled="opencodeGoUsageSaving"
+                    data-testid="opencode-go-usage-global-save"
+                    @click="saveOpenCodeGoUsageSettings"
+                  >
+                    {{ opencodeGoUsageSaving ? t("common.saving") : t("common.save") }}
+                  </AppButton>
+                </div>
+              </template>
+            </div>
+          </div>
+
           <!-- Gateway Scheduling Settings -->
           <div class="settings-surface">
             <div
@@ -2550,6 +2635,50 @@
                   </p>
                 </div>
                 <Toggle v-model="form.openai_codex_version_auto_sync_enabled" />
+              </div>
+
+              <!-- Claude Code client version -->
+              <div>
+                <label
+                  class="mb-2 block text-sm font-[var(--fw-medium)] text-[var(--body-copy)]"
+                  for="claude-code-client-version"
+                >
+                  {{ t("admin.settings.gatewayForwarding.claudeCodeClientVersion") }}
+                </label>
+                <input
+                  id="claude-code-client-version"
+                  v-model="form.claude_code_client_version"
+                  type="text"
+                  class="field-control w-full font-mono text-sm"
+                  :placeholder="t('admin.settings.gatewayForwarding.claudeCodeClientVersionPlaceholder')"
+                  data-testid="claude-code-client-version"
+                />
+                <p class="mt-1.5 text-xs text-[var(--muted-foreground)]">
+                  {{ t("admin.settings.gatewayForwarding.claudeCodeClientVersionHint") }}
+                </p>
+              </div>
+
+              <!-- Claude Code version auto-sync -->
+              <div class="flex items-center justify-between">
+                <div>
+                  <label class="text-sm font-[var(--fw-medium)] text-[var(--body-copy)]">
+                    {{ t("admin.settings.gatewayForwarding.claudeCodeVersionAutoSync") }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-[var(--muted-foreground)]">
+                    {{ t("admin.settings.gatewayForwarding.claudeCodeVersionAutoSyncHint") }}
+                  </p>
+                  <p
+                    v-if="claudeSyncedVersionLabel"
+                    class="mt-0.5 text-xs text-[var(--muted-foreground)]"
+                    data-testid="claude-code-version-synced"
+                  >
+                    {{ claudeSyncedVersionLabel }}
+                  </p>
+                </div>
+                <Toggle
+                  v-model="form.claude_code_version_auto_sync_enabled"
+                  data-testid="claude-code-version-auto-sync"
+                />
               </div>
 
             </div>

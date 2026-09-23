@@ -23,6 +23,13 @@
           </div>
         </div>
 
+        <p class="text-sm text-[var(--muted-foreground)] dark:text-[var(--muted-foreground)]" data-test="active-audit-engine">
+          {{ t('admin.riskControl.activeEngine', { engine: engineLabel(status?.engine ?? savedEngine) }) }}
+        </p>
+        <p v-if="status?.enabled && status.risk_control_enabled && status.mode !== 'off' && status.pre_block_api_key_available_count === 0" class="text-sm text-[var(--brand)] dark:text-[var(--brand)]" role="status">
+          {{ t('admin.riskControl.engineUnavailable') }}
+        </p>
+
         <div class="grid grid-cols-2 items-start gap-4 lg:grid-cols-4">
           <div
             v-for="item in overviewItems"
@@ -388,12 +395,19 @@
                 <p class="mt-2 text-xs leading-5 text-[var(--muted-foreground)] dark:text-[var(--muted-foreground)]">{{ modeDescription(configForm.mode) }}</p>
               </div>
               <div>
+                <label class="field-label">{{ t('admin.riskControl.engine') }}</label>
+                <Select data-test="audit-engine-select" :model-value="configForm.engine" :options="engineOptions" :disabled="apiKeyTesting || saving" @update:model-value="switchEngine" />
+              </div>
+              <div v-if="configForm.engine === 'typesafe'" class="lg:col-span-2 text-sm text-[var(--brand)] dark:text-[var(--brand)]" role="status">
+                {{ t('admin.riskControl.typeSafeNotice') }}
+              </div>
+              <div>
                 <label class="field-label">{{ t('admin.riskControl.baseUrl') }}</label>
-                <input v-model.trim="configForm.base_url" type="url" class="field-control" placeholder="https://api.openai.com" />
+                <input v-model.trim="configForm.base_url" data-test="audit-base-url" type="url" class="field-control" :placeholder="configForm.engine === 'typesafe' ? 'https://api.typesafe.ai' : 'https://api.openai.com'" />
               </div>
               <div>
                 <label class="field-label">{{ t('admin.riskControl.model') }}</label>
-                <input v-model.trim="configForm.model" type="text" class="field-control" placeholder="omni-moderation-latest" />
+                <input v-model.trim="configForm.model" data-test="audit-model" type="text" class="field-control" :placeholder="configForm.engine === 'typesafe' ? 'jev-latest' : 'omni-moderation-latest'" />
               </div>
               <div>
                 <label class="field-label">{{ t('admin.riskControl.timeoutMs') }}</label>
@@ -561,7 +575,7 @@
                   </div>
                 </div>
 
-                <div class="rounded-lg border border-[var(--brand-line)] bg-[var(--brand-tint)] p-3 dark:border-[var(--border-subtle)] dark:bg-[var(--card)]">
+                <div data-test="audit-key-statuses" class="rounded-lg border border-[var(--brand-line)] bg-[var(--brand-tint)] p-3 dark:border-[var(--border-subtle)] dark:bg-[var(--card)]">
                   <div class="mb-3 flex items-start justify-between gap-3">
                     <div class="min-w-0">
                       <p class="text-sm font-[var(--fw-medium)] text-[var(--foreground)] dark:text-[var(--foreground)]">{{ t('admin.riskControl.apiKeyHealth') }}</p>
@@ -635,6 +649,10 @@
                   </div>
 
                   <div v-if="moderationTestResult" class="mt-4 rounded-lg border border-[var(--brand-line)] bg-white p-3 dark:border-[var(--border-subtle)] dark:bg-[var(--card)]">
+                    <p v-if="moderationTestResult.engine_meta" class="mb-2 break-words text-xs text-[var(--muted-foreground)]">
+                      {{ engineLabel(moderationTestResult.engine_meta.engine) }} · {{ moderationTestResult.engine_meta.model }} · {{ moderationTestResult.engine_meta.rules_version }}
+                      <span v-if="moderationTestResult.engine_meta.skipped_images"> · {{ t('admin.riskControl.skippedImages', { count: moderationTestResult.engine_meta.skipped_images }) }}</span>
+                    </p>
                     <div class="flex items-start justify-between gap-3">
                       <div>
                         <p class="text-sm font-[var(--fw-medium)] text-[var(--foreground)] dark:text-[var(--foreground)]">{{ t('admin.riskControl.auditTestResult') }}</p>
@@ -881,6 +899,8 @@
           </div>
 
           <div v-else-if="activeSettingsTab === 'riskThresholds'" class="space-y-5">
+            <p class="text-sm font-[var(--fw-medium)] text-[var(--foreground)] dark:text-[var(--foreground)]">{{ engineLabel(configForm.engine) }}</p>
+            <p v-if="configForm.engine === 'typesafe'" class="text-sm text-[var(--brand)] dark:text-[var(--brand)]">{{ t('admin.riskControl.typeSafeThresholds') }}</p>
             <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h3 class="text-base font-[var(--fw-medium)] text-[var(--foreground)] dark:text-[var(--foreground)]">{{ t('admin.riskControl.riskThresholds') }}</h3>
@@ -1035,6 +1055,14 @@
         @close="closeInputDetail"
       >
         <div v-if="inputDetailRow" class="space-y-5">
+          <div class="text-sm break-words" data-test="audit-engine-meta">
+            <span class="font-[var(--fw-medium)]">{{ t('admin.riskControl.auditSource') }}: </span>
+            <template v-if="inputDetailRow.engine_meta">
+              {{ engineLabel(inputDetailRow.engine_meta.engine) }} · {{ inputDetailRow.engine_meta.model || '-' }} · {{ inputDetailRow.engine_meta.rules_version || '-' }}
+              <span v-if="inputDetailRow.engine_meta.skipped_images"> · {{ t('admin.riskControl.skippedImages', { count: inputDetailRow.engine_meta.skipped_images }) }}</span>
+            </template>
+            <template v-else>{{ ['cyber_policy', 'keyword_block', 'hash_block'].includes(inputDetailRow.action) ? '-' : t('admin.riskControl.legacyAuditSource') }}</template>
+          </div>
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div class="rounded-lg border border-[var(--brand-line)] bg-[var(--brand-tint)] p-4 dark:border-[var(--border-subtle)] dark:bg-[var(--card)]">
               <p class="text-xs font-[var(--fw-medium)] text-[var(--muted-foreground)] dark:text-[var(--muted-foreground)]">{{ t('admin.riskControl.table.time') }}</p>
@@ -1089,7 +1117,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useDialogService } from '@/composables/useDialogService'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -1115,7 +1143,9 @@ import type {
   ContentModerationRuntimeStatus,
   ContentModerationTestAuditResult,
   KeywordBlockingMode,
+  ModerationEngine,
   ModerationMode,
+  UpdateModerationEngineConfig,
   UpdateContentModerationConfig,
 } from '@/api/admin/riskControl'
 import type { AdminGroup, Proxy, SelectOption } from '@/types'
@@ -1198,9 +1228,13 @@ const moderationTestPrompt = ref('')
 const moderationTestImages = ref<string[]>([])
 const moderationTestResult = ref<ContentModerationTestAuditResult | null>(null)
 const inputDetailRow = ref<ContentModerationLog | null>(null)
+const savedEngine = ref<ModerationEngine>('openai')
+const engineOptions: SelectOption[] = [{ value: 'openai', label: 'OpenAI' }, { value: 'typesafe', label: 'TypeSafe AI' }]
+const engineLabel = (engine: ModerationEngine) => engine === 'typesafe' ? 'TypeSafe AI' : 'OpenAI'
 let statusTimer: number | null = null
 
 const configForm = reactive({
+  engine: 'openai' as ModerationEngine,
   enabled: false,
   mode: 'pre_block' as ModerationMode,
   base_url: 'https://api.openai.com',
@@ -1238,6 +1272,53 @@ const configForm = reactive({
   model_filter_type: 'all' as ContentModerationModelFilterType,
   model_filter_models: [] as string[],
 })
+
+const engineFields = ['base_url', 'model', 'proxy_id', 'api_keys_text', 'api_key_configured', 'api_key_masked', 'api_key_count', 'api_key_masks', 'api_key_statuses', 'api_keys_mode', 'clear_api_key', 'timeout_ms', 'retry_count', 'thresholds'] as const
+type EngineDraft = Pick<typeof configForm, typeof engineFields[number]> & { pendingDeletes: string[] }
+const engineDrafts = ref<Partial<Record<ModerationEngine, EngineDraft>>>({})
+
+function captureEngineDraft(): EngineDraft {
+  return structuredClone({ ...Object.fromEntries(engineFields.map(key => [key, toRaw(configForm)[key]])), pendingDeletes: [...pendingDeleteApiKeyHashes.value] }) as EngineDraft
+}
+
+function switchEngine(value: string | number | boolean | null) {
+  if ((value !== 'openai' && value !== 'typesafe') || apiKeyTesting.value || saving.value) return
+  engineDrafts.value[configForm.engine] = captureEngineDraft()
+  configForm.engine = value
+  const draft = engineDrafts.value[value]
+  if (draft) {
+    const { pendingDeletes, ...fields } = structuredClone(toRaw(draft))
+    Object.assign(configForm, fields)
+    pendingDeleteApiKeyHashes.value = pendingDeletes
+  }
+  testedApiKeyStatuses.value = []
+  moderationTestResult.value = null
+}
+
+function engineDraftFromConfig(config: ContentModerationConfig | undefined, engine: ModerationEngine): EngineDraft {
+  return {
+    base_url: config?.base_url || (engine === 'typesafe' ? 'https://api.typesafe.ai' : 'https://api.openai.com'),
+    model: config?.model || (engine === 'typesafe' ? 'jev-latest' : 'omni-moderation-latest'),
+    proxy_id: config?.proxy_id ?? null, api_keys_text: '', api_key_configured: config?.api_key_configured ?? false,
+    api_key_masked: config?.api_key_masked ?? '', api_key_count: config?.api_key_count ?? 0,
+    api_key_masks: [...(config?.api_key_masks ?? [])], api_key_statuses: [...(config?.api_key_statuses ?? [])],
+    api_keys_mode: 'append', clear_api_key: false, pendingDeletes: [],
+    timeout_ms: config?.timeout_ms ?? 3000, retry_count: config?.retry_count ?? 2,
+    thresholds: riskThresholdsFromConfig(config?.thresholds),
+  }
+}
+
+function engineDraftPayload(draft: EngineDraft): UpdateModerationEngineConfig {
+  const keys = parseApiKeys(draft.api_keys_text)
+  if (!draft.clear_api_key && draft.api_keys_mode === 'replace' && keys.length === 0) throw new Error('empty replacement keys')
+  return {
+    base_url: draft.base_url, model: draft.model, proxy_id: draft.proxy_id ?? 0,
+    timeout_ms: draft.timeout_ms, retry_count: draft.retry_count,
+    thresholds: Object.fromEntries(riskThresholdCategories.map(k => [k, clampPercent(draft.thresholds[k]) / 100])),
+    clear_api_key: draft.clear_api_key, api_keys: keys.length ? keys : undefined,
+    api_keys_mode: draft.api_keys_mode, delete_api_key_hashes: draft.pendingDeletes,
+  }
+}
 
 const pagination = reactive({
   page: 1,
@@ -1456,7 +1537,7 @@ const storedApiKeyTestButtonText = computed(() => {
 })
 
 const savedApiKeyRows = computed<ContentModerationAPIKeyStatus[]>(() => {
-  const rows = status.value?.api_key_statuses?.length
+  const rows = (status.value?.engine ?? 'openai') === configForm.engine && status.value?.api_key_statuses?.length
     ? status.value.api_key_statuses
     : configForm.api_key_statuses
   return Array.isArray(rows) ? rows : []
@@ -1682,6 +1763,8 @@ const runtimeBadgeText = computed(() => {
 })
 
 function applyConfig(config: ContentModerationConfig) {
+  savedEngine.value = config.engine ?? 'openai'
+  configForm.engine = savedEngine.value
   configForm.enabled = config.enabled
   configForm.mode = config.mode
   configForm.base_url = config.base_url || 'https://api.openai.com'
@@ -1722,6 +1805,13 @@ function applyConfig(config: ContentModerationConfig) {
   const modelFilter = normalizeModelFilter(config.model_filter)
   configForm.model_filter_type = modelFilter.type
   configForm.model_filter_models = modelFilter.models
+  engineDrafts.value = {
+    openai: engineDraftFromConfig(config.engine_configs?.openai ?? (savedEngine.value === 'openai' ? config : undefined), 'openai'),
+    typesafe: engineDraftFromConfig(config.engine_configs?.typesafe ?? (savedEngine.value === 'typesafe' ? config : undefined), 'typesafe'),
+  }
+  const { pendingDeletes, ...fields } = structuredClone(toRaw(engineDrafts.value[configForm.engine]!))
+  Object.assign(configForm, fields)
+  pendingDeleteApiKeyHashes.value = [...pendingDeletes]
 }
 
 async function loadAll() {
@@ -1738,7 +1828,7 @@ async function loadAll() {
     groups.value = groupItems
     status.value = runtimeStatus
     proxies.value = proxyItems
-    if (Array.isArray(runtimeStatus.api_key_statuses)) {
+    if ((runtimeStatus.engine ?? 'openai') === configForm.engine && Array.isArray(runtimeStatus.api_key_statuses)) {
       configForm.api_key_statuses = [...runtimeStatus.api_key_statuses]
       prunePendingDeleteAPIKeyHashes()
     }
@@ -1755,7 +1845,7 @@ async function loadStatus(silent = true) {
   try {
     const runtimeStatus = await adminAPI.riskControl.getStatus()
     status.value = runtimeStatus
-    if (Array.isArray(runtimeStatus.api_key_statuses)) {
+    if ((runtimeStatus.engine ?? 'openai') === configForm.engine && Array.isArray(runtimeStatus.api_key_statuses)) {
       configForm.api_key_statuses = [...runtimeStatus.api_key_statuses]
       prunePendingDeleteAPIKeyHashes()
     }
@@ -1777,6 +1867,7 @@ async function saveConfig() {
       return
     }
     const payload: UpdateContentModerationConfig = {
+      engine: configForm.engine,
       enabled: configForm.enabled,
       mode: configForm.mode,
       base_url: configForm.base_url,
@@ -1821,6 +1912,12 @@ async function saveConfig() {
       payload.delete_api_key_hashes = [...pendingDeleteApiKeyHashes.value]
     }
 
+    engineDrafts.value[configForm.engine] = captureEngineDraft()
+    payload.engine_configs = Object.fromEntries(
+      Object.entries(engineDrafts.value)
+        .filter((entry): entry is [string, EngineDraft] => Boolean(entry[1]))
+        .map(([engine, draft]) => [engine, engineDraftPayload(draft)])
+    )
     const updated = await adminAPI.riskControl.updateConfig(payload)
     applyConfig(updated)
     settingsOpen.value = false
@@ -1980,6 +2077,8 @@ async function testApiKeys(useInputKeys: boolean) {
   apiKeyTesting.value = true
   try {
     const result = await adminAPI.riskControl.testAPIKeys({
+      engine: configForm.engine,
+      thresholds: buildRiskThresholdPayload(),
       api_keys: keys,
       base_url: configForm.base_url,
       model: configForm.model,
@@ -1997,7 +2096,11 @@ async function testApiKeys(useInputKeys: boolean) {
       testedApiKeyStatuses.value = []
       await loadStatus(true)
     }
-    appStore.showSuccess(t('admin.riskControl.apiKeyTestDone', { count: result.items.length }))
+    if (result.items.length === 0 || result.items.some(item => item.status === 'error' || item.status === 'frozen')) {
+      appStore.showError(t('admin.riskControl.apiKeyTestFailed'))
+    } else {
+      appStore.showSuccess(t('admin.riskControl.apiKeyTestDone', { count: result.items.length }))
+    }
   } catch (err: unknown) {
     appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.apiKeyTestFailed')))
   } finally {

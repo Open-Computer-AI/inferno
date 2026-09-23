@@ -4,8 +4,10 @@
  */
 
 import { apiClient } from '../client'
+import type { OpenAIReferralRefreshResult, OpenAIReferralSendResult } from '@/types/openaiReferrals'
 import type {
   Account,
+  AccountListItem,
   CreateAccountRequest,
   UpdateAccountRequest,
   PaginatedResponse,
@@ -25,7 +27,11 @@ import type {
   UpstreamBillingProbeSettings,
   UpstreamBillingRatesResponse,
   OllamaCloudUsageSettings,
-  OllamaCloudUsageState
+  OllamaCloudUsageState,
+  GrokMediaEligibilityMode,
+  GrokMediaEligibilityState,
+  OpenCodeGoUsageSettings,
+  OpenCodeGoUsageState
 } from '@/types'
 
 /**
@@ -53,8 +59,8 @@ export async function list(
   options?: {
     signal?: AbortSignal
   }
-): Promise<PaginatedResponse<Account>> {
-  const { data } = await apiClient.get<PaginatedResponse<Account>>('/admin/accounts', {
+): Promise<PaginatedResponse<AccountListItem>> {
+  const { data } = await apiClient.get<PaginatedResponse<AccountListItem>>('/admin/accounts', {
     params: {
       page,
       page_size: pageSize,
@@ -68,7 +74,7 @@ export async function list(
 export interface AccountListWithEtagResult {
   notModified: boolean
   etag: string | null
-  data: PaginatedResponse<Account> | null
+  data: PaginatedResponse<AccountListItem> | null
 }
 
 export interface AccountUpstreamBillingRatesWithEtagResult {
@@ -138,7 +144,7 @@ export async function listWithEtag(
     headers['If-None-Match'] = options.etag
   }
 
-  const response = await apiClient.get<PaginatedResponse<Account>>('/admin/accounts', {
+  const response = await apiClient.get<PaginatedResponse<AccountListItem>>('/admin/accounts', {
     params: {
       page,
       page_size: pageSize,
@@ -240,6 +246,24 @@ export async function update(id: number, updates: UpdateAccountRequest): Promise
   return data
 }
 
+export async function getGrokMediaEligibility(id: number): Promise<GrokMediaEligibilityState> {
+  const { data } = await apiClient.get<GrokMediaEligibilityState>(
+    `/admin/accounts/${id}/grok-media-eligibility`
+  )
+  return data
+}
+
+export async function updateGrokMediaEligibility(
+  id: number,
+  mode: GrokMediaEligibilityMode
+): Promise<GrokMediaEligibilityState> {
+  const { data } = await apiClient.put<GrokMediaEligibilityState>(
+    `/admin/accounts/${id}/grok-media-eligibility`,
+    { mode }
+  )
+  return data
+}
+
 /**
  * Check mixed-channel risk for account-group binding.
  */
@@ -289,13 +313,19 @@ export async function testAccount(id: number): Promise<{
 }
 
 /**
- * Refresh account credentials
- * @param id - Account ID
- * @returns Updated account
+ * Refresh account credentials.
+ *
+ * Older server responses return the account directly. Newer responses wrap it
+ * with a non-fatal warning when credentials refreshed but a temporary project
+ * is still missing, so callers always receive one normalized shape.
  */
-export async function refreshCredentials(id: number): Promise<Account> {
-  const { data } = await apiClient.post<Account>(`/admin/accounts/${id}/refresh`)
-  return data
+export type RefreshCredentialsResult =
+  | { account: Account; message: string; warning: 'missing_project_id_temporary' }
+  | { account: Account; message?: never; warning?: never }
+
+export async function refreshCredentials(id: number): Promise<RefreshCredentialsResult> {
+  const { data } = await apiClient.post<Account | RefreshCredentialsResult>(`/admin/accounts/${id}/refresh`)
+  return 'account' in data ? data : { account: data }
 }
 
 /**
@@ -895,7 +925,14 @@ export interface OpenAIQuotaUsage {
   rate_limit?: OpenAIRateLimit | null
   additional_rate_limits?: OpenAIAdditionalRateLimit[]
   rate_limit_reset_credits?: OpenAIRateLimitResetCredits | null
+  credits?: OpenAICredits | null
   fetched_at: number
+}
+
+export interface OpenAICredits {
+  has_credits: boolean
+  unlimited: boolean
+  balance: string | null
 }
 
 export interface OpenAIQuotaResetCredit {
@@ -925,6 +962,7 @@ export interface OpenAIQuotaResetResult {
 /** Usage payload plus whether the reset-credit snapshot was persisted. */
 export interface OpenAIQuotaRefreshResult extends OpenAIQuotaUsage {
   cache_persisted: boolean
+  credits_cache_persisted?: boolean
 }
 
 /**
@@ -939,6 +977,25 @@ export interface OpenAIQuotaRefreshResult extends OpenAIQuotaUsage {
 export async function refreshOpenAIQuota(id: number): Promise<OpenAIQuotaRefreshResult> {
   const { data } = await apiClient.post<OpenAIQuotaRefreshResult>(
     `/admin/openai/accounts/${id}/quota/refresh`
+  )
+  return data
+}
+
+export async function refreshOpenAIReferrals(id: number): Promise<OpenAIReferralRefreshResult> {
+  const { data } = await apiClient.post<OpenAIReferralRefreshResult>(
+    `/admin/openai/accounts/${id}/referrals/refresh`
+  )
+  return data
+}
+
+export async function sendOpenAIReferralInvite(
+  id: number,
+  input: { email: string; program_id: string; confirmed: boolean }
+): Promise<OpenAIReferralSendResult> {
+  const { data } = await apiClient.post<OpenAIReferralSendResult>(
+    `/admin/openai/accounts/${id}/referrals/invite`,
+    input,
+    { timeout: 90_000 }
   )
   return data
 }
@@ -1048,6 +1105,39 @@ export async function refreshOllamaCloudUsage(id: number): Promise<OllamaCloudUs
   return data
 }
 
+export async function getOpenCodeGoUsageSettings(): Promise<OpenCodeGoUsageSettings> {
+  const { data } = await apiClient.get<OpenCodeGoUsageSettings>('/admin/accounts/opencode-go-usage/settings')
+  return data
+}
+
+export async function updateOpenCodeGoUsageSettings(
+  settings: OpenCodeGoUsageSettings
+): Promise<OpenCodeGoUsageSettings> {
+  const { data } = await apiClient.put<OpenCodeGoUsageSettings>(
+    '/admin/accounts/opencode-go-usage/settings',
+    settings
+  )
+  return data
+}
+
+export async function getOpenCodeGoUsage(id: number): Promise<OpenCodeGoUsageState> {
+  const { data } = await apiClient.get<OpenCodeGoUsageState>(`/admin/accounts/${id}/opencode-go-usage`)
+  return data
+}
+
+export async function setOpenCodeGoUsageAutoRefresh(id: number, enabled: boolean): Promise<OpenCodeGoUsageState> {
+  const { data } = await apiClient.put<OpenCodeGoUsageState>(
+    `/admin/accounts/${id}/opencode-go-usage/auto-refresh`,
+    { enabled }
+  )
+  return data
+}
+
+export async function refreshOpenCodeGoUsage(id: number): Promise<OpenCodeGoUsageState> {
+  const { data } = await apiClient.post<OpenCodeGoUsageState>(`/admin/accounts/${id}/opencode-go-usage/refresh`)
+  return data
+}
+
 export const accountsAPI = {
   list,
   listWithEtag,
@@ -1056,6 +1146,8 @@ export const accountsAPI = {
   create,
   duplicate,
   update,
+  getGrokMediaEligibility,
+  updateGrokMediaEligibility,
   checkMixedChannelRisk,
   delete: deleteAccount,
   toggleStatus,
@@ -1096,6 +1188,8 @@ export const accountsAPI = {
   setPrivacy,
   revertProxyFallback,
   refreshOpenAIQuota,
+  refreshOpenAIReferrals,
+  sendOpenAIReferralInvite,
   resetOpenAIQuota,
   createSparkShadow,
   getUpstreamBillingProbeSettings,
@@ -1109,7 +1203,12 @@ export const accountsAPI = {
   saveOllamaCloudUsageSession,
   deleteOllamaCloudUsageSession,
   setOllamaCloudUsageAutoRefresh,
-  refreshOllamaCloudUsage
+  refreshOllamaCloudUsage,
+  getOpenCodeGoUsageSettings,
+  updateOpenCodeGoUsageSettings,
+  getOpenCodeGoUsage,
+  setOpenCodeGoUsageAutoRefresh,
+  refreshOpenCodeGoUsage
 }
 
 export default accountsAPI

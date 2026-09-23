@@ -6,24 +6,32 @@ import UsersView from '../UsersView.vue'
 
 const {
   listUsers,
+  toggleStatus,
   getAllGroups,
   getBatchUsersUsage,
   listEnabledDefinitions,
-  getBatchUserAttributes
+  getBatchUserAttributes,
+  deleteUser,
+  showError,
+  showSuccess
 } = vi.hoisted(() => ({
   listUsers: vi.fn(),
+  toggleStatus: vi.fn(),
   getAllGroups: vi.fn(),
   getBatchUsersUsage: vi.fn(),
   listEnabledDefinitions: vi.fn(),
-  getBatchUserAttributes: vi.fn()
+  getBatchUserAttributes: vi.fn(),
+  deleteUser: vi.fn(),
+  showError: vi.fn(),
+  showSuccess: vi.fn()
 }))
 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
     users: {
       list: listUsers,
-      toggleStatus: vi.fn(),
-      delete: vi.fn()
+      toggleStatus,
+      delete: deleteUser
     },
     groups: {
       getAll: getAllGroups
@@ -40,8 +48,8 @@ vi.mock('@/api/admin', () => ({
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
-    showError: vi.fn(),
-    showSuccess: vi.fn()
+    showError,
+    showSuccess
   })
 }))
 
@@ -98,6 +106,12 @@ const DataTableStub = {
       </template>
       <div v-for="row in data" :key="row.id">
         <slot name="cell-last_used_at" :value="row.last_used_at" :row="row" />
+        <div :data-test="'status-' + row.id">
+          <slot name="cell-status" :value="row.status" :row="row" />
+        </div>
+        <div :data-test="'actions-' + row.id">
+          <slot name="cell-actions" :row="row" />
+        </div>
       </div>
     </div>
   `
@@ -119,16 +133,32 @@ const BulkEditUserModalStub = {
   `
 }
 
+const ConfirmDialogStub = {
+  props: ['show', 'title', 'message'],
+  emits: ['confirm', 'cancel'],
+  template: `
+    <div v-if="show" :data-test="title === 'admin.users.bulkDelete.title' ? 'bulk-confirm-dialog' : 'single-confirm-dialog'">
+      <p>{{ message }}</p>
+      <button data-test="confirm-dialog-action" @click="$emit('confirm')">confirm</button>
+      <button data-test="cancel-dialog-action" @click="$emit('cancel')">cancel</button>
+    </div>
+  `
+}
+
 describe('admin UsersView', () => {
   beforeEach(() => {
     vi.useRealTimers()
     localStorage.clear()
 
     listUsers.mockReset()
+    toggleStatus.mockReset()
     getAllGroups.mockReset()
     getBatchUsersUsage.mockReset()
     listEnabledDefinitions.mockReset()
     getBatchUserAttributes.mockReset()
+    deleteUser.mockReset()
+    showError.mockReset()
+    showSuccess.mockReset()
 
     listUsers.mockResolvedValue({
       items: [createAdminUser()],
@@ -197,6 +227,135 @@ describe('admin UsersView', () => {
       }),
       expect.any(Object)
     )
+  })
+
+  it('updates the visible status from the toggle response without reloading the list', async () => {
+    toggleStatus.mockResolvedValue({
+      status: 'disabled',
+      updated_at: '2026-09-23T12:00:00Z'
+    })
+
+    const wrapper = mount(UsersView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          EmptyState: true,
+          GroupBadge: true,
+          Select: true,
+          UserAttributesConfigModal: true,
+          UserConcurrencyCell: true,
+          UserCreateModal: true,
+          UserEditModal: true,
+          BulkEditUserModal: BulkEditUserModalStub,
+          UserPlatformQuotaModal: true,
+          UserApiKeysModal: true,
+          UserAllowedGroupsModal: true,
+          UserBalanceModal: true,
+          UserBalanceHistoryModal: true,
+          GroupReplaceModal: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
+    await flushPromises()
+    const listCallsBeforeToggle = listUsers.mock.calls.length
+
+    await wrapper.get('[data-test="actions-42"] button:nth-child(2)').trigger('click')
+    await flushPromises()
+
+    expect(toggleStatus).toHaveBeenCalledWith(42, 'disabled')
+    expect(wrapper.get('[data-test="status-42"]').text()).toContain('admin.users.disabled')
+    expect(listUsers).toHaveBeenCalledTimes(listCallsBeforeToggle)
+    wrapper.unmount()
+  })
+
+  it('refetches if the user list is loading when a status toggle completes', async () => {
+    let resolvePendingList!: (response: {
+      items: AdminUser[]
+      total: number
+      page: number
+      page_size: number
+      pages: number
+    }) => void
+    let pendingSignal: AbortSignal | undefined
+    toggleStatus.mockResolvedValue({
+      status: 'disabled',
+      updated_at: '2026-09-23T12:00:00Z'
+    })
+
+    const wrapper = mount(UsersView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          EmptyState: true,
+          GroupBadge: true,
+          Select: true,
+          UserAttributesConfigModal: true,
+          UserConcurrencyCell: true,
+          UserCreateModal: true,
+          UserEditModal: true,
+          BulkEditUserModal: BulkEditUserModalStub,
+          UserPlatformQuotaModal: true,
+          UserApiKeysModal: true,
+          UserAllowedGroupsModal: true,
+          UserBalanceModal: true,
+          UserBalanceHistoryModal: true,
+          GroupReplaceModal: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
+    await flushPromises()
+    const listCallsBeforeReload = listUsers.mock.calls.length
+    listUsers.mockResolvedValue({
+      items: [createAdminUser({ status: 'disabled' })],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+    listUsers.mockImplementationOnce((_page: number, _pageSize: number, _filters: unknown, options: { signal: AbortSignal }) => {
+      pendingSignal = options.signal
+      return new Promise((resolve) => {
+        resolvePendingList = resolve
+      })
+    })
+
+    await wrapper.get('[data-test="sort-last-used"]').trigger('click')
+    expect(listUsers).toHaveBeenCalledTimes(listCallsBeforeReload + 1)
+    await wrapper.get('[data-test="actions-42"] button:nth-child(2)').trigger('click')
+    await flushPromises()
+
+    expect(listUsers).toHaveBeenCalledTimes(listCallsBeforeReload + 2)
+    expect(pendingSignal?.aborted).toBe(true)
+
+    resolvePendingList({
+      items: [createAdminUser({ status: 'active' })],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="status-42"]').text()).toContain('admin.users.disabled')
+    wrapper.unmount()
   })
 
   it('clears usage current-page sort when switching to last_used_at server sort', async () => {
@@ -368,5 +527,65 @@ describe('admin UsersView', () => {
     expect(wrapper.get('[data-test="row-order"]').text()).toBe('refreshed-page-two@example.com')
     expect(wrapper.find('[data-test="bulk-edit-limits"]').exists()).toBe(false)
     expect(wrapper.get('[data-test="selected-keys"]').text()).toBe('')
+  })
+
+  it('confirms bulk deletion and keeps only failed user IDs selected', async () => {
+    listUsers.mockResolvedValue({
+      items: [
+        createAdminUser({ id: 42, email: 'delete-first@example.com' }),
+        createAdminUser({ id: 43, email: 'delete-second@example.com' })
+      ],
+      total: 2,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+    deleteUser.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('delete failed'))
+
+    const wrapper = mount(UsersView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: ConfirmDialogStub,
+          EmptyState: true,
+          GroupBadge: true,
+          Select: true,
+          UserAttributesConfigModal: true,
+          UserConcurrencyCell: true,
+          UserCreateModal: true,
+          UserEditModal: true,
+          BulkEditUserModal: BulkEditUserModalStub,
+          UserPlatformQuotaModal: true,
+          UserApiKeysModal: true,
+          UserAllowedGroupsModal: true,
+          UserBalanceModal: true,
+          UserBalanceHistoryModal: true,
+          GroupReplaceModal: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
+    await flushPromises()
+    await wrapper.get('[data-test="select-42"]').trigger('click')
+    await wrapper.get('[data-test="select-43"]').trigger('click')
+    await wrapper.get('[data-test="bulk-delete-users"]').trigger('click')
+    expect(wrapper.get('[data-test="bulk-confirm-dialog"]').text()).toContain('admin.users.bulkDelete.confirm')
+
+    await wrapper.get('[data-test="confirm-dialog-action"]').trigger('click')
+    await flushPromises()
+
+    expect(deleteUser).toHaveBeenNthCalledWith(1, 42)
+    expect(deleteUser).toHaveBeenNthCalledWith(2, 43)
+    expect(wrapper.get('[data-test="selected-keys"]').text()).toBe('43')
+    expect(showSuccess).toHaveBeenCalledWith('admin.users.bulkDelete.success')
+    expect(showError).toHaveBeenCalledWith('admin.users.bulkDelete.failed')
+    wrapper.unmount()
   })
 })

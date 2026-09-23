@@ -635,6 +635,9 @@ export interface SystemSettings {
   openai_codex_client_version: string;
   openai_codex_client_version_synced: string;
   openai_codex_version_auto_sync_enabled: boolean;
+  claude_code_client_version: string;
+  claude_code_client_version_synced: string;
+  claude_code_version_auto_sync_enabled: boolean;
   // codex_cli_only 加固
   min_codex_version: string;
   max_codex_version: string;
@@ -646,6 +649,7 @@ export interface SystemSettings {
 
   // Payment configuration
   payment_enabled: boolean;
+  subscription_enabled: boolean;
   risk_control_enabled: boolean;
 
   // Cyber session block
@@ -951,6 +955,8 @@ export interface UpdateSettingsRequest {
   openai_codex_user_agent?: string;
   openai_codex_client_version?: string;
   openai_codex_version_auto_sync_enabled?: boolean;
+  claude_code_client_version?: string;
+  claude_code_version_auto_sync_enabled?: boolean;
   // codex_cli_only 加固
   min_codex_version?: string;
   max_codex_version?: string;
@@ -960,6 +966,7 @@ export interface UpdateSettingsRequest {
   codex_cli_only_engine_fingerprint_signals?: string;
   // Payment configuration
   payment_enabled?: boolean;
+  subscription_enabled?: boolean;
   risk_control_enabled?: boolean;
 
   // Cyber session block

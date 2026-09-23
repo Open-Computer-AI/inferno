@@ -75,7 +75,7 @@ const LEDGER = [
     what: 'Upstream specs with no equivalent in ours, or holding fewer cases — behaviour they pin that we do not',
     origin: 'scripts/behaviour-parity.mjs 2026-08-31; 4 missing files + 3 shortfalls remain, each needing a reason or a test',
     expect: 'closed',
-    probe: `cd ${ROOT} && n=$(node scripts/behaviour-parity.mjs --gaps 2>/dev/null | grep -cE '^  (-|[0-9a-f]{7})'); [ "$n" != "0" ] && echo "$n upstream-pinned behaviours unmatched in ours"`
+    probe: `cd ${ROOT} && report=$(node scripts/behaviour-parity.mjs --gaps 2>/dev/null) && printf '%s\\n' "$report" | grep -q '^0 missing file(s) · 0 shortfall(s) ·' || echo "upstream-pinned behaviours remain unmatched; run: node scripts/behaviour-parity.mjs --gaps"`
   },
   {
     id: 'port-coverage-clean',
@@ -111,7 +111,7 @@ const LEDGER = [
      * took that file from 19% to 13% and the headline never moved.
      *
      * port-coverage --check-baseline diffs the current unaccounted set against
-     * docs/superpowers/analysis/port-coverage-missing.txt and exits 1 naming
+     * docs/superpowers/analysis/archive/2026-09-23/port-coverage-missing.txt and exits 1 naming
      * every line that changed state. Verified against four injected defects:
      * a reverted hunk, a changed locale value, a flipped default and an
      * inverted predicate. All four caught; the flipped default had previously

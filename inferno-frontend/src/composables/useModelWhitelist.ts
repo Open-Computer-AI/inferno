@@ -9,6 +9,8 @@ const openaiModels = [
   'gpt-5.2-pro', 'gpt-5.2-pro-2025-12-11',
   // GPT-5.6 系列
   'gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna',
+  // GPT-6 系列
+  'gpt-6', 'gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna',
   // GPT-5.5 系列
   'gpt-5.5',
   // GPT-5.4 系列
@@ -32,6 +34,7 @@ export const claudeModels = [
   'claude-opus-4-6',
   'claude-opus-4-7',
   'claude-opus-4-8',
+  'claude-opus-5-5',
   'claude-opus-5',
   'claude-sonnet-4-6',
   'claude-sonnet-5',
@@ -277,6 +280,7 @@ const anthropicPresetMappings = [
   { label: 'Opus 4.7', from: 'claude-opus-4-7', to: 'claude-opus-4-7', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Opus 4.8', from: 'claude-opus-4-8', to: 'claude-opus-4-8', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Opus 5', from: 'claude-opus-5', to: 'claude-opus-5', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
+  { label: 'Opus 5.5', from: 'claude-opus-5-5', to: 'claude-opus-5-5', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Haiku 3.5', from: 'claude-3-5-haiku-20241022', to: 'claude-3-5-haiku-20241022', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Haiku 4.5', from: 'claude-haiku-4-5-20251001', to: 'claude-haiku-4-5-20251001', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Opus->Sonnet', from: 'claude-opus-4-6', to: 'claude-sonnet-4-5-20250929', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' }
@@ -290,10 +294,14 @@ const openaiPresetMappings = [
   { label: 'o3', from: 'o3', to: 'o3', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'GPT-5.3 Codex Spark', from: 'gpt-5.3-codex-spark', to: 'gpt-5.3-codex-spark', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'GPT-5.2', from: 'gpt-5.2', to: 'gpt-5.2', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
+  { label: 'GPT-6', from: 'gpt-6', to: 'gpt-6', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'GPT-5.6', from: 'gpt-5.6', to: 'gpt-5.6', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
+  { label: 'GPT-6 Sol', from: 'gpt-6-sol', to: 'gpt-6-sol', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'GPT-5.6 Sol', from: 'gpt-5.6-sol', to: 'gpt-5.6-sol', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'GPT-5.6 Terra', from: 'gpt-5.6-terra', to: 'gpt-5.6-terra', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
+  { label: 'GPT-6 Luna', from: 'gpt-6-luna', to: 'gpt-6-luna', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'GPT-5.6 Luna', from: 'gpt-5.6-luna', to: 'gpt-5.6-luna', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
+  { label: 'GPT-6 Astra', from: 'gpt-6-astra', to: 'gpt-6-astra', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'GPT-5.5', from: 'gpt-5.5', to: 'gpt-5.5', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'GPT-5.4', from: 'gpt-5.4', to: 'gpt-5.4', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Haiku→5.4', from: 'claude-haiku-4-5-20251001', to: 'gpt-5.4', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
@@ -438,6 +446,18 @@ export function getModelsByPlatform(platform: string): string[] {
     case 'yi': return yiModels
     case 'moonshot':
     case 'kimi': return moonshotModels
+    case 'opencode_go': return [
+      'grok-4.7', 'grok-4.6', 'gpt-5.6-luna',
+      'glm-5.3-flash', 'glm-5.3', 'glm-5.2', 'glm-5.1',
+      'kimi-k3', 'kimi-k2.7-code', 'kimi-k2.6',
+      'longcat-2.0',
+      'deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp',
+      'mimo-v2.5', 'mimo-v2.5-pro',
+      'minimax-m3', 'minimax-m2.7', 'minimax-m2.5',
+      'muse-spark-1.3-contributor', 'muse-spark-1.2-contributor',
+      'qwen3.8-max', 'qwen3.8-flash', 'qwen3.7-max', 'qwen3.7-plus', 'qwen3.6-plus',
+      'hy4-preview', 'hy3', 'omen-alpha'
+    ]
     case 'doubao': return doubaoModels
     case 'minimax': return minimaxModels
     case 'baidu': return baiduModels

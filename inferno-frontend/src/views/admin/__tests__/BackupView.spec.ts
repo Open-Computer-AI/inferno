@@ -194,6 +194,7 @@ describe('admin BackupView 分卷备份', () => {
     const wrapper = mountBackupView()
     await flushPromises()
     await wrapper.get('[data-testid="archive-enabled"]').setValue(true)
+    await wrapper.get('#backup-archive-dates').trigger('click')
     await wrapper.get('[data-testid="backup-archive"] input[type="checkbox"][value="15"]').setValue(true)
     await wrapper.get('[data-testid="archive-month-end"]').setValue(true)
     await wrapper.get('[data-testid="save-backup-schedule"]').trigger('click')
@@ -213,6 +214,7 @@ describe('admin BackupView 分卷备份', () => {
     const wrapper = mountBackupView()
     await flushPromises()
     await wrapper.get('[data-testid="archive-enabled"]').setValue(true)
+    await wrapper.get('#backup-archive-dates').trigger('click')
     await wrapper.get('[data-testid="backup-archive"] input[type="checkbox"][value="1"]').setValue(false)
     expect(wrapper.get('[data-testid="save-backup-schedule"]').attributes('disabled')).toBeDefined()
     await wrapper.get('[data-testid="archive-month-end"]').setValue(true)
@@ -220,6 +222,52 @@ describe('admin BackupView 分卷备份', () => {
     await wrapper.get('[data-testid="archive-count"]').setValue('1.5')
     expect(wrapper.get('[data-testid="save-backup-schedule"]').attributes('disabled')).toBeDefined()
     expect(updateSchedule).not.toHaveBeenCalled()
+  })
+
+  it('preserves hidden archive settings while disabled and restores edits when re-enabled', async () => {
+    getSchedule.mockResolvedValue({
+      enabled: true,
+      cron_expr: '0 4 * * *',
+      retain_days: 14,
+      retain_count: 10,
+      monthly_archive: { enabled: true, days: [1, 15], include_month_end: false, retain_count: 12 },
+    })
+    const wrapper = mountBackupView()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="archive-count"]').setValue('1')
+    await wrapper.get('[data-testid="archive-enabled"]').setValue(false)
+    expect(wrapper.find('[data-testid="archive-count"]').exists()).toBe(false)
+
+    const save = wrapper.get('[data-testid="save-backup-schedule"]')
+    await save.trigger('click')
+    await flushPromises()
+    expect(updateSchedule).toHaveBeenLastCalledWith(expect.objectContaining({
+      monthly_archive: { enabled: false, days: [1, 15], include_month_end: false, retain_count: 12 },
+    }))
+
+    await wrapper.get('[data-testid="archive-enabled"]').setValue(true)
+    expect((wrapper.get('[data-testid="archive-count"]').element as HTMLInputElement).value).toBe('1')
+  })
+
+  it('supports keyboard opening and Escape dismissal of the archive date picker', async () => {
+    getSchedule.mockResolvedValue({
+      enabled: true,
+      cron_expr: '0 4 * * *',
+      retain_days: 14,
+      retain_count: 10,
+      monthly_archive: { enabled: true, days: [1, 15], include_month_end: true, retain_count: 23 },
+    })
+    const wrapper = mountBackupView()
+    await flushPromises()
+
+    await wrapper.get('#backup-archive-dates').trigger('keydown', { key: 'ArrowDown' })
+    await flushPromises()
+    expect(wrapper.find('#backup-archive-options').exists()).toBe(true)
+    expect((wrapper.get('#backup-archive-options input[value="15"]').element as HTMLInputElement).checked).toBe(true)
+
+    await wrapper.get('#backup-archive-options').trigger('keydown', { key: 'Escape' })
+    expect(wrapper.find('#backup-archive-options').exists()).toBe(false)
   })
 
   it('requires explicit confirmation before deleting monthly archive copies', async () => {

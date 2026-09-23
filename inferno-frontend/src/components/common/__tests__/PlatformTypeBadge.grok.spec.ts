@@ -1,7 +1,9 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 
+import type { AccountPlatform } from '@/types'
 import GrokFreeIcon from '../GrokFreeIcon.vue'
+import PlatformIcon from '../PlatformIcon.vue'
 import PlatformTypeBadge from '../PlatformTypeBadge.vue'
 
 vi.mock('vue-i18n', async () => {
@@ -136,5 +138,58 @@ describe('PlatformTypeBadge OpenAI authentication modes', () => {
       props: { platform: 'grok', type: 'oauth', planType: 'SuperGrok Plus' },
     })
     expect(plus.text()).toContain('SuperGrok Plus')
+  })
+})
+
+describe('PlatformTypeBadge platform mappings', () => {
+  it('labels MiniMax and OpenCode without falling back to Gemini', () => {
+    const minimax = mount(PlatformTypeBadge, {
+      props: { platform: 'minimax', type: 'apikey' },
+    })
+    expect(minimax.text()).toContain('MiniMax')
+    expect(minimax.text()).not.toContain('Gemini')
+    expect(minimax.html()).toContain('bg-rose-100')
+    expect(minimax.findComponent(PlatformIcon).find('path').attributes('d')).toContain('M16.278 2')
+
+    const opencode = mount(PlatformTypeBadge, {
+      props: { platform: 'opencode_go', type: 'apikey' },
+    })
+    expect(opencode.text()).toContain('OpenCode')
+    expect(opencode.text()).not.toContain('Gemini')
+    expect(opencode.html()).toContain('bg-amber-100')
+    expect(opencode.findComponent(PlatformIcon).find('path').attributes('d')).toBe('M16 6H8v12h8V6zm4 16H4V2h16v20z')
+  })
+
+  it('keeps unknown providers identifiable instead of calling them Gemini', () => {
+    const wrapper = mount(PlatformTypeBadge, {
+      props: { platform: 'unknown-provider' as AccountPlatform, type: 'apikey' },
+    })
+
+    expect(wrapper.text()).toContain('unknown-provider')
+    expect(wrapper.text()).not.toContain('Gemini')
+  })
+
+  it.each([
+    ['pro', 'Pro 20x'],
+    ['chatgpt_pro', 'Pro 20x'],
+    ['pro_lite', 'Pro 5x'],
+    ['team', 'Business Standard'],
+    ['self_serve_business_prolite', 'Business Premium'],
+  ])('maps the OpenAI %s tier to %s', (planType, label) => {
+    const wrapper = mount(PlatformTypeBadge, {
+      props: { platform: 'openai', type: 'oauth', planType },
+    })
+
+    expect(wrapper.text()).toContain(label)
+    expect(wrapper.text()).not.toContain(planType)
+  })
+
+  it('does not apply ChatGPT tier names to other platforms', () => {
+    const wrapper = mount(PlatformTypeBadge, {
+      props: { platform: 'grok', type: 'oauth', planType: 'pro' },
+    })
+
+    expect(wrapper.text()).toContain('Pro')
+    expect(wrapper.text()).not.toContain('Pro 20x')
   })
 })

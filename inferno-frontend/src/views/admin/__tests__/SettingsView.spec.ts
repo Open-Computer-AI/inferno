@@ -26,6 +26,8 @@ const {
   updateUpstreamBillingProbeSettings,
   getOllamaCloudUsageSettings,
   updateOllamaCloudUsageSettings,
+  getOpenCodeGoUsageSettings,
+  updateOpenCodeGoUsageSettings,
   getGroups,
   listProxies,
   getProviders,
@@ -67,6 +69,12 @@ const {
     debounce_minutes: 1,
   }),
   updateOllamaCloudUsageSettings: vi.fn().mockImplementation(async (payload) => payload),
+  getOpenCodeGoUsageSettings: vi.fn().mockResolvedValue({
+    enabled: false,
+    interval_minutes: 15,
+    debounce_minutes: 1,
+  }),
+  updateOpenCodeGoUsageSettings: vi.fn().mockImplementation(async (payload) => payload),
   getGroups: vi.fn(),
   listProxies: vi.fn(),
   getProviders: vi.fn(),
@@ -103,6 +111,8 @@ vi.mock("@/api", () => ({
       updateUpstreamBillingProbeSettings,
       getOllamaCloudUsageSettings,
       updateOllamaCloudUsageSettings,
+      getOpenCodeGoUsageSettings,
+      updateOpenCodeGoUsageSettings,
     },
     groups: {
       getAll: getGroups,
@@ -230,6 +240,7 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.upstreamBillingProbe.intervalHint": "范围 5–1440 分钟。",
     "admin.settings.upstreamBillingProbe.saved": "上游倍率自动探测设置已保存",
     "admin.settings.upstreamBillingProbe.saveFailed": "保存上游倍率自动探测设置失败",
+    "admin.settings.gatewayForwarding.claudeCodeVersionSyncedValue": "当前同步到：{version}",
     "admin.settings.openaiFastPolicy.summaryTargetModels": "目标模型",
     "admin.settings.openaiFastPolicy.summaryAllModels": "全部模型",
     "admin.settings.openaiFastPolicy.summaryOtherModels": "其他模型",
@@ -660,6 +671,8 @@ describe("admin SettingsView payment visible method controls", () => {
     updateUpstreamBillingProbeSettings.mockReset();
     getOllamaCloudUsageSettings.mockReset();
     updateOllamaCloudUsageSettings.mockReset();
+    getOpenCodeGoUsageSettings.mockReset();
+    updateOpenCodeGoUsageSettings.mockReset();
     getGroups.mockReset();
     listProxies.mockReset();
     getProviders.mockReset();
@@ -726,6 +739,12 @@ describe("admin SettingsView payment visible method controls", () => {
       debounce_minutes: 1,
     });
     updateOllamaCloudUsageSettings.mockImplementation(async (payload) => payload);
+    getOpenCodeGoUsageSettings.mockResolvedValue({
+      enabled: false,
+      interval_minutes: 15,
+      debounce_minutes: 1,
+    });
+    updateOpenCodeGoUsageSettings.mockImplementation(async (payload) => payload);
     getGroups.mockResolvedValue([]);
     listProxies.mockResolvedValue({
       items: [],
@@ -1434,6 +1453,69 @@ describe("admin SettingsView payment visible method controls", () => {
       interval_minutes: 90,
       debounce_minutes: 3,
     });
+  });
+
+  it("loads and saves OpenCode Go usage refresh settings with the full contract", async () => {
+    getOpenCodeGoUsageSettings.mockResolvedValueOnce({
+      enabled: false,
+      interval_minutes: 15,
+      debounce_minutes: 1,
+    });
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const card = wrapper.get('[data-testid="opencode-go-usage-global-settings"]');
+    expect(card.isVisible()).toBe(true);
+    expect(
+      (card.get('[data-testid="opencode-go-usage-global-enabled"]').element as HTMLInputElement)
+        .checked,
+    ).toBe(false);
+    expect(card.find('[data-testid="opencode-go-usage-global-interval"]').exists()).toBe(false);
+
+    await card.get('[data-testid="opencode-go-usage-global-enabled"]').setValue(true);
+    await card.get('[data-testid="opencode-go-usage-global-debounce"]').setValue(2);
+    await card.get('[data-testid="opencode-go-usage-global-interval"]').setValue(45);
+    await card.get('[data-testid="opencode-go-usage-global-save"]').trigger("click");
+    await flushPromises();
+
+    expect(updateOpenCodeGoUsageSettings).toHaveBeenCalledWith({
+      enabled: true,
+      interval_minutes: 45,
+      debounce_minutes: 2,
+    });
+  });
+
+  it("round-trips Claude Code runtime-version controls through system settings", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      claude_code_client_version: "2.1.280",
+      claude_code_client_version_synced: "2.1.281",
+      claude_code_version_auto_sync_enabled: true,
+    });
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const version = wrapper.get<HTMLInputElement>('[data-testid="claude-code-client-version"]');
+    const autoSync = wrapper.get<HTMLInputElement>('[data-testid="claude-code-version-auto-sync"]');
+    expect(version.element.value).toBe("2.1.280");
+    expect(autoSync.element.checked).toBe(true);
+    expect(wrapper.get('[data-testid="claude-code-version-synced"]').text()).toContain("2.1.281");
+
+    await version.setValue("2.1.282");
+    await autoSync.setValue(false);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        claude_code_client_version: "2.1.282",
+        claude_code_version_auto_sync_enabled: false,
+      }),
+    );
   });
 
   it("places and explains rate controls for both scheduling modes", async () => {

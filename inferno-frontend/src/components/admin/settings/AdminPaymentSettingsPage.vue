@@ -395,7 +395,7 @@
                     t("admin.settings.payment.enabledPaymentTypes")
                   }}</label>
                   <div class="mt-1.5 flex flex-wrap gap-2">
-                    <Button
+                    <BaseButton
                       v-for="pt in allPaymentTypes"
                       :key="pt.value"
                       type="button"
@@ -405,7 +405,7 @@
                       :aria-pressed="isPaymentTypeEnabled(pt.value)"
                     >
                       {{ pt.label }}
-                    </Button>
+                    </BaseButton>
                   </div>
                   <p class="mt-2 text-xs text-[var(--muted-foreground)] ">
                     {{ t("admin.settings.payment.enabledPaymentTypesHint") }}
@@ -487,8 +487,7 @@
 
 <script lang="ts">
 import { defineComponent } from 'vue'
-import Button from '@/components/common/Button.vue'
-import Icon from '@/components/icons/Icon.vue'
+import BaseButton from '@/components/common/Button.vue'
 import ImageUpload from '@/components/common/ImageUpload.vue'
 import PaymentProviderList from '@/components/payment/PaymentProviderList.vue'
 import BaseSelect from '@/components/common/Select.vue'
@@ -499,8 +498,7 @@ export default defineComponent({
   name: 'AdminPaymentSettingsPage',
   components: {
     BaseSelect,
-    Button,
-    Icon,
+    BaseButton,
     ImageUpload,
     PaymentProviderList,
     Toggle,

@@ -487,11 +487,62 @@
         </div>
 
         <div>
-          <label class="input-label">{{ t('keys.groupLabel') }}</label>
+          <fieldset v-if="!showEditModal" class="space-y-2" data-tour="key-form-provider" :aria-busy="groupsLoading">
+            <legend class="input-label">{{ t('keys.providerLabel') }}</legend>
+            <div class="grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" :aria-label="t('keys.providerLabel')">
+              <label
+                v-for="provider in createProviderOptions"
+                :key="provider.value"
+                class="key-provider-option"
+                :data-disabled="provider.count === 0 || groupsLoading || undefined"
+              >
+                <input
+                  type="radio"
+                  name="key-provider"
+                  class="key-provider-option__input"
+                  :value="provider.value"
+                  :checked="createProvider === provider.value"
+                  :disabled="provider.count === 0 || groupsLoading"
+                  @change="selectCreateProvider(provider.value)"
+                />
+                <span
+                  class="key-provider-option__surface"
+                  :data-selected="createProvider === provider.value || undefined"
+                  :data-disabled="provider.count === 0 || groupsLoading || undefined"
+                >
+                  <span class="key-provider-option__icons" aria-hidden="true">
+                    <span
+                      v-for="platform in KEY_GROUP_PROVIDER_ICONS[provider.value]"
+                      :key="platform"
+                      class="key-provider-option__icon"
+                    >
+                      <PlatformIcon :platform="platform" size="sm" />
+                    </span>
+                  </span>
+                  <span class="key-provider-option__label">{{ provider.label }}</span>
+                </span>
+              </label>
+            </div>
+            <p class="input-hint" aria-live="polite">
+              {{
+                groupsLoading
+                  ? t('common.loading')
+                  : groups.length === 0 || !createProvider
+                    ? t('common.noGroupsAvailable')
+                    : t(`keys.providerHints.${createProvider}`)
+              }}
+            </p>
+          </fieldset>
+
           <Select
+            :key="showEditModal ? 'edit' : (createProvider ?? 'create-loading')"
+            id="key-form-group"
+            :aria-label="t('keys.groupLabel')"
             v-model="formData.group_id"
-            :options="groupOptions"
+            :options="formGroupOptions"
             :placeholder="t('keys.selectGroup')"
+            :empty-text="t('common.noGroupsAvailable')"
+            :loading="groupsLoading"
             :searchable="true"
             :search-placeholder="t('keys.searchGroup')"
             data-tour="key-form-group"
@@ -1147,7 +1198,7 @@
 </template>
 
 <script setup lang="ts">
-	import { ref, reactive, computed, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
+	import { ref, reactive, computed, watch, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
 	import { useI18n } from 'vue-i18n'
 	import { useAppStore } from '@/stores/app'
 	import { useOnboardingStore } from '@/stores/onboarding'
@@ -1171,12 +1222,19 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import EndpointPopover from '@/components/keys/EndpointPopover.vue'
 	import GroupBadge from '@/components/common/GroupBadge.vue'
 	import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
+	import PlatformIcon from '@/components/common/PlatformIcon.vue'
 	import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform, UpdateApiKeyRequest } from '@/types'
 import type { Column } from '@/components/common/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
 import { formatDateTime } from '@/utils/format'
 import { maskApiKey } from '@/utils/maskApiKey'
 import { PRODUCT_NAME } from '@/config/brand'
+import {
+  KEY_GROUP_PROVIDERS,
+  KEY_GROUP_PROVIDER_ICONS,
+  getKeyGroupProvider,
+  type KeyGroupProvider
+} from '@/utils/keyGroupProviders'
 import {
   buildCcSwitchImportDeeplink,
   type CcSwitchClientType
@@ -1318,6 +1376,7 @@ const handleBulkUpdated = (succeededIds: number[]) => {
 }
 
 const groups = ref<Group[]>([])
+const groupsLoading = ref(true)
 const loading = ref(false)
 const submitting = ref(false)
 const now = ref(new Date())
@@ -1472,6 +1531,55 @@ const groupOptions = computed(() =>
   }))
 )
 
+const createProvider = ref<KeyGroupProvider | null>(null)
+const createProviderOptions = computed(() => KEY_GROUP_PROVIDERS.map((value) => ({
+  value,
+  label: t(`keys.providers.${value}`),
+  count: groups.value.filter((group) => getKeyGroupProvider(group.platform) === value).length
+})))
+
+// Edit mode must retain every available group. Only a new key is narrowed to
+// the provider bucket selected above.
+const formGroupOptions = computed(() => {
+  if (showEditModal.value) return groupOptions.value
+  if (!createProvider.value) return []
+  return groupOptions.value.filter((group) => getKeyGroupProvider(group.platform) === createProvider.value)
+})
+
+const selectCreateProvider = (provider: KeyGroupProvider) => {
+  const option = createProviderOptions.value.find((item) => item.value === provider)
+  if (!option || option.count === 0 || groupsLoading.value) return
+  if (createProvider.value === provider) return
+  createProvider.value = provider
+  formData.value.group_id = null
+}
+
+// Also handles groups arriving after the create dialog has already opened.
+watch(
+  [showCreateModal, showEditModal, groupsLoading, createProviderOptions],
+  ([isCreateOpen, isEditOpen, isLoading, providers]) => {
+    if (!isCreateOpen || isEditOpen) return
+
+    if (isLoading) {
+      createProvider.value = null
+      formData.value.group_id = null
+      return
+    }
+
+    const currentProvider = providers.find(
+      (provider) => provider.value === createProvider.value && provider.count > 0
+    )
+    if (!currentProvider) {
+      createProvider.value = providers.find((provider) => provider.count > 0)?.value ?? null
+    }
+
+    if (!formGroupOptions.value.some((group) => group.value === formData.value.group_id)) {
+      formData.value.group_id = null
+    }
+  },
+  { immediate: true }
+)
+
 // Group dropdown search
 const groupSearchQuery = ref('')
 const filteredGroupOptions = computed(() => {
@@ -1555,10 +1663,13 @@ const loadApiKeys = async () => {
 }
 
 const loadGroups = async () => {
+  groupsLoading.value = true
   try {
     groups.value = await userGroupsAPI.getAvailable()
   } catch (error) {
     console.error('Failed to load groups:', error)
+  } finally {
+    groupsLoading.value = false
   }
 }
 
@@ -1838,6 +1949,7 @@ const handleDelete = async () => {
 const closeModals = () => {
   showCreateModal.value = false
   showEditModal.value = false
+  createProvider.value = null
   selectedKey.value = null
   formData.value = {
     name: '',
@@ -2024,3 +2136,90 @@ onUnmounted(() => {
   if (resetTimer) clearInterval(resetTimer)
 })
 </script>
+
+<style scoped>
+.key-provider-option {
+  position: relative;
+  display: block;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.key-provider-option[data-disabled] {
+  cursor: not-allowed;
+}
+
+.key-provider-option__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.key-provider-option__surface {
+  display: flex;
+  min-height: 54px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card);
+  padding: 8px;
+  color: var(--muted-foreground);
+  text-align: center;
+  transition: background-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.key-provider-option__surface:hover:not([data-disabled]) {
+  background: var(--brand-tint);
+}
+
+.key-provider-option__surface[data-selected] {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  box-shadow: 0 0 0 1px var(--brand);
+  color: var(--foreground);
+}
+
+.key-provider-option__surface[data-disabled] {
+  opacity: 0.55;
+}
+
+.key-provider-option__input:focus-visible + .key-provider-option__surface {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.key-provider-option__icons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.key-provider-option__icon {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: var(--r-sm);
+  background: var(--brand-tint);
+  color: var(--brand);
+}
+
+.key-provider-option__label {
+  overflow: hidden;
+  max-width: 100%;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>

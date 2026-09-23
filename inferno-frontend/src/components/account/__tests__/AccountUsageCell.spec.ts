@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import AccountUsageCell from '../AccountUsageCell.vue'
-import type { Account } from '@/types'
+import type { Account, OpenCodeGoUsageState } from '@/types'
 
 const { getUsage } = vi.hoisted(() => ({
   getUsage: vi.fn()
@@ -74,11 +74,32 @@ function makeOllamaUsage(accountId: number, overrides: Partial<NonNullable<Accou
   }
 }
 
+function makeOpenCodeUsage(accountId: number, overrides: Partial<OpenCodeGoUsageState> = {}): OpenCodeGoUsageState {
+  return {
+    account_id: accountId,
+    eligible: true,
+    auto_refresh_enabled: true,
+    snapshot: {
+      status: 'ok',
+      data: {
+        rolling: { percent: 12 },
+        weekly: { percent: 34 },
+        monthly: { percent: 56 }
+      }
+    },
+    ...overrides
+  }
+}
+
 // CN 平台 Ollama Cloud 用例共用的子组件 stub：按 data-test 断言渲染与否
 const cnUsageCellStubs = {
   OllamaCloudUsageCell: {
     props: ['account'],
     template: '<div data-test="embedded-ollama">ollama</div>'
+  },
+  OpenCodeGoUsageCell: {
+    props: ['account'],
+    template: '<div data-test="embedded-opencode">opencode</div>'
   },
   CNProviderQuotaCell: {
     template: '<div data-test="cn-quota-cell" />'
@@ -133,6 +154,86 @@ describe('AccountUsageCell', () => {
       expect(getUsage).not.toHaveBeenCalled()
     }
   )
+
+  it.each(['minimax', 'opencode_go'] as const)(
+    '%s apikey 账号 OpenCode Go eligible 时渲染用量单元格，不回退到 CN 探测',
+    async (platform) => {
+      const wrapper = mount(AccountUsageCell, {
+        props: {
+          account: makeAccount({
+            id: 9010,
+            platform,
+            type: 'apikey',
+            credentials: { account_mode: 'coding' },
+            opencode_go_usage: makeOpenCodeUsage(9010)
+          })
+        },
+        global: {
+          stubs: { ...cnUsageCellStubs, UsageProgressBar: true, AccountQuotaInfo: true }
+        }
+      })
+
+      await flushPromises()
+
+      expect(wrapper.find('[data-test="embedded-opencode"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="embedded-ollama"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="cn-quota-cell"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="cn-balance-cell"]').exists()).toBe(false)
+      expect(getUsage).not.toHaveBeenCalled()
+    }
+  )
+
+  it('OpenCode Go 用量更新经 account-updated 透传', async () => {
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 9011,
+          platform: 'opencode_go',
+          type: 'apikey',
+          opencode_go_usage: makeOpenCodeUsage(9011)
+        })
+      },
+      global: {
+        stubs: {
+          ...cnUsageCellStubs,
+          OpenCodeGoUsageCell: {
+            props: ['account'],
+            emits: ['updated'],
+            template: '<button data-test="embedded-opencode" @click="$emit(\'updated\', { ...account.opencode_go_usage, auto_refresh_enabled: false })" />'
+          },
+          UsageProgressBar: true,
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await wrapper.get('[data-test="embedded-opencode"]').trigger('click')
+
+    const updatedAccount = wrapper.emitted<Account[]>('account-updated')?.[0]?.[0]
+    expect(updatedAccount?.id).toBe(9011)
+    expect(updatedAccount?.opencode_go_usage?.auto_refresh_enabled).toBe(false)
+  })
+
+  it('普通 OpenCode Go 账号仍显示占位符', async () => {
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 9012,
+          platform: 'opencode_go',
+          type: 'apikey',
+          opencode_go_usage: makeOpenCodeUsage(9012, { eligible: false })
+        })
+      },
+      global: {
+        stubs: { ...cnUsageCellStubs, UsageProgressBar: true, AccountQuotaInfo: true }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="embedded-opencode"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="embedded-ollama"]').exists()).toBe(false)
+  })
 
   it('CN 平台 Ollama Cloud eligible 账号的用量更新经 account-updated 透传', async () => {
     const wrapper = mount(AccountUsageCell, {

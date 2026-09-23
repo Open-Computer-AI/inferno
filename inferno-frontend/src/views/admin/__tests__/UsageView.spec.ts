@@ -29,6 +29,7 @@ const { list, exportList, getStats, getSnapshotV2, getById, getModelStats, listE
 
 const messages: Record<string, string> = {
   'admin.usage.requestId': 'Request ID',
+  'admin.usage.upstreamRequestId': 'Upstream Request ID',
   'admin.dashboard.timeRange': 'Time Range',
   'admin.dashboard.day': 'Day',
   'admin.dashboard.hour': 'Hour',
@@ -642,6 +643,8 @@ describe('admin UsageView model audit export', () => {
 				upstream_model: 'gpt-5.5',
 				upstream_response_model: 'gpt-5.4',
 				upstream_model_mismatch: true,
+				request_id: 'req-admin-export',
+				upstream_request_id: 'upstream-admin-export',
 				request_type: 'sync',
 				input_tokens: 1,
 				output_tokens: 1,
@@ -690,9 +693,13 @@ describe('admin UsageView model audit export', () => {
 			'Upstream response model',
 			'Upstream model mismatch',
 		])
-		const row = sheetAddAoa.mock.calls[0][1][0]
-		expect(row.slice(4, 8)).toEqual(['gpt-5.6-sol', 'gpt-5.5', 'gpt-5.4', 'Yes'])
-		expect(saveAs).toHaveBeenCalledTimes(1)
+			const row = sheetAddAoa.mock.calls[0][1][0]
+			expect(row.slice(4, 8)).toEqual(['gpt-5.6-sol', 'gpt-5.5', 'gpt-5.4', 'Yes'])
+			const requestHeaderIndex = headers.indexOf('Request ID')
+		expect(headers[requestHeaderIndex + 1]).toBe('Upstream Request ID')
+			expect(row[requestHeaderIndex]).toBe('req-admin-export')
+			expect(row[requestHeaderIndex + 1]).toBe('upstream-admin-export')
+			expect(saveAs).toHaveBeenCalledTimes(1)
 	})
 
   /*
@@ -726,6 +733,34 @@ describe('admin UsageView model audit export', () => {
 
     expect(usageTable.props('columns')).toEqual(
       expect.arrayContaining([expect.objectContaining({ key: 'request_id', label: 'Request ID' })])
+    )
+  })
+
+  it('keeps upstream ID hidden by default and allows enabling it from column settings', async () => {
+    const wrapper = mount(UsageView, {
+      global: { stubs: {
+        AppLayout: AppLayoutStub, UsageStatsCards: true, UsageFilters: UsageFiltersStub,
+        UsageTable: UsageTableStub, UsageExportProgress: true, UsageCleanupDialog: true,
+        UserBalanceHistoryModal: true, AuditLogModal: true, Pagination: true, Select: true,
+        DateRangePicker: true, Icon: true, TokenUsageTrend: true,
+        ModelDistributionChart: true, GroupDistributionChart: true,
+        EndpointDistributionChart: true, UserTokenRanking: true,
+      } },
+    })
+    await wrapper.vm.$nextTick()
+
+    const usageTable = wrapper.findComponent(UsageTableStub)
+    expect(usageTable.props('columns')).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: 'upstream_request_id' })])
+    )
+
+    await wrapper.get('button[title="admin.users.columnSettings"]').trigger('click')
+    const toggle = wrapper.findAll('button').find((b) => b.text() === 'Upstream Request ID')
+    expect(toggle).toBeDefined()
+    await toggle!.trigger('click')
+
+      expect(usageTable.props('columns')).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: 'upstream_request_id', label: 'Upstream Request ID' })])
     )
   })
 })

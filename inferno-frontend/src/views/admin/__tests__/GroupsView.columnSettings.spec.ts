@@ -7,6 +7,7 @@ import GroupsView from '../GroupsView.vue'
 const {
   listGroups,
   getAllGroups,
+  getModelAllowlistCandidates,
   getModelsListCandidates,
   getUsageSummary,
   getCapacitySummary,
@@ -19,6 +20,7 @@ const {
 } = vi.hoisted(() => ({
   listGroups: vi.fn(),
   getAllGroups: vi.fn(),
+  getModelAllowlistCandidates: vi.fn(),
   getModelsListCandidates: vi.fn(),
   getUsageSummary: vi.fn(),
   getCapacitySummary: vi.fn(),
@@ -53,6 +55,7 @@ vi.mock('@/api/admin', () => ({
     groups: {
       list: listGroups,
       getAll: getAllGroups,
+      getModelAllowlistCandidates,
       getModelsListCandidates,
       getUsageSummary,
       getCapacitySummary,
@@ -73,6 +76,10 @@ vi.mock('@/stores/app', () => ({
     showError,
     showSuccess,
   }),
+}))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ isSimpleMode: false }),
 }))
 
 vi.mock('@/stores/onboarding', () => ({
@@ -233,6 +240,7 @@ describe('admin GroupsView column settings', () => {
 
     listGroups.mockReset()
     getAllGroups.mockReset()
+    getModelAllowlistCandidates.mockReset()
     getModelsListCandidates.mockReset()
     getUsageSummary.mockReset()
     getCapacitySummary.mockReset()
@@ -250,6 +258,7 @@ describe('admin GroupsView column settings', () => {
       pages: 1,
     })
     getAllGroups.mockResolvedValue([])
+    getModelAllowlistCandidates.mockResolvedValue([])
     getModelsListCandidates.mockResolvedValue([])
     getUsageSummary.mockResolvedValue([])
     getCapacitySummary.mockResolvedValue([])

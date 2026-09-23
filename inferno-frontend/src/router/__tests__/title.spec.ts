@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveDocumentTitle, resolveRouteDocumentTitle } from '@/router/title'
+import { resolveDocumentTitle, resolvePurchaseTitleKey, resolveRouteDocumentTitle } from '@/router/title'
 import { PRODUCT_NAME } from '@/config/brand'
 
 describe('resolveDocumentTitle', () => {
@@ -28,6 +28,12 @@ describe('resolveDocumentTitle', () => {
 })
 
 describe('resolveRouteDocumentTitle', () => {
+  it('uses the selected site billing mode for the purchase title', () => {
+    expect(resolvePurchaseTitleKey('recharge_only')).toBe('payment.tabTopUp')
+    expect(resolvePurchaseTitleKey('subscription_only')).toBe('payment.tabSubscribe')
+    expect(resolvePurchaseTitleKey('recharge_and_subscription')).toBeUndefined()
+  })
+
   it('自定义页面菜单加载后，使用菜单名称作为标题', () => {
     const route = {
       name: 'CustomPage',
