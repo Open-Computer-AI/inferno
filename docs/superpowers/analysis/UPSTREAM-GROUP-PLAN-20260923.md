@@ -54,6 +54,11 @@ consumers still decide the disposition.
 - `b8d52fad3` — per-reasoning-effort billing multipliers adapted across channel pricing, account-stat overrides, group pricing, model-plaza disclosure, and the shared June pricing editor. The map round-trips through the existing backend contract; empty values clear, while unknown keys and non-positive/non-finite values block submission.
 - `63c079d87` — OAuth reauthorization preservation is already equivalent in the candidate: existing non-auth credentials are merged before stored credentials are sanitized, with `model_mapping` and `account_id` preserved while auth material is refreshed. Confirmed by `TestApplyOAuthCredentialsPreservesExistingNonAuthCredentials`; no duplicate patch was needed.
 - `7f18f3e9a` — adapted the user API-key modal's stale-request protection to June. It reloads when the selected user changes, clears previous rows immediately, and only lets the latest request update rows/loading/error state. Four regression cases cover failed switch, late response, stale `finally`, and switching while open.
+- `f3a2dcabb` and `b86849e44` — balance-history and user-error-detail stale-request guards were already present in June, with request-version checks around result/error/loading updates and focused race suites; no duplicate port was needed.
+- `50f79e11f` — group replacement already surfaces extracted API failure text and keeps the dialog open for retry; June behavior matches upstream.
+- `3b0bb60ea` and `cd2a4357c` — group RPM inputs already reject fractional/negative values while preserving zero RPM, and group rate multipliers already reject non-finite/non-positive values; June has focused validation tests for both.
+- `cb2bb6084` — adapted the allowed-groups editor's load-readiness guard. Save remains disabled until group configuration loads successfully and the handler repeats the guard; tests cover pending load, load failure, failed reopen, and successful payload preservation.
+- `6b09c74e3` and `26c09b7de` — numeric user attributes already stay strings through the June values API, and optional attribute descriptions/placeholders already send explicit empty strings so a cleared value persists. Both June forms have focused regression tests.
 
 Integration verification at the 2026-09-23 checkpoint before the API-key-modal
 slice: the full June suite passed (2,227 tests across 314 files), the production
@@ -61,8 +66,10 @@ frontend build passed, and the billing slice passed focused tests, June
 typecheck, changed-file ESLint, static i18n-key check, and `git diff --check`.
 After the API-key-modal slice, the full June suite passed (2,232 tests across
 315 files), June typecheck passed, and its focused four-test suite, changed-file
-ESLint, static i18n-key check, and `git diff --check` passed. The second full
-production build passed. The build reports existing
+ESLint, static i18n-key check, and `git diff --check` passed. After the grouped
+user/group batch, the full June suite passed (2,236 tests across 316 files),
+typecheck, production build, 17 focused tests, changed-file ESLint, static
+i18n-key checks, and `git diff --check` passed. The build reports existing
 dynamic/static import and large-chunk warnings. The full lint command previously
 reported 11 errors in unrelated legacy files; no unrelated files were changed
 to silence them.
