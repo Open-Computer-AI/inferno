@@ -122,7 +122,7 @@
       </div>
 
       <!-- Schedule Config -->
-      <div class="card p-6">
+      <div class="card p-6" data-testid="backup-schedule">
         <div class="mb-4">
           <h3 class="text-base font-semibold text-gray-900 dark:text-white">
             {{ t('admin.backup.schedule.title') }}
@@ -142,17 +142,61 @@
           </div>
           <div>
             <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.schedule.retainDays') }}</label>
-            <input v-model.number="scheduleForm.retain_days" type="number" min="0" class="input w-full" />
+            <input v-model.number="scheduleForm.retain_days" data-testid="backup-retain-days" type="number" min="0" class="input w-full" />
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.backup.schedule.retainDaysHint') }}</p>
           </div>
           <div>
             <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.schedule.retainCount') }}</label>
-            <input v-model.number="scheduleForm.retain_count" type="number" min="0" class="input w-full" />
+            <input v-model.number="scheduleForm.retain_count" data-testid="backup-retain-count" type="number" min="0" class="input w-full" />
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.backup.schedule.retainCountHint') }}</p>
           </div>
         </div>
+        <section class="mt-5 border-t border-gray-200 pt-5 dark:border-dark-600" data-testid="backup-archive">
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h4 class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.backup.archive.title') }}</h4>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.backup.archive.description') }}</p>
+            </div>
+            <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input v-model="archiveForm.enabled" data-testid="archive-enabled" type="checkbox" />
+              {{ t('admin.backup.archive.enabled') }}
+            </label>
+          </div>
+          <div v-if="archiveForm.enabled" class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <fieldset class="md:col-span-2">
+              <legend class="mb-2 text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.archive.dates') }}</legend>
+              <div class="grid grid-cols-6 gap-2 sm:grid-cols-8 md:grid-cols-12">
+                <label v-for="day in 31" :key="day" class="flex items-center gap-1 rounded px-1 py-1 text-xs hover:bg-gray-100 dark:hover:bg-dark-700">
+                  <input type="checkbox" :value="day" :checked="archiveForm.days.includes(day)" :aria-label="t('admin.backup.archive.day', { day })" @change="toggleArchiveDay(day, $event)" />
+                  {{ day }}
+                </label>
+                <label class="col-span-2 flex items-center gap-1 rounded px-1 py-1 text-xs hover:bg-gray-100 dark:hover:bg-dark-700">
+                  <input v-model="archiveForm.include_month_end" data-testid="archive-month-end" type="checkbox" />
+                  {{ t('admin.backup.archive.monthEnd') }}
+                </label>
+              </div>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.backup.archive.datesHint') }}</p>
+            </fieldset>
+            <div>
+              <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.archive.retention') }}</span>
+              <div class="flex flex-wrap items-center gap-3">
+                <label v-if="archiveForm.retain_count !== 0" class="flex min-w-0 flex-1 items-center gap-2">
+                  <input :value="archiveForm.retain_count" data-testid="archive-count" type="number" min="1" step="1" class="input w-full min-w-0" :aria-label="t('admin.backup.archive.count')" @input="setArchiveRetainCount" />
+                  <span class="shrink-0 text-sm">{{ t('admin.backup.archive.copies') }}</span>
+                </label>
+                <label class="inline-flex min-h-10 shrink-0 items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <input data-testid="archive-forever" type="checkbox" :checked="archiveForm.retain_count === 0" @change="toggleArchiveForever" />
+                  {{ t('admin.backup.archive.forever') }}
+                </label>
+              </div>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t(archiveForm.retain_count === 0 ? 'admin.backup.archive.foreverHint' : 'admin.backup.archive.countHint') }}</p>
+            </div>
+          </div>
+          <p v-if="archiveForm.enabled && archiveValidationError" class="mt-2 text-xs text-red-600 dark:text-red-400">{{ archiveValidationError }}</p>
+          <p v-else-if="!archiveForm.enabled" class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.backup.archive.disabledHint') }}</p>
+        </section>
         <div class="mt-4">
-          <button type="button" class="btn btn-primary btn-sm" :disabled="savingSchedule" @click="saveSchedule">
+          <button type="button" class="btn btn-primary btn-sm" :disabled="savingSchedule || !!archiveValidationError" data-testid="save-backup-schedule" @click="saveSchedule">
             {{ savingSchedule ? t('common.loading') : t('common.save') }}
           </button>
         </div>
@@ -211,11 +255,17 @@
                       : t(`admin.backup.status.${record.status}`) }}
                   </span>
                 </td>
-                <td class="py-3 pr-4 text-xs">{{ record.file_name }}</td>
+                <td class="py-3 pr-4 text-xs">
+                  {{ record.file_name }}
+                  <span v-if="record.monthly_archive" class="ml-1 inline-block rounded bg-primary-50 px-1.5 py-0.5 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">{{ t('admin.backup.archive.badge') }}</span>
+                  <div v-if="record.monthly_archive" class="mt-1 text-gray-500 dark:text-gray-400">{{ record.monthly_archive.dates.join(' / ') }}</div>
+                </td>
                 <td class="py-3 pr-4 text-xs">{{ formatSize(record.size_bytes) }}</td>
                 <td class="py-3 pr-4 text-xs">{{ record.parts?.length || (record.status === 'running' ? '-' : 1) }}</td>
                 <td class="py-3 pr-4 text-xs">
-                  {{ record.expires_at ? formatDate(record.expires_at) : t('admin.backup.neverExpire') }}
+                  {{ record.monthly_archive
+                    ? record.monthly_archive.retain_count === 0 ? t('admin.backup.archive.forever') : t('admin.backup.archive.retainLatest', { count: record.monthly_archive.retain_count })
+                    : record.expires_at ? formatDate(record.expires_at) : t('admin.backup.neverExpire') }}
                 </td>
                 <td class="py-3 pr-4 text-xs">
                   {{ record.triggered_by === 'scheduled' ? t('admin.backup.trigger.scheduled') : t('admin.backup.trigger.manual') }}
@@ -399,6 +449,7 @@ import type {
   BackupS3Config,
   BackupScheduleConfig,
   BackupRecord,
+  BackupMonthlyArchiveConfig,
   BackupDownloadPart,
   ImageStorageConfig,
 } from '@/api/admin/backup'
@@ -462,7 +513,33 @@ const scheduleForm = ref<BackupScheduleConfig>({
   retain_days: 14,
   retain_count: 10,
 })
+const archiveForm = ref<BackupMonthlyArchiveConfig>({
+  enabled: false,
+  days: [1],
+  include_month_end: false,
+  retain_count: 0,
+})
+const lastFiniteArchiveCount = ref(12)
 const savingSchedule = ref(false)
+const archiveValidationError = computed(() => {
+  if (!archiveForm.value.enabled) return ''
+  if (archiveForm.value.days.length === 0 && !archiveForm.value.include_month_end) {
+    return t('admin.backup.archive.daysRequired')
+  }
+  const count = archiveForm.value.retain_count
+  if (count !== 0 && (!Number.isInteger(count) || count < 1)) {
+    return t('admin.backup.archive.countInvalid')
+  }
+  return ''
+})
+const archivePayload = computed<BackupMonthlyArchiveConfig>(() => ({
+  enabled: archiveForm.value.enabled,
+  days: [...archiveForm.value.days].sort((a, b) => a - b),
+  include_month_end: archiveForm.value.include_month_end,
+  retain_count: archiveForm.value.retain_count === 0 || (Number.isInteger(archiveForm.value.retain_count) && archiveForm.value.retain_count > 0)
+    ? archiveForm.value.retain_count
+    : lastFiniteArchiveCount.value,
+}))
 
 // Backups
 const backups = ref<BackupRecord[]>([])
@@ -695,24 +772,50 @@ async function loadSchedule() {
     scheduleForm.value = {
       enabled: cfg.enabled,
       cron_expr: cfg.cron_expr || '0 2 * * *',
-      retain_days: cfg.retain_days || 14,
-      retain_count: cfg.retain_count || 10,
+      retain_days: cfg.retain_days ?? 14,
+      retain_count: cfg.retain_count ?? 10,
     }
+    archiveForm.value = {
+      enabled: cfg.monthly_archive?.enabled ?? false,
+      days: cfg.monthly_archive?.days ?? [1],
+      include_month_end: cfg.monthly_archive?.include_month_end ?? false,
+      retain_count: cfg.monthly_archive?.retain_count ?? 0,
+    }
+    if (archiveForm.value.retain_count > 0) lastFiniteArchiveCount.value = archiveForm.value.retain_count
   } catch (error) {
     appStore.showError((error as { message?: string })?.message || t('errors.networkError'))
   }
 }
 
 async function saveSchedule() {
+  if (archiveValidationError.value) return
   savingSchedule.value = true
   try {
-    await adminAPI.backup.updateSchedule(scheduleForm.value)
+    await adminAPI.backup.updateSchedule({ ...scheduleForm.value, monthly_archive: archivePayload.value })
     appStore.showSuccess(t('admin.backup.schedule.saved'))
   } catch (error) {
     appStore.showError((error as { message?: string })?.message || t('errors.networkError'))
   } finally {
     savingSchedule.value = false
   }
+}
+
+function toggleArchiveDay(day: number, event: Event) {
+  const checked = (event.target as HTMLInputElement).checked
+  const days = archiveForm.value.days.filter(value => value !== day)
+  if (checked) days.push(day)
+  archiveForm.value.days = days.sort((a, b) => a - b)
+}
+
+function setArchiveRetainCount(event: Event) {
+  const raw = (event.target as HTMLInputElement).value
+  const count = raw === '' ? Number.NaN : Number(raw)
+  archiveForm.value.retain_count = count === 0 ? Number.NaN : count
+  if (Number.isInteger(count) && count > 0) lastFiniteArchiveCount.value = count
+}
+
+function toggleArchiveForever(event: Event) {
+  archiveForm.value.retain_count = (event.target as HTMLInputElement).checked ? 0 : lastFiniteArchiveCount.value
 }
 
 async function loadBackups() {
@@ -804,9 +907,10 @@ async function restoreBackup(id: string) {
 }
 
 async function removeBackup(id: string) {
-  if (!window.confirm(t('admin.backup.actions.deleteConfirm'))) return
+  const archived = !!backups.value.find(record => record.id === id)?.monthly_archive
+  if (!window.confirm(t(archived ? 'admin.backup.archive.deleteConfirm' : 'admin.backup.actions.deleteConfirm'))) return
   try {
-    await adminAPI.backup.deleteBackup(id)
+    await adminAPI.backup.deleteBackup(id, archived)
     appStore.showSuccess(t('admin.backup.actions.deleted'))
     await loadBackups()
   } catch (error) {

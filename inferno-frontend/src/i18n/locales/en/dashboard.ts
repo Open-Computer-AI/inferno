@@ -651,6 +651,8 @@ export default {
       tierHint: 'The whole request is billed at the tier matching its total context (input + cache write + cache read)',
       tierHintMarginal: 'Only the portion above the threshold is billed at this tier; output is unaffected',
       marginalBadge: 'excess-only tiers',
+      reasoningMultiplierBadge: '{effort} {multiplier}×',
+      reasoningMultiplierHint: 'Requests with {effort} reasoning effort use a {multiplier}× billing multiplier',
       timePricingRowHint: 'Requests made within this period ({timezone} time) are billed at the prices in this row',
       timePricingRowHintWeekdays:
         'On weekdays (Mon–Fri) only, requests made within this period ({timezone} time) are billed at the prices in this row; weekends use the standard prices',
@@ -664,8 +666,11 @@ export default {
       unitPerMillion: '$ / 1M tokens',
       perUnitRequest: '/ request',
       perUnitImage: '/ image',
+      perUnitSecond: '/ second',
       perRequest: 'Per request',
-      perImage: 'Per image'
+      perImage: 'Per image',
+      perVideo: 'Per video',
+      videoPrice: 'Video price'
     },
     nav: {
       login: 'Sign In',

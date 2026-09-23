@@ -56,6 +56,20 @@ function mountTable(
 }
 
 describe('PlazaModelPricingTable', () => {
+  it('shows only valid configured reasoning-effort billing multipliers', () => {
+    const model = tokenModel({
+      pricing: {
+        ...tokenModel().pricing!,
+        reasoning_effort_multipliers: { high: 1.5, max: 0, custom: 2 },
+      },
+    })
+    const wrapper = mountTable([model], 1)
+
+    expect(wrapper.find('[data-reasoning-effort="high"]').exists()).toBe(true)
+    expect(wrapper.find('[data-reasoning-effort="max"]').exists()).toBe(false)
+    expect(wrapper.find('[data-reasoning-effort="custom"]').exists()).toBe(false)
+  })
+
   it('倍率为 1 时展示渠道单价原值($/1M),价格保底 2 位小数', () => {
     const wrapper = mountTable([tokenModel()], 1)
     const text = wrapper.text()
@@ -237,6 +251,57 @@ describe('PlazaModelPricingTable', () => {
     expect(text).toContain('modelPlaza.table.perRequest')
     // 单位后缀跟在价格后(按次 → / 次)
     expect(text).toContain('modelPlaza.table.perUnitRequest')
+  })
+
+  it('video 模型展示基础价和各分辨率阶梯价,单位均按秒标注', () => {
+    const model = tokenModel({
+      name: 'video-generation',
+      pricing: {
+        billing_mode: 'video',
+        input_price: null,
+        output_price: null,
+        cache_write_price: null,
+        cache_read_price: null,
+        image_input_price: null,
+        image_output_price: null,
+        per_request_price: 0.05,
+        intervals: [
+          {
+            min_tokens: 0,
+            max_tokens: null,
+            tier_label: '480p',
+            input_price: null,
+            output_price: null,
+            cache_write_price: null,
+            cache_read_price: null,
+            per_request_price: 0
+          },
+          {
+            min_tokens: 0,
+            max_tokens: null,
+            tier_label: '720p',
+            input_price: null,
+            output_price: null,
+            cache_write_price: null,
+            cache_read_price: null,
+            per_request_price: 0.12
+          }
+        ]
+      },
+      official_pricing: null
+    })
+
+    const text = mountTable([model], 1).text()
+
+    expect(text).toContain('modelPlaza.table.perVideo')
+    expect(text).toContain('modelPlaza.table.videoPrice')
+    expect(text).toContain('$0.05')
+    expect(text).toContain('480p')
+    expect(text).toContain('$0.00')
+    expect(text).toContain('720p')
+    expect(text).toContain('$0.12')
+    expect(text.match(/modelPlaza\.table\.perUnitSecond/g)).toHaveLength(3)
+    expect(text).not.toContain('modelPlaza.table.perUnitRequest')
   })
 
   it('token 模型阶梯定价内联进输入/输出列,按倍率折算', () => {

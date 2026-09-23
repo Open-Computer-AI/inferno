@@ -656,6 +656,8 @@ export default {
       tierHint: '按单次请求的总上下文（输入 + 缓存写入 + 缓存读取）所在档位对整单计价',
       tierHintMarginal: '仅超过阈值的部分按该档计价，输出不加价',
       marginalBadge: '超出部分计价',
+      reasoningMultiplierBadge: '{effort} {multiplier}×',
+      reasoningMultiplierHint: '思考等级为 {effort} 的请求按 {multiplier}× 倍率计费',
       timePricingRowHint: '按 {timezone} 时间，在该时段内发起的请求按本行价格计费',
       timePricingRowHintWeekdays:
         '按 {timezone} 时间，仅工作日（周一至周五）在该时段内发起的请求按本行价格计费，周末全天按标准价',
@@ -668,8 +670,11 @@ export default {
       unitPerMillion: '$ / 1M token',
       perUnitRequest: '/ 次',
       perUnitImage: '/ 张',
+      perUnitSecond: '/ 秒',
       perRequest: '按次计费',
-      perImage: '按图片计费'
+      perImage: '按图片计费',
+      perVideo: '按视频计费',
+      videoPrice: '视频单价'
     },
     nav: {
       login: '登录',

@@ -99,6 +99,15 @@
               >
                 {{ t('modelPlaza.table.marginalBadge') }}
               </span>
+              <span
+                v-for="([effort, multiplier]) in reasoningEffortMultipliers(m)"
+                :key="effort"
+                class="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+                :title="t('modelPlaza.table.reasoningMultiplierHint', { effort, multiplier })"
+                :data-reasoning-effort="effort"
+              >
+                {{ t('modelPlaza.table.reasoningMultiplierBadge', { effort, multiplier }) }}
+              </span>
             </div>
           </td>
 
@@ -175,6 +184,16 @@
           <!-- 按次 / 按图片计费:实付区整体合并,阶梯芯片或单一按次价 -->
           <template v-else>
             <td colspan="3" class="pz-cell px-3 py-2.5 align-middle">
+              <div
+                v-if="billingMode(m) === BILLING_MODE_VIDEO && m.pricing?.per_request_price != null"
+                class="mb-1 text-xs text-gray-500 dark:text-dark-400"
+              >
+                <span class="font-sans">{{ t('modelPlaza.table.videoPrice') }}</span>
+                <span class="ml-1 font-mono font-semibold text-gray-900 dark:text-gray-50">
+                  {{ paidRequestPrice(m, m.pricing.per_request_price) }}
+                </span>
+                <span class="ml-1 font-sans">{{ perUnitSuffix(m) }}</span>
+              </div>
               <div
                 v-if="requestIntervals(m).length"
                 class="flex flex-wrap items-center gap-1.5"
@@ -304,10 +323,22 @@ import { platformAccentColor, platformBadgeLightClass, platformLabel } from '@/u
 import {
   BILLING_MODE_TOKEN,
   BILLING_MODE_IMAGE,
+  BILLING_MODE_VIDEO,
+  REASONING_EFFORT_LEVELS,
   type BillingMode
 } from '@/constants/channel'
 import type { PlazaModel, PlazaTimePricingPeriod } from '@/api/modelPlaza'
 import type { UserPricingInterval } from '@/api/channels'
+
+function reasoningEffortMultipliers(model: PlazaModel): [string, number][] {
+  const multipliers = model.pricing?.reasoning_effort_multipliers
+  return REASONING_EFFORT_LEVELS.flatMap(effort => {
+    const multiplier = multipliers?.[effort]
+    return typeof multiplier === 'number' && Number.isFinite(multiplier) && multiplier > 0
+      ? [[effort, multiplier] as [string, number]]
+      : []
+  })
+}
 
 const props = defineProps<{
   models: PlazaModel[]
@@ -366,9 +397,14 @@ function billingMode(m: PlazaModel): BillingMode {
 }
 
 function billingModeLabel(m: PlazaModel): string {
-  return billingMode(m) === BILLING_MODE_IMAGE
-    ? t('modelPlaza.table.perImage')
-    : t('modelPlaza.table.perRequest')
+  switch (billingMode(m)) {
+    case BILLING_MODE_IMAGE:
+      return t('modelPlaza.table.perImage')
+    case BILLING_MODE_VIDEO:
+      return t('modelPlaza.table.perVideo')
+    default:
+      return t('modelPlaza.table.perRequest')
+  }
 }
 
 /** 价格统一保底 2 位小数,更长的有效小数原样保留。 */
@@ -427,11 +463,16 @@ function official(value: number | null | undefined): string {
   return formatScaled(value, PER_MILLION, MIN_DECIMALS)
 }
 
-/** 非 token 计费的单位后缀:按图片 → “/ 张”,按次 → “/ 次”。 */
+/** 非 token 计费的单位后缀:图片按张,视频按秒,其他按次。 */
 function perUnitSuffix(m: PlazaModel): string {
-  return billingMode(m) === BILLING_MODE_IMAGE
-    ? t('modelPlaza.table.perUnitImage')
-    : t('modelPlaza.table.perUnitRequest')
+  switch (billingMode(m)) {
+    case BILLING_MODE_IMAGE:
+      return t('modelPlaza.table.perUnitImage')
+    case BILLING_MODE_VIDEO:
+      return t('modelPlaza.table.perUnitSecond')
+    default:
+      return t('modelPlaza.table.perUnitRequest')
+  }
 }
 
 function hasCachePricing(m: PlazaModel): boolean {
