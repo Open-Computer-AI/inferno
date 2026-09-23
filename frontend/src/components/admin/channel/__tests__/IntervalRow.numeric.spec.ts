@@ -27,4 +27,15 @@ describe('pricing interval token bounds', () => {
     expect(wrapper.emitted('update')?.[0]?.[0]).toMatchObject({ min_tokens: min })
     expect(wrapper.emitted('update')?.[1]?.[0]).toMatchObject({ max_tokens: max })
   })
+
+  it('falls back safely for non-finite token bounds', async () => {
+    const wrapper = mount(IntervalRow, { props: { interval, mode: 'token' } })
+    const inputs = wrapper.findAll('input[type="number"]')
+    Object.defineProperty(inputs[0].element, 'value', { configurable: true, value: '1e999' })
+    await inputs[0].trigger('input')
+    Object.defineProperty(inputs[1].element, 'value', { configurable: true, value: '-1e999' })
+    await inputs[1].trigger('input')
+    expect(wrapper.emitted('update')?.[0]?.[0]).toMatchObject({ min_tokens: 0 })
+    expect(wrapper.emitted('update')?.[1]?.[0]).toMatchObject({ max_tokens: null })
+  })
 })
