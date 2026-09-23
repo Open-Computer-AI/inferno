@@ -62,7 +62,7 @@ func allowlistGroup(platform string, enabled bool, models ...string) *service.Gr
 
 // TestGatewayRoutesGroupModelAllowlistMountedOnEveryGatewayRoute follows the
 // source-level route assertion convention of prompt_audit_route_coverage_test.go:
-// every gateway chain must mount groupModelAllowlist after api key auth and
+// every gateway chain must mount groupModelAllowlist after credential auth and
 // before the composite rewrite (gateway.go + rootRoute helper).
 func TestGatewayRoutesGroupModelAllowlistMountedOnEveryGatewayRoute(t *testing.T) {
 	routeSource, err := os.ReadFile("gateway.go")
@@ -73,25 +73,24 @@ func TestGatewayRoutesGroupModelAllowlistMountedOnEveryGatewayRoute(t *testing.T
 	rootHelper := regexp.MustCompile(regexp.QuoteMeta(`r.Handle(method, path, limit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, handler)`))
 	require.Regexp(t, rootHelper, source,
 		"root alias helper must place the allowlist between apiKeyAuth and compositeTarget")
+	oauthRootHelper := regexp.MustCompile(regexp.QuoteMeta(`r.Handle(method, path, limit, clientRequestID, opsErrorLogger, endpointNorm, oauthOrAPIKeyAuth, groupModelAllowlist, compositeTarget, requireGroupAnthropic, handler)`))
+	require.Regexp(t, oauthRootHelper, source,
+		"OAuth root alias helper must place the allowlist after OAuth/API-key auth and before compositeTarget")
 
 	chains := []struct {
 		group     string
-		auth      []string
+		auth      string
 		marker    string
 		composite string
 	}{
-		{group: "gateway", auth: []string{"gin.HandlerFunc(apiKeyAuth)", "oauthOrAPIKeyAuth"}, marker: "gateway.Use(groupModelAllowlist)", composite: "gateway.Use(compositeTarget)"},
-		{group: "gemini", auth: []string{"middleware.APIKeyAuthWithSubscriptionGoogle(apiKeyService, subscriptionService, cfg)"}, marker: "gemini.Use(groupModelAllowlist)", composite: "gemini.Use(compositeGeminiTarget)"},
-		{group: "antigravityV1", auth: []string{"gin.HandlerFunc(apiKeyAuth)"}, marker: "antigravityV1.Use(groupModelAllowlist)", composite: "antigravityV1.Use(requireGroupAnthropic)"},
-		{group: "antigravityV1Beta", auth: []string{"middleware.APIKeyAuthWithSubscriptionGoogle(apiKeyService, subscriptionService, cfg)"}, marker: "antigravityV1Beta.Use(groupModelAllowlist)", composite: "antigravityV1Beta.Use(requireGroupGoogle)"},
+		{group: "gateway", auth: "oauthOrAPIKeyAuth", marker: "gateway.Use(groupModelAllowlist)", composite: "gateway.Use(compositeTarget)"},
+		{group: "gemini", auth: "middleware.APIKeyAuthWithSubscriptionGoogle(apiKeyService, subscriptionService, cfg)", marker: "gemini.Use(groupModelAllowlist)", composite: "gemini.Use(compositeGeminiTarget)"},
+		{group: "antigravityV1", auth: "gin.HandlerFunc(apiKeyAuth)", marker: "antigravityV1.Use(groupModelAllowlist)", composite: "antigravityV1.Use(requireGroupAnthropic)"},
+		{group: "antigravityV1Beta", auth: "middleware.APIKeyAuthWithSubscriptionGoogle(apiKeyService, subscriptionService, cfg)", marker: "antigravityV1Beta.Use(groupModelAllowlist)", composite: "antigravityV1Beta.Use(requireGroupGoogle)"},
 	}
 	for _, chain := range chains {
-		auth := make([]string, 0, len(chain.auth))
-		for _, candidate := range chain.auth {
-			auth = append(auth, regexp.QuoteMeta(chain.group+".Use("+candidate))
-		}
 		re := regexp.MustCompile(
-			"(?:" + strings.Join(auth, "|") + ")" +
+			regexp.QuoteMeta(chain.group+".Use("+chain.auth) +
 				`[\s\S]{0,400}?` + regexp.QuoteMeta(chain.marker) +
 				`[\s\S]{0,400}?` + regexp.QuoteMeta(chain.composite))
 		require.Regexp(t, re, source,
@@ -162,6 +161,10 @@ func TestGatewayRoutesGroupModelAllowlistCoversRootAliasRoutes(t *testing.T) {
 		{http.MethodPost, "/v1/embeddings", `{"model":"gpt-4.1","input":"hi"}`},
 		{http.MethodPost, "/v1/images/generations", `{"model":"gpt-4.1"}`},
 		{http.MethodPost, "/v1/videos/generations", `{"model":"gpt-4.1"}`},
+		{http.MethodPost, "/api/v3/contents/generations/tasks", `{"model":"gpt-4.1","content":[{"type":"text","text":"waves"}]}`},
+		{http.MethodPost, "/v3/contents/generations/tasks", `{"model":"gpt-4.1","content":[{"type":"text","text":"waves"}]}`},
+		{http.MethodPost, "/v1/contents/generations/tasks", `{"model":"gpt-4.1","content":[{"type":"text","text":"waves"}]}`},
+		{http.MethodPost, "/contents/generations/tasks", `{"model":"gpt-4.1","content":[{"type":"text","text":"waves"}]}`},
 		{http.MethodPost, "/v1/live", `{"session":{"model":"gpt-4.1"},"sdp":"v=0"}`},
 		{http.MethodPost, "/backend-api/codex/responses", `{"model":"gpt-4.1"}`},
 		{http.MethodPost, "/backend-api/codex/realtime/calls", `{"session":{"model":"gpt-4.1"},"sdp":"v=0"}`},

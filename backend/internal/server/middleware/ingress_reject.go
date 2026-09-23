@@ -46,7 +46,7 @@ const (
 	IngressRejectOAuthBackingKeyExpired        IngressRejectReason = "oauth_backing_key_expired"
 	IngressRejectOAuthBackingKeyQuotaExhausted IngressRejectReason = "oauth_backing_key_quota_exhausted"
 	IngressRejectOAuthSubscriptionNotFound     IngressRejectReason = "oauth_subscription_not_found"
-	IngressRejectModelNotAllowed        IngressRejectReason = "model_not_allowed"
+	IngressRejectModelNotAllowed               IngressRejectReason = "model_not_allowed"
 )
 
 const ingressRejectReasonContextKey = "ingress_reject_reason"

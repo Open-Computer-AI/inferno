@@ -70,6 +70,7 @@ var v1RouteBillingClassification = []classifiedRoute{
 
 	// --- the adjudicated non-billable divergent class ----------------------
 	{http.MethodGet, "/v1/models", classNonBillableDivergent},
+	{http.MethodGet, "/v1/models/:model", classNonBillableDivergent},
 	{http.MethodGet, "/v1/images/batches", classNonBillableDivergent},
 	{http.MethodGet, "/v1/images/batches/models", classNonBillableDivergent},
 	{http.MethodGet, "/v1/images/batches/:id", classNonBillableDivergent},
@@ -91,6 +92,9 @@ var v1RouteBillingClassification = []classifiedRoute{
 	{http.MethodGet, "/v1/responses", classEnforced},
 	{http.MethodPost, "/v1/alpha/search", classEnforced},
 	{http.MethodPost, "/v1/live", classEnforced},
+	{http.MethodPost, "/v1/contents/generations/tasks", classEnforced},
+	{http.MethodGet, "/v1/contents/generations/tasks/:task_id", classEnforced},
+	{http.MethodDelete, "/v1/contents/generations/tasks/:task_id", classEnforced},
 	{http.MethodPost, "/v1/images/generations", classEnforced},
 	{http.MethodPost, "/v1/images/edits", classEnforced},
 	{http.MethodPost, "/v1/images/generations/async", classEnforced},
@@ -159,7 +163,7 @@ func TestEveryV1RouteIsClassifiedAgainstTheBalanceDivergence(t *testing.T) {
 // itself, separately from the total, so that reclassifying an existing route
 // out of the divergent bucket is also a visible edit.
 func TestTheDivergentClassIsExactlyWhatIsDocumented(t *testing.T) {
-	got := make([]string, 0, 11)
+	got := make([]string, 0, 12)
 	for _, r := range v1RouteBillingClassification {
 		if r.class == classNonBillableDivergent {
 			got = append(got, routeKey(r.method, r.path))
@@ -180,6 +184,7 @@ func TestTheDivergentClassIsExactlyWhatIsDocumented(t *testing.T) {
 		"GET /v1/images/batches/models",
 		"GET /v1/live/:call_id",
 		"GET /v1/models",
+		"GET /v1/models/:model",
 		"POST /v1/images/batches/:id/cancel",
 	}
 	require.Equal(t, want, got,
