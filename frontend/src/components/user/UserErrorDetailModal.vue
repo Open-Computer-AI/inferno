@@ -97,9 +97,7 @@ let requestVersion = 0
 watch(
   () => [props.show, props.errorId] as const,
   ([show, id], _, onCleanup) => {
-    onCleanup(() => {
-      requestVersion++
-    })
+    onCleanup(() => { requestVersion++ })
     if (show && id != null) {
       fetchDetail(id)
     } else if (!show) {

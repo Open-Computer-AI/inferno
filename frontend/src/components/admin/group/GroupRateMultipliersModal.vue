@@ -63,7 +63,7 @@
           <button
             type="button"
             class="btn btn-primary shrink-0"
-            :disabled="!selectedUser || !isValidNewRate"
+            :disabled="!selectedUser || newRate == null || newRate <= 0"
             @click="handleAddLocal"
           >
             {{ t('common.add') }}
@@ -87,7 +87,7 @@
             <button
               type="button"
               class="btn btn-primary btn-sm shrink-0 px-2.5 py-1 text-xs"
-              :disabled="!isValidBatchFactor"
+              :disabled="!batchFactor || batchFactor <= 0"
               @click="applyBatchFactor"
             >
               {{ t('admin.groups.applyMultiplier') }}
@@ -274,15 +274,9 @@ const searchResults = ref<AdminUser[]>([])
 const showDropdown = ref(false)
 const selectedUser = ref<AdminUser | null>(null)
 const newRate = ref<number | null>(null)
-const isValidNewRate = computed(() => newRate.value != null && Number.isFinite(newRate.value) && newRate.value > 0)
 const currentPage = ref(1)
 const pageSize = ref(10)
 const batchFactor = ref<number | null>(null)
-const isValidBatchFactor = computed(() => {
-  const factor = batchFactor.value
-  return factor != null && Number.isFinite(factor) && factor > 0
-    && localEntries.value.every(entry => entry.rate_multiplier == null || Number.isFinite(entry.rate_multiplier * factor))
-})
 
 let searchTimeout: ReturnType<typeof setTimeout>
 
@@ -297,7 +291,7 @@ const platformColorClass = computed(() => {
 
 // 是否显示"最终倍率"预览列
 const showFinalRate = computed(() => {
-  return isValidBatchFactor.value && batchFactor.value !== 1
+  return batchFactor.value != null && batchFactor.value > 0 && batchFactor.value !== 1
 })
 
 // 计算最终倍率预览
@@ -392,8 +386,7 @@ const selectUser = (user: AdminUser) => {
 
 // 本地添加（或覆盖已有用户）
 const handleAddLocal = () => {
-  const rate = newRate.value
-  if (!selectedUser.value || rate == null || !Number.isFinite(rate) || rate <= 0) return
+  if (!selectedUser.value || newRate.value == null || newRate.value <= 0) return
   const user = selectedUser.value
   const idx = localEntries.value.findIndex(e => e.user_id === user.id)
   const entry: LocalEntry = {
@@ -402,7 +395,7 @@ const handleAddLocal = () => {
     user_email: user.email,
     user_notes: user.notes || '',
     user_status: user.status || 'active',
-    rate_multiplier: rate,
+    rate_multiplier: newRate.value,
     rpm_override: null
   }
   if (idx >= 0) {
@@ -425,7 +418,7 @@ const updateLocalRate = (userId: number, value: string) => {
     return
   }
   const num = parseFloat(value)
-  if (!Number.isFinite(num)) return
+  if (isNaN(num)) return
   entry.rate_multiplier = num
 }
 
@@ -437,18 +430,12 @@ const removeLocal = (userId: number) => {
 
 // 批量乘数应用到本地
 const applyBatchFactor = () => {
-  const factor = batchFactor.value
-  if (factor == null || !Number.isFinite(factor) || factor <= 0) return
-  const updatedRates = localEntries.value.map(entry => {
-    if (entry.rate_multiplier == null) return null
-    const updatedRate = entry.rate_multiplier * factor
-    if (!Number.isFinite(updatedRate)) return Number.NaN
-    return parseFloat(updatedRate.toFixed(6))
-  })
-  if (updatedRates.some(rate => rate != null && !Number.isFinite(rate))) return
-  localEntries.value.forEach((entry, index) => {
-    entry.rate_multiplier = updatedRates[index]
-  })
+  if (!batchFactor.value || batchFactor.value <= 0) return
+  for (const entry of localEntries.value) {
+    if (entry.rate_multiplier != null) {
+      entry.rate_multiplier = parseFloat((entry.rate_multiplier * batchFactor.value).toFixed(6))
+    }
+  }
   batchFactor.value = null
 }
 

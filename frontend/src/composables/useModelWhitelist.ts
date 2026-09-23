@@ -4,15 +4,13 @@
 
 // OpenAI
 const openaiModels = [
-  // GPT-6 系列
-  'gpt-6', 'gpt-6-astra',
   // GPT-5.2 系列
   'gpt-5.2', 'gpt-5.2-2025-12-11', 'gpt-5.2-chat-latest',
   'gpt-5.2-pro', 'gpt-5.2-pro-2025-12-11',
 	// GPT-5.6 系列
   'gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna',
   // GPT-6 系列
-  'gpt-6-astra',
+  'gpt-6', 'gpt-6-astra',
   // GPT-5.5 系列
   'gpt-5.5',
   // GPT-5.4 系列
@@ -21,7 +19,7 @@ const openaiModels = [
   'gpt-5.3-codex-spark', 'codex-auto-review',
   'gpt-4o-audio-preview', 'gpt-4o-realtime-preview',
   // GPT Image 系列
-  'gpt-image-1', 'gpt-image-1.5', 'gpt-image-2'
+  'gpt-image-1', 'gpt-image-1.5', 'gpt-image-2', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst'
 ]
 
 // Anthropic Claude
@@ -118,7 +116,7 @@ const qwenModels = [
 
 // DeepSeek
 const deepseekModels = [
-  'deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp',
+  'deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp', 'deepseek-flash',
   'deepseek-coder',
   'deepseek-v3', 'deepseek-v3-0324',
   'deepseek-r1', 'deepseek-r1-0528',
@@ -146,6 +144,7 @@ const metaModels = [
 
 // xAI Grok
 const xaiModels = [
+  'grok-4.7',
   'grok-4.6',
   'grok-4.5',
   'grok-4.3',
@@ -208,6 +207,14 @@ const doubaoModels = [
 
 // MiniMax
 const minimaxModels = [
+  'MiniMax-M3',
+  'MiniMax-M2.7',
+  'MiniMax-M2.7-highspeed',
+  'MiniMax-M2.5',
+  'MiniMax-M2.5-highspeed',
+  'MiniMax-M2.1',
+  'MiniMax-M2.1-highspeed',
+  'MiniMax-M2',
   'abab6.5-chat', 'abab6.5s-chat', 'abab6.5s-chat-pro',
   'abab6-chat',
   'abab5.5-chat', 'abab5.5s-chat'
@@ -298,7 +305,6 @@ const openaiPresetMappings = [
   { label: 'GPT-5.3 Codex Spark', from: 'gpt-5.3-codex-spark', to: 'gpt-5.3-codex-spark', color: 'bg-teal-100 text-teal-700 hover:bg-teal-200 dark:bg-teal-900/30 dark:text-teal-400' },
   { label: 'GPT-5.2', from: 'gpt-5.2', to: 'gpt-5.2', color: 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400' },
   { label: 'GPT-6', from: 'gpt-6', to: 'gpt-6', color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400' },
-  { label: 'GPT-6 Astra', from: 'gpt-6-astra', to: 'gpt-6-astra', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-400' },
   { label: 'GPT-5.6', from: 'gpt-5.6', to: 'gpt-5.6', color: 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400' },
   { label: 'GPT-5.6 Sol', from: 'gpt-5.6-sol', to: 'gpt-5.6-sol', color: 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-400' },
   { label: 'GPT-5.6 Terra', from: 'gpt-5.6-terra', to: 'gpt-5.6-terra', color: 'bg-lime-100 text-lime-700 hover:bg-lime-200 dark:bg-lime-900/30 dark:text-lime-400' },
@@ -321,6 +327,7 @@ const geminiPresetMappings = [
 ]
 
 const grokPresetMappings = [
+  { label: 'Grok 4.7', from: 'grok-4.7', to: 'grok-4.7', color: 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800/50 dark:text-slate-300' },
   { label: 'Grok 4.6', from: 'grok-4.6', to: 'grok-4.6', color: 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800/50 dark:text-slate-300' },
   { label: 'Grok 4.5', from: 'grok-4.5', to: 'grok-4.5', color: 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800/50 dark:text-slate-300' },
   { label: 'Grok 4.3', from: 'grok-4.3', to: 'grok-4.3', color: 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800/50 dark:text-slate-300' },
@@ -448,6 +455,18 @@ export function getModelsByPlatform(platform: string): string[] {
     case 'yi': return yiModels
     case 'moonshot':
     case 'kimi': return moonshotModels
+    case 'opencode_go': return [
+      'grok-4.7', 'grok-4.6', 'gpt-5.6-luna',
+      'glm-5.3-flash', 'glm-5.3', 'glm-5.2', 'glm-5.1',
+      'kimi-k3', 'kimi-k2.7-code', 'kimi-k2.6',
+      'longcat-2.0',
+      'deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp',
+      'mimo-v2.5', 'mimo-v2.5-pro',
+      'minimax-m3', 'minimax-m2.7', 'minimax-m2.5',
+      'muse-spark-1.3-contributor', 'muse-spark-1.2-contributor',
+      'qwen3.8-max', 'qwen3.8-flash', 'qwen3.7-max', 'qwen3.7-plus', 'qwen3.6-plus',
+      'hy4-preview', 'hy3', 'omen-alpha'
+    ]
     case 'doubao': return doubaoModels
     case 'minimax': return minimaxModels
     case 'baidu': return baiduModels

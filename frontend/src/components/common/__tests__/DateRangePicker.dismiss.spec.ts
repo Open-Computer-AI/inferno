@@ -4,9 +4,9 @@ import { nextTick, ref } from 'vue'
 import DateRangePicker from '../DateRangePicker.vue'
 
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key, locale: ref('en') }) }))
-let wrapper: ReturnType<typeof mount>
+let wrapper: ReturnType<typeof mount<typeof DateRangePicker>>
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date(2026, 8, 13, 12)) })
-afterEach(() => { wrapper?.unmount(); document.body.innerHTML = ''; vi.useRealTimers() })
+afterEach(() => { wrapper?.unmount(); vi.useRealTimers() })
 
 async function chooseDraft() {
   wrapper = mount(DateRangePicker, {

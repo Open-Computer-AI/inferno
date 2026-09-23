@@ -34,6 +34,9 @@ export default {
           showQuota: '向用户展示渠道用量/余额',
           showQuotaHint:
             '开启后，配额模式的渠道监控会在用户端渠道状态页展示关联账号的用量滚动窗口/余额。默认关闭；管理员始终可见。',
+          hideUserRanking: '对用户隐藏用户排行',
+          hideUserRankingHint:
+            '开启后，用户端渠道监控 V2 不再显示「用户排行」页，用户 API 也不返回排行数据。管理员仍可查看。',
         },
         availableChannels: {
           title: '可用渠道',
@@ -41,6 +44,21 @@ export default {
           configureLink: '前往 渠道管理 > 渠道定价 配置模型价格',
           enabled: '启用可用渠道',
           enabledHint: '关闭后用户端侧边栏入口隐藏，接口返回空数组。',
+        },
+        siteBillingMode: {
+          title: '站点类型',
+          description: '决定用户端提供哪些购买方式。默认「充值 & 订阅」。',
+          label: '购买方式',
+          options: {
+            rechargeAndSubscription: '充值 & 订阅',
+            rechargeOnly: '仅充值',
+            subscriptionOnly: '仅订阅',
+          },
+          hints: {
+            rechargeAndSubscription: '用户端同时提供余额充值与订阅套餐。',
+            rechargeOnly: '用户端隐藏「我的订阅」、购买页订阅套餐、顶栏订阅进度与用量页「计费类型」筛选，直接访问「我的订阅」会跳回仪表盘；管理端侧边栏同时隐藏「订阅管理」入口（页面仍可通过地址访问）。已有订阅的计费与兑换码发放的订阅不受影响。',
+            subscriptionOnly: '用户端购买页只保留订阅套餐，侧边栏入口显示为「订阅」，余额充值下单会被拒绝；兑换码、返利等余额入账不受影响。',
+          },
         },
         modelPlaza: {
           title: '模型广场',
@@ -399,7 +417,7 @@ export default {
         subscriptionGroup: '订阅分组',
         subscriptionValidityDays: '有效期（天）',
         defaultPlatformQuotas: '默认平台限额（注册时分配）',
-        defaultPlatformQuotasHint: '新用户注册时自动写入平台限额记录；已有用户不受影响。留空 = 该平台该窗口不限制。',
+        defaultPlatformQuotasHint: '新用户注册时自动获得这里配置的限额；已有用户不受影响。留空 = 该平台该窗口不限制。',
         platformQuotaNotice: '月限额为 30 天滚动窗口，非自然月',
       },
       platformQuota: {
@@ -669,6 +687,7 @@ export default {
         namePlaceholder: '如：帮助中心',
         url: '页面 URL',
         urlPlaceholder: 'https://example.com/page',
+        hideOpenButton: '隐藏“新窗口打开”按钮',
         iconSvg: 'SVG 图标',
         iconSvgPlaceholder: '<svg>...</svg>',
         iconPreview: '图标预览',
@@ -1075,7 +1094,7 @@ export default {
       },
       openaiFastPolicy: {
         title: 'OpenAI Fast/Flex 策略',
-        description: '基于请求体 service_tier 字段拦截/过滤/透传 OpenAI fast(priority)、ultrafast 与 flex 请求；仅作用于 OpenAI 网关。',
+        description: '基于请求体 service_tier 字段拦截/过滤/透传 OpenAI fast(priority)、ultrafast 与 flex 请求；仅作用于 OpenAI 网关。“全部 tier 值”仅包含显式传入的 tier。',
         empty: '尚未配置任何规则。点击下方按钮新增。',
         ruleHeader: '规则 #{index}',
         removeRule: '删除规则',
@@ -1083,6 +1102,7 @@ export default {
         saveHint: '保存时随系统设置一起提交（点击页面底部「保存」按钮）。',
         serviceTier: 'service_tier 匹配',
         tierAll: '全部 tier 值',
+        tierMissing: '省略 tier',
         tierPriority: 'priority（fast）',
         tierUltrafast: 'ultrafast',
         tierFlex: 'flex',
@@ -1193,8 +1213,9 @@ export default {
         lowRatePriorityTitle: '低倍率优先',
         lowRatePriorityDescription: '开启后优先选择计费倍率较低的账号；倍率相同时，再比较账号优先级和当前负载等。启用实验调度策略后，此开关不生效。',
         oauthRateTitle: 'OAuth 调度参考倍率',
-        oauthRatePriorityDescription: '同一分组同时包含 API Key 和 OAuth 账号时，OAuth 账号按此倍率与已探测的 API Key 计费倍率一起排序。',
-        oauthRateWeightedDescription: '同一分组同时包含 API Key 和 OAuth 账号时，计算“计费倍率”得分时，OAuth 账号按此倍率参与计算。',
+        oauthRatePriorityDescription: 'OAuth 账号按此参考倍率参与低倍率优先排序；留空时使用各自的账号倍率。API Key 账号优先使用有效探测倍率，无有效探测时使用账号倍率。',
+        oauthRateWeightedDescription: '计算“计费倍率”得分时，OAuth 账号使用此参考倍率；留空时使用各自的账号倍率。API Key 账号优先使用有效探测倍率，无有效探测时使用账号倍率。',
+        oauthRateInvalid: 'OAuth 调度参考倍率必须是非负数字，或留空以使用账号倍率。',
         stickyWeightedTitle: '粘性加权',
         stickyWeightedDescription: '开启后 previous_response_id 和 session_hash 粘性进入高级调度打分；关闭时仍按旧逻辑硬命中粘性账号。',
         subscriptionPriorityTitle: '订阅优先',

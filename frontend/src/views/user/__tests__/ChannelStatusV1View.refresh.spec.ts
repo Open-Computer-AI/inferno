@@ -25,28 +25,21 @@ afterEach(() => { wrapper?.unmount(); vi.useRealTimers(); localStorage.clear() }
 
 describe('channel monitor refresh interval', () => {
   it('keeps automatic refresh disabled after reopening the page', async () => {
-    wrapper = mountView()
-    await flushPromises()
+    wrapper = mountView(); await flushPromises()
     await wrapper.get('.disable').trigger('click')
     wrapper.unmount()
-    wrapper = mountView()
-    await flushPromises()
-
+    wrapper = mountView(); await flushPromises()
     const calls = list.mock.calls.length
     await vi.advanceTimersByTimeAsync(240000)
     expect(list).toHaveBeenCalledTimes(calls)
     expect(JSON.parse(localStorage.getItem('channel-status-auto-refresh')!).enabled).toBe(false)
-
-    await wrapper.get('.refresh').trigger('click')
-    await flushPromises()
+    await wrapper.get('.refresh').trigger('click'); await flushPromises()
     expect(list).toHaveBeenCalledTimes(calls + 1)
   })
 
   it('starts automatic refresh for a first visit', async () => {
-    wrapper = mountView()
-    await flushPromises()
+    wrapper = mountView(); await flushPromises()
     await vi.advanceTimersByTimeAsync(120000)
-
     expect(list.mock.calls.length).toBeGreaterThan(1)
   })
 

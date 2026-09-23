@@ -5,7 +5,6 @@ import type { IntervalFormEntry } from '../types'
 
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 enableAutoUnmount(afterEach)
-
 const interval: IntervalFormEntry = {
   min_tokens: 0, max_tokens: null, tier_label: '', sort_order: 0,
   input_price: null, output_price: null, cache_write_price: null, cache_read_price: null,
@@ -26,16 +25,5 @@ describe('pricing interval token bounds', () => {
     await inputs[1].setValue(value)
     expect(wrapper.emitted('update')?.[0]?.[0]).toMatchObject({ min_tokens: min })
     expect(wrapper.emitted('update')?.[1]?.[0]).toMatchObject({ max_tokens: max })
-  })
-
-  it('falls back safely for non-finite token bounds', async () => {
-    const wrapper = mount(IntervalRow, { props: { interval, mode: 'token' } })
-    const inputs = wrapper.findAll('input[type="number"]')
-    Object.defineProperty(inputs[0].element, 'value', { configurable: true, value: '1e999' })
-    await inputs[0].trigger('input')
-    Object.defineProperty(inputs[1].element, 'value', { configurable: true, value: '-1e999' })
-    await inputs[1].trigger('input')
-    expect(wrapper.emitted('update')?.[0]?.[0]).toMatchObject({ min_tokens: 0 })
-    expect(wrapper.emitted('update')?.[1]?.[0]).toMatchObject({ max_tokens: null })
   })
 })

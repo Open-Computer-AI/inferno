@@ -15,12 +15,11 @@ export function useAutoRefresh(options: UseAutoRefreshOptions) {
     storageKey,
     intervals = [5, 10, 15, 30] as const,
     defaultInterval,
-    defaultEnabled,
     onRefresh,
     shouldPause,
   } = options
 
-  const enabled = ref(defaultEnabled ?? false)
+  const enabled = ref(options.defaultEnabled ?? false)
   const intervalSeconds = ref(defaultInterval ?? intervals[intervals.length - 1])
   const countdown = ref(0)
   const fetching = ref(false)

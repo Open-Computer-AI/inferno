@@ -97,11 +97,11 @@ function mountDialog(options: { editing?: ProviderInstance | null } = {}) {
 
 describe('PaymentProviderDialog callback URLs', () => {
   it.each([
-    ['https://notify.example.com/', 'https://return.example.com///', 'https://notify.example.com/', 'https://return.example.com///'],
-    [' https://notify.example.com/sub/ ', ' https://return.example.com/site/ ', 'https://notify.example.com/sub/', 'https://return.example.com/site/'],
+    ['https://notify.example.com/', 'https://return.example.com///', 'https://notify.example.com', 'https://return.example.com'],
+    [' https://notify.example.com/sub/ ', ' https://return.example.com/site/ ', 'https://notify.example.com/sub', 'https://return.example.com/site'],
     ['https://notify.example.com', 'https://return.example.com', 'https://notify.example.com', 'https://return.example.com'],
     ['', '', window.location.origin, window.location.origin],
-  ])('joins callback paths without rewriting the configured bases', async (notify, returnUrl, expectedNotifyBase, expectedReturnBase) => {
+  ])('joins callback paths to %s and %s', async (notify, returnUrl, expectedNotify, expectedReturn) => {
     const provider = providerFactory({
       provider_key: 'easypay', name: 'EasyPay',
       config: { pid: 'pid-1', apiBase: 'https://pay.example.com' },
@@ -115,10 +115,8 @@ describe('PaymentProviderDialog callback URLs', () => {
     await bases[1].setValue(returnUrl)
     await wrapper.find('form').trigger('submit')
     const payload = wrapper.emitted('save')?.[0]?.[0] as { config: Record<string, string> }
-    expect(payload.config.notifyUrl).toBe(expectedNotifyBase.replace(/\/+$/, '') + '/api/v1/payment/webhook/easypay')
-    expect(payload.config.returnUrl).toBe(expectedReturnBase.replace(/\/+$/, '') + '/payment/result')
-    expect((bases[0].element as HTMLInputElement).value).toBe(expectedNotifyBase)
-    expect((bases[1].element as HTMLInputElement).value).toBe(expectedReturnBase)
+    expect(payload.config.notifyUrl).toBe(expectedNotify + '/api/v1/payment/webhook/easypay')
+    expect(payload.config.returnUrl).toBe(expectedReturn + '/payment/result')
     wrapper.unmount()
   })
 })

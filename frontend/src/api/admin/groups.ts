@@ -119,18 +119,6 @@ export async function getModelAllowlistCandidates(
   return data.models || []
 }
 
-/** Compatibility endpoint for the legacy display-only models list. */
-export async function getModelsListCandidates(
-  id: number,
-  platform?: GroupPlatform
-): Promise<string[]> {
-  const { data } = await apiClient.get<{ models: string[] }>(
-    `/admin/groups/${id}/models-list-candidates`,
-    { params: platform ? { platform } : undefined }
-  )
-  return data.models || []
-}
-
 /**
  * Create new group
  * @param groupData - Group data
@@ -490,7 +478,6 @@ export const groupsAPI = {
   getLiveCapability,
   getById,
   getModelAllowlistCandidates,
-  getModelsListCandidates,
   create,
   duplicate,
   update,

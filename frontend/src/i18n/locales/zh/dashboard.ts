@@ -116,6 +116,19 @@ export default {
     nameLabel: '名称',
     namePlaceholder: '我的 API 密钥',
     groupLabel: '分组',
+    providerLabel: '厂商',
+    providers: {
+      anthropic: 'Anthropic',
+      openai: 'OpenAI',
+      domestic: '国产模型',
+      other: '其他'
+    },
+    providerHints: {
+      anthropic: '选择 Anthropic / Claude 的可用分组',
+      openai: '选择 OpenAI / GPT 的可用分组',
+      domestic: '包含 DeepSeek、Kimi、智谱 GLM、MiniMax',
+      other: '包含 Gemini、Grok、Antigravity、OpenCode 和混合分组'
+    },
     selectGroup: '选择分组',
     statusLabel: '状态',
     selectStatus: '选择状态',
@@ -210,6 +223,12 @@ export default {
       deepseek: {
         description: '通过当前 DeepSeek 分组配置 Claude Code、Codex 或 OpenCode。',
         codexDescription: '使用 API Key 配置 Codex，并通过当前 DeepSeek 分组发送请求。',
+        codexConfigTomlHint: '下载下方模型目录，将两个文件保存到 Codex 配置目录后重启 Codex。',
+        codexNote: '启动 Codex 前先导出 SUB2API_API_KEY。下载的目录只包含模型元数据，不包含 API Key。'
+      },
+      minimax: {
+        description: '通过当前 MiniMax 分组配置 Claude Code、Codex 或 OpenCode。',
+        codexDescription: '使用 API Key 配置 Codex，并通过当前 MiniMax 分组发送请求。',
         codexConfigTomlHint: '下载下方模型目录，将两个文件保存到 Codex 配置目录后重启 Codex。',
         codexNote: '启动 Codex 前先导出 SUB2API_API_KEY。下载的目录只包含模型元数据，不包含 API Key。'
       },
@@ -486,7 +505,9 @@ export default {
       antigravity: 'Antigravity',
       kimi: 'Kimi',
       zhipu: '智谱 GLM',
-      deepseek: 'DeepSeek'
+      deepseek: 'DeepSeek',
+      minimax: 'MiniMax',
+      opencode_go: 'OpenCode'
     },
     // 检查模式（监控条目的工作方式）
     checkMode: {
@@ -503,6 +524,7 @@ export default {
         '7dSonnet': '7 天 Sonnet',
         '7dFable': '7 天 Fable',
         weekly: '周',
+        monthly: '月',
         daily: '日',
         '30d': '30 天',
         total: '总量'
@@ -603,6 +625,8 @@ export default {
       billingModePerRequest: '按次',
       billingModeImage: '按图片',
       billingModeVideo: '按视频',
+      videoPrice: '视频单价',
+      unitPerSecond: '/ 秒',
       inputPrice: '输入',
       outputPrice: '输出',
       cacheWritePrice: '缓存写入',
@@ -656,6 +680,8 @@ export default {
       cacheReadShort: '读',
       tierHint: '按单次请求的总上下文（输入 + 缓存写入 + 缓存读取）所在档位对整单计价',
       tierHintMarginal: '仅超过阈值的部分按该档计价，输出不加价',
+      reasoningMultiplierBadge: '{effort} ×{multiplier}',
+      reasoningMultiplierHint: '最终转发的思考等级为 {effort} 时，整次请求的计费与额度消耗乘以 {multiplier}；未配置的等级按 1 倍计费',
       marginalBadge: '超出部分计价',
       timePricingRowHint: '按 {timezone} 时间，在该时段内发起的请求按本行价格计费',
       timePricingRowHintWeekdays:

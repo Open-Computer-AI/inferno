@@ -27,7 +27,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 function uploader(mode: 'image' | 'svg' = 'image') {
-  const wrapper = mount(ImageUpload, { props: { modelValue: 'existing', mode }, global: { stubs: { Icon: true } } })
+  const wrapper = mount(ImageUpload, { props: { modelValue: 'existing', mode } })
   const input = wrapper.get('input')
   return {
     wrapper,

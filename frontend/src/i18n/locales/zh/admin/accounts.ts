@@ -310,6 +310,8 @@ export default {
         kimi: 'Kimi',
         zhipu: 'Zhipu GLM',
         deepseek: 'DeepSeek',
+        minimax: 'MiniMax',
+        opencode_go: 'OpenCode',
       },
       cnProviders: {
         accountMode: {
@@ -351,11 +353,29 @@ export default {
         balance: '余额 --',
         window5h: '5h',
         windowWeekly: '7d',
+        windowMonthly: '月',
         probe: '查询',
         probeTooltip: '请求供应商额度端点，查询 5 小时 / 每周滚动窗口用量',
         balanceProbeTooltip: '请求供应商余额端点，查询账户余额',
         balanceLow: '余额不足',
         noBalanceEndpoint: '该平台暂无余额查询接口',
+      },
+      opencodeGo: {
+        accountMode: {
+          zen: 'Zen',
+          zenDesc: '按量付费网关，消耗账户余额，按 Token 计费。',
+          go: 'GO',
+          goDesc: '订阅制网关，按 5 小时 / 周 / 月滚动用量窗口限流。',
+        },
+        protocolRules: {
+          title: '模型协议分流',
+          hint: '自适应模式下按模型匹配上游协议。支持精确 ID 或末尾 * 通配（如 grok-*、qwen*）；自上而下第一条命中生效；未命中走 Chat Completions。',
+          patternPlaceholder: 'grok-* 或 deepseek-v4-flash',
+          add: '添加规则',
+          remove: '删除规则',
+          restoreDefaults: '恢复默认',
+          fallback: '未命中以上规则 → Chat Completions（/v1/chat/completions）',
+        },
       },
       types: {
         oauth: 'OAuth',
@@ -479,7 +499,9 @@ export default {
         grokLastProbe: '探测 {time}',
         grokLastHeadersSeen: '响应头 {time}',
         passiveSampled: '被动采样',
-        activeQuery: '查询'
+        activeQuery: '查询',
+        estimatedTotalCost: '预计总费用 ${cost}',
+        estimatedTotalCostTooltip: '根据当前窗口费用和使用率估算达到 100% 使用率时的总费用'
       },
       openaiReferral: {
         available: '可邀请',
@@ -675,6 +697,14 @@ export default {
       apiKeyRequired: 'API Key *',
       apiKeyPlaceholder: 'sk-ant-api03-...',
       apiKeyHint: '您的 Claude Console API Key',
+      upstreamRequestIdHeader: '上游ID',
+      upstreamRequestIdHeaderPlaceholder: '留空不记录',
+      upstreamRequestIdHeaderHelp: {
+        intro: '填写直接上游在响应头中声明请求标识的头名，记录到用量明细的“上游ID”列；留空则不记录。',
+        examplesTitle: '常见取值',
+        sub2apiNote: '对应对方用量明细的请求ID列',
+        official: '{platform} 官方 API'
+      },
       // OpenAI specific hints
       openai: {
         baseUrlHint: '留空使用官方 OpenAI API',
@@ -692,15 +722,16 @@ export default {
           '默认关闭。开启后可启用 responses_websockets_v2 协议能力（受网关全局开关与账号类型开关约束）。',
         wsMode: 'WS mode',
         wsModeDesc:
-          '仅对当前 OpenAI 账号类型生效；包括 http_bridge 在内的账号 WS mode 仅在全局 gateway.openai_ws.mode_router_v2_enabled=true 时生效。',
+          '仅对当前 OpenAI 账号类型生效。选择“关闭”可禁用 WS；其余模式需全局 gateway.openai_ws.mode_router_v2_enabled=true 才按所选方式连接，未开启时统一使用上下文池。',
         wsModeOff: '关闭（off）',
         wsModeCtxPool: '上下文池（ctx_pool）',
         wsModePassthrough: '透传（passthrough）',
         wsModeHttpBridge: 'HTTP 桥接（http_bridge）',
         wsModeShared: '共享（shared）',
         wsModeDedicated: '独享（dedicated）',
-        wsModeConcurrencyHint: '账号并发数限制同时执行的请求数；上下文池的连接上限由网关连接池配置决定。',
-        wsModePassthroughHint: 'passthrough 模式不使用 WS 连接池。',
+        wsModeCtxPoolHint: '网关从连接池获取并复用上游 WS 连接，连接池上限由网关配置决定。',
+        wsModePassthroughHint: '网关为每个客户端会话单独建立上游 WS 连接，不使用连接池。',
+        wsModeHttpBridgeHint: '网关将客户端 WS 请求转换为上游 HTTP 请求，再将 SSE 流式响应转换为 WS 消息返回。',
         oauthResponsesWebsocketsV2: 'OAuth WebSocket Mode',
         oauthResponsesWebsocketsV2Desc:
           '仅对 OpenAI OAuth 生效。开启后该账号才允许使用 OpenAI WebSocket Mode 协议。',
@@ -848,6 +879,8 @@ export default {
       modelRestriction: '模型限制（可选）',
       modelWhitelist: '模型白名单',
       modelMapping: '模型映射',
+      fromModel: '请求模型',
+      toModel: '目标模型',
       selectAllowedModels: '选择允许的模型。留空则支持所有模型。',
       mapRequestModels: '将请求模型映射到实际模型。左边是请求的模型，右边是发送到 API 的实际模型。',
       selectedModels: '已选择 {count} 个模型',
