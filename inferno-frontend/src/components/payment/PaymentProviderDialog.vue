@@ -710,8 +710,8 @@ function handleSave() {
     const returnBase = returnBaseUrl.value.trim() || defaultBaseUrl
     notifyBaseUrl.value = notifyBase
     returnBaseUrl.value = returnBase
-    if (paths.notifyUrl) filteredConfig['notifyUrl'] = notifyBase + paths.notifyUrl
-    if (paths.returnUrl) filteredConfig['returnUrl'] = returnBase + paths.returnUrl
+    if (paths.notifyUrl) filteredConfig['notifyUrl'] = notifyBase.replace(/\/+$/, '') + paths.notifyUrl
+    if (paths.returnUrl) filteredConfig['returnUrl'] = returnBase.replace(/\/+$/, '') + paths.returnUrl
   }
 
   emit('save', {
