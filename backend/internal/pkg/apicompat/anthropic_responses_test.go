@@ -1136,7 +1136,22 @@ func TestAnthropicToResponses_ThinkingDisabled(t *testing.T) {
 
 	resp, err := AnthropicToResponses(req)
 	require.NoError(t, err)
-	// Explicitly disabled thinking maps to the Responses no-reasoning effort.
+	require.NotNil(t, resp.Reasoning)
+	assert.Equal(t, "none", resp.Reasoning.Effort)
+	assert.Empty(t, resp.Reasoning.Summary)
+}
+
+func TestAnthropicToResponses_ThinkingDisabledOverridesOutputEffort(t *testing.T) {
+	req := &AnthropicRequest{
+		Model:        "gpt-5.6-sol",
+		MaxTokens:    1024,
+		Messages:     []AnthropicMessage{{Role: "user", Content: json.RawMessage(`"Hello"`)}},
+		Thinking:     &AnthropicThinking{Type: "disabled"},
+		OutputConfig: &AnthropicOutputConfig{Effort: "max"},
+	}
+
+	resp, err := AnthropicToResponses(req)
+	require.NoError(t, err)
 	require.NotNil(t, resp.Reasoning)
 	assert.Equal(t, "none", resp.Reasoning.Effort)
 }
