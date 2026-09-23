@@ -74,23 +74,25 @@ before the cluster at `checkpoint/pre-ws-execution-scope-20260922`.
 ## Current inventory
 
 The current `upstream-daily.mjs --no-fetch` report covers the watermark window
-starting at `5097b3145` and contains 406 non-empty upstream commits:
+starting at `5097b3145` (last recorded run 2026-09-02) through upstream
+`20a94fbb` and contains 492 non-empty upstream commits:
 
 | provisional route | count | meaning before review |
 |---|---:|---|
-| `MERGE` | 254 | backend/mirror or other changes; inspect ancestry and behavior |
-| `VERBATIM` | 5 | candidate route says the product copy is untouched |
-| `NEW` | 11 | candidate route says no product counterpart exists |
-| `REBUILD` | 136 | candidate route says the product copy carries June changes |
+| `MERGE` | 308 | backend/mirror or other changes; inspect ancestry and behavior |
+| `VERBATIM` | 6 | candidate route says the product copy is untouched |
+| `NEW` | 8 | candidate route says no product counterpart exists |
+| `REBUILD` | 170 | candidate route says the product copy carries June changes |
 
 These are routing hints, not completion claims. Each commit must receive a
 final `TAKE`, `HAND-MERGE`, or `SKIP` disposition with affected paths,
 rationale, and observed verification evidence.
 
-The broader candidate-to-upstream graph still has 561 upstream commits that
-are not ancestors of the candidate. That graph fact is not a reason to bulk
-merge: the candidate contains intentional OAuth, GPT Live, sideband, billing,
-and June-product divergence.
+The current candidate-to-upstream graph has 687 upstream commits that are not
+ancestors of the candidate. This is an ancestry count, not 687 features to
+port: hand-ported changes do not become upstream ancestors, and the candidate
+contains intentional OAuth, GPT Live, sideband, billing, and June-product
+divergence.
 
 ## Execution lanes
 
@@ -719,7 +721,61 @@ on June. Both Vue typechecks passed. Changed-file ESLint passed in the isolated
 implementation lanes; a redundant scratch-tree lint attempt was blocked by its
 missing `vue-eslint-parser` module link. The scratch-only auto-install side
 effects on lockfiles were restored, and no dependency files are included.
-The incremental upstream delta now has 18 TAKE rows, 66 unresolved review rows,
-and 2 duplicate-wrapper SKIPs. No backend, schema, OAuth, container, deployment,
-or production build changes were made; the aged Browserslist warning remains
-informational.
+## 2026-09-23 parallel UI port batch
+
+Four isolated implementation lanes were integrated as four separate commits on
+the candidate branch, covering seven upstream feature commits:
+
+| Upstream | Ported behavior | Candidate commit |
+| --- | --- | --- |
+| `ba26e543f`, `00591cbe9` | Retry model-mapping and admin-settings loads after transient failures | `f9e086a85` |
+| `158234720` | Trim trailing slashes only when composing payment callback URLs; preserve editable base URLs | `e1c38ab70` |
+| `23a1d3818`, `cd2a4357c` | Accept scientific notation in token bounds; reject negative group rates | `a5874df2f` |
+| `b86849e44`, `319299519` | Ignore superseded error-detail responses and preserve saved auto-refresh preference | `b84e214f1` |
+
+Each feature was implemented on both the upstream mirror and June frontend, with
+June-specific behavior retained. The combined candidate passed focused Vitest
+(42/42 mirror; 36/36 June), changed-file ESLint on both surfaces, both Vue
+typechecks, and `git diff --check`. Follow-up finite-number hardening covers
+existing multiplier edits and batch multiplication overflow on both surfaces;
+its focused numeric suites passed 17/17 per surface. Final full Vitest passed
+305 files / 2,195 tests on the mirror and 312 files / 2,210 tests on June.
+Both Vue typechecks and changed-file ESLint passed again. No backend, schema,
+OAuth, gateway, container, database, deployment, or production changes were
+made.
+
+The refreshed range is still `1c0a69c0` → `20a94fbb`: 126 reachable commits,
+86 non-empty content rows. Seven feature rows are now TAKE. A first-parent
+stable patch-ID comparison proves these 13 merge wrappers are exact duplicates
+of their source feature commits and adds no unique resolution, so they are
+SKIP:
+
+| Merge wrapper | Source feature commit |
+| --- | --- |
+| `e7d348868` | `ba26e543f` |
+| `405727805` | `0c0df031c` |
+| `9d9e90960` | `d0ed0eaca` |
+| `3442a6a53` | `27f4398b5` |
+| `1716e9915` | `935db6851` |
+| `a5015e1fc` | `7e530c9d4` |
+| `231e72fdd` | `37238c098` |
+| `de6388aec` | `7f1f85cb7` |
+| `65f086d2d` | `fa79b1ebc` |
+| `fa9f104a9` | `c12d0131c` |
+| `b12a187d4` | `7511e4de5` |
+| `583398d18` | `3fdd54ca1` |
+| `02d9901b4` | `f744375a4` |
+
+Five wrapper patch IDs did not match their source commits and remain review-only:
+`483cd5692`, `b717ac7f0`, `b0e32fe5b`, `e26abaef7`, and `13be6ca27`.
+The resulting inventory is 25 TAKE, 46 unresolved review, and 15 SKIP rows.
+
+The range was refreshed independently against `upstream/main` at
+`20a94fbb567b62208751292ed7786b24a7e7c0fe`. The repository watcher defaults to
+the older `5097b3145` watermark (492 content commits), so its generated report
+was filtered to the exact `1c0a69c0..20a94fbb` range and written under `/tmp`.
+That exact range contains 126 reachable commits: 40 empty merge wrappers and
+86 content-bearing rows. The generated 86-commit SHA set exactly matches
+`UPSTREAM-DELTA-20260923.tsv` (no additions or omissions). Current route hints
+for those rows are 54 `MERGE`, 29 `REBUILD`, 2 `VERBATIM`, and 1 `NEW`; these
+are review-routing hints, not decisions to port.
