@@ -509,7 +509,7 @@ func (s *GatewayService) computeFinalAnthropicBeta(
 
 	if tokenType == "oauth" {
 		if mimicClaudeCode {
-// Preserve explicitly requested compatibility tokens so the forwarded
+			// Preserve explicitly requested compatibility tokens so the forwarded
 			// body and headers agree. Unknown betas remain excluded; policy drops
 			// still take precedence. Missing companion tokens are not inferred.
 			var incomingBetas []string
@@ -521,7 +521,6 @@ func (s *GatewayService) computeFinalAnthropicBeta(
 				if containsBetaToken(clientBeta, token) {
 					incomingBetas = append(incomingBetas, token)
 				}
-			}
 			}
 			return mergeAnthropicBetaDropping(claude.FullClaudeCodeMimicryBetas(), strings.Join(incomingBetas, ","), effectiveDropSet), true
 		}
