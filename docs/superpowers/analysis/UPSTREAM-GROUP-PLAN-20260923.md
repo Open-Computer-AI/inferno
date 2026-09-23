@@ -61,6 +61,7 @@ consumers still decide the disposition.
 - `6b09c74e3` and `26c09b7de` — numeric user attributes already stay strings through the June values API, and optional attribute descriptions/placeholders already send explicit empty strings so a cleared value persists. Both June forms have focused regression tests.
 - `a65d476f2` — adapted API-key quota reset to use the server's returned `quota_used` and `status`; the selected-key reference is captured before awaiting, and an open editor status is synchronized only if it still refers to that key.
 - `386f321d3` — adapted the CSV missing-value sentinel exception for exactly `-`; formula-injection escaping remains active for values such as `-1+1`.
+- `dc6b318c3` — adapted user usage filters to load all API-key pages rather than silently omitting keys after the first 100; stops safely if a later page is empty despite a stale page count.
 
 Integration verification at the 2026-09-23 checkpoint before the API-key-modal
 slice: the full June suite passed (2,227 tests across 314 files), the production
@@ -77,6 +78,10 @@ changed-file ESLint passed, and the production build passed. The build reports e
 dynamic/static import and large-chunk warnings. The full lint command previously
 reported 11 errors in unrelated legacy files; no unrelated files were changed
 to silence them.
+
+After the API-key-filter pagination slice, the full June suite passed (2,242
+tests across 316 files), typecheck and production build passed, and the focused
+UsageView suite (7 tests), changed-file ESLint, and `git diff --check` passed.
 
 ## One-hour execution discipline
 
