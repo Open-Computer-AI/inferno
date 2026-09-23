@@ -59,6 +59,8 @@ consumers still decide the disposition.
 - `3b0bb60ea` and `cd2a4357c` — group RPM inputs already reject fractional/negative values while preserving zero RPM, and group rate multipliers already reject non-finite/non-positive values; June has focused validation tests for both.
 - `cb2bb6084` — adapted the allowed-groups editor's load-readiness guard. Save remains disabled until group configuration loads successfully and the handler repeats the guard; tests cover pending load, load failure, failed reopen, and successful payload preservation.
 - `6b09c74e3` and `26c09b7de` — numeric user attributes already stay strings through the June values API, and optional attribute descriptions/placeholders already send explicit empty strings so a cleared value persists. Both June forms have focused regression tests.
+- `a65d476f2` — adapted API-key quota reset to use the server's returned `quota_used` and `status`; the selected-key reference is captured before awaiting, and an open editor status is synchronized only if it still refers to that key.
+- `386f321d3` — adapted the CSV missing-value sentinel exception for exactly `-`; formula-injection escaping remains active for values such as `-1+1`.
 
 Integration verification at the 2026-09-23 checkpoint before the API-key-modal
 slice: the full June suite passed (2,227 tests across 314 files), the production
@@ -69,7 +71,9 @@ After the API-key-modal slice, the full June suite passed (2,232 tests across
 ESLint, static i18n-key check, and `git diff --check` passed. After the grouped
 user/group batch, the full June suite passed (2,236 tests across 316 files),
 typecheck, production build, 17 focused tests, changed-file ESLint, static
-i18n-key checks, and `git diff --check` passed. The build reports existing
+i18n-key checks, and `git diff --check` passed. After the quota-reset/CSV batch,
+the full June suite passed (2,240 tests across 316 files), typecheck passed,
+changed-file ESLint passed, and the production build passed. The build reports existing
 dynamic/static import and large-chunk warnings. The full lint command previously
 reported 11 errors in unrelated legacy files; no unrelated files were changed
 to silence them.
