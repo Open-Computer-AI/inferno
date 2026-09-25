@@ -13,8 +13,8 @@ evidence, not active queues. `upstream-watch.json` is only a watcher watermark.
 | Candidate working branch | `inferno` |
 | Candidate implementation commit | `c219bebb4522b774f8f08e5056940d9586988a22` |
 | Candidate parent checkpoint | `b3bf590a26e5484026a13abf6c8ccee0069e744f` |
-| GitHub fork `main` SHA | `3dd60d21d05e4613a3ee4003e0ec2e75f35f99ee` |
-| GitHub fork `inferno` SHA | `3dd60d21d05e4613a3ee4003e0ec2e75f35f99ee` |
+| GitHub fork main SHA | `3dd60d21d05e4613a3ee4003e0ec2e75f35f99ee` |
+| GitHub fork inferno SHA | `3dd60d21d05e4613a3ee4003e0ec2e75f35f99ee` |
 | Protected baseline checkout | `/Users/saksham/OpenComputerV2/inferno-local` |
 | Protected baseline HEAD | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
 | Local upstream/main SHA | `a3eb7ef302961cba716dc78b39b93b60c467db0e` |
