@@ -1,6 +1,6 @@
 # Inferno selective upstream reconciliation — live source of truth
 
-Last refreshed: 2026-09-23 17:08 UTC. This file is the active status, disposition,
+Last refreshed: 2026-09-25 09:23 UTC. This file is the active status, disposition,
 and verification ledger for the selective upstream reconciliation. Historical
 inventories and run logs are archived under `archive/2026-09-23/`; they are
 evidence, not active queues. `upstream-watch.json` is only a watcher watermark.
@@ -9,27 +9,43 @@ evidence, not active queues. `upstream-watch.json` is only a watcher watermark.
 
 | Item | Verified value |
 |---|---|
-| Candidate checkout | `/Users/saksham/OpenComputerV2/inferno-port-20260922` |
-| Candidate branch | `port/inferno-selective-upstream-20260922` |
+| Candidate checkout | `/Users/saksham/OpenComputerV2/inferno` |
+| Candidate working branch | `inferno` |
 | Candidate implementation commit | `c219bebb4522b774f8f08e5056940d9586988a22` |
 | Candidate parent checkpoint | `b3bf590a26e5484026a13abf6c8ccee0069e744f` |
+| GitHub fork `main` SHA | `3dd60d21d05e4613a3ee4003e0ec2e75f35f99ee` |
+| GitHub fork `inferno` SHA | `3dd60d21d05e4613a3ee4003e0ec2e75f35f99ee` |
 | Protected baseline checkout | `/Users/saksham/OpenComputerV2/inferno-local` |
 | Protected baseline HEAD | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
 | Local upstream/main SHA | `a3eb7ef302961cba716dc78b39b93b60c467db0e` |
-| GitHub refs/heads/main SHA | `a3eb7ef302961cba716dc78b39b93b60c467db0e` |
+| GitHub upstream/main SHA | `a3eb7ef302961cba716dc78b39b93b60c467db0e` |
 | Merge base | `5097b31457e6dc9f49e5f5c9c72b925ce79543b3` |
 
-The local `upstream/main` ref and `git ls-remote upstream refs/heads/main` matched
-at refresh. The candidate incorporates the upstream `0.2.8` version marker and
-selectively reconciles behavior through `a3eb7ef3`; it is not a wholesale fork
-replacement. The protected baseline checkout and tracked files were not modified.
+The GitHub fork's `main` and `inferno` branches both point to the reconciled
+candidate snapshot above. The local `main` branch was safely fast-forwarded from
+its stale August upstream-history tip to that same snapshot; it had no unique
+commits. The local `upstream/main` ref and live Sub2API `upstream/main` matched
+at refresh. This 2026-09-25 maintenance changes only the reconciliation ledger
+and its verifier; it does not change candidate application code. The candidate
+incorporates upstream's `0.2.8` version marker and selectively reconciles
+behavior through `a3eb7ef3`; it is not a wholesale fork replacement.
 
-After this implementation commit, a separate final commit updates only this
-ledger. Run `./scripts/verify-inferno-reconciliation.sh` from this checkout to
-check the recorded branch/commit relationship, protected baseline, local and
-live upstream refs, merge base, clean candidate status, and the nine closed
-backend rows below. This verifier checks freshness and repository state; it does
-not establish runtime behavior or future upstream freshness.
+The former `inferno-port-20260922` checkout still exists on its historical
+`port/inferno-selective-upstream-20260922` branch at the verified candidate
+snapshot. It is a duplicate checkout, not the active source of truth; it was
+left untouched. The protected `inferno-local` HEAD still matches the recorded
+baseline. Its working tree had local modifications/artifacts during this
+refresh; their contents were not inspected and they were not changed.
+Cleanliness is not a precondition for verifying the protected HEAD.
+
+Run `./scripts/verify-inferno-reconciliation.sh` from this checkout to check the
+candidate path and working branch, that the implementation commit remains an
+ancestor and no source files changed after it, the protected baseline HEAD, both
+live GitHub fork refs, local and live upstream refs, merge base, clean candidate
+status, and the nine closed backend rows below. The verifier deliberately does
+not require the separate protected baseline working tree to be clean. It checks
+freshness and repository state; it does not establish runtime behavior or future
+upstream freshness.
 
 ## Current disposition
 
