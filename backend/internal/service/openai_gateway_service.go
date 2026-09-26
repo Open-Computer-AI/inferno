@@ -566,6 +566,11 @@ func NewOpenAIGatewayService(
 		openAITokenProvider.SetAccountRuntimeBlocker(svc)
 	}
 	svc.logOpenAIWSModeBootstrap()
+	// Prepare Live attestation now so the first call after start (or after
+	// idle) does not pay for starting osascript and the DeviceCheck process.
+	if warmer, ok := svc.liveAttestation.(liveattestation.Warmer); ok {
+		warmer.Warm()
+	}
 	return svc
 }
 

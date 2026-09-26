@@ -15,3 +15,10 @@ type Provider interface {
 	Check(ctx context.Context) error
 	Generate(ctx context.Context) (string, error)
 }
+
+// Warmer is implemented by providers that can prepare attestation before the
+// first Live call and keep it ready while idle. Only the long-lived gateway
+// service should call it, not one-off checks.
+type Warmer interface {
+	Warm()
+}
