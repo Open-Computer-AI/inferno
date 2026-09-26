@@ -68,13 +68,20 @@ type LiveCallRecord struct {
 	InboundEndpoint string
 	// AttestationCiphertext 仅用于让同一会话的 Sideband 复用创建时的证明。
 	AttestationCiphertext string
+	// UpstreamSessionID 和 UpstreamThreadID identify the creation leg. They are
+	// retained for diagnostics; the direct Live sideband generates its own
+	// connection identity headers.
+	UpstreamSessionID string
+	UpstreamThreadID  string
 }
 
 type LiveCallCreated struct {
-	SDP      []byte
-	CallID   string
-	Location string
-	Account  *Account
+	SDP               []byte
+	CallID            string
+	Location          string
+	UpstreamSessionID string
+	UpstreamThreadID  string
+	Account           *Account
 }
 
 // LiveCallStore 由 GatewayCache 的 Redis 实现可选提供，避免扩大旧缓存接口。

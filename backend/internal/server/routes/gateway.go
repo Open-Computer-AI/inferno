@@ -339,6 +339,9 @@ func RegisterGatewayRoutes(
 		gateway.PATCH("/custom-voices/:voice_id", customVoicePathHandler)
 		gateway.DELETE("/custom-voices/:voice_id", customVoicePathHandler)
 		gateway.GET("/realtime", func(c *gin.Context) {
+			if !resolveCompositeRealtimeTarget(c, compositeResolver) {
+				return
+			}
 			if getGroupPlatform(c) != service.PlatformGrok {
 				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 				c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Realtime API is not supported for this platform"}})
@@ -504,6 +507,9 @@ func RegisterGatewayRoutes(
 	r.PATCH("/custom-voices/:voice_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, rootCustomVoicePathHandler)
 	r.DELETE("/custom-voices/:voice_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, rootCustomVoicePathHandler)
 	r.GET("/realtime", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+		if !resolveCompositeRealtimeTarget(c, compositeResolver) {
+			return
+		}
 		if getGroupPlatform(c) != service.PlatformGrok {
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 			c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Realtime API is not supported for this platform"}})
@@ -561,6 +567,36 @@ func RegisterGatewayRoutes(
 		antigravityV1Beta.POST("/models/*modelAction", h.Gateway.GeminiV1BetaModels)
 	}
 
+}
+
+// resolveCompositeRealtimeTarget resolves the model carried in the WebSocket
+// query string. The normal composite middleware cannot inspect GET bodies, so
+// realtime needs this query-based path before the platform gate runs.
+func resolveCompositeRealtimeTarget(c *gin.Context, resolver *service.CompositeRouteResolver) bool {
+	if c == nil || c.Request == nil {
+		return true
+	}
+	apiKey, ok := middleware.GetAPIKeyFromContext(c)
+	if !ok || apiKey == nil || apiKey.Group == nil || apiKey.Group.Platform != service.PlatformComposite {
+		return true
+	}
+	model := strings.TrimSpace(c.Query("model"))
+	if model == "" {
+		model = "grok-voice-latest"
+	}
+	if resolver == nil {
+		resolver = service.NewCompositeRouteResolver(nil)
+	}
+	decision, err := resolver.Resolve(c.Request.Context(), apiKey.Group.ID, model, service.CompositeRouteEndpointAny)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{"type": "server_error", "message": "Failed to resolve composite realtime model route"}})
+		c.Abort()
+		return false
+	}
+	if decision.Matched {
+		c.Request = c.Request.WithContext(service.WithCompositeRouteDecision(c.Request.Context(), decision))
+	}
+	return true
 }
 
 func dispatchCodexModelsGateway(c *gin.Context, openAIHandler, generatedHandler gin.HandlerFunc) {

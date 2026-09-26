@@ -205,7 +205,7 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - sub2api-network
+      - inferno-local-network
     healthcheck:
       test:
         [
@@ -230,7 +230,7 @@ services:
   # ===========================================================================
   postgres:
     image: postgres:18-alpine
-    container_name: sub2api-postgres
+    container_name: inferno-local-postgres
     restart: unless-stopped
     ulimits:
       nofile:
@@ -257,7 +257,7 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-sub2api}
       - TZ=${TZ:-Asia/Shanghai}
     networks:
-      - sub2api-network
+      - inferno-local-network
     healthcheck:
       test:
         [
@@ -269,14 +269,14 @@ services:
       retries: 18
       start_period: 60s
     # 注意：不暴露端口到宿主机，应用通过内部网络连接
-    # 如需调试，可临时添加：ports: ["127.0.0.1:5433:5432"]
+    # Local host mapping, when needed: ports: ["127.0.0.1:15432:5432"]
 
   # ===========================================================================
   # Redis Cache
   # ===========================================================================
   redis:
     image: redis:8-alpine
-    container_name: sub2api-redis
+    container_name: inferno-local-redis
     restart: unless-stopped
     ulimits:
       nofile:
@@ -300,7 +300,7 @@ services:
       # REDISCLI_AUTH is used by redis-cli for authentication (safer than -a flag)
       - REDISCLI_AUTH=${REDIS_PASSWORD:-}
     networks:
-      - sub2api-network
+      - inferno-local-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -324,5 +324,5 @@ volumes:
 # Networks
 # =============================================================================
 networks:
-  sub2api-network:
+  inferno-local-network:
     driver: bridge

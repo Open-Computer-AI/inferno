@@ -422,7 +422,7 @@ func TestProxyLiveSidebandForwardsTextAndBinary(t *testing.T) {
 	require.Equal(t, coderws.MessageBinary, messageType)
 	require.Equal(t, []byte{4, 5, 6}, payload)
 
-	require.Equal(t, "wss://chatgpt.com/backend-api/codex/call_proxy", dialer.url)
+	require.Equal(t, "wss://api.openai.com/v1/live/call_proxy", dialer.url)
 	require.Equal(t, "Bearer test-access-token", dialer.headers.Get("Authorization"))
 	require.Equal(t, "acct_test", dialer.headers.Get("Chatgpt-Account-Id"))
 	require.Equal(t, `{"v":1,"s":0,"t":"v1.sideband"}`, dialer.headers.Get(liveAttestationHeader))
@@ -451,6 +451,35 @@ func TestLiveSessionEndedTreatsLeaseLossAsTerminal(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.want, liveSessionEnded(tc.err))
 		})
+	}
+}
+
+// TestLiveSessionEndedTreatsExpiredSidebandHandshakeAsTerminal locks the
+// observer contract for the upstream statuses returned after a Live session
+// has expired. These must not enter the retry loop.
+func TestLiveSessionEndedTreatsExpiredSidebandHandshakeAsTerminal(t *testing.T) {
+	for _, status := range []int{
+		http.StatusUnauthorized,
+		http.StatusForbidden,
+		http.StatusNotFound,
+		http.StatusGone,
+	} {
+		err := fmt.Errorf("dial live sideband (status %d): %w", status, ErrLiveCallNotFound)
+		require.True(t, liveSessionEnded(err))
+	}
+}
+
+func TestLiveSidebandHandshakeIsTerminalOnlyForNonRecoverableStatuses(t *testing.T) {
+	for _, status := range []int{
+		http.StatusUnauthorized,
+		http.StatusForbidden,
+		http.StatusNotFound,
+		http.StatusGone,
+	} {
+		require.True(t, liveSidebandHandshakeIsTerminal(status), "status=%d", status)
+	}
+	for _, status := range []int{http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout} {
+		require.False(t, liveSidebandHandshakeIsTerminal(status), "status=%d", status)
 	}
 }
 

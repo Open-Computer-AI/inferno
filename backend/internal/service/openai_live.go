@@ -37,7 +37,11 @@ var liveObserverStoreRetryInterval = time.Second
 
 var (
 	chatGPTLiveCallsURL        = "https://chatgpt.com/backend-api/codex/realtime/calls?intent=quicksilver&architecture=avas"
-	chatGPTLiveSidebandBaseURL = "wss://chatgpt.com/backend-api/codex"
+	// The Live SDP offer is created through ChatGPT's Codex endpoint, but the
+	// authenticated server-side sideband is served by the OpenAI Live endpoint.
+	// Keeping these origins separate is required: the former accepts the call
+	// creation POST, while the latter owns the WebSocket for {call_id}.
+	openAILiveSidebandBaseURL = "wss://api.openai.com/v1/live"
 )
 
 type liveFrameConn interface {
@@ -147,6 +151,10 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 	// Live 按通话时长计费，不属于 token 利润门的语义范围：显式豁免，避免
 	// 防御性装门按文本 D 过滤 Live 账号池且门与计费时刻不同源。
 	ctx = WithOpenAIProfitControlSuppressed(ctx)
+	model := strings.TrimSpace(gjson.GetBytes(request.Session, "model").String())
+	if model == "" {
+		model = "gpt-live"
+	}
 	var lastErr error
 	for attempt := 0; attempt <= 3; attempt++ {
 		selection, _, selectErr := s.SelectAccountWithSchedulerForCapability(
@@ -199,6 +207,40 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 		selection.ReleaseFunc()
 		if createErr != nil {
 			s.releaseLiveLease(account.ID, identity.UserID, identity.APIKeyID, leaseID)
+			// Live creation uses the same account scheduler as the other OpenAI
+			// paths, so apply the established health/rate-limit policy here too.
+			// Without this call a Live 429/403 only entered the request-local
+			// failover loop and the same unhealthy account was eligible again on
+			// the next call.
+			if upstreamErr, ok := createErr.(*UpstreamFailoverError); ok {
+				if account.Platform == PlatformOpenAI &&
+					(upstreamErr.StatusCode == http.StatusUnauthorized || upstreamErr.StatusCode == http.StatusForbidden) {
+					// Live sideband/account auth failures are terminal for this
+					// account even when Cloudflare returns plain text instead of a
+					// structured OpenAI error body. Park it before the next call;
+					// persist the short quarantine so another API worker does not
+					// immediately select the same account from the scheduler cache.
+					s.BlockAccountScheduling(account, time.Time{}, "openai_live_access")
+					if s.accountRepo != nil {
+						stateCtx, cancel := openAIAccountStateContext(ctx)
+						_ = s.accountRepo.SetTempUnschedulable(
+							stateCtx,
+							account.ID,
+							time.Now().Add(10*time.Minute),
+							"openai_live_access",
+						)
+						cancel()
+					}
+				}
+				s.handleOpenAIAccountUpstreamError(
+					ctx,
+					account,
+					upstreamErr.StatusCode,
+					upstreamErr.ResponseHeaders,
+					upstreamErr.ResponseBody,
+					model,
+				)
+			}
 			if !s.shouldFailoverLiveCreateError(createErr) {
 				return nil, createErr
 			}
@@ -208,10 +250,6 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 		}
 
 		now := time.Now()
-		model := strings.TrimSpace(gjson.GetBytes(request.Session, "model").String())
-		if model == "" {
-			model = "gpt-live"
-		}
 		record := &LiveCallRecord{
 			CallID:                created.CallID,
 			CallHash:              hashLiveCallID(created.CallID),
@@ -229,6 +267,8 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 			IPAddress:             identity.IPAddress,
 			InboundEndpoint:       identity.InboundEndpoint,
 			AttestationCiphertext: attestationCiphertext,
+			UpstreamSessionID:     created.UpstreamSessionID,
+			UpstreamThreadID:      created.UpstreamThreadID,
 		}
 		mappingTTL := s.liveMaxSessionDuration() + 5*time.Minute
 		if saveErr := store.SaveLiveCall(ctx, record, mappingTTL); saveErr != nil {
@@ -302,7 +342,7 @@ func (s *OpenAIGatewayService) createUpstreamLiveCall(
 	upstreamReq.Header.Set("Content-Type", "application/json")
 	upstreamReq.Header.Set("Accept", "application/sdp")
 	upstreamReq.Header.Set(liveAttestationHeader, attestation)
-	applyLiveUpstreamIdentityHeaders(upstreamReq.Header)
+	upstreamSessionID, upstreamThreadID := applyLiveUpstreamIdentityHeaders(upstreamReq.Header, "", "")
 
 	resp, err := s.doOpenAIUpstream(upstreamReq, resolveAccountProxyURL(account), account)
 	if err != nil {
@@ -330,9 +370,11 @@ func (s *OpenAIGatewayService) createUpstreamLiveCall(
 		return nil, err
 	}
 	return &LiveCallCreated{
-		SDP:      responseBody,
-		CallID:   callID,
-		Location: resp.Header.Get("Location"),
+		SDP:               responseBody,
+		CallID:            callID,
+		Location:          resp.Header.Get("Location"),
+		UpstreamSessionID: upstreamSessionID,
+		UpstreamThreadID:  upstreamThreadID,
 	}, nil
 }
 
@@ -399,18 +441,27 @@ func liveCallIDFromLocation(location string) (string, error) {
 	return callID, nil
 }
 
-func applyLiveUpstreamIdentityHeaders(headers http.Header) {
+func applyLiveUpstreamIdentityHeaders(headers http.Header, sessionID, threadID string) (string, string) {
 	headers.Set("OpenAI-Alpha", "quicksilver=v2")
 	ensureCodexIdentityHeaders(headers)
 	enforceCodexIdentityHeaders(headers)
-	if strings.TrimSpace(headers.Get("session-id")) == "" {
-		headers.Set("session-id", uuid.NewString())
+	if strings.TrimSpace(sessionID) == "" {
+		sessionID = strings.TrimSpace(headers.Get("session-id"))
 	}
-	if strings.TrimSpace(headers.Get("thread-id")) == "" {
-		headers.Set("thread-id", uuid.NewString())
+	if sessionID == "" {
+		sessionID = uuid.NewString()
 	}
+	if strings.TrimSpace(threadID) == "" {
+		threadID = strings.TrimSpace(headers.Get("thread-id"))
+	}
+	if threadID == "" {
+		threadID = uuid.NewString()
+	}
+	headers.Set("session-id", sessionID)
+	headers.Set("thread-id", threadID)
 	// Realtime/Live 不使用 Responses 的实验头。
 	headers.Del("OpenAI-Beta")
+	return sessionID, threadID
 }
 
 func (s *OpenAIGatewayService) liveSidebandHeaders(
@@ -434,7 +485,10 @@ func (s *OpenAIGatewayService) liveSidebandHeaders(
 		return nil, err
 	}
 	headers.Set(liveAttestationHeader, attestation)
-	applyLiveUpstreamIdentityHeaders(headers)
+	// The direct OpenAI Live sideband is its own protocol leg. Match the
+	// validated LiveKit/Inferno candidate: keep the creation identity in the
+	// local record for diagnostics, but generate a fresh pair for this socket.
+	applyLiveUpstreamIdentityHeaders(headers, "", "")
 	return headers, nil
 }
 
@@ -450,9 +504,23 @@ func (s *OpenAIGatewayService) dialLiveSideband(ctx context.Context, record *Liv
 	if err != nil {
 		return nil, err
 	}
-	target := strings.TrimRight(chatGPTLiveSidebandBaseURL, "/") + "/" + url.PathEscape(record.CallID)
-	conn, status, _, err := s.getOpenAIWSPassthroughDialer().Dial(ctx, target, headers, resolveAccountProxyURL(account))
+	target := strings.TrimRight(openAILiveSidebandBaseURL, "/") + "/" + url.PathEscape(record.CallID)
+	conn, status, responseHeaders, err := s.getOpenAIWSPassthroughDialer().Dial(ctx, target, headers, resolveAccountProxyURL(account))
 	if err != nil {
+		var handshakeErr *openAIWSHandshakeError
+		var responseBody []byte
+		if errors.As(err, &handshakeErr) && handshakeErr != nil {
+			responseBody = handshakeErr.Body
+		}
+		logLiveUpstreamFailure(ctx, account.ID, status, responseHeaders, responseBody)
+		// A sideband handshake is bound to the upstream call and its account
+		// identity. Authentication/edge rejection (401/403) and a missing or
+		// expired call (404/410) cannot recover by redialing the same call ID.
+		// Return the terminal lifecycle sentinel so the proxy and observer close
+		// the Dograh session instead of retrying stale audio until ExpiresAt.
+		if liveSidebandHandshakeIsTerminal(status) {
+			return nil, fmt.Errorf("dial live sideband (status %d): %w", status, ErrLiveCallNotFound)
+		}
 		return nil, fmt.Errorf("dial live sideband (status %d): %w", status, err)
 	}
 	raw, ok := conn.(liveFrameConn)
@@ -461,6 +529,15 @@ func (s *OpenAIGatewayService) dialLiveSideband(ctx context.Context, record *Liv
 		return nil, errors.New("live sideband transport does not support raw frames")
 	}
 	return raw, nil
+}
+
+func liveSidebandHandshakeIsTerminal(status int) bool {
+	switch status {
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusGone:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *OpenAIGatewayService) GetLiveCallForIdentity(
@@ -659,6 +736,15 @@ func (s *OpenAIGatewayService) observeLiveCall(record *LiveCallRecord) {
 		}
 		upstream, dialErr := s.dialLiveSideband(context.Background(), record)
 		if dialErr != nil {
+			// A 404/410 from the upstream sideband is wrapped as
+			// ErrLiveCallNotFound by dialLiveSideband.  The upstream call is
+			// already gone; redialing the same call ID only creates a noisy
+			// retry loop and keeps the lease alive until expiry.  Finalize it
+			// immediately so the usage record and concurrency lease settle.
+			if liveSessionEnded(dialErr) {
+				s.finalizeLiveCall(record)
+				return
+			}
 			if !s.waitForLiveObserverRetry(record) {
 				return
 			}

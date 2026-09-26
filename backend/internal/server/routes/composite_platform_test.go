@@ -205,6 +205,36 @@ func TestCompositeCodexControlPathsUseResponsesRoutes(t *testing.T) {
 	}
 }
 
+func TestResolveCompositeRealtimeTargetUsesQueryModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	groupID := int64(7)
+	resolver := service.NewCompositeRouteResolver(compositeRouteRepoStub{
+		routes: []service.CompositeModelRoute{{
+			GroupID:        groupID,
+			PublicModel:    "grok-voice",
+			TargetPlatform: service.PlatformGrok,
+			UpstreamModel:  "grok-voice-latest",
+			Endpoint:       service.CompositeRouteEndpointAny,
+			Priority:       100,
+			Enabled:        true,
+		}},
+	})
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = httptest.NewRequest(http.MethodGet, "/v1/realtime?model=grok-voice", nil)
+	context.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{
+		GroupID: &groupID,
+		Group:   &service.Group{ID: groupID, Platform: service.PlatformComposite},
+	})
+
+	require.True(t, resolveCompositeRealtimeTarget(context, resolver))
+	platform, ok := service.ResolvedTargetPlatformFromContext(context.Request.Context())
+	require.True(t, ok)
+	require.Equal(t, service.PlatformGrok, platform)
+	upstreamModel, ok := service.ResolvedUpstreamModelFromContext(context.Request.Context())
+	require.True(t, ok)
+	require.Equal(t, "grok-voice-latest", upstreamModel)
+}
+
 func TestCompositeTargetPlatformMiddlewareUsesExplicitRouteForMultipartImages(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

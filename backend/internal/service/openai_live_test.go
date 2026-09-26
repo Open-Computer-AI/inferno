@@ -137,9 +137,40 @@ func TestCreateUpstreamLiveCallPreservesSession(t *testing.T) {
 	require.Equal(t, `{"v":1,"s":0,"t":"v1.test"}`, upstream.request.Header.Get(liveAttestationHeader))
 	require.NotEmpty(t, upstream.request.Header.Get("Session-Id"))
 	require.NotEmpty(t, upstream.request.Header.Get("Thread-Id"))
+	require.Equal(t, upstream.request.Header.Get("Session-Id"), created.UpstreamSessionID)
+	require.Equal(t, upstream.request.Header.Get("Thread-Id"), created.UpstreamThreadID)
 	require.Empty(t, upstream.request.Header.Get("OpenAI-Beta"))
 	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(upstream.request.Context()))
 	require.True(t, HTTPUpstreamRedirectsDisabled(upstream.request.Context()))
+}
+
+func TestLiveSidebandHeadersUseIndependentDirectIdentity(t *testing.T) {
+	account := &Account{
+		ID:       9,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":       "test-access-token",
+			"chatgpt_account_id": "acct_test",
+		},
+	}
+	cipher := newLiveAttestationCipher(&config.Config{JWT: config.JWTConfig{Secret: "live-header-reuse-test"}})
+	ciphertext, err := cipher.Encrypt(`{"v":1,"s":0,"t":"v1.sideband"}`)
+	require.NoError(t, err)
+	service := &OpenAIGatewayService{
+		accountRepo:           &liveTestAccountRepo{account: account},
+		liveAttestationCipher: cipher,
+	}
+	headers, err := service.liveSidebandHeaders(context.Background(), account, &LiveCallRecord{
+		AttestationCiphertext: ciphertext,
+		UpstreamSessionID:     "session-from-create",
+		UpstreamThreadID:      "thread-from-create",
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, headers.Get("Session-Id"))
+	require.NotEmpty(t, headers.Get("Thread-Id"))
+	require.NotEqual(t, "session-from-create", headers.Get("Session-Id"))
+	require.NotEqual(t, "thread-from-create", headers.Get("Thread-Id"))
 }
 
 func TestLiveAttestationCipherRoundTripAndRejectsOtherInstanceKey(t *testing.T) {

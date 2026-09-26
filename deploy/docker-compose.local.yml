@@ -211,7 +211,7 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - inferno-network
+      - inferno-local-network
     healthcheck:
       test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8080/health"]
       interval: 30s
@@ -224,7 +224,7 @@ services:
   # ===========================================================================
   postgres:
     image: postgres:18-alpine
-    container_name: sub2api-postgres
+    container_name: inferno-local-postgres
     restart: unless-stopped
     ulimits:
       nofile:
@@ -233,6 +233,8 @@ services:
     volumes:
       # Local directory mapping for easy migration
       - ./postgres_data:/var/lib/postgresql/data:Z
+    ports:
+      - "127.0.0.1:15432:5432"
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-sub2api}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
@@ -240,7 +242,7 @@ services:
       - PGDATA=/var/lib/postgresql/data
       - TZ=${TZ:-Asia/Shanghai}
     networks:
-      - inferno-network
+      - inferno-local-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sub2api} -d ${POSTGRES_DB:-sub2api}"]
       interval: 10s
@@ -248,14 +250,13 @@ services:
       retries: 5
       start_period: 10s
     # 注意：不暴露端口到宿主机，应用通过内部网络连接
-    # 如需调试，可临时添加：ports: ["127.0.0.1:5433:5432"]
 
   # ===========================================================================
   # Redis Cache
   # ===========================================================================
   redis:
     image: redis:8-alpine
-    container_name: sub2api-redis
+    container_name: inferno-local-redis
     restart: unless-stopped
     ulimits:
       nofile:
@@ -264,6 +265,8 @@ services:
     volumes:
       # Local directory mapping for easy migration
       - ./redis_data:/data:Z
+    ports:
+      - "127.0.0.1:16379:6379"
     # The command is one quoted script for the inner `sh -c`. Compose keeps
     # the newlines inside the quoted string, so every line needs a trailing
     # `\` — without it, `redis-server` on the first line runs with no flags
@@ -280,7 +283,7 @@ services:
       # REDISCLI_AUTH is used by redis-cli for authentication (safer than -a flag)
       - REDISCLI_AUTH=${REDIS_PASSWORD:-}
     networks:
-      - inferno-network
+      - inferno-local-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -292,5 +295,5 @@ services:
 # Networks
 # =============================================================================
 networks:
-  inferno-network:
+  inferno-local-network:
     driver: bridge

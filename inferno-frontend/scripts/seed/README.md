@@ -9,8 +9,8 @@ more than once.
 ```bash
 cd inferno-frontend/scripts/seed
 for f in seed-dashboard seed-year seed-models seed-ops seed-ops-dense seed-alert-events seed-users; do
-  docker cp $f.sql sub2api-postgres:/tmp/
-  docker exec sub2api-postgres psql -U sub2api -d sub2api -q -f /tmp/$f.sql
+  docker cp $f.sql inferno-local-postgres:/tmp/
+  docker exec inferno-local-postgres psql -U sub2api -d sub2api -q -f /tmp/$f.sql
 done
 ```
 

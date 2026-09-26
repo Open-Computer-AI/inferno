@@ -27,7 +27,7 @@ func (h *OpenAIGatewayHandler) GrokRealtime(c *gin.Context) {
 		return
 	}
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
-	if !ok || apiKey.Group == nil || apiKey.Group.Platform != service.PlatformGrok {
+	if !ok || apiKey.Group == nil || effectiveAPIKeyPlatform(c, apiKey) != service.PlatformGrok {
 		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Realtime API is not supported for this platform")
 		return
 	}
