@@ -1487,25 +1487,28 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				lastTurnReplayInput, _ = stripOpenAIInvalidEncryptedContentFromReplayItems(lastTurnReplayInput, invalidDigests)
 			}
 		}
-		currentPreviousResponseID := openAIWSPayloadStringFromRaw(currentPayload, "previous_response_id")
-		expectedPrev := strings.TrimSpace(lastTurnResponseID)
-		boundaryPayload, contextWindowBoundary, boundaryErr := normalizeOpenAIWSContextWindowBoundary(currentPayload, lastTurnWindowID)
+		boundaryPayload, contextWindowBoundary, boundaryErr := normalizeOpenAIWSContextWindowBoundary(
+			currentPayload,
+			lastTurnWindowID,
+		)
 		if boundaryErr != nil {
 			return fmt.Errorf("normalize Codex websocket context-window boundary: %w", boundaryErr)
 		}
 		if contextWindowBoundary.Changed {
 			currentPayload = boundaryPayload
 			currentPayloadBytes = len(boundaryPayload)
-			currentPreviousResponseID = openAIWSPayloadStringFromRaw(currentPayload, "previous_response_id")
-			expectedPrev = ""
 			logOpenAIWSModeInfo(
-				"ingress_ws_context_window_changed account_id=%d turn=%d previous_window_id=%s current_window_id=%s previous_response_id_removed=%v",
-				account.ID,
-				turn,
+				"ingress_ws_context_window_changed account_id=%d turn=%d conn_id=%s action=break_previous_response_chain previous_window_id=%s current_window_id=%s previous_response_id_removed=%v",
+				account.ID, turn, truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
 				truncateOpenAIWSLogValue(lastTurnWindowID, openAIWSIDValueMaxLen),
 				truncateOpenAIWSLogValue(contextWindowBoundary.WindowID, openAIWSIDValueMaxLen),
 				contextWindowBoundary.PreviousResponseIDRemoved,
 			)
+		}
+		currentPreviousResponseID := openAIWSPayloadStringFromRaw(currentPayload, "previous_response_id")
+		expectedPrev := strings.TrimSpace(lastTurnResponseID)
+		if contextWindowBoundary.Changed {
+			expectedPrev = ""
 		}
 		toolSignals := ToolContinuationSignals{
 			HasFunctionCallOutput: openAIWSRawPayloadHasToolCallOutput(currentPayload),
