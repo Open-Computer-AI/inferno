@@ -1,51 +1,49 @@
 # Inferno selective upstream reconciliation — live source of truth
 
-Last refreshed: 2026-09-25 09:23 UTC. This file is the active status, disposition,
-and verification ledger for the selective upstream reconciliation. Historical
+Last refreshed: 2026-09-27. This file is the active status, disposition, and
+verification ledger for the selective upstream reconciliation. Historical
 inventories and run logs are archived under `archive/2026-09-23/`; they are
 evidence, not active queues. `upstream-watch.json` is only a watcher watermark.
+The canonical development and publication ref is GitHub `main`. The separate
+GitHub `inferno` ref is a legacy snapshot and is not required to match `main`.
 
 ## Exact source snapshot
 
 | Item | Verified value |
 |---|---|
-| Candidate checkout | `/Users/saksham/OpenComputerV2/inferno` |
-| Candidate working branch | `inferno` |
-| Candidate implementation commit | `c219bebb4522b774f8f08e5056940d9586988a22` |
-| Candidate parent checkpoint | `b3bf590a26e5484026a13abf6c8ccee0069e744f` |
-| GitHub fork main SHA | `3dd60d21d05e4613a3ee4003e0ec2e75f35f99ee` |
-| GitHub fork inferno SHA | `3dd60d21d05e4613a3ee4003e0ec2e75f35f99ee` |
-| Protected baseline checkout | `/Users/saksham/OpenComputerV2/inferno-local` |
-| Protected baseline HEAD | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
+| Canonical repository origin | `https://github.com/Open-Computer-AI/inferno.git` |
+| Candidate working branch | `main` |
+| Candidate implementation commit | `e4beef144e924d0b21a34fa66dc349397cc862a1` |
+| Protected baseline commit | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
+| GitHub legacy inferno SHA | `3dd60d21d05e4613a3ee4003e0ec2e75f35f99ee` |
 | Local upstream/main SHA | `a3eb7ef302961cba716dc78b39b93b60c467db0e` |
 | GitHub upstream/main SHA | `a3eb7ef302961cba716dc78b39b93b60c467db0e` |
 | Merge base | `5097b31457e6dc9f49e5f5c9c72b925ce79543b3` |
 
-The GitHub fork's `main` and `inferno` branches both point to the reconciled
-candidate snapshot above. The local `main` branch was safely fast-forwarded from
-its stale August upstream-history tip to that same snapshot; it had no unique
-commits. The local `upstream/main` ref and live Sub2API `upstream/main` matched
-at refresh. This 2026-09-25 maintenance changes only the reconciliation ledger
-and its verifier; it does not change candidate application code. The candidate
-incorporates upstream's `0.2.8` version marker and selectively reconciles
-behavior through `a3eb7ef3`; it is not a wholesale fork replacement.
+The Mac's two reconciliation-ledger/verifier commits and GitHub `main`'s
+channel-monitor privacy UI and historical attestation audit are now joined by a
+normal merge at the implementation commit above. GitHub `main` is the only
+canonical source ref. The legacy `inferno` branch remains at `3dd60d21`; it was
+not moved because it may have external consumers. The merge does not rewrite or
+replace history. The root `.worktrees/` directory is ignored as local workspace
+state, not committed as source.
 
-The former `inferno-port-20260922` checkout still exists on its historical
-`port/inferno-selective-upstream-20260922` branch at the verified candidate
-snapshot. It is a duplicate checkout, not the active source of truth; it was
-left untouched. The protected `inferno-local` HEAD still matches the recorded
-baseline. Its working tree had local modifications/artifacts during this
-refresh; their contents were not inspected and they were not changed.
-Cleanliness is not a precondition for verifying the protected HEAD.
+At refresh, upstream `main` was `a3eb7ef3` (Sub2API `0.2.8`), and the standard
+`frontend/` mirror still exactly matches that tree. The protected baseline
+commit remains an ancestor of the candidate. The separate local
+`/Users/saksham/OpenComputerV2/inferno-local` checkout is not this repository or
+the active candidate; it remains at the protected commit with local edits and
+artifacts preserved. Its absolute path is intentionally not required by the
+portable verifier.
 
-Run `./scripts/verify-inferno-reconciliation.sh` from this checkout to check the
-candidate path and working branch, that the implementation commit remains an
-ancestor and no source files changed after it, the protected baseline HEAD, both
-live GitHub fork refs, local and live upstream refs, merge base, clean candidate
-status, and the nine closed backend rows below. The verifier deliberately does
-not require the separate protected baseline working tree to be clean. It checks
-freshness and repository state; it does not establish runtime behavior or future
-upstream freshness.
+Run `./scripts/verify-inferno-reconciliation.sh` from any clean clone of this
+repository on branch `main`. It checks repository identity, branch, baseline
+commit ancestry, the implementation snapshot, live GitHub `main` and legacy
+`inferno` refs, local/live upstream refs and merge base, standard-frontend
+parity, clean tracked/untracked status, and the nine closed backend rows below.
+It does not require the separate protected checkout to exist. The verifier
+checks repository freshness and state; it does not establish runtime behavior
+or guarantee future upstream freshness.
 
 ## Current disposition
 
@@ -54,6 +52,8 @@ upstream freshness.
 | Backend upstream behavior | **Reconciled through `a3eb7ef3`; no omitted upstream-only backend path found.** | Backend review covered 3,100 upstream backend paths and 3,207 candidate paths: 2,985 byte-identical shared paths, 115 locally adapted shared paths, and 107 Inferno-specific paths. OAuth, backing-key routing, Razorpay/billing, refresh-token protections, GPT Live sideband/session identity, and local settings remain represented. The only change after `fd80b08c` was the version marker, now `0.2.8`. |
 | Standard `frontend/` mirror | **Matches upstream/main and is tracked in the implementation commit.** | `git diff --quiet upstream/main -- frontend` passed. The three OpenCode Go files previously present but untracked are included in `c219bebb`. |
 | June `inferno-frontend/` | **Current-tip comparison complete; Inferno design retained.** | Parity audit: 0 missing files; 1,049 upstream test cases examined across 148 touched specs; 22 remaining test-count shortfalls. Every shortfall was classified: two actual behavior mismatches were fixed with focused tests; the remaining 20 are test-count-only, consolidated/relocated coverage, or intentional design differences. No full June UI replacement was performed. |
+| June channel-monitor privacy setting | **Present on canonical `main`.** | The upstream ranking-privacy option is implemented in the June admin settings UI, English/Chinese locales, and focused settings tests. This was merged from GitHub `main` during the 2026-09-27 reconciliation. |
+| Live-attestation audit | **Historical documentation, not a runtime check.** | `docs/superpowers/analysis/2026-09-11-live-attestation-audit.md` records the previous source audit; it does not attest the current host or prove a Live call works. |
 | June user-status toggle | **Fixed.** | When the list is idle, apply the API-returned status and `updated_at` in place. If a list load is active, abort/refetch so stale data cannot overwrite the mutation. Focused tests cover both paths. |
 | June channel-status timer | **Fixed.** | Reload completion now calls `autoRefresh.resetCountdown()`, preserving the selected interval instead of reverting to the default. Focused test covers a 120-second selection. |
 | Local app runtime smoke | **Not run.** | Read-only inspection found `127.0.0.1:3000` belongs to `athena-editor-reference-layout`, not Inferno; nothing was listening on `:8080`. Existing `inferno-local-postgres` and Redis containers are persistent local state and were not used, restarted, or altered. The login/OAuth-refresh/key/account UI/OpenAI/Anthropic/GPT Live sideband smoke therefore remains unverified against a full isolated app stack. |
@@ -126,6 +126,22 @@ Both Vite builds emit existing advisories (stale Browserslist data, dynamic/stat
 import chunking, and large chunks); builds exit successfully. Full June lint is
 green, so the older recorded 10-error/1-warning result is stale and no longer
 describes this candidate.
+
+## 2026-09-27 post-merge verification
+
+The GitHub-`main` merge was checked after preserving both sides of the divergence:
+
+- June frontend full suite: 362 files / 2,573 tests — pass, including the channel
+  monitor privacy-setting tests.
+- `pnpm run lint:check` — pass.
+- `pnpm run typecheck` — pass.
+- `pnpm run build` — pass. It emitted the existing stale-Browserslist,
+  mixed-import, and large-chunk advisories. Vite regenerated the ignored embedded
+  bundle under `backend/internal/web/dist`; no app process, container, database,
+  or deployment was touched.
+- `bash -n scripts/verify-inferno-reconciliation.sh` and `git diff --check` — pass.
+
+These are build/test checks, not the separate isolated-runtime smoke listed above.
 
 ## Remaining limitation
 

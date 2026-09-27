@@ -25,12 +25,6 @@ ledger_value() {
   ' "$LEDGER"
 }
 
-BASELINE_DIR="$(ledger_value 'Protected baseline checkout')"
-if [[ ! -d "$BASELINE_DIR/.git" && ! -f "$BASELINE_DIR/.git" ]]; then
-  echo "protected baseline checkout not found: $BASELINE_DIR" >&2
-  exit 2
-fi
-
 fail_if_different() {
   local label="$1" expected="$2" actual="$3" shown_expected shown_actual
   shown_expected="$expected"
@@ -44,30 +38,47 @@ fail_if_different() {
   printf 'PASS: %s = %s\n' "$label" "$actual"
 }
 
-candidate_checkout="$(git -C "$ROOT" rev-parse --show-toplevel)"
+canonical_origin="$(git -C "$ROOT" remote get-url origin 2>/dev/null || true)"
 candidate_branch="$(git -C "$ROOT" branch --show-current)"
 local_main="$(git -C "$ROOT" rev-parse --verify refs/heads/main)"
 implementation_commit="$(ledger_value 'Candidate implementation commit')"
-baseline_head="$(git -C "$BASELINE_DIR" rev-parse HEAD)"
+protected_baseline="$(ledger_value 'Protected baseline commit')"
 upstream_local="$(git -C "$ROOT" rev-parse --verify refs/remotes/upstream/main 2>/dev/null || true)"
 fork_main_local="$(git -C "$ROOT" rev-parse --verify refs/remotes/origin/main 2>/dev/null || true)"
-fork_inferno_local="$(git -C "$ROOT" rev-parse --verify refs/remotes/origin/inferno 2>/dev/null || true)"
 fork_main_remote="$(git -C "$ROOT" ls-remote origin refs/heads/main | awk 'NR == 1 { print $1 }')"
-fork_inferno_remote="$(git -C "$ROOT" ls-remote origin refs/heads/inferno | awk 'NR == 1 { print $1 }')"
+legacy_inferno_remote="$(git -C "$ROOT" ls-remote origin refs/heads/inferno | awk 'NR == 1 { print $1 }')"
 upstream_remote="$(git -C "$ROOT" ls-remote upstream refs/heads/main | awk 'NR == 1 { print $1 }')"
 merge_base="$(git -C "$ROOT" merge-base "$implementation_commit" "$upstream_remote" 2>/dev/null || true)"
 
-fail_if_different "candidate checkout" "$(ledger_value 'Candidate checkout')" "$candidate_checkout"
+fail_if_different "canonical repository origin" "$(ledger_value 'Canonical repository origin')" "$canonical_origin"
 fail_if_different "candidate working branch" "$(ledger_value 'Candidate working branch')" "$candidate_branch"
-fail_if_different "protected baseline HEAD" "$(ledger_value 'Protected baseline HEAD')" "$baseline_head"
+fail_if_different "GitHub legacy inferno SHA" "$(ledger_value 'GitHub legacy inferno SHA')" "$legacy_inferno_remote"
 fail_if_different "merge base" "$(ledger_value 'Merge base')" "$merge_base"
-fail_if_different "GitHub fork main SHA" "$(ledger_value 'GitHub fork main SHA')" "$fork_main_remote"
-fail_if_different "GitHub fork inferno SHA" "$(ledger_value 'GitHub fork inferno SHA')" "$fork_inferno_remote"
-fail_if_different "GitHub main and inferno refs agree" "$fork_main_remote" "$fork_inferno_remote"
 fail_if_different "local origin/main" "$fork_main_remote" "$fork_main_local"
-fail_if_different "local origin/inferno" "$fork_inferno_remote" "$fork_inferno_local"
 fail_if_different "local upstream/main" "$(ledger_value 'Local upstream/main SHA')" "$upstream_local"
 fail_if_different "live upstream/main" "$(ledger_value 'GitHub upstream/main SHA')" "$upstream_remote"
+
+if [[ "$candidate_branch" != "main" || "$local_main" != "$(git -C "$ROOT" rev-parse HEAD)" ]]; then
+  echo "STALE: run this verifier from the canonical main checkout" >&2
+  exit 1
+fi
+printf 'PASS: HEAD is the canonical local main branch\n'
+
+if ! git -C "$ROOT" cat-file -e "$protected_baseline^{commit}" 2>/dev/null; then
+  printf 'STALE: protected baseline commit is absent: %s\n' "$protected_baseline" >&2
+  exit 1
+fi
+if ! git -C "$ROOT" merge-base --is-ancestor "$protected_baseline" "$implementation_commit"; then
+  printf 'STALE: protected baseline %s is not an ancestor of the implementation snapshot\n' "$protected_baseline" >&2
+  exit 1
+fi
+printf 'PASS: protected baseline commit exists and remains an implementation ancestor\n'
+
+if ! git -C "$ROOT" merge-base --is-ancestor "$implementation_commit" "$fork_main_remote"; then
+  printf 'STALE: live GitHub main does not contain the implementation snapshot %s\n' "$implementation_commit" >&2
+  exit 1
+fi
+printf 'PASS: live GitHub main contains the implementation snapshot\n'
 
 if ! git -C "$ROOT" merge-base --is-ancestor "$implementation_commit" HEAD; then
   printf 'STALE: candidate implementation %s is not an ancestor of HEAD\n' "$implementation_commit" >&2
@@ -76,7 +87,8 @@ fi
 printf 'PASS: candidate implementation is an ancestor of HEAD\n'
 
 fork_source_changes="$(git -C "$ROOT" diff --name-only "$implementation_commit" "$fork_main_remote" -- . \
-  ':(exclude)docs/superpowers/analysis/RECONCILIATION.md')"
+  ':(exclude)docs/superpowers/analysis/RECONCILIATION.md' \
+  ':(exclude)scripts/verify-inferno-reconciliation.sh')"
 if [[ -n "$fork_source_changes" ]]; then
   printf 'STALE: GitHub fork main differs from the implementation snapshot outside the ledger:\n%s\n' "$fork_source_changes" >&2
   exit 1
@@ -110,13 +122,6 @@ if [[ -n "$candidate_status" ]]; then
   exit 1
 fi
 printf 'PASS: candidate tracked and non-ignored untracked Git status is clean\n'
-
-baseline_status="$(git -C "$BASELINE_DIR" status --porcelain=v1 --untracked-files=all)"
-if [[ -n "$baseline_status" ]]; then
-  echo "WARN: protected baseline has local working-tree changes/artifacts; preserved and not used as candidate state"
-else
-  echo "PASS: protected baseline working tree is clean"
-fi
 
 closed_rows="$(awk '
   /^### Closed former unresolved backend rows/ { in_rows = 1; next }
