@@ -4,8 +4,7 @@ Last refreshed: 2026-09-27. This file is the active status, disposition, and
 verification ledger for the selective upstream reconciliation. Historical
 inventories and run logs are archived under `archive/2026-09-23/`; they are
 evidence, not active queues. `upstream-watch.json` is only a watcher watermark.
-The canonical development and publication ref is GitHub `main`. The separate
-GitHub `inferno` ref is a legacy snapshot and is not required to match `main`.
+The canonical development and publication ref is GitHub `main`.
 
 ## Exact source snapshot
 
@@ -15,7 +14,6 @@ GitHub `inferno` ref is a legacy snapshot and is not required to match `main`.
 | Candidate working branch | `main` |
 | Candidate implementation commit | `e4beef144e924d0b21a34fa66dc349397cc862a1` |
 | Protected baseline commit | `7d3a6099bfa5d14d95253de7ac1864a9b330040e` |
-| GitHub legacy inferno SHA | `3dd60d21d05e4613a3ee4003e0ec2e75f35f99ee` |
 | Local upstream/main SHA | `a3eb7ef302961cba716dc78b39b93b60c467db0e` |
 | GitHub upstream/main SHA | `a3eb7ef302961cba716dc78b39b93b60c467db0e` |
 | Merge base | `5097b31457e6dc9f49e5f5c9c72b925ce79543b3` |
@@ -23,10 +21,14 @@ GitHub `inferno` ref is a legacy snapshot and is not required to match `main`.
 The Mac's two reconciliation-ledger/verifier commits and GitHub `main`'s
 channel-monitor privacy UI and historical attestation audit are now joined by a
 normal merge at the implementation commit above. GitHub `main` is the only
-canonical source ref. The legacy `inferno` branch remains at `3dd60d21`; it was
-not moved because it may have external consumers. The merge does not rewrite or
-replace history. The root `.worktrees/` directory is ignored as local workspace
-state, not committed as source.
+canonical source ref. The old GitHub `inferno` branch was deleted on 2026-09-27
+after confirming its tip (`3dd60d21`) was already an ancestor of `main`, it had
+no open pull request or branch protection, and no branch-specific references
+appeared in repository scripts/workflows or the visible `Open-Computer-AI` code
+search. This removes only the stale branch pointer; its commit history remains
+reachable from `main`. Private/local scripts and clones are outside that audit.
+The merge does not rewrite or replace history. The root `.worktrees/` directory
+is ignored as local workspace state, not committed as source.
 
 At refresh, upstream `main` was `a3eb7ef3` (Sub2API `0.2.8`), and the standard
 `frontend/` mirror still exactly matches that tree. The protected baseline
@@ -38,9 +40,9 @@ portable verifier.
 
 Run `./scripts/verify-inferno-reconciliation.sh` from any clean clone of this
 repository on branch `main`. It checks repository identity, branch, baseline
-commit ancestry, the implementation snapshot, live GitHub `main` and legacy
-`inferno` refs, local/live upstream refs and merge base, standard-frontend
-parity, clean tracked/untracked status, and the nine closed backend rows below.
+commit ancestry, the implementation snapshot, live GitHub `main`, local/live
+upstream refs and merge base, standard-frontend parity, clean tracked/untracked
+status, and the nine closed backend rows below.
 It does not require the separate protected checkout to exist. The verifier
 checks repository freshness and state; it does not establish runtime behavior
 or guarantee future upstream freshness.
