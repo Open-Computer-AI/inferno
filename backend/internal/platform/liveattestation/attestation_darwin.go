@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,6 +36,9 @@ const (
 	// Health check for the idle helper; a dead helper is restarted before the
 	// next call needs it.
 	helperPingInterval = time.Minute
+	// A slow answer is dropped by its request ID, so one timeout doesn't cost a
+	// helper restart; this many in a row means it is stuck and is restarted.
+	helperMaxFailures = 3
 )
 
 type darwinProvider struct {
@@ -132,9 +136,22 @@ func (p *darwinProvider) warmStep(refreshSignals bool) {
 	if refreshSignals {
 		_, _ = p.refreshSignals(ctx)
 	}
-	pingCtx, pingCancel := context.WithTimeout(ctx, helperTimeout)
+	// Its own budget: a slow osascript must not leave the ping too little time.
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), helperTimeout)
 	defer pingCancel()
-	_ = p.helper.ping(pingCtx, nodePath, modulePath)
+	_ = p.helper.ping(pingCtx, runtimeIdentity(nodePath, modulePath), nodePath, modulePath)
+}
+
+// runtimeIdentity changes when the ChatGPT app updates its Node or DeviceCheck
+// module in place, so the helper is restarted on the new files.
+func runtimeIdentity(nodePath, modulePath string) string {
+	identity := nodePath + "|" + modulePath
+	for _, filePath := range []string{nodePath, modulePath} {
+		if info, err := os.Stat(filePath); err == nil {
+			identity += fmt.Sprintf("|%d:%d", info.ModTime().UnixNano(), info.Size())
+		}
+	}
+	return identity
 }
 
 func (p *darwinProvider) resolveRuntime(ctx context.Context) (string, string, string, error) {
@@ -180,14 +197,20 @@ func (p *darwinProvider) Generate(ctx context.Context) (string, error) {
 	}
 
 	helperCtx, helperCancel := context.WithTimeout(runCtx, helperTimeout)
-	header, helperErr := p.helper.generate(helperCtx, nodePath, modulePath, bundleID, signalsJSON)
+	header, helperErr := p.helper.generate(helperCtx, runtimeIdentity(nodePath, modulePath), nodePath, modulePath, bundleID, signalsJSON)
 	helperCancel()
-	if helperErr == nil && validateHeader(header) == nil {
-		return header, nil
+	if helperErr == nil {
+		if helperErr = validateHeader(header); helperErr == nil {
+			return header, nil
+		}
 	}
 	// The helper only saves the process start; any failure takes the original
-	// one-shot path, which also reports the real reason.
-	return generateOnce(runCtx, nodePath, modulePath, bundleID, signalsJSON)
+	// one-shot path, which also reports the real reason. It gets a full budget
+	// of its own so a slow helper cannot make the call fail.
+	slog.Warn("live attestation helper failed; using a one-shot process", "error", helperErr.Error())
+	onceCtx, onceCancel := context.WithTimeout(ctx, attestationTimeout)
+	defer onceCancel()
+	return generateOnce(onceCtx, nodePath, modulePath, bundleID, signalsJSON)
 }
 
 func generateOnce(ctx context.Context, nodePath, modulePath, bundleID string, signalsJSON []byte) (string, error) {
@@ -368,14 +391,14 @@ func truncateSignal(value string, limit int, fallback string) string {
 type deviceCheckHelper struct {
 	// lock is a one-slot semaphore instead of a mutex so a caller gives up
 	// when its deadline passes rather than queueing behind a stuck request.
-	lock       chan struct{}
-	cmd        *exec.Cmd
-	stdin      io.WriteCloser
-	lines      <-chan string
-	done       chan struct{}
-	nodePath   string
-	modulePath string
-	seq        uint64
+	lock     chan struct{}
+	cmd      *exec.Cmd
+	stdin    io.WriteCloser
+	lines    <-chan string
+	done     chan struct{}
+	identity string
+	seq      uint64
+	failures int
 }
 
 func newDeviceCheckHelper() *deviceCheckHelper {
@@ -396,8 +419,8 @@ type helperResponse struct {
 	Pong   bool   `json:"pong,omitempty"`
 }
 
-func (h *deviceCheckHelper) generate(ctx context.Context, nodePath, modulePath, bundleID string, signalsJSON []byte) (string, error) {
-	response, err := h.call(ctx, nodePath, modulePath, helperRequest{BundleID: bundleID, Signals: signalsJSON})
+func (h *deviceCheckHelper) generate(ctx context.Context, identity, nodePath, modulePath, bundleID string, signalsJSON []byte) (string, error) {
+	response, err := h.call(ctx, identity, nodePath, modulePath, helperRequest{BundleID: bundleID, Signals: signalsJSON})
 	if err != nil {
 		return "", err
 	}
@@ -407,24 +430,24 @@ func (h *deviceCheckHelper) generate(ctx context.Context, nodePath, modulePath, 
 	return response.Header, nil
 }
 
-func (h *deviceCheckHelper) ping(ctx context.Context, nodePath, modulePath string) error {
-	response, err := h.call(ctx, nodePath, modulePath, helperRequest{Ping: true})
+func (h *deviceCheckHelper) ping(ctx context.Context, identity, nodePath, modulePath string) error {
+	response, err := h.call(ctx, identity, nodePath, modulePath, helperRequest{Ping: true})
 	if err == nil && !response.Pong {
 		err = errors.New("attestation helper did not answer the health check")
 	}
 	return err
 }
 
-func (h *deviceCheckHelper) call(ctx context.Context, nodePath, modulePath string, request helperRequest) (helperResponse, error) {
+func (h *deviceCheckHelper) call(ctx context.Context, identity, nodePath, modulePath string, request helperRequest) (helperResponse, error) {
 	select {
 	case h.lock <- struct{}{}:
 		defer func() { <-h.lock }()
 	case <-ctx.Done():
 		return helperResponse{}, ctx.Err()
 	}
-	if h.cmd == nil || h.nodePath != nodePath || h.modulePath != modulePath {
+	if h.cmd == nil || h.identity != identity {
 		h.stopLocked()
-		if err := h.startLocked(nodePath, modulePath); err != nil {
+		if err := h.startLocked(identity, nodePath, modulePath); err != nil {
 			return helperResponse{}, err
 		}
 	}
@@ -441,8 +464,13 @@ func (h *deviceCheckHelper) call(ctx context.Context, nodePath, modulePath strin
 	for {
 		select {
 		case <-ctx.Done():
-			// Stop it so a late answer is never read as the next request's.
-			h.stopLocked()
+			// A late answer is skipped by its ID; only a helper that keeps
+			// failing is restarted (a restart is the slow path we avoid).
+			h.failures++
+			if h.failures >= helperMaxFailures {
+				slog.Warn("live attestation helper unresponsive; restarting it", "failures", h.failures)
+				h.stopLocked()
+			}
 			return helperResponse{}, ctx.Err()
 		case line, ok := <-h.lines:
 			if !ok {
@@ -457,12 +485,13 @@ func (h *deviceCheckHelper) call(ctx context.Context, nodePath, modulePath strin
 			if response.ID != request.ID {
 				continue
 			}
+			h.failures = 0
 			return response, nil
 		}
 	}
 }
 
-func (h *deviceCheckHelper) startLocked(nodePath, modulePath string) error {
+func (h *deviceCheckHelper) startLocked(identity, nodePath, modulePath string) error {
 	command := exec.Command(nodePath, "-e", deviceCheckHelperScript)
 	command.Env = []string{
 		"PATH=/usr/bin:/bin",
@@ -495,7 +524,7 @@ func (h *deviceCheckHelper) startLocked(nodePath, modulePath string) error {
 		_ = command.Wait()
 	}()
 	h.cmd, h.stdin, h.lines, h.done = command, stdin, lines, done
-	h.nodePath, h.modulePath = nodePath, modulePath
+	h.identity, h.failures = identity, 0
 	return nil
 }
 

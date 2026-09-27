@@ -24,6 +24,7 @@ while IFS= read -r line; do
   n=$((n+1))
   id=$(printf '%s' "$line" | sed -E 's/.*"id":([0-9]+).*/\1/')
   [ "$mode" = hang ] && sleep 30
+  [ "$mode" = slow-first ] && [ "$n" = 1 ] && sleep 0.6
   case "$line" in
     *'"ping":true'*) printf '{"id":%s,"pong":true}\n' "$id" ;;
     *) printf '{"id":%s,"header":"{\\"v\\":1,\\"s\\":0,\\"t\\":\\"v1.fake-%s-%s\\"}"}\n' "$id" "$$" "$n" ;;
@@ -69,18 +70,18 @@ func TestHelperReusesOneProcess(t *testing.T) {
 	node, helper := writeFakeNode(t), newDeviceCheckHelper()
 	defer helper.stop()
 	ctx := context.Background()
-	first, err := helper.generate(ctx, node, "ok", "com.openai.chat", []byte(`{}`))
+	first, err := helper.generate(ctx, node+"|ok", node, "ok", "com.openai.chat", []byte(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := helper.generate(ctx, node, "ok", "com.openai.chat", []byte(`{}`))
+	second, err := helper.generate(ctx, node+"|ok", node, "ok", "com.openai.chat", []byte(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if fakePid(t, first) != fakePid(t, second) {
 		t.Fatalf("helper was restarted between calls: %s then %s", first, second)
 	}
-	if err := helper.ping(ctx, node, "ok"); err != nil {
+	if err := helper.ping(ctx, node+"|ok", node, "ok"); err != nil {
 		t.Fatalf("ping: %v", err)
 	}
 }
@@ -89,14 +90,14 @@ func TestHelperRestartsAfterExit(t *testing.T) {
 	node, helper := writeFakeNode(t), newDeviceCheckHelper()
 	defer helper.stop()
 	ctx := context.Background()
-	first, err := helper.generate(ctx, node, "exit-after-one", "com.openai.chat", []byte(`{}`))
+	first, err := helper.generate(ctx, node+"|exit-after-one", node, "exit-after-one", "com.openai.chat", []byte(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := helper.generate(ctx, node, "exit-after-one", "com.openai.chat", []byte(`{}`)); err == nil {
+	if _, err := helper.generate(ctx, node+"|exit-after-one", node, "exit-after-one", "com.openai.chat", []byte(`{}`)); err == nil {
 		t.Fatal("expected an error from the exited helper")
 	}
-	third, err := helper.generate(ctx, node, "exit-after-one", "com.openai.chat", []byte(`{}`))
+	third, err := helper.generate(ctx, node+"|exit-after-one", node, "exit-after-one", "com.openai.chat", []byte(`{}`))
 	if err != nil {
 		t.Fatalf("helper did not restart: %v", err)
 	}
@@ -105,23 +106,47 @@ func TestHelperRestartsAfterExit(t *testing.T) {
 	}
 }
 
-func TestHelperTimeoutStopsProcess(t *testing.T) {
+func TestHelperTimeoutKeepsHelperUntilRepeatedFailures(t *testing.T) {
 	node, helper := writeFakeNode(t), newDeviceCheckHelper()
 	defer helper.stop()
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
-	started := time.Now()
-	if _, err := helper.generate(ctx, node, "hang", "com.openai.chat", []byte(`{}`)); !errors.Is(err, context.DeadlineExceeded) {
+	for attempt := 1; attempt <= helperMaxFailures; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+		started := time.Now()
+		_, err := helper.generate(ctx, node+"|hang", node, "hang", "com.openai.chat", []byte(`{}`))
+		cancel()
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("attempt %d: error = %v, want deadline exceeded", attempt, err)
+		}
+		if elapsed := time.Since(started); elapsed > 2*time.Second {
+			t.Fatalf("timeout took %s", elapsed)
+		}
+		if stopped := helper.cmd == nil; stopped != (attempt == helperMaxFailures) {
+			t.Fatalf("attempt %d: helper stopped = %v", attempt, stopped)
+		}
+	}
+	if _, err := helper.generate(context.Background(), node+"|ok", node, "ok", "com.openai.chat", []byte(`{}`)); err != nil {
+		t.Fatalf("helper did not recover: %v", err)
+	}
+}
+
+func TestHelperSkipsLateAnswerAfterTimeout(t *testing.T) {
+	node, helper := writeFakeNode(t), newDeviceCheckHelper()
+	defer helper.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	_, err := helper.generate(ctx, node+"|slow-first", node, "slow-first", "com.openai.chat", []byte(`{}`))
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("error = %v, want deadline exceeded", err)
 	}
-	if elapsed := time.Since(started); elapsed > 2*time.Second {
-		t.Fatalf("timeout took %s", elapsed)
+	pid := helper.cmd.Process.Pid
+	header, err := helper.generate(context.Background(), node+"|slow-first", node, "slow-first", "com.openai.chat", []byte(`{}`))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if helper.cmd != nil {
-		t.Fatal("hung helper was not stopped")
-	}
-	if _, err := helper.generate(context.Background(), node, "ok", "com.openai.chat", []byte(`{}`)); err != nil {
-		t.Fatalf("helper did not recover: %v", err)
+	// Same process, and the answer is the second request's (the first one's late
+	// answer was skipped by its ID).
+	if helper.cmd == nil || helper.cmd.Process.Pid != pid || !strings.HasSuffix(fakeToken(t, header), "-2") {
+		t.Fatalf("expected the second answer from the same helper, got %s", header)
 	}
 }
 
@@ -130,7 +155,7 @@ func TestHelperLockHonoursDeadline(t *testing.T) {
 	helper.lock <- struct{}{} // another request holds the helper
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	if _, err := helper.generate(ctx, "/nonexistent", "ok", "com.openai.chat", nil); !errors.Is(err, context.DeadlineExceeded) {
+	if _, err := helper.generate(ctx, "x", "/nonexistent", "ok", "com.openai.chat", nil); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("error = %v, want deadline exceeded while waiting for the lock", err)
 	}
 }
@@ -211,7 +236,7 @@ func TestRealDeviceCheckHelperMatchesOneShot(t *testing.T) {
 		t.Fatal(err)
 	}
 	signalsJSON, _ := json.Marshal(signals)
-	fromHelper, err := provider.helper.generate(ctx, nodePath, modulePath, bundleID, signalsJSON)
+	fromHelper, err := provider.helper.generate(ctx, runtimeIdentity(nodePath, modulePath), nodePath, modulePath, bundleID, signalsJSON)
 	if err != nil {
 		t.Fatalf("helper: %v", err)
 	}

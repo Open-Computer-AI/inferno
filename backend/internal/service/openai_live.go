@@ -36,7 +36,7 @@ const (
 var liveObserverStoreRetryInterval = time.Second
 
 var (
-	chatGPTLiveCallsURL        = "https://chatgpt.com/backend-api/codex/realtime/calls?intent=quicksilver&architecture=avas"
+	chatGPTLiveCallsURL = "https://chatgpt.com/backend-api/codex/realtime/calls?intent=quicksilver&architecture=avas"
 	// The Live SDP offer is created through ChatGPT's Codex endpoint, but the
 	// authenticated server-side sideband is served by the OpenAI Live endpoint.
 	// Keeping these origins separate is required: the former accepts the call
@@ -134,6 +134,7 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 	if err := ValidateLiveCallRequest(request); err != nil {
 		return nil, err
 	}
+	createStarted := time.Now()
 	store, err := s.liveStore()
 	if err != nil {
 		return nil, err
@@ -142,10 +143,12 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 	if err != nil {
 		return nil, err
 	}
+	attestationStarted := time.Now()
 	attestation, attestationCiphertext, err := s.prepareLiveAttestation(ctx)
 	if err != nil {
 		return nil, err
 	}
+	attestationMs := time.Since(attestationStarted).Milliseconds()
 
 	excluded := make(map[int64]struct{})
 	// Live 按通话时长计费，不属于 token 利润门的语义范围：显式豁免，避免
@@ -157,6 +160,7 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 	}
 	var lastErr error
 	for attempt := 0; attempt <= 3; attempt++ {
+		selectStarted := time.Now()
 		selection, _, selectErr := s.SelectAccountWithSchedulerForCapability(
 			ctx,
 			identity.GroupID,
@@ -203,7 +207,10 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 			return nil, ErrLiveConcurrencyFull
 		}
 
+		selectMs := time.Since(selectStarted).Milliseconds()
+		upstreamStarted := time.Now()
 		created, createErr := s.createUpstreamLiveCall(ctx, account, request, attestation)
+		upstreamMs := time.Since(upstreamStarted).Milliseconds()
 		selection.ReleaseFunc()
 		if createErr != nil {
 			s.releaseLiveLease(account.ID, identity.UserID, identity.APIKeyID, leaseID)
@@ -277,6 +284,17 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 		}
 		created.Account = account
 		go s.observeLiveCall(record)
+		// One line per call shows where a slow first call went: attestation,
+		// account selection, token/headers or the upstream request itself.
+		logger.FromContext(ctx).Info(
+			"OpenAI Live create timing",
+			zap.Int64("account_id", account.ID),
+			zap.Int("attempt", attempt),
+			zap.Int64("attestation_ms", attestationMs),
+			zap.Int64("select_ms", selectMs),
+			zap.Int64("upstream_ms", upstreamMs),
+			zap.Int64("total_ms", time.Since(createStarted).Milliseconds()),
+		)
 		return created, nil
 	}
 	if lastErr != nil {
@@ -304,6 +322,7 @@ func (s *OpenAIGatewayService) createUpstreamLiveCall(
 	request *LiveCallRequest,
 	attestation string,
 ) (*LiveCallCreated, error) {
+	prepareStarted := time.Now()
 	token, _, err := s.GetAccessToken(ctx, account)
 	if err != nil {
 		logLiveCreateStageFailure(ctx, account.ID, "access_token", err)
@@ -343,8 +362,16 @@ func (s *OpenAIGatewayService) createUpstreamLiveCall(
 	upstreamReq.Header.Set("Accept", "application/sdp")
 	upstreamReq.Header.Set(liveAttestationHeader, attestation)
 	upstreamSessionID, upstreamThreadID := applyLiveUpstreamIdentityHeaders(upstreamReq.Header, "", "")
+	prepareMs := time.Since(prepareStarted).Milliseconds()
 
+	requestStarted := time.Now()
 	resp, err := s.doOpenAIUpstream(upstreamReq, resolveAccountProxyURL(account), account)
+	logger.FromContext(ctx).Info(
+		"OpenAI Live upstream create timing",
+		zap.Int64("account_id", account.ID),
+		zap.Int64("prepare_ms", prepareMs),
+		zap.Int64("request_ms", time.Since(requestStarted).Milliseconds()),
+	)
 	if err != nil {
 		logLiveCreateStageFailure(ctx, account.ID, "upstream_transport", err)
 		return nil, err
@@ -588,8 +615,19 @@ func (s *OpenAIGatewayService) ProxyLiveSideband(
 	}
 
 	// observer 轮询到接管状态后会关闭旧控制连接；同一个 call 可重新加入。
-	time.Sleep(liveObserverPollInterval)
+	// In-process observers hand over at once instead of after a poll interval.
+	handoverStarted := time.Now()
+	awaitLiveObserverRelease(record.CallHash)
+	handoverMs := time.Since(handoverStarted).Milliseconds()
+	dialStarted := time.Now()
 	upstream, err := s.dialLiveSideband(ctx, record)
+	logger.FromContext(ctx).Info(
+		"OpenAI Live sideband timing",
+		zap.Int64("account_id", record.AccountID),
+		zap.Int64("handover_ms", handoverMs),
+		zap.Int64("dial_ms", time.Since(dialStarted).Milliseconds()),
+		zap.Bool("dialed", err == nil),
+	)
 	if err != nil {
 		_, _ = store.ReleaseLiveController(context.Background(), record.CallHash, owner)
 		go s.observeLiveCall(record)
@@ -707,6 +745,17 @@ func (s *OpenAIGatewayService) observeLiveCall(record *LiveCallRecord) {
 	if !claimed {
 		return
 	}
+	takeover := registerLiveTakeover(record.CallHash)
+	defer takeover.release(record.CallHash)
+	observerCtx, cancelObserver := context.WithCancel(context.Background())
+	defer cancelObserver()
+	go func() {
+		select {
+		case <-takeover.requested:
+			cancelObserver()
+		case <-observerCtx.Done():
+		}
+	}()
 	storeErrStreak := 0
 	for {
 		latest, getErr := store.GetLiveCall(context.Background(), record.CallHash)
@@ -734,8 +783,11 @@ func (s *OpenAIGatewayService) observeLiveCall(record *LiveCallRecord) {
 			s.finalizeLiveCall(record)
 			return
 		}
-		upstream, dialErr := s.dialLiveSideband(context.Background(), record)
+		upstream, dialErr := s.dialLiveSideband(observerCtx, record)
 		if dialErr != nil {
+			if observerCtx.Err() != nil {
+				return // a proxy is taking the call over
+			}
 			// A 404/410 from the upstream sideband is wrapped as
 			// ErrLiveCallNotFound by dialLiveSideband.  The upstream call is
 			// already gone; redialing the same call ID only creates a noisy
@@ -750,7 +802,7 @@ func (s *OpenAIGatewayService) observeLiveCall(record *LiveCallRecord) {
 			}
 			continue
 		}
-		runErr := s.runLiveObserverConnection(record, upstream)
+		runErr := s.runLiveObserverConnection(record, upstream, takeover.requested)
 		_ = upstream.Close()
 		if errors.Is(runErr, ErrLiveControllerChanged) {
 			return
@@ -765,7 +817,7 @@ func (s *OpenAIGatewayService) observeLiveCall(record *LiveCallRecord) {
 	}
 }
 
-func (s *OpenAIGatewayService) runLiveObserverConnection(record *LiveCallRecord, upstream liveFrameConn) error {
+func (s *OpenAIGatewayService) runLiveObserverConnection(record *LiveCallRecord, upstream liveFrameConn, takeover <-chan struct{}) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	frameCh := make(chan []byte, 1)
@@ -805,6 +857,8 @@ func (s *OpenAIGatewayService) runLiveObserverConnection(record *LiveCallRecord,
 			}
 		case err := <-errCh:
 			return err
+		case <-takeover:
+			return ErrLiveControllerChanged
 		case <-controllerTicker.C:
 			controller, err := store.GetLiveController(context.Background(), record.CallHash)
 			if err != nil {
