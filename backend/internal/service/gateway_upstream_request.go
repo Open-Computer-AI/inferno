@@ -97,8 +97,8 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	// === 计算最终 anthropic-beta header（先于 body sanitize 与 CCH 签名）===
 	//
 	// 顺序约束：
-	//   1) 算 finalBeta（纯函数，不依赖 req.Header；mimicry 路径会忽略客户端 beta，
-	//      与原“OAuth + mimicClaudeCode 跳过白名单透传”行为对齐）
+	//   1) 算 finalBeta（纯函数，不依赖 req.Header；mimicry 路径仅保留明确支持的
+	//      客户端兼容性 beta，其余使用固定列表）
 	//   2) 按 finalBeta 做能力维度 body sanitize（如 context-management beta 缺失 →
 	//      strip body.context_management，与 Bedrock 路径对称）
 	//   3) CCH 签名（必须使用 strip 后的 body，否则 hash 与最终 body 不一致 →
@@ -509,12 +509,17 @@ func (s *GatewayService) computeFinalAnthropicBeta(
 
 	if tokenType == "oauth" {
 		if mimicClaudeCode {
-			// Keep the default beta set, with a narrow opt-in for the structured
-			// output compatibility token. Unknown client betas remain excluded.
+// Keep the default beta set, with narrow opt-in for client-requested
+			// structured output and tool-change betas. Unknown client betas remain excluded.
 			incomingBeta := ""
 			const structuredOutputsBeta = "structured-outputs-2025-11-13"
+			const toolChangesBeta = "tool-changes-2025-11-24"
 			if containsBetaToken(clientBeta, structuredOutputsBeta) {
 				incomingBeta = structuredOutputsBeta
+			}
+			if containsBetaToken(clientBeta, toolChangesBeta) {
+				incomingBeta = mergeAnthropicBeta(incomingBeta, toolChangesBeta)
+			}
 			}
 			return mergeAnthropicBetaDropping(claude.FullClaudeCodeMimicryBetas(), incomingBeta, effectiveDropSet), true
 		}
@@ -541,7 +546,7 @@ func (s *GatewayService) computeFinalAnthropicBeta(
 // 两条特殊规则：
 //
 //   - OAuth mimic：requiredBetas 为 FullClaudeCodeMimicryBetas + BetaTokenCounting；
-//     count_tokens 另外保留客户端 beta，而 messages mimic 会忽略客户端 beta。
+//     count_tokens 另外保留客户端 beta，而 messages mimic 仅保留明确支持的兼容性 token。
 //   - OAuth 透传 + 客户端未传 anthropic-beta：补齐 CountTokensBetaHeader
 //   - OAuth 透传 + 客户端传了：补齐 BetaTokenCounting（如果未含）
 //
