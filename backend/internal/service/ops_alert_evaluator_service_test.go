@@ -252,3 +252,40 @@ func TestComputeRuleMetricNewIndicators(t *testing.T) {
 		})
 	}
 }
+
+func TestComputeRuleMetricLatencyPercentiles(t *testing.T) {
+	t.Parallel()
+
+	p95 := 2500
+	p99 := 3500
+	svc := &OpsAlertEvaluatorService{
+		opsRepo: &stubOpsRepo{overview: &OpsDashboardOverview{
+			Duration: OpsPercentiles{P95: &p95, P99: &p99},
+		}},
+	}
+	start := time.Now().UTC().Add(-5 * time.Minute)
+	end := time.Now().UTC()
+
+	for _, tt := range []struct {
+		metricType string
+		want       float64
+	}{
+		{metricType: "p95_latency_ms", want: 2500},
+		{metricType: "p99_latency_ms", want: 3500},
+	} {
+		t.Run(tt.metricType, func(t *testing.T) {
+			t.Parallel()
+			got, ok := svc.computeRuleMetric(context.Background(), &OpsAlertRule{MetricType: tt.metricType}, nil, start, end, "", nil)
+			require.True(t, ok, "latency percentile should be available from the dashboard overview")
+			require.Equal(t, tt.want, got)
+		})
+	}
+
+	noSamples := &OpsAlertEvaluatorService{
+		opsRepo: &stubOpsRepo{overview: &OpsDashboardOverview{}},
+	}
+	for _, metricType := range []string{"p95_latency_ms", "p99_latency_ms"} {
+		got, ok := noSamples.computeRuleMetric(context.Background(), &OpsAlertRule{MetricType: metricType}, nil, start, end, "", nil)
+		require.False(t, ok, "%s must not treat missing samples as zero latency (got %v)", metricType, got)
+	}
+}

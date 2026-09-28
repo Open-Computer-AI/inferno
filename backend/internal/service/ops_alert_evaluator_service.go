@@ -603,6 +603,16 @@ func (s *OpsAlertEvaluatorService) computeRuleMetric(
 			return 0, false
 		}
 		return overview.SLA * 100, true
+	case "p95_latency_ms":
+		if overview.Duration.P95 == nil {
+			return 0, false
+		}
+		return float64(*overview.Duration.P95), true
+	case "p99_latency_ms":
+		if overview.Duration.P99 == nil {
+			return 0, false
+		}
+		return float64(*overview.Duration.P99), true
 	case "error_rate":
 		if overview.RequestCountSLA <= 0 {
 			return 0, false

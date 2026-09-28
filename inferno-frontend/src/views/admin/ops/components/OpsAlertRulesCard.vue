@@ -12,7 +12,7 @@
  * THE LIST SHOWED MACHINE NAMES THAT ALREADY HAD HUMAN LABELS
  * The table rendered `row.metric_type` raw -- `group_available_ratio > 10` --
  * while `metricDefinitions` directly above it carries a translated `label` and
- * a `unit` for all fourteen types, used only by the editor's dropdown. The list
+ * a `unit` for all sixteen types, used only by the editor's dropdown. The list
  * reads "Group available ratio > 10%" now, off data the component already had.
  * An unrecognised metric_type still falls back to the raw string, so a rule
  * created against a newer backend cannot render blank.
@@ -164,6 +164,24 @@ const metricDefinitions = computed(() => {
       recommendedOperator: '>',
       recommendedThreshold: 1,
       unit: '%'
+    },
+    {
+      type: 'p95_latency_ms',
+      group: 'system',
+      label: t('admin.ops.alertRules.metrics.p95'),
+      description: t('admin.ops.alertRules.metricDescriptions.p95'),
+      recommendedOperator: '>',
+      recommendedThreshold: 2000,
+      unit: 'ms'
+    },
+    {
+      type: 'p99_latency_ms',
+      group: 'system',
+      label: t('admin.ops.alertRules.metrics.p99'),
+      description: t('admin.ops.alertRules.metricDescriptions.p99'),
+      recommendedOperator: '>',
+      recommendedThreshold: 3000,
+      unit: 'ms'
     },
     {
       type: 'cpu_usage_percent',
