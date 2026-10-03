@@ -509,19 +509,21 @@ func (s *GatewayService) computeFinalAnthropicBeta(
 
 	if tokenType == "oauth" {
 		if mimicClaudeCode {
-// Keep the default beta set, with narrow opt-in for client-requested
-			// structured output and tool-change betas. Unknown client betas remain excluded.
-			incomingBeta := ""
-			const structuredOutputsBeta = "structured-outputs-2025-11-13"
-			const toolChangesBeta = "tool-changes-2025-11-24"
-			if containsBetaToken(clientBeta, structuredOutputsBeta) {
-				incomingBeta = structuredOutputsBeta
+// Preserve explicitly requested compatibility tokens so the forwarded
+			// body and headers agree. Unknown betas remain excluded; policy drops
+			// still take precedence. Missing companion tokens are not inferred.
+			var incomingBetas []string
+			for _, token := range []string{
+				claude.BetaStructuredOutputs,
+				claude.BetaMidConversationToolChanges,
+				claude.BetaInlineTools,
+			} {
+				if containsBetaToken(clientBeta, token) {
+					incomingBetas = append(incomingBetas, token)
+				}
 			}
-			if containsBetaToken(clientBeta, toolChangesBeta) {
-				incomingBeta = mergeAnthropicBeta(incomingBeta, toolChangesBeta)
 			}
-			}
-			return mergeAnthropicBetaDropping(claude.FullClaudeCodeMimicryBetas(), incomingBeta, effectiveDropSet), true
+			return mergeAnthropicBetaDropping(claude.FullClaudeCodeMimicryBetas(), strings.Join(incomingBetas, ","), effectiveDropSet), true
 		}
 		// 真 Claude Code 客户端透传路径
 		return stripBetaTokensWithSet(s.getBetaHeader(modelID, clientBeta), effectiveDropSet), true
