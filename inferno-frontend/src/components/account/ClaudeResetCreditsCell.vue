@@ -19,7 +19,7 @@
         type="button"
         data-testid="claude-reset-redeem"
         class="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-orange-600 transition-colors hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-orange-400 dark:hover:bg-orange-900/30"
-        :disabled="redeeming || loading || !canRedeem"
+        :disabled="redeeming || loading || !canRedeem || redemptionFenced"
         :title="redeemButtonTitle"
         @click="openRedeemConfirm"
       >
@@ -52,7 +52,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { Account } from '@/types'
 import { getClaudeResetCredits, redeemClaudeResetCredit, type ClaudeResetCredits, type ClaudeResetOutcome } from '@/api/admin/claudeResetCredits'
@@ -67,7 +67,8 @@ const error = ref(false)
 const redeeming = ref(false)
 const showRedeemConfirm = ref(false)
 const redeemFeedback = ref<{ kind: 'success' | 'warning' | 'error'; text: string } | null>(null)
-let pendingKey: string | null = null
+const pendingKey = ref<string | null>(null)
+const redemptionFenced = ref(false)
 let generation = 0
 
 const visible = computed(() => props.account.platform === 'anthropic' && props.account.type === 'oauth')
@@ -79,7 +80,12 @@ watch(() => [props.account.id, props.account.platform, props.account.type], () =
   redeeming.value = false
   showRedeemConfirm.value = false
   redeemFeedback.value = null
-  pendingKey = null
+  pendingKey.value = null
+  redemptionFenced.value = false
+})
+
+onUnmounted(() => {
+  generation++
 })
 
 const formatTime = (value: string, style: 'short' | 'full') => {
@@ -119,14 +125,17 @@ const countButtonTitle = computed(() => !status.value
 const canRedeem = computed(() => (status.value?.available_count ?? 0) > 0)
 const redeemButtonTitle = computed(() => !status.value
   ? t('admin.accounts.claudeResetCredits.resetTooltipNeedQuery')
-  : canRedeem.value ? t('admin.accounts.claudeResetCredits.resetTooltipReady') : t('admin.accounts.claudeResetCredits.resetTooltipNone'))
+  : redemptionFenced.value ? t('admin.accounts.claudeResetCredits.outcome.unknown')
+    : canRedeem.value ? t('admin.accounts.claudeResetCredits.resetTooltipReady') : t('admin.accounts.claudeResetCredits.resetTooltipNone'))
 const confirmMessage = computed(() => t('admin.accounts.claudeResetCredits.confirmMessage', {
   windows: windowLabels(status.value?.credits.find(credit => credit.redeemable)?.clears) || '—',
   count: Math.max(totalResets.value - 1, 0)
 }))
 const feedbackClass = computed(() => redeemFeedback.value?.kind === 'success' ? 'text-emerald-600 dark:text-emerald-400' : redeemFeedback.value?.kind === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400')
 const newOperationKey = (accountID: number) => `claude-reset-${accountID}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`
-const openRedeemConfirm = () => { if (!redeeming.value && !loading.value && canRedeem.value) showRedeemConfirm.value = true }
+const openRedeemConfirm = () => {
+  if (!redeeming.value && !loading.value && canRedeem.value && !redemptionFenced.value) showRedeemConfirm.value = true
+}
 const outcomeFeedback = (result: ClaudeResetOutcome) => {
   const key = 'admin.accounts.claudeResetCredits.outcome'
   switch (result.outcome) {
@@ -138,7 +147,7 @@ const outcomeFeedback = (result: ClaudeResetOutcome) => {
     default: return { kind: 'warning' as const, text: result.reason === 'upstream_unavailable' ? t(`${key}.unavailable`) : t(`${key}.unknown`) }
   }
 }
-const preClaimRefusals = new Set(['CLAUDE_RESET_BUSY', 'CLAUDE_RESET_NOT_AVAILABLE', 'CLAUDE_RESET_UNRESOLVED', 'CLAUDE_RESET_UPSTREAM_UNAVAILABLE'])
+const preClaimRefusals = new Set(['CLAUDE_RESET_BUSY', 'CLAUDE_RESET_NOT_AVAILABLE'])
 const errorText = (value: unknown) => {
   const reason = (value as { reason?: string })?.reason
   const key = 'admin.accounts.claudeResetCredits.outcome'
@@ -153,9 +162,14 @@ const refresh = async () => {
   const current = ++generation
   loading.value = true
   error.value = false
+  redeemFeedback.value = null
   try {
     const result = await getClaudeResetCredits(props.account.id)
-    if (current === generation) status.value = result
+    if (current === generation) {
+      status.value = result
+      pendingKey.value = null
+      redemptionFenced.value = false
+    }
   } catch {
     if (current === generation) { error.value = true; status.value = null }
   } finally {
@@ -164,23 +178,31 @@ const refresh = async () => {
 }
 const confirmRedeem = async () => {
   showRedeemConfirm.value = false
-  if (redeeming.value || loading.value || !canRedeem.value) return
+  if (redeeming.value || loading.value || !canRedeem.value || redemptionFenced.value) return
   const accountID = props.account.id
   const current = generation
-  pendingKey ??= newOperationKey(accountID)
+  pendingKey.value ??= newOperationKey(accountID)
   redeeming.value = true
   redeemFeedback.value = null
   try {
-    const result = await redeemClaudeResetCredit(accountID, pendingKey)
+    const result = await redeemClaudeResetCredit(accountID, pendingKey.value)
     if (current !== generation) return
-    pendingKey = null
+    if (result.outcome === 'unknown') {
+      redemptionFenced.value = true
+    } else {
+      pendingKey.value = null
+      redemptionFenced.value = false
+    }
     redeemFeedback.value = outcomeFeedback(result)
     emit('redeemed', result)
-    redeeming.value = false
-    await refresh()
   } catch (value) {
     if (current !== generation) return
-    if (preClaimRefusals.has((value as { reason?: string })?.reason ?? '')) pendingKey = null
+    if (preClaimRefusals.has((value as { reason?: string })?.reason ?? '')) {
+      pendingKey.value = null
+      redemptionFenced.value = false
+    } else {
+      redemptionFenced.value = true
+    }
     redeemFeedback.value = { kind: 'error', text: errorText(value) }
   } finally {
     if (current === generation) redeeming.value = false
