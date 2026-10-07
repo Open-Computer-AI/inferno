@@ -18,6 +18,8 @@ Composite groups can route to these concrete account platforms:
 - Zhipu GLM
 - DeepSeek
 - MiniMax
+- OpenCode Go
+- TypeSafe JEV
 
 The selected concrete platform is used for account selection, user platform
 quota checks, post-usage billing, ops error platform attribution, channel
@@ -83,6 +85,8 @@ Composite routing detects common public model IDs and provider-prefixed IDs:
 - `glm-*` routes to Zhipu GLM.
 - `deepseek-*` routes to DeepSeek.
 - `minimax-*`, `abab*`, and `minimax/*` route to MiniMax.
+- `opencode_go/*` routes to OpenCode Go.
+- `jev-*` and `typesafe/jev-*` route to TypeSafe JEV.
 
 Unknown or ambiguous model names fail closed with a client error instead of
 guessing a provider.

@@ -948,6 +948,12 @@ func (s *GatewayService) resolveGatewayGroup(ctx context.Context, groupID *int64
 	}
 }
 
+// ResolveEffectiveGatewayGroup resolves Claude Code-only fallback chains for
+// request handlers while retaining the scheduler's cycle and hydration rules.
+func (s *GatewayService) ResolveEffectiveGatewayGroup(ctx context.Context, groupID *int64) (*Group, *int64, error) {
+	return s.resolveGatewayGroup(ctx, groupID)
+}
+
 // checkClaudeCodeRestriction 检查分组的 Claude Code 客户端限制
 // 如果分组启用了 claude_code_only 且请求不是来自 Claude Code 客户端：
 //   - 有降级分组：返回降级分组的 ID

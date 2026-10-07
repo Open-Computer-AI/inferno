@@ -3586,3 +3586,69 @@ func TestGatewayService_SelectAccountForModelWithPlatform_RoutedOpenAIGroup(t *t
 	require.NotNil(t, acc)
 	require.Equal(t, int64(2), acc.ID, "routed account must win over the higher-priority unrouted one")
 }
+
+func TestGatewayServiceResolveEffectiveGatewayGroupUsesFallbackChain(t *testing.T) {
+	primaryID := int64(9400)
+	fallbackID := int64(9401)
+	primary := &Group{
+		ID:              primaryID,
+		Platform:        PlatformComposite,
+		Status:          StatusActive,
+		Hydrated:        true,
+		ClaudeCodeOnly:  true,
+		FallbackGroupID: &fallbackID,
+	}
+	fallback := &Group{ID: fallbackID, Platform: PlatformOpenAI, Status: StatusActive, Hydrated: true}
+	svc := &GatewayService{groupRepo: &mockGroupRepoForGateway{groups: map[int64]*Group{
+		primaryID:  primary,
+		fallbackID: fallback,
+	}}}
+
+	group, resolvedID, err := svc.ResolveEffectiveGatewayGroup(context.Background(), &primaryID)
+
+	require.NoError(t, err)
+	require.Same(t, fallback, group)
+	require.Equal(t, &fallbackID, resolvedID)
+}
+
+func TestClearCompositeRouteDecisionClearsAllResolvedValues(t *testing.T) {
+	ctx := WithCompositeRouteDecision(context.Background(), CompositeRouteDecision{
+		Matched:        true,
+		Source:         CompositeRouteSourceExplicit,
+		PublicModel:    "public-alias",
+		TargetPlatform: PlatformOpenAI,
+		UpstreamModel:  "gpt-5.5",
+	})
+
+	cleared := ClearCompositeRouteDecision(ctx)
+	_, platformOK := ResolvedTargetPlatformFromContext(cleared)
+	_, upstreamOK := ResolvedUpstreamModelFromContext(cleared)
+	_, publicOK := RequestedPublicModelFromContext(cleared)
+	_, sourceOK := CompositeRouteSourceFromContext(cleared)
+
+	require.False(t, platformOK)
+	require.False(t, upstreamOK)
+	require.False(t, publicOK)
+	require.False(t, sourceOK)
+}
+
+func TestGatewayServiceResolveCompositeRouteDecisionUsesProviderResolver(t *testing.T) {
+	resolver := NewCompositeRouteResolver(nil)
+	resolver.SetModelOwnershipResolver(func(context.Context, int64, string) (CompositeModelOwnership, error) {
+		return CompositeModelOwnership{TargetPlatform: PlatformOpenCodeGo, Matched: true}, nil
+	})
+	svc := &GatewayService{compositeResolver: resolver}
+
+	decision, matched, err := svc.ResolveCompositeRouteDecision(
+		context.Background(),
+		&Group{ID: 9402, Platform: PlatformComposite},
+		"provider-alias",
+		CompositeRouteEndpointResponses,
+	)
+
+	require.NoError(t, err)
+	require.True(t, matched)
+	require.True(t, decision.Matched)
+	require.Equal(t, CompositeRouteSourceAccount, decision.Source)
+	require.Equal(t, PlatformOpenCodeGo, decision.TargetPlatform)
+}

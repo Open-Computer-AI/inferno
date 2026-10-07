@@ -179,3 +179,77 @@ func TestGatewayOpenAICompatibleHandlersClaudeCodeOnlyFallback(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveEffectiveOpenAICompatibleRouteCrossPlatformFallback(t *testing.T) {
+	primaryID := int64(9400)
+	fallbackID := int64(9401)
+	primary := &service.Group{
+		ID:              primaryID,
+		Platform:        service.PlatformComposite,
+		Status:          service.StatusActive,
+		Hydrated:        true,
+		ClaudeCodeOnly:  true,
+		FallbackGroupID: &fallbackID,
+	}
+	fallback := &service.Group{ID: fallbackID, Platform: service.PlatformOpenAI, Status: service.StatusActive, Hydrated: true}
+	groupRepo := &groupMapRepo{
+		fakeGroupRepo: &fakeGroupRepo{},
+		groups: map[int64]*service.Group{
+			primaryID:  primary,
+			fallbackID: fallback,
+		},
+	}
+	gatewayService := service.NewGatewayService(
+		nil, groupRepo, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+
+	apiKey := &service.APIKey{
+		ID:      9402,
+		UserID:  9403,
+		GroupID: &primaryID,
+		Group:   primary,
+		User:    &service.User{ID: 9403},
+	}
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	ctx := context.WithValue(context.Background(), ctxkey.Group, primary)
+	ctx = service.WithCompositeRouteDecision(ctx, service.CompositeRouteDecision{
+		Matched:        true,
+		Source:         service.CompositeRouteSourceExplicit,
+		PublicModel:    "public-alias",
+		TargetPlatform: service.PlatformAnthropic,
+		UpstreamModel:  "claude-primary",
+	})
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil).WithContext(ctx)
+
+	route, err := resolveEffectiveOpenAICompatibleRoute(
+		c,
+		gatewayService,
+		apiKey,
+		"claude-primary",
+		service.CompositeRouteEndpointResponses,
+	)
+
+	require.NoError(t, err)
+	require.Same(t, fallback, route.group)
+	require.Equal(t, &fallbackID, route.groupID)
+	require.Equal(t, "public-alias", route.requestedModel)
+	require.Equal(t, "public-alias", route.routeModel, "a concrete fallback must restore the public model before channel mapping")
+	require.NotSame(t, apiKey, route.apiKey)
+	require.Same(t, fallback, route.apiKey.Group)
+	require.Equal(t, apiKey.ID, route.apiKey.ID)
+	require.Same(t, apiKey.User, route.apiKey.User)
+	require.Same(t, primary, apiKey.Group, "routing must not replace the authenticated group")
+	require.Equal(t, &primaryID, apiKey.GroupID)
+
+	platform, ok := service.ResolvedTargetPlatformFromContext(c.Request.Context())
+	require.True(t, ok)
+	require.Equal(t, service.PlatformOpenAI, platform)
+	require.Equal(t, service.PlatformOpenAI, service.QuotaPlatform(c.Request.Context(), apiKey))
+	_, ok = service.ResolvedUpstreamModelFromContext(c.Request.Context())
+	require.False(t, ok, "primary composite upstream model must not leak into the concrete fallback")
+	_, ok = service.CompositeRouteSourceFromContext(c.Request.Context())
+	require.False(t, ok, "primary composite route source must not leak into the concrete fallback")
+}

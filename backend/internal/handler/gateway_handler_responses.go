@@ -76,12 +76,24 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		return
 	}
 	reqModel := modelResult.String()
-	bindRequestedReasoningEffort(c, body, reqModel)
-	ensureCompositeTargetPlatform(c, apiKey, reqModel)
-	if !compositeTargetPlatformResolved(c, apiKey, reqModel) {
-		h.responsesErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by composite groups")
+	route, routeErr := resolveEffectiveOpenAICompatibleRoute(c, h.gatewayService, apiKey, reqModel, service.CompositeRouteEndpointResponses)
+	if routeErr != nil {
+		if errors.Is(routeErr, service.ErrClaudeCodeOnly) {
+			h.responsesErrorResponse(c, http.StatusForbidden, "permission_error",
+				"This group is restricted to Claude Code clients (/v1/messages only)")
+		} else {
+			h.responsesErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by composite groups")
+		}
 		return
 	}
+	reqModel = route.requestedModel
+	routingAPIKey := route.apiKey
+	routingGroupID := route.groupID
+	routingModel := route.routeModel
+	if bodyModel := gjson.GetBytes(body, "model").String(); bodyModel != reqModel {
+		body = h.gatewayService.ReplaceModelInBody(body, reqModel)
+	}
+	bindRequestedReasoningEffort(c, body, reqModel)
 	reqStream, ok := parseOpenAICompatibleStream(body)
 	if !ok {
 		h.responsesErrorResponse(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)
@@ -97,23 +109,13 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 	// 里的任何工具声明（含 Codex 被动 image_gen namespace）而关闭。生图意图
 	// 仅用于能力路由与图片计费；独立图片/视频端点才在利润门范围之外。
 	requestCtx, pricingAt := service.WithGatewayTokenRequestPricing(requestCtx)
-	if service.IsImageGenerationIntentForPlatform("/v1/responses", reqModel, body, openAICompatibleRequestPlatform(c.Request.Context(), apiKey)) {
+	if service.IsImageGenerationIntentForPlatform("/v1/responses", reqModel, body, openAICompatibleRequestPlatform(c.Request.Context(), routingAPIKey)) {
 		requestCtx = service.WithOpenAIImageGenerationIntent(requestCtx)
 	}
 	c.Request = c.Request.WithContext(requestCtx)
 
 	// 解析渠道级模型映射
-	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(requestCtx, apiKey.GroupID, reqModel)
-
-	// Claude Code only restriction: /v1/responses is never a Claude Code
-	// endpoint. With a fallback group the request continues and account selection
-	// (checkClaudeCodeRestriction) schedules it in the fallback group; without one
-	// it is rejected here.
-	if apiKey.Group != nil && apiKey.Group.ClaudeCodeOnly && apiKey.Group.FallbackGroupID == nil {
-		h.responsesErrorResponse(c, http.StatusForbidden, "permission_error",
-			"This group is restricted to Claude Code clients (/v1/messages only)")
-		return
-	}
+	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(requestCtx, routingGroupID, routingModel)
 
 	if decision := h.checkSecurityAudit(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, reqModel, body); decision != nil && !decision.AllowNextStage {
 		h.responsesSecurityAuditError(c, decision)
@@ -171,10 +173,10 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		if requestCtx.Err() != nil {
 			return
 		}
-		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(requestCtx, apiKey.GroupID, sessionHash, reqModel, fs.FailedAccountIDs, "", int64(0))
+		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(requestCtx, routingGroupID, sessionHash, routingModel, fs.FailedAccountIDs, "", int64(0))
 		if err != nil {
 			if len(fs.FailedAccountIDs) == 0 {
-				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, effectiveAPIKeyPlatform(c, apiKey))
+				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, routingAPIKey, reqModel, routingModel, effectiveAPIKeyPlatform(c, routingAPIKey))
 				cls = classifySelectionFailureError(err, cls)
 				if !cls.ModelNotFound {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
@@ -247,7 +249,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		account = latest
 		selection.Account = latest
 		if selection.ProfitGateActive() {
-			if err := h.gatewayService.BindStickySessionAfterProfitAdmission(admissionCtx, apiKey.GroupID, sessionHash, account.ID); err != nil {
+			if err := h.gatewayService.BindStickySessionAfterProfitAdmission(admissionCtx, routingGroupID, sessionHash, account.ID); err != nil {
 				reqLog.Warn("gateway.responses.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 			}
 		}
@@ -256,8 +258,12 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		// 5. Forward request
 		writerSizeBeforeForward := c.Writer.Size()
 		forwardBody := body
+		forwardModel := routingModel
 		if channelMapping.Mapped {
-			forwardBody = h.gatewayService.ReplaceModelInBody(body, channelMapping.MappedModel)
+			forwardModel = channelMapping.MappedModel
+		}
+		if forwardModel != reqModel {
+			forwardBody = h.gatewayService.ReplaceModelInBody(body, forwardModel)
 		}
 		var result *service.ForwardResult
 		setActualUpstreamEndpoint(c, "")

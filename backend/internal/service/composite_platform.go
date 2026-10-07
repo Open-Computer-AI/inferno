@@ -48,6 +48,19 @@ func WithCompositeRouteDecision(ctx context.Context, decision CompositeRouteDeci
 	return ctx
 }
 
+// ClearCompositeRouteDecision masks any route decision inherited from an
+// earlier routing attempt in the request context.
+func ClearCompositeRouteDecision(ctx context.Context) context.Context {
+	if ctx == nil {
+		return nil
+	}
+	ctx = context.WithValue(ctx, ctxkey.ResolvedTargetPlatform, nil)
+	ctx = context.WithValue(ctx, ctxkey.ResolvedUpstreamModel, nil)
+	ctx = context.WithValue(ctx, ctxkey.RequestedPublicModel, nil)
+	ctx = context.WithValue(ctx, ctxkey.CompositeRouteSource, nil)
+	return ctx
+}
+
 func ResolvedUpstreamModelFromContext(ctx context.Context) (string, bool) {
 	if ctx == nil {
 		return "", false
@@ -114,8 +127,8 @@ func DetectModelPlatform(model string) (string, bool) {
 			return PlatformDeepseek, true
 		case "minimax":
 			return PlatformMiniMax, true
-		case "typesafe", "jev":
-			return PlatformTypeSafe, true
+		case "opencode", "opencode-go", "opencode_go":
+			return PlatformOpenCodeGo, true
 		}
 		if rest != "" {
 			normalized = strings.TrimPrefix(rest, "models/")
@@ -157,8 +170,6 @@ func DetectModelPlatform(model string) (string, bool) {
 		strings.HasPrefix(normalized, "abab6"),
 		strings.HasPrefix(normalized, "abab7"):
 		return PlatformMiniMax, true
-	case normalized == "jev-latest" || strings.HasPrefix(normalized, "jev-"):
-		return PlatformTypeSafe, true
 	default:
 		return "", false
 	}
@@ -203,10 +214,16 @@ func (s *GatewayService) resolveCompositeRouteDecision(ctx context.Context, grou
 	return decision, decision.Matched, nil
 }
 
+// ResolveCompositeRouteDecision exposes the existing route-resolution path to
+// HTTP handlers without duplicating its detector and account-ownership logic.
+func (s *GatewayService) ResolveCompositeRouteDecision(ctx context.Context, group *Group, requestedModel, endpoint string) (CompositeRouteDecision, bool, error) {
+	return s.resolveCompositeRouteDecision(ctx, group, requestedModel, endpoint)
+}
+
 func isConcreteRequestPlatform(platform string) bool {
 	switch platform {
 	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok,
-		PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo, PlatformTypeSafe:
+		PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo:
 		return true
 	default:
 		return false

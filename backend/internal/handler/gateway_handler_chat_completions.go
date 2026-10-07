@@ -76,12 +76,24 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		return
 	}
 	reqModel := modelResult.String()
-	bindRequestedReasoningEffort(c, body, reqModel)
-	ensureCompositeTargetPlatform(c, apiKey, reqModel)
-	if !compositeTargetPlatformResolved(c, apiKey, reqModel) {
-		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by composite groups")
+	route, routeErr := resolveEffectiveOpenAICompatibleRoute(c, h.gatewayService, apiKey, reqModel, service.CompositeRouteEndpointChatCompletions)
+	if routeErr != nil {
+		if errors.Is(routeErr, service.ErrClaudeCodeOnly) {
+			h.chatCompletionsErrorResponse(c, http.StatusForbidden, "permission_error",
+				"This group is restricted to Claude Code clients (/v1/messages only)")
+		} else {
+			h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by composite groups")
+		}
 		return
 	}
+	reqModel = route.requestedModel
+	routingAPIKey := route.apiKey
+	routingGroupID := route.groupID
+	routingModel := route.routeModel
+	if bodyModel := gjson.GetBytes(body, "model").String(); bodyModel != reqModel {
+		body = h.gatewayService.ReplaceModelInBody(body, reqModel)
+	}
+	bindRequestedReasoningEffort(c, body, reqModel)
 	reqStream, ok := parseOpenAICompatibleStream(body)
 	if !ok {
 		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)
@@ -99,17 +111,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 	c.Request = c.Request.WithContext(pricingCtx)
 
 	// 解析渠道级模型映射
-	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
-
-	// Claude Code only restriction: /v1/chat/completions is never a Claude Code
-	// endpoint. With a fallback group the request continues and account selection
-	// (checkClaudeCodeRestriction) schedules it in the fallback group; without one
-	// it is rejected here.
-	if apiKey.Group != nil && apiKey.Group.ClaudeCodeOnly && apiKey.Group.FallbackGroupID == nil {
-		h.chatCompletionsErrorResponse(c, http.StatusForbidden, "permission_error",
-			"This group is restricted to Claude Code clients (/v1/messages only)")
-		return
-	}
+	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), routingGroupID, routingModel)
 
 	if decision := h.checkSecurityAudit(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIChat, reqModel, body); decision != nil && !decision.AllowNextStage {
 		h.openAISecurityAuditError(c, decision)
@@ -159,7 +161,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		APIKeyID:  apiKey.ID,
 	}
 	sessionHash := h.gatewayService.GenerateSessionHash(parsedReq)
-	groupPlatform := effectiveAPIKeyPlatform(c, apiKey)
+	groupPlatform := effectiveAPIKeyPlatform(c, routingAPIKey)
 	selectionSessionHash := sessionHash
 	if groupPlatform == service.PlatformGemini && selectionSessionHash != "" {
 		selectionSessionHash = "gemini:" + selectionSessionHash
@@ -174,10 +176,10 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		if c.Request.Context().Err() != nil {
 			return
 		}
-		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, selectionSessionHash, reqModel, fs.FailedAccountIDs, "", int64(0))
+		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), routingGroupID, selectionSessionHash, routingModel, fs.FailedAccountIDs, "", int64(0))
 		if err != nil {
 			if len(fs.FailedAccountIDs) == 0 {
-				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, groupPlatform)
+				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, routingAPIKey, reqModel, routingModel, groupPlatform)
 				cls = classifySelectionFailureError(err, cls)
 				if !cls.ModelNotFound {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
@@ -248,7 +250,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		account = latest
 		selection.Account = latest
 		if selection.ProfitGateActive() {
-			if err := h.gatewayService.BindStickySessionAfterProfitAdmission(admissionCtx, apiKey.GroupID, selectionSessionHash, account.ID); err != nil {
+			if err := h.gatewayService.BindStickySessionAfterProfitAdmission(admissionCtx, routingGroupID, selectionSessionHash, account.ID); err != nil {
 				reqLog.Warn("gateway.cc.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 			}
 		}
@@ -265,8 +267,12 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		// 5. Forward request
 		writerSizeBeforeForward := c.Writer.Size()
 		forwardBody := body
+		forwardModel := routingModel
 		if channelMapping.Mapped {
-			forwardBody = h.gatewayService.ReplaceModelInBody(body, channelMapping.MappedModel)
+			forwardModel = channelMapping.MappedModel
+		}
+		if forwardModel != reqModel {
+			forwardBody = h.gatewayService.ReplaceModelInBody(body, forwardModel)
 		}
 		var result *service.ForwardResult
 		setActualUpstreamEndpoint(c, "")

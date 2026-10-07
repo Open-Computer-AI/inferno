@@ -1544,6 +1544,33 @@ func TestOpenAIResponsesWebSocket_PassthroughTracksModelPerTurn(t *testing.T) {
 		"each turn must be billed with its own channel-mapped model")
 }
 
+func TestOpenAIResponsesWebSocket_CompositeExplicitAliasUsesResolver(t *testing.T) {
+	resolver := service.NewCompositeRouteResolver(&openAICompositeRouteRepositoryStub{
+		routes: []service.CompositeModelRoute{{
+			ID:             8801,
+			GroupID:        4201,
+			PublicModel:    "customer-alias",
+			MatchType:      service.CompositeRouteMatchExact,
+			TargetPlatform: service.PlatformOpenAI,
+			UpstreamModel:  "gpt-5.5",
+			Endpoint:       service.CompositeRouteEndpointResponses,
+			Enabled:        true,
+		}},
+	})
+
+	got := runOpenAIResponsesWebSocketUsageLogCase(t, openAIResponsesWSUsageLogCase{
+		firstPayload:      `{"type":"response.create","model":"customer-alias","stream":false}`,
+		group:             &service.Group{ID: 4201, Platform: service.PlatformComposite, Status: service.StatusActive},
+		compositeResolver: resolver,
+	})
+
+	require.Equal(t, "gpt-5.5", gjson.GetBytes(got.upstreamFirstPayload, "model").String())
+	require.Equal(t, "customer-alias", gjson.GetBytes(got.clientEvents[0], "response.model").String())
+	require.Equal(t, "customer-alias", got.log.RequestedModel)
+	require.NotNil(t, got.log.UpstreamModel)
+	require.Equal(t, "gpt-5.5", *got.log.UpstreamModel)
+}
+
 func TestOpenAIResponsesWebSocket_ChannelMappedTargetSelectsAccountWithoutRequestedAlias(t *testing.T) {
 	got := runOpenAIResponsesWebSocketUsageLogCase(t, openAIResponsesWSUsageLogCase{
 		firstPayload:  `{"type":"response.create","model":"public-alias","stream":false}`,
@@ -1944,7 +1971,8 @@ type openAIResponsesWSUsageLogCase struct {
 	accountModelMapping       map[string]any
 	afterFirstUpstreamRequest func(channelSvc *service.ChannelService) error
 	// group 覆盖 apiKey.Group（分组级模型白名单测试用）；nil 保持原有无分组行为。
-	group *service.Group
+	group             *service.Group
+	compositeResolver *service.CompositeRouteResolver
 	// firstFrameCloseExpected：首帧即被拒（连接被 1008 关闭），不期待任何响应帧。
 	firstFrameCloseExpected bool
 	// secondTurnCloseExpected：第二个 turn 被拒（连接被 1008 关闭）。
@@ -1962,6 +1990,15 @@ type openAIResponsesWSUsageLogResult struct {
 type openAIWSUsageHandlerAccountRepoStub struct {
 	service.AccountRepository
 	account service.Account
+}
+
+type openAICompositeRouteRepositoryStub struct {
+	service.CompositeModelRouteRepository
+	routes []service.CompositeModelRoute
+}
+
+func (r *openAICompositeRouteRepositoryStub) ListByGroup(context.Context, int64, bool) ([]service.CompositeModelRoute, error) {
+	return append([]service.CompositeModelRoute(nil), r.routes...), nil
 }
 
 func (s *openAIWSUsageHandlerAccountRepoStub) ListSchedulableByPlatform(ctx context.Context, platform string) ([]service.Account, error) {
@@ -3025,6 +3062,9 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		billingCacheService: billingCacheSvc,
 		apiKeyService:       &service.APIKeyService{},
 		concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, time.Second),
+	}
+	if tc.compositeResolver != nil {
+		h.SetCompositeRouteResolver(tc.compositeResolver)
 	}
 
 	apiKey := &service.APIKey{
