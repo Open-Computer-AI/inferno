@@ -33,6 +33,144 @@ func TestAPIKeyRepoSuite(t *testing.T) {
 	suite.Run(t, new(APIKeyRepoSuite))
 }
 
+func TestAPIKeyRepositoryCreateWithActiveLimitConcurrentAcrossRepositories(t *testing.T) {
+	client := testEntClient(t)
+	ctx := context.Background()
+	user := mustCreateUser(t, client, &service.User{})
+	defer func() {
+		_, _ = client.ExecContext(ctx, "DELETE FROM api_keys WHERE user_id = $1", user.ID)
+		_, _ = client.ExecContext(ctx, "DELETE FROM users WHERE id = $1", user.ID)
+	}()
+
+	repoOne := newAPIKeyRepositoryWithSQL(client, integrationDB)
+	repoTwo := newAPIKeyRepositoryWithSQL(client, integrationDB)
+	seed := &service.APIKey{
+		UserID: user.ID,
+		Key:    "sk-active-limit-seed",
+		Name:   "active limit seed",
+		Status: service.StatusActive,
+	}
+	require.NoError(t, repoOne.Create(ctx, seed))
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for i, repo := range []*apiKeyRepository{repoOne, repoTwo} {
+		wg.Add(1)
+		go func(i int, repo *apiKeyRepository) {
+			defer wg.Done()
+			<-start
+			errs <- repo.CreateWithActiveLimit(ctx, &service.APIKey{
+				UserID: user.ID,
+				Key:    "sk-active-limit-race-" + string(rune('0'+i)),
+				Name:   "active limit race",
+				Status: service.StatusActive,
+			}, 2)
+		}(i, repo)
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	succeeded := 0
+	for err := range errs {
+		if err == nil {
+			succeeded++
+			continue
+		}
+		require.ErrorIs(t, err, service.ErrAPIKeyCountExceeded)
+	}
+	require.Equal(t, 1, succeeded)
+
+	count, err := repoOne.CountByUserID(ctx, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), count)
+}
+
+func TestAPIKeyRepositoryCreateWithActiveLimitCountsEligibility(t *testing.T) {
+	client := testEntClient(t)
+	ctx := context.Background()
+	user := mustCreateUser(t, client, &service.User{})
+	defer func() {
+		_, _ = client.ExecContext(ctx, "DELETE FROM api_keys WHERE user_id = $1", user.ID)
+		_, _ = client.ExecContext(ctx, "DELETE FROM users WHERE id = $1", user.ID)
+	}()
+	repo := newAPIKeyRepositoryWithSQL(client, integrationDB)
+
+	softDeleted := &service.APIKey{
+		UserID: user.ID,
+		Key:    "sk-active-limit-soft-deleted",
+		Name:   "soft deleted",
+		Status: service.StatusActive,
+	}
+	require.NoError(t, repo.Create(ctx, softDeleted))
+	require.NoError(t, repo.Delete(ctx, softDeleted.ID))
+
+	clientID := "agent:active-limit-backing"
+	backing := mustCreateApiKey(t, client, &service.APIKey{
+		UserID:        user.ID,
+		Key:           "sk-active-limit-backing",
+		Name:          "OAuth backing",
+		Status:        service.StatusActive,
+		OAuthClientID: &clientID,
+	})
+
+	ordinary := &service.APIKey{
+		UserID: user.ID,
+		Key:    "sk-active-limit-ordinary",
+		Name:   "ordinary",
+		Status: service.StatusActive,
+	}
+	// The soft-deleted row is excluded, so the backing row leaves one slot.
+	require.NoError(t, repo.CreateWithActiveLimit(ctx, ordinary, 2))
+
+	count, err := repo.CountByUserID(ctx, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), count, "live backing and ordinary rows both count")
+
+	tooMany := &service.APIKey{
+		UserID: user.ID,
+		Key:    "sk-active-limit-too-many",
+		Name:   "too many",
+		Status: service.StatusActive,
+	}
+	require.ErrorIs(t, repo.CreateWithActiveLimit(ctx, tooMany, 2), service.ErrAPIKeyCountExceeded)
+	require.Zero(t, tooMany.ID, "cap rejection must not populate an inserted row")
+
+	keys, page, err := repo.ListByUserID(ctx, user.ID, pagination.PaginationParams{Page: 1, PageSize: 10}, service.APIKeyListFilters{})
+	require.NoError(t, err)
+	require.Len(t, keys, 1, "OAuth backing rows remain hidden from ordinary listings")
+	require.Equal(t, ordinary.ID, keys[0].ID)
+	require.Equal(t, int64(1), page.Total)
+	require.NotZero(t, backing.ID)
+}
+
+func TestAPIKeyRepositoryCreateWithActiveLimitTransactionFailureLeavesNoRow(t *testing.T) {
+	client := testEntClient(t)
+	ctx := context.Background()
+	user := mustCreateUser(t, client, &service.User{})
+	defer func() {
+		_, _ = client.ExecContext(context.Background(), "DELETE FROM api_keys WHERE user_id = $1", user.ID)
+		_, _ = client.ExecContext(context.Background(), "DELETE FROM users WHERE id = $1", user.ID)
+	}()
+	repo := newAPIKeyRepositoryWithSQL(client, integrationDB)
+
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	failed := &service.APIKey{
+		UserID: user.ID,
+		Key:    "sk-active-limit-canceled",
+		Name:   "canceled",
+		Status: service.StatusActive,
+	}
+	require.Error(t, repo.CreateWithActiveLimit(canceled, failed, 1))
+	require.Zero(t, failed.ID)
+
+	count, err := repo.CountByUserID(ctx, user.ID)
+	require.NoError(t, err)
+	require.Zero(t, count, "a failed transaction must insert nothing")
+}
+
 // --- Create / GetByID / GetByKey ---
 
 func (s *APIKeyRepoSuite) TestCreate() {

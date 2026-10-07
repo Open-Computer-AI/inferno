@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ type createLimitAPIKeyRepoStub struct {
 	activeCount int64
 	countErr    error
 	created     []*APIKey
+	mu          sync.Mutex
 }
 
 func (s *createLimitAPIKeyRepoStub) CountByUserID(ctx context.Context, userID int64) (int64, error) {
@@ -32,11 +34,32 @@ func (s *createLimitAPIKeyRepoStub) Create(ctx context.Context, key *APIKey) err
 	return nil
 }
 
+func (s *createLimitAPIKeyRepoStub) CreateWithActiveLimit(ctx context.Context, key *APIKey, maxActive int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.countErr != nil {
+		return s.countErr
+	}
+	if s.activeCount >= int64(maxActive) {
+		return ErrAPIKeyCountExceeded
+	}
+	s.activeCount++
+	s.created = append(s.created, key)
+	return nil
+}
+
 type createLimitCacheStub struct {
 	*apiKeyCacheStub
 	createCounts map[int64]int64
 	incrErr      error
 	windows      []time.Duration
+}
+
+func (s *createLimitCacheStub) DecrementCreateCount(ctx context.Context, userID int64) error {
+	if s.createCounts[userID] > 0 {
+		s.createCounts[userID]--
+	}
+	return nil
 }
 
 func (s *createLimitCacheStub) IncrementCreateCount(ctx context.Context, userID int64, window time.Duration) (int64, error) {
@@ -144,6 +167,41 @@ func TestAPIKeyServiceCreate_CountErrorFailsClosed(t *testing.T) {
 	_, err := svc.Create(context.Background(), 7, CreateAPIKeyRequest{Name: "k"})
 	require.Error(t, err)
 	require.Empty(t, repo.created)
+}
+
+func TestAPIKeyServiceCreate_ActiveLimitSerializesConcurrentCreates(t *testing.T) {
+	repo, cache := newCreateLimitStubs()
+	repo.activeCount = 1
+	services := []*APIKeyService{
+		newCreateLimitService(repo, cache, 2, 0),
+		newCreateLimitService(repo, cache, 2, 0),
+	}
+	start := make(chan struct{})
+	errs := make(chan error, len(services))
+	var wg sync.WaitGroup
+	for _, svc := range services {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := svc.Create(context.Background(), 7, CreateAPIKeyRequest{Name: "k"})
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	succeeded := 0
+	for err := range errs {
+		if err == nil {
+			succeeded++
+			continue
+		}
+		require.ErrorIs(t, err, ErrAPIKeyCountExceeded)
+	}
+	require.Equal(t, 1, succeeded)
+	require.Equal(t, int64(2), repo.activeCount)
 }
 
 func TestAPIKeyServiceCreate_RedisErrorFailsOpen(t *testing.T) {

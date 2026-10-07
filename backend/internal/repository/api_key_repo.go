@@ -43,7 +43,8 @@ func (r *apiKeyRepository) activeQuery() *dbent.APIKeyQuery {
 }
 
 func (r *apiKeyRepository) Create(ctx context.Context, key *service.APIKey) error {
-	builder := r.client.APIKey.Create().
+	client := clientFromContext(ctx, r.client)
+	builder := client.APIKey.Create().
 		SetUserID(key.UserID).
 		SetKey(key.Key).
 		SetName(key.Name).
@@ -72,6 +73,67 @@ func (r *apiKeyRepository) Create(ctx context.Context, key *service.APIKey) erro
 		key.UpdatedAt = created.UpdatedAt
 	}
 	return translatePersistenceError(err, nil, service.ErrAPIKeyExists)
+}
+
+// CreateWithActiveLimit serializes the active-key count and insert per user.
+// The count intentionally matches CountByUserID: soft-deleted rows are
+// excluded, while internal OAuth backing rows remain part of the user's live
+// key count even though they are hidden from user-facing listings.
+func (r *apiKeyRepository) CreateWithActiveLimit(ctx context.Context, key *service.APIKey, maxActive int) error {
+	if maxActive <= 0 {
+		return r.Create(ctx, key)
+	}
+
+	txCtx := ctx
+	txClient := clientFromContext(ctx, r.client)
+	var tx *dbent.Tx
+	if dbent.TxFromContext(ctx) == nil {
+		started, err := r.client.Tx(ctx)
+		switch {
+		case err == nil:
+			tx = started
+			txClient = tx.Client()
+			txCtx = dbent.NewTxContext(ctx, tx)
+			defer func() { _ = tx.Rollback() }()
+		case errors.Is(err, dbent.ErrTxStarted):
+			// r.client may already be bound to a caller-owned transaction.
+		case err != nil:
+			return err
+		}
+	}
+
+	lockExec := txAwareSQLExecutor(txCtx, r.sql, r.client)
+	if txClient.Driver().Dialect() == dialect.Postgres && lockExec == nil {
+		return errors.New("api key active limit: PostgreSQL SQL executor unavailable")
+	}
+	release, err := lockRepositoryScopedKeys(
+		txCtx,
+		txClient,
+		lockExec,
+		fmt.Sprintf("api-key-active:%d", key.UserID),
+	)
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	count, err := txClient.APIKey.Query().
+		Where(apikey.UserIDEQ(key.UserID), apikey.DeletedAtIsNil()).
+		Count(txCtx)
+	if err != nil {
+		return err
+	}
+	if count >= maxActive {
+		return service.ErrAPIKeyCountExceeded
+	}
+
+	if err := r.Create(txCtx, key); err != nil {
+		return err
+	}
+	if tx != nil {
+		return tx.Commit()
+	}
+	return nil
 }
 
 func (r *apiKeyRepository) GetByID(ctx context.Context, id int64) (*service.APIKey, error) {

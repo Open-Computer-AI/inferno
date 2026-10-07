@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"html"
 	"math"
@@ -128,6 +129,13 @@ type APIKeyRepository interface {
 	IncrementRateLimitUsage(ctx context.Context, id int64, cost float64) error
 	ResetRateLimitWindows(ctx context.Context, id int64) error
 	GetRateLimitData(ctx context.Context, id int64) (*APIKeyRateLimitData, error)
+}
+
+// apiKeyCreateWithActiveLimit is the repository capability required when the
+// active-key cap is enabled. Its count and insert happen in one serialized
+// database operation; a plain Create fallback would reintroduce the race.
+type apiKeyCreateWithActiveLimit interface {
+	CreateWithActiveLimit(ctx context.Context, key *APIKey, maxActive int) error
 }
 
 type apiKeyAllByUserIDLister interface {
@@ -454,21 +462,13 @@ func (s *APIKeyService) checkAPIKeyRateLimit(ctx context.Context, userID int64) 
 	return nil
 }
 
-// checkAPIKeyCreateLimits 校验创建 API Key 的防滥用限制（对自定义与自动生成的 Key 一视同仁）。
-// 数量上限按未删除的 Key 计；创建次数按固定窗口累计，删除 Key 不返还次数，
-// 以阻断"删除后反复新建"的循环。Redis 出错时与自定义 Key 限流一致，不阻止用户操作。
+// checkAPIKeyCreateLimits 校验创建次数防滥用限制（对自定义与自动生成的 Key 一视同仁）。
+// 活跃 Key 数量上限由 repository 的串行化 count-and-insert 操作强制；
+// 创建次数按固定窗口累计，删除 Key 不返还次数，以阻断"删除后反复新建"的循环。
+// Redis 出错时与自定义 Key 限流一致，不阻止用户操作。
 func (s *APIKeyService) checkAPIKeyCreateLimits(ctx context.Context, userID int64) error {
 	if s.cfg == nil {
 		return nil
-	}
-	if maxActive := s.cfg.APIKeyCreate.MaxActivePerUser; maxActive > 0 {
-		count, err := s.apiKeyRepo.CountByUserID(ctx, userID)
-		if err != nil {
-			return fmt.Errorf("count api keys: %w", err)
-		}
-		if count >= int64(maxActive) {
-			return ErrAPIKeyCountExceeded
-		}
 	}
 	if maxPerHour := s.cfg.APIKeyCreate.MaxPerUserPerHour; maxPerHour > 0 && s.cache != nil {
 		count, err := s.cache.IncrementCreateCount(ctx, userID, apiKeyCreateCountWindow)
@@ -480,6 +480,21 @@ func (s *APIKeyService) checkAPIKeyCreateLimits(ctx context.Context, userID int6
 		}
 	}
 	return nil
+}
+
+// decrementAPIKeyCreateCount releases the hourly reservation when the
+// authoritative database cap rejects the request. This optional capability
+// keeps older cache implementations source-compatible and preserves their
+// fail-open behavior when Redis is unavailable.
+func (s *APIKeyService) decrementAPIKeyCreateCount(ctx context.Context, userID int64) {
+	if s.cache == nil {
+		return
+	}
+	if cache, ok := s.cache.(interface {
+		DecrementCreateCount(context.Context, int64) error
+	}); ok {
+		_ = cache.DecrementCreateCount(ctx, userID)
+	}
 }
 
 // incrementAPIKeyErrorCount 增加用户创建自定义Key的错误计数
@@ -603,7 +618,23 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 		apiKey.ExpiresAt = &expiresAt
 	}
 
-	if err := s.apiKeyRepo.Create(ctx, apiKey); err != nil {
+	maxActive := 0
+	if s.cfg != nil {
+		maxActive = s.cfg.APIKeyCreate.MaxActivePerUser
+	}
+	if maxActive > 0 {
+		repo, ok := s.apiKeyRepo.(apiKeyCreateWithActiveLimit)
+		if !ok {
+			s.decrementAPIKeyCreateCount(ctx, userID)
+			return nil, fmt.Errorf("create api key: repository does not support atomic active-key limits")
+		}
+		if err := repo.CreateWithActiveLimit(ctx, apiKey, maxActive); err != nil {
+			if errors.Is(err, ErrAPIKeyCountExceeded) {
+				s.decrementAPIKeyCreateCount(ctx, userID)
+			}
+			return nil, fmt.Errorf("create api key: %w", err)
+		}
+	} else if err := s.apiKeyRepo.Create(ctx, apiKey); err != nil {
 		return nil, fmt.Errorf("create api key: %w", err)
 	}
 

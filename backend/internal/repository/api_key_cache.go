@@ -20,6 +20,19 @@ const (
 	authCacheInvalidateChannel = "auth:cache:invalidate"
 )
 
+var decrementAPIKeyCreateCountScript = redis.NewScript(`
+local count = redis.call("GET", KEYS[1])
+if not count then
+  return 0
+end
+count = tonumber(count)
+if not count or count <= 1 then
+  redis.call("DEL", KEYS[1])
+  return 0
+end
+return redis.call("DECR", KEYS[1])
+`)
+
 // apiKeyRateLimitKey generates the Redis key for API key creation rate limiting.
 func apiKeyRateLimitKey(userID int64) string {
 	return fmt.Sprintf("%s%d", apiKeyRateLimitKeyPrefix, userID)
@@ -72,6 +85,13 @@ func (c *apiKeyCache) IncrementCreateCount(ctx context.Context, userID int64, wi
 		return 0, err
 	}
 	return incr.Val(), nil
+}
+
+// DecrementCreateCount releases a reservation when the database active-key
+// cap rejects the corresponding creation.
+func (c *apiKeyCache) DecrementCreateCount(ctx context.Context, userID int64) error {
+	key := apiKeyCreateCountKey(userID)
+	return decrementAPIKeyCreateCountScript.Run(ctx, c.rdb, []string{key}).Err()
 }
 
 func (c *apiKeyCache) IncrementDailyUsage(ctx context.Context, apiKey string) error {
