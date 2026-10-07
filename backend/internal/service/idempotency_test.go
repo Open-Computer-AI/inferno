@@ -15,9 +15,10 @@ import (
 )
 
 type inMemoryIdempotencyRepo struct {
-	mu     sync.Mutex
-	nextID int64
-	data   map[string]*IdempotencyRecord
+	mu           sync.Mutex
+	nextID       int64
+	reclaimCalls int
+	data         map[string]*IdempotencyRecord
 }
 
 func newInMemoryIdempotencyRepo() *inMemoryIdempotencyRepo {
@@ -83,6 +84,7 @@ func (r *inMemoryIdempotencyRepo) GetByScopeAndKeyHash(_ context.Context, scope,
 func (r *inMemoryIdempotencyRepo) TryReclaim(_ context.Context, id int64, fromStatus string, now, newLockedUntil, newExpiresAt time.Time) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.reclaimCalls++
 	for _, rec := range r.data {
 		if rec.ID != id {
 			continue
@@ -163,7 +165,7 @@ func (r *inMemoryIdempotencyRepo) DeleteExpired(_ context.Context, now time.Time
 	defer r.mu.Unlock()
 	var deleted int64
 	for k, rec := range r.data {
-		if !rec.ExpiresAt.After(now) {
+		if rec.Scope != ClaudeResetOperationScope && !rec.ExpiresAt.After(now) {
 			delete(r.data, k)
 			deleted++
 		}
@@ -279,6 +281,71 @@ func TestIdempotencyCoordinator_ReclaimExpiredSucceededRecord(t *testing.T) {
 	metrics := GetIdempotencyMetricsSnapshot()
 	require.GreaterOrEqual(t, metrics.ClaimTotal, uint64(2))
 	require.GreaterOrEqual(t, metrics.ReplayTotal, uint64(1))
+}
+
+func TestIdempotencyCoordinator_NeverReclaimExpired(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status string
+	}{
+		{name: "processing", status: IdempotencyStatusProcessing},
+		{name: "succeeded", status: IdempotencyStatusSucceeded},
+		{name: "failed retryable", status: IdempotencyStatusFailedRetryable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newInMemoryIdempotencyRepo()
+			coordinator := NewIdempotencyCoordinator(repo, DefaultIdempotencyConfig())
+			opts := IdempotencyExecuteOptions{
+				Scope:               "test.scope.never_reclaim_expired",
+				Method:              "POST",
+				Route:               "/test/never-reclaim-expired",
+				ActorScope:          "user:expired",
+				RequireKey:          true,
+				IdempotencyKey:      "expired-" + strings.ReplaceAll(tc.name, " ", "-"),
+				Payload:             map[string]any{"status": tc.status},
+				NeverReclaimExpired: true,
+			}
+			fingerprint, err := BuildIdempotencyFingerprint(opts.Method, opts.Route, opts.ActorScope, opts.Payload)
+			require.NoError(t, err)
+			expiresAt := time.Now().Add(-time.Minute)
+			lockedUntil := time.Now().Add(-time.Minute)
+			record := &IdempotencyRecord{
+				Scope:              opts.Scope,
+				IdempotencyKeyHash: HashIdempotencyKey(opts.IdempotencyKey),
+				RequestFingerprint: fingerprint,
+				Status:             IdempotencyStatusProcessing,
+				LockedUntil:        &lockedUntil,
+				ExpiresAt:          expiresAt,
+			}
+			owner, err := repo.CreateProcessing(context.Background(), record)
+			require.NoError(t, err)
+			require.True(t, owner)
+			switch tc.status {
+			case IdempotencyStatusSucceeded:
+				require.NoError(t, repo.MarkSucceeded(context.Background(), record.ID, 200, `{"ok":true}`, expiresAt))
+			case IdempotencyStatusFailedRetryable:
+				require.NoError(t, repo.MarkFailedRetryable(context.Background(), record.ID, "RETRYABLE_FAILURE", lockedUntil, expiresAt))
+			}
+			before, err := repo.GetByScopeAndKeyHash(context.Background(), opts.Scope, record.IdempotencyKeyHash)
+			require.NoError(t, err)
+
+			execCount := 0
+			result, err := coordinator.Execute(context.Background(), opts, func(context.Context) (any, error) {
+				execCount++
+				return map[string]any{"ok": true}, nil
+			})
+			require.Nil(t, result)
+			require.ErrorIs(t, err, ErrIdempotencyInProgress)
+			require.Zero(t, execCount)
+
+			repo.mu.Lock()
+			after := cloneRecord(repo.data[repo.key(opts.Scope, record.IdempotencyKeyHash)])
+			reclaimCalls := repo.reclaimCalls
+			repo.mu.Unlock()
+			require.Zero(t, reclaimCalls)
+			require.Equal(t, before, after)
+		})
+	}
 }
 
 func TestIdempotencyCoordinator_SameKeyDifferentPayloadConflict(t *testing.T) {

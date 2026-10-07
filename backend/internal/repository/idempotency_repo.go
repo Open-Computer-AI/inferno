@@ -223,13 +223,14 @@ func (r *idempotencyRepository) DeleteExpired(ctx context.Context, now time.Time
 			SELECT id
 			FROM idempotency_records
 			WHERE expires_at <= $1
+				AND scope <> $2
 			ORDER BY expires_at ASC
-			LIMIT $2
+			LIMIT $3
 		)
 		DELETE FROM idempotency_records
 		WHERE id IN (SELECT id FROM victims)
 	`
-	res, err := r.sql.ExecContext(ctx, query, now, limit)
+	res, err := r.sql.ExecContext(ctx, query, now, service.ClaudeResetOperationScope, limit)
 	if err != nil {
 		return 0, err
 	}

@@ -87,6 +87,8 @@ type IdempotencyExecuteOptions struct {
 	Payload        any
 	TTL            time.Duration
 	RequireKey     bool
+	// NeverReclaimExpired keeps an expired record as a permanent conflict.
+	NeverReclaimExpired bool
 	// ExecutionTimeout opts into bounded execution independent of client cancellation,
 	// with lease renewal and a separate short window to persist the final result.
 	ExecutionTimeout time.Duration
@@ -297,6 +299,13 @@ func (c *IdempotencyCoordinator) Execute(
 		}
 		reclaimedByExpired := false
 		if !existing.ExpiresAt.After(now) {
+			if opts.NeverReclaimExpired {
+				recordIdempotencyConflict(opts.Route, opts.Scope, map[string]string{"reason": "expired_reclaim_disabled"})
+				logIdempotencyAudit(opts.Route, opts.Scope, keyHash, existing.Status+"->conflict", false, map[string]string{
+					"reason": "expired_reclaim_disabled",
+				})
+				return nil, ErrIdempotencyInProgress
+			}
 			taken, reclaimErr := c.repo.TryReclaim(ctx, existing.ID, existing.Status, now, lockedUntil, expiresAt)
 			if reclaimErr != nil {
 				RecordIdempotencyStoreUnavailable(opts.Route, opts.Scope, "try_reclaim_expired_error")

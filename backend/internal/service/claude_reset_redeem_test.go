@@ -132,7 +132,7 @@ func seedClaudeResetOperation(t *testing.T, repo *inMemoryIdempotencyRepo, id in
 	fingerprint, err := BuildIdempotencyFingerprint(http.MethodPost, "/admin/accounts/:id/claude/reset-credits/redeem", fmt.Sprintf("account:%d", id), map[string]any{"account_id": id})
 	require.NoError(t, err)
 	record := &IdempotencyRecord{
-		Scope:              claudeResetOperationScope,
+		Scope:              ClaudeResetOperationScope,
 		IdempotencyKeyHash: HashIdempotencyKey(operation),
 		RequestFingerprint: fingerprint,
 		Status:             IdempotencyStatusProcessing,
@@ -539,6 +539,94 @@ func TestClaudeResetRedeemExpiredProcessingWithoutMatchingFenceRemainsInProgress
 			}
 		})
 	}
+}
+
+func TestClaudeResetRedeemExpiredOperationFailsClosedRegardlessOfFence(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		completedFence bool
+	}{
+		{name: "completed fence", completedFence: true},
+		{name: "absent fence", completedFence: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			now := time.Now().UTC()
+			f := &redeemFake{claim: `{"result":"reset"}`}
+			s, repo, _ := newRedeemService(t, f)
+			s.now = func() time.Time { return now }
+			key := "expired-" + strings.ReplaceAll(tc.name, " ", "-")
+			operation := seedClaudeResetOperation(t, repo, 1, key, now.Add(-time.Minute), now.Add(-time.Second))
+			if tc.completedFence {
+				seedClaudeResetFence(t, repo, operation, claudeResetFence{
+					Outcome:   ClaudeResetOutcomeReset,
+					Completed: true,
+					At:        now,
+				}, now)
+			}
+			operationHash := HashIdempotencyKey(operation)
+			before, err := repo.GetByScopeAndKeyHash(context.Background(), ClaudeResetOperationScope, operationHash)
+			require.NoError(t, err)
+			require.NotNil(t, before)
+
+			out, err := s.Redeem(context.Background(), 1, key)
+			require.Nil(t, out)
+			require.ErrorIs(t, err, ErrIdempotencyInProgress)
+			require.Equal(t, "IDEMPOTENCY_IN_PROGRESS", infraerrors.Reason(err))
+			require.Zero(t, f.postCount())
+
+			after, err := repo.GetByScopeAndKeyHash(context.Background(), ClaudeResetOperationScope, operationHash)
+			require.NoError(t, err)
+			require.Equal(t, before, after)
+		})
+	}
+}
+
+func TestClaudeResetRedeemCleanupPreservesTombstoneAndBlocksSameKey(t *testing.T) {
+	now := time.Now().UTC()
+	f := &redeemFake{claim: `{"result":"reset"}`}
+	s, repo, _ := newRedeemService(t, f)
+	s.now = func() time.Time { return now }
+	key := "cleanup-expired"
+	operation := seedClaudeResetOperation(t, repo, 1, key, now.Add(-2*time.Minute), now.Add(-time.Minute))
+	operationHash := HashIdempotencyKey(operation)
+	operationRow, err := repo.GetByScopeAndKeyHash(context.Background(), ClaudeResetOperationScope, operationHash)
+	require.NoError(t, err)
+	require.NoError(t, repo.MarkSucceeded(context.Background(), operationRow.ID, http.StatusOK, `{"outcome":"reset"}`, operationRow.ExpiresAt))
+	before, err := repo.GetByScopeAndKeyHash(context.Background(), ClaudeResetOperationScope, operationHash)
+	require.NoError(t, err)
+
+	genericScope := "generic.cleanup"
+	genericKey := HashIdempotencyKey("generic-cleanup")
+	genericFingerprint, err := BuildIdempotencyFingerprint(http.MethodPost, "/generic", "user:1", map[string]any{"ok": true})
+	require.NoError(t, err)
+	genericLockedUntil := now.Add(-2 * time.Minute)
+	generic := &IdempotencyRecord{
+		Scope:              genericScope,
+		IdempotencyKeyHash: genericKey,
+		RequestFingerprint: genericFingerprint,
+		Status:             IdempotencyStatusProcessing,
+		LockedUntil:        &genericLockedUntil,
+		ExpiresAt:          now.Add(-time.Minute),
+	}
+	owner, err := repo.CreateProcessing(context.Background(), generic)
+	require.NoError(t, err)
+	require.True(t, owner)
+
+	deleted, err := repo.DeleteExpired(context.Background(), now, 500)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), deleted)
+	remainingClaude, err := repo.GetByScopeAndKeyHash(context.Background(), ClaudeResetOperationScope, operationHash)
+	require.NoError(t, err)
+	require.Equal(t, before, remainingClaude)
+	remainingGeneric, err := repo.GetByScopeAndKeyHash(context.Background(), genericScope, genericKey)
+	require.NoError(t, err)
+	require.Nil(t, remainingGeneric)
+
+	out, err := s.Redeem(context.Background(), 1, key)
+	require.Nil(t, out)
+	require.ErrorIs(t, err, ErrIdempotencyInProgress)
+	require.Equal(t, "IDEMPOTENCY_IN_PROGRESS", infraerrors.Reason(err))
+	require.Zero(t, f.postCount())
 }
 
 func TestClaudeResetRedeemMapsUpstreamResults(t *testing.T) {

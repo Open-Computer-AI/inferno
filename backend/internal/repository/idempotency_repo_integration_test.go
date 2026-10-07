@@ -147,3 +147,44 @@ func TestIdempotencyRepo_StatusTransition_ToSucceeded(t *testing.T) {
 	require.Equal(t, `{"ok":true}`, *got.ResponseBody)
 	require.Nil(t, got.LockedUntil)
 }
+
+func TestIdempotencyRepo_DeleteExpiredPreservesClaudeResetTombstones(t *testing.T) {
+	tx := testTx(t)
+	repo := &idempotencyRepository{sql: tx}
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	claude := &service.IdempotencyRecord{
+		Scope:              service.ClaudeResetOperationScope,
+		IdempotencyKeyHash: hashedTestValue(t, "idem-hash-claude-tombstone"),
+		RequestFingerprint: hashedTestValue(t, "idem-fp-claude-tombstone"),
+		Status:             service.IdempotencyStatusSucceeded,
+		ExpiresAt:          now.Add(-2 * time.Minute),
+	}
+	owner, err := repo.CreateProcessing(ctx, claude)
+	require.NoError(t, err)
+	require.True(t, owner)
+	require.NoError(t, repo.MarkSucceeded(ctx, claude.ID, 200, `{"outcome":"reset"}`, claude.ExpiresAt))
+
+	generic := &service.IdempotencyRecord{
+		Scope:              uniqueTestValue(t, "idem-scope-generic-expired"),
+		IdempotencyKeyHash: hashedTestValue(t, "idem-hash-generic-expired"),
+		RequestFingerprint: hashedTestValue(t, "idem-fp-generic-expired"),
+		Status:             service.IdempotencyStatusProcessing,
+		ExpiresAt:          now.Add(-time.Minute),
+	}
+	owner, err = repo.CreateProcessing(ctx, generic)
+	require.NoError(t, err)
+	require.True(t, owner)
+
+	deleted, err := repo.DeleteExpired(ctx, now, 1)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), deleted)
+
+	gotClaude, err := repo.GetByScopeAndKeyHash(ctx, claude.Scope, claude.IdempotencyKeyHash)
+	require.NoError(t, err)
+	require.NotNil(t, gotClaude)
+	gotGeneric, err := repo.GetByScopeAndKeyHash(ctx, generic.Scope, generic.IdempotencyKeyHash)
+	require.NoError(t, err)
+	require.Nil(t, gotGeneric)
+}

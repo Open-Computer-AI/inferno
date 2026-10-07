@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	claudeResetOperationScope = "claude_reset_redeem"
+	ClaudeResetOperationScope = "claude_reset_redeem"
 	claudeResetFenceScope     = "claude_reset_org_fence"
 	claudeResetProfileURL     = "https://api.anthropic.com/api/oauth/profile"
 	claudeResetRedeemURLFmt   = "https://api.anthropic.com/api/organizations/%s/reset_rate_limits"
@@ -105,9 +105,10 @@ func (s *ClaudeResetCreditService) Redeem(ctx context.Context, id int64, key str
 	}
 	operation := HashIdempotencyKey(fmt.Sprintf("claude-reset:%d:%s", id, normalized))
 	result, err := s.idempotency.Execute(ctx, IdempotencyExecuteOptions{
-		Scope: claudeResetOperationScope, ActorScope: fmt.Sprintf("account:%d", id), Method: http.MethodPost,
+		Scope: ClaudeResetOperationScope, ActorScope: fmt.Sprintf("account:%d", id), Method: http.MethodPost,
 		Route: "/admin/accounts/:id/claude/reset-credits/redeem", IdempotencyKey: operation,
-		Payload: map[string]any{"account_id": id}, TTL: claudeResetRecordTTL, RequireKey: true, ExecutionTimeout: 60 * time.Second,
+		Payload: map[string]any{"account_id": id}, TTL: claudeResetRecordTTL, RequireKey: true,
+		NeverReclaimExpired: true, ExecutionTimeout: 60 * time.Second,
 	}, func(exec context.Context) (any, error) { return s.redeemOnce(exec, id, operation) })
 	if err != nil {
 		if infraerrors.Reason(err) == infraerrors.Reason(ErrIdempotencyInProgress) {
@@ -178,7 +179,7 @@ func (s *ClaudeResetCreditService) acquireRedeemLeases(ctx context.Context, id i
 
 func (s *ClaudeResetCreditService) recoverExpiredProcessing(ctx context.Context, id int64, operation string) (*ClaudeResetOutcome, error) {
 	operationKeyHash := HashIdempotencyKey(operation)
-	operationRow, err := s.idempotency.repo.GetByScopeAndKeyHash(ctx, claudeResetOperationScope, operationKeyHash)
+	operationRow, err := s.idempotency.repo.GetByScopeAndKeyHash(ctx, ClaudeResetOperationScope, operationKeyHash)
 	if err != nil {
 		return nil, ErrIdempotencyStoreUnavail.WithCause(err)
 	}
@@ -194,7 +195,7 @@ func (s *ClaudeResetCreditService) recoverExpiredProcessing(ctx context.Context,
 	defer release()
 
 	now = s.now()
-	operationRow, err = s.idempotency.repo.GetByScopeAndKeyHash(ctx, claudeResetOperationScope, operationKeyHash)
+	operationRow, err = s.idempotency.repo.GetByScopeAndKeyHash(ctx, ClaudeResetOperationScope, operationKeyHash)
 	if err != nil {
 		return nil, ErrIdempotencyStoreUnavail.WithCause(err)
 	}
