@@ -509,9 +509,14 @@ func (s *GatewayService) computeFinalAnthropicBeta(
 
 	if tokenType == "oauth" {
 		if mimicClaudeCode {
-			// mimic 路径跳过白名单透传，incomingBeta 始终为空；所有模型都必须
-			// 携带完整 Claude Code beta 集合，避免 Haiku 被识别为第三方客户端。
-			return mergeAnthropicBetaDropping(claude.FullClaudeCodeMimicryBetas(), "", effectiveDropSet), true
+			// Keep the default beta set, with a narrow opt-in for the structured
+			// output compatibility token. Unknown client betas remain excluded.
+			incomingBeta := ""
+			const structuredOutputsBeta = "structured-outputs-2025-11-13"
+			if containsBetaToken(clientBeta, structuredOutputsBeta) {
+				incomingBeta = structuredOutputsBeta
+			}
+			return mergeAnthropicBetaDropping(claude.FullClaudeCodeMimicryBetas(), incomingBeta, effectiveDropSet), true
 		}
 		// 真 Claude Code 客户端透传路径
 		return stripBetaTokensWithSet(s.getBetaHeader(modelID, clientBeta), effectiveDropSet), true
