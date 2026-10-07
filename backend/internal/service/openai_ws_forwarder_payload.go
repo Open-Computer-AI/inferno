@@ -378,6 +378,41 @@ func setPreviousResponseIDToRawPayload(payload []byte, previousResponseID string
 	return rebuilt, nil
 }
 
+type openAIWSContextWindowBoundary struct {
+	WindowID                  string
+	Changed                   bool
+	PreviousResponseIDRemoved bool
+}
+
+func openAIWSPayloadCodexWindowID(payload []byte) string {
+	if len(payload) == 0 {
+		return ""
+	}
+	if id := strings.TrimSpace(gjson.GetBytes(payload, "client_metadata.x-codex-window-id").String()); id != "" {
+		return id
+	}
+	metadata := strings.TrimSpace(gjson.GetBytes(payload, "client_metadata.x-codex-turn-metadata").String())
+	if metadata == "" {
+		return ""
+	}
+	return strings.TrimSpace(gjson.Get(metadata, "window_id").String())
+}
+
+func normalizeOpenAIWSContextWindowBoundary(payload []byte, previousWindowID string) ([]byte, openAIWSContextWindowBoundary, error) {
+	currentWindowID := openAIWSPayloadCodexWindowID(payload)
+	boundary := openAIWSContextWindowBoundary{WindowID: currentWindowID}
+	if previousWindowID == "" || currentWindowID == "" || currentWindowID == previousWindowID {
+		return payload, boundary, nil
+	}
+	boundary.Changed = true
+	updated, removed, err := dropPreviousResponseIDFromRawPayload(payload)
+	if err != nil {
+		return payload, boundary, err
+	}
+	boundary.PreviousResponseIDRemoved = removed
+	return updated, boundary, nil
+}
+
 func shouldInferIngressFunctionCallOutputPreviousResponseID(
 	storeDisabled bool,
 	turn int,

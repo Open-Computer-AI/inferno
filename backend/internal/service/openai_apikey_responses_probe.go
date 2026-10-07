@@ -93,6 +93,13 @@ func selectResponsesProbeModel(account *Account) string {
 		return openai.DefaultTestModel
 	}
 	sort.Strings(candidates)
+	// Prefer a general text model over auxiliary entries such as
+	// codex-auto-review or image-only models, which cannot prove tool support.
+	for _, candidate := range candidates {
+		if strings.HasPrefix(candidate, "gpt-") && !isOpenAIImageGenerationModel(candidate) {
+			return candidate
+		}
+	}
 	return candidates[0]
 }
 
@@ -262,6 +269,9 @@ func (s *AccountTestService) ProbeOpenAIAPIKeyResponsesSupport(ctx context.Conte
 // 非 2xx 的结论只看状态码、不依赖响应内容，恒可下结论。
 // 缺少 status 字段的响应体（含非 JSON）也按可下结论处理，保持既有行为。
 func responsesProbeVerdictIsConclusive(status int, body []byte) bool {
+	if isResponsesProbeModelUnavailable(status, body) {
+		return false
+	}
 	if status < 200 || status >= 300 {
 		return true
 	}
@@ -303,6 +313,9 @@ func isResponsesEndpointSupportedByStatus(status int) bool {
 //     输出项才算真正可用;否则(如火山方舟 coding/v3 × kimi-k2.6 仅回 reasoning)
 //     判为 false,使网关改走 /v1/chat/completions 直转路径。
 func decideResponsesProbeSupport(status int, body []byte) bool {
+	if isResponsesProbeModelUnavailable(status, body) {
+		return true
+	}
 	if status == http.StatusNotFound || status == http.StatusMethodNotAllowed {
 		return false
 	}
@@ -310,6 +323,27 @@ func decideResponsesProbeSupport(status int, body []byte) bool {
 		return true
 	}
 	return responsesProbeBodyHasFunctionCall(body)
+}
+
+// isResponsesProbeModelUnavailable identifies 400/404 responses that only
+// report that the selected probe model is unavailable, not that the endpoint
+// itself is absent.
+func isResponsesProbeModelUnavailable(status int, body []byte) bool {
+	if status != http.StatusBadRequest && status != http.StatusNotFound {
+		return false
+	}
+	for _, path := range []string{"error.code", "error.type", "response.error.code", "response.error.type"} {
+		switch strings.ToLower(strings.TrimSpace(gjson.GetBytes(body, path).String())) {
+		case "model_not_found", "model_not_available", "unsupported_model", "invalid_model":
+			return true
+		}
+	}
+	for _, path := range []string{"error.message", "response.error.message"} {
+		if isExplicitOpenAIModelAvailabilityMessage(gjson.GetBytes(body, path).String()) {
+			return true
+		}
+	}
+	return isExplicitOpenAIModelAvailabilityMessage(extractUpstreamErrorMessage(body))
 }
 
 // responsesProbeBodyHasFunctionCall 判断非流式 Responses 响应体的 output 数组里
