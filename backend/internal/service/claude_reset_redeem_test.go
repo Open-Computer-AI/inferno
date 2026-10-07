@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -121,6 +122,48 @@ func newRedeemService(t *testing.T, f *redeemFake) (*ClaudeResetCreditService, *
 		return &http.Response{StatusCode: code, Body: io.NopCloser(strings.NewReader(body))}, nil
 	}
 	return s, repo, locks
+}
+
+func seedExpiredClaudeResetOperation(t *testing.T, repo *inMemoryIdempotencyRepo, id int64, key string, now time.Time) string {
+	t.Helper()
+	normalized, err := NormalizeIdempotencyKey(key)
+	require.NoError(t, err)
+	operation := HashIdempotencyKey(fmt.Sprintf("claude-reset:%d:%s", id, normalized))
+	fingerprint, err := BuildIdempotencyFingerprint(http.MethodPost, "/admin/accounts/:id/claude/reset-credits/redeem", fmt.Sprintf("account:%d", id), map[string]any{"account_id": id})
+	require.NoError(t, err)
+	lockedUntil := now.Add(-time.Minute)
+	record := &IdempotencyRecord{
+		Scope:              claudeResetOperationScope,
+		IdempotencyKeyHash: HashIdempotencyKey(operation),
+		RequestFingerprint: fingerprint,
+		Status:             IdempotencyStatusProcessing,
+		LockedUntil:        &lockedUntil,
+		ExpiresAt:          now.Add(time.Hour),
+	}
+	owner, err := repo.CreateProcessing(context.Background(), record)
+	require.NoError(t, err)
+	require.True(t, owner)
+	require.NotZero(t, record.ID)
+	return operation
+}
+
+func seedClaudeResetFence(t *testing.T, repo *inMemoryIdempotencyRepo, operation string, fence claudeResetFence, now time.Time) {
+	t.Helper()
+	orgHash := HashIdempotencyKey("claude-org:" + redeemTestOrg)
+	row := &IdempotencyRecord{
+		Scope:              claudeResetFenceScope,
+		IdempotencyKeyHash: orgHash,
+		RequestFingerprint: orgHash,
+		Status:             IdempotencyStatusProcessing,
+		ExpiresAt:          now.Add(claudeResetRecordTTL),
+	}
+	owner, err := repo.CreateProcessing(context.Background(), row)
+	require.NoError(t, err)
+	require.True(t, owner)
+	fence.Operation = operation
+	body, err := json.Marshal(fence)
+	require.NoError(t, err)
+	require.NoError(t, repo.MarkSucceeded(context.Background(), row.ID, http.StatusOK, string(body), now.Add(claudeResetRecordTTL)))
 }
 
 func TestClaudeResetRedeemHappyPathServerPicksNextGrant(t *testing.T) {
@@ -286,6 +329,121 @@ func TestClaudeResetRedeemCrashAfterMarkerNeverResends(t *testing.T) {
 	require.Equal(t, ClaudeResetOutcomeUnknown, out.Outcome)
 	require.True(t, out.Replayed)
 	require.Zero(t, f.postCount())
+}
+
+func TestClaudeResetRedeemRecoversExpiredProcessingFromCompleteFence(t *testing.T) {
+	now := time.Now().UTC()
+	cooldownUntil := now.Add(2 * time.Hour)
+	weeklyResetsAt := now.Add(24 * time.Hour)
+	fetchedAt := now.Add(-time.Minute)
+	credits := &ClaudeResetCredits{
+		Eligible:       true,
+		AvailableCount: 2,
+		Credits: []ClaudeResetCredit{{
+			Label:            "five hour",
+			ResetsLeft:       2,
+			Clears:           []string{"five_hour"},
+			PercentUsed:      map[string]float64{"five_hour": 100},
+			Blocking:         []string{},
+			UseRequiresLimit: true,
+			Redeemable:       true,
+		}},
+		CooldownUntil:  &cooldownUntil,
+		WeeklyResetsAt: &weeklyResetsAt,
+		FetchedAt:      fetchedAt,
+	}
+	cases := []struct {
+		name    string
+		outcome ClaudeResetOutcome
+	}{
+		{
+			name: "reset",
+			outcome: ClaudeResetOutcome{
+				Outcome: ClaudeResetOutcomeReset,
+				Cleared: []string{"five_hour", "seven_day"},
+				Credits: credits,
+			},
+		},
+		{
+			name: "cooldown and cleared",
+			outcome: ClaudeResetOutcome{
+				Outcome:       ClaudeResetOutcomeCooldown,
+				Reason:        "tenure",
+				Cleared:       []string{"seven_day"},
+				CooldownUntil: &cooldownUntil,
+				Credits:       credits,
+			},
+		},
+		{
+			name: "unknown",
+			outcome: ClaudeResetOutcome{
+				Outcome: ClaudeResetOutcomeUnknown,
+				Reason:  "claim_unconfirmed",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &redeemFake{claim: `{"result":"reset"}`}
+			s, repo, _ := newRedeemService(t, f)
+			s.now = func() time.Time { return now }
+			key := "stale-" + strings.ReplaceAll(tc.name, " ", "-")
+			operation := seedExpiredClaudeResetOperation(t, repo, 1, key, now)
+			seedClaudeResetFence(t, repo, operation, claudeResetFence{
+				Outcome:       tc.outcome.Outcome,
+				Reason:        tc.outcome.Reason,
+				Cleared:       tc.outcome.Cleared,
+				CooldownUntil: tc.outcome.CooldownUntil,
+				Credits:       tc.outcome.Credits,
+				At:            now,
+			}, now)
+
+			want := tc.outcome
+			want.Replayed = true
+			got, err := s.Redeem(context.Background(), 1, key)
+			require.NoError(t, err)
+			require.Equal(t, &want, got)
+			require.True(t, got.Replayed)
+			require.Zero(t, f.postCount())
+		})
+	}
+}
+
+func TestClaudeResetRedeemExpiredProcessingWithoutMatchingFenceRemainsInProgress(t *testing.T) {
+	now := time.Now().UTC()
+	for _, tc := range []struct {
+		name         string
+		seedNonmatch bool
+	}{
+		{name: "nonmatching fence", seedNonmatch: true},
+		{name: "absent fence", seedNonmatch: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &redeemFake{claim: `{"result":"reset"}`}
+			s, repo, _ := newRedeemService(t, f)
+			s.now = func() time.Time { return now }
+			key := "stale-" + strings.ReplaceAll(tc.name, " ", "-")
+			seedExpiredClaudeResetOperation(t, repo, 1, key, now)
+			if tc.seedNonmatch {
+				seedClaudeResetFence(t, repo, "different-operation", claudeResetFence{
+					Outcome: ClaudeResetOutcomeReset,
+					At:      now,
+				}, now)
+			}
+
+			out, err := s.Redeem(context.Background(), 1, key)
+			require.Nil(t, out)
+			require.ErrorIs(t, err, ErrIdempotencyInProgress)
+			require.Equal(t, "IDEMPOTENCY_IN_PROGRESS", infraerrors.Reason(err))
+			require.Zero(t, f.postCount())
+			if !tc.seedNonmatch {
+				orgHash := HashIdempotencyKey("claude-org:" + redeemTestOrg)
+				fence, getErr := repo.GetByScopeAndKeyHash(context.Background(), claudeResetFenceScope, orgHash)
+				require.NoError(t, getErr)
+				require.Nil(t, fence)
+			}
+		})
+	}
 }
 
 func TestClaudeResetRedeemMapsUpstreamResults(t *testing.T) {

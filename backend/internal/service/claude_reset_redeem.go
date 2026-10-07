@@ -68,10 +68,13 @@ type ClaudeResetOutcome struct {
 // claudeResetFence is stored in the idempotency table, one row per provider
 // organization, so duplicate local accounts share it and account edits cannot erase it.
 type claudeResetFence struct {
-	Operation string    `json:"operation"`
-	Outcome   string    `json:"outcome"`
-	Reason    string    `json:"reason,omitempty"`
-	At        time.Time `json:"at"`
+	Operation     string              `json:"operation"`
+	Outcome       string              `json:"outcome"`
+	Reason        string              `json:"reason,omitempty"`
+	Cleared       []string            `json:"cleared,omitempty"`
+	CooldownUntil *time.Time          `json:"cooldown_until,omitempty"`
+	Credits       *ClaudeResetCredits `json:"credits,omitempty"`
+	At            time.Time           `json:"at"`
 }
 
 // ConfigureRedemption enables Redeem. Without both stores Redeem refuses to run.
@@ -106,6 +109,15 @@ func (s *ClaudeResetCreditService) Redeem(ctx context.Context, id int64, key str
 		Payload: map[string]any{"account_id": id}, TTL: claudeResetRecordTTL, RequireKey: true, ExecutionTimeout: 60 * time.Second,
 	}, func(exec context.Context) (any, error) { return s.redeemOnce(exec, id, operation) })
 	if err != nil {
+		if infraerrors.Reason(err) == infraerrors.Reason(ErrIdempotencyInProgress) {
+			replayed, recoveryErr := s.recoverExpiredProcessing(ctx, id, operation)
+			if recoveryErr != nil {
+				return nil, recoveryErr
+			}
+			if replayed != nil {
+				return replayed, nil
+			}
+		}
 		return nil, err
 	}
 	raw, err := json.Marshal(result.Data)
@@ -135,27 +147,93 @@ func (s *ClaudeResetCreditService) lease(ctx context.Context, key, owner string)
 	}, nil
 }
 
-func (s *ClaudeResetCreditService) redeemOnce(ctx context.Context, id int64, operation string) (*ClaudeResetOutcome, error) {
+func (s *ClaudeResetCreditService) acquireRedeemLeases(ctx context.Context, id int64) (string, string, string, string, func(), error) {
 	owner := uuid.NewString()
-	release, err := s.lease(ctx, fmt.Sprintf("claude:reset-credit:account:%d", id), owner)
+	releaseAccount, err := s.lease(ctx, fmt.Sprintf("claude:reset-credit:account:%d", id), owner)
 	if err != nil {
-		return nil, err
+		return "", "", "", "", nil, err
 	}
-	defer release()
 	_, token, proxy, err := s.account(ctx, id)
 	if err != nil {
-		return nil, err
+		releaseAccount()
+		return "", "", "", "", nil, err
 	}
 	org, err := s.organization(ctx, token, proxy)
 	if err != nil {
-		return nil, err
+		releaseAccount()
+		return "", "", "", "", nil, err
 	}
 	orgHash := HashIdempotencyKey("claude-org:" + org)
 	releaseOrg, err := s.lease(ctx, "claude:reset-credit:organization:"+orgHash, owner)
 	if err != nil {
+		releaseAccount()
+		return "", "", "", "", nil, err
+	}
+	return token, proxy, org, orgHash, func() {
+		releaseOrg()
+		releaseAccount()
+	}, nil
+}
+
+func (s *ClaudeResetCreditService) recoverExpiredProcessing(ctx context.Context, id int64, operation string) (*ClaudeResetOutcome, error) {
+	operationRow, err := s.idempotency.repo.GetByScopeAndKeyHash(ctx, claudeResetOperationScope, HashIdempotencyKey(operation))
+	if err != nil {
+		return nil, ErrIdempotencyStoreUnavail.WithCause(err)
+	}
+	now := s.now()
+	if operationRow == nil || operationRow.Status != IdempotencyStatusProcessing || operationRow.LockedUntil == nil || operationRow.LockedUntil.After(now) {
+		return nil, nil
+	}
+
+	_, _, _, orgHash, release, err := s.acquireRedeemLeases(ctx, id)
+	if err != nil {
 		return nil, err
 	}
-	defer releaseOrg()
+	defer release()
+
+	fence, err := s.idempotency.repo.GetByScopeAndKeyHash(ctx, claudeResetFenceScope, orgHash)
+	if err != nil {
+		return nil, ErrIdempotencyStoreUnavail.WithCause(err)
+	}
+	if fence == nil || fence.ResponseBody == nil {
+		return nil, nil
+	}
+	var prior claudeResetFence
+	if json.Unmarshal([]byte(*fence.ResponseBody), &prior) != nil || prior.Operation != operation {
+		return nil, nil
+	}
+	return claudeResetOutcomeFromFence(prior, true), nil
+}
+
+func claudeResetFenceFromOutcome(operation string, outcome *ClaudeResetOutcome, at time.Time) claudeResetFence {
+	return claudeResetFence{
+		Operation:     operation,
+		Outcome:       outcome.Outcome,
+		Reason:        outcome.Reason,
+		Cleared:       outcome.Cleared,
+		CooldownUntil: outcome.CooldownUntil,
+		Credits:       outcome.Credits,
+		At:            at,
+	}
+}
+
+func claudeResetOutcomeFromFence(fence claudeResetFence, replayed bool) *ClaudeResetOutcome {
+	return &ClaudeResetOutcome{
+		Outcome:       fence.Outcome,
+		Reason:        fence.Reason,
+		Cleared:       fence.Cleared,
+		CooldownUntil: fence.CooldownUntil,
+		Credits:       fence.Credits,
+		Replayed:      replayed,
+	}
+}
+
+func (s *ClaudeResetCreditService) redeemOnce(ctx context.Context, id int64, operation string) (*ClaudeResetOutcome, error) {
+	token, proxy, org, orgHash, release, err := s.acquireRedeemLeases(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 
 	fence, err := s.loadFence(ctx, orgHash)
 	if err != nil {
@@ -168,7 +246,7 @@ func (s *ClaudeResetCreditService) redeemOnce(ctx context.Context, id int64, ope
 		}
 		if prior.Operation == operation {
 			// A crashed or interrupted attempt of this same confirmation: never resend.
-			return &ClaudeResetOutcome{Outcome: prior.Outcome, Reason: prior.Reason, Replayed: true}, nil
+			return claudeResetOutcomeFromFence(prior, true), nil
 		}
 		if prior.Outcome == ClaudeResetOutcomeUnknown && prior.Reason == claudeResetReasonUnavailable {
 			if s.now().Before(prior.At.Add(claudeResetUnavailableFenceTTL)) {
@@ -200,22 +278,22 @@ func (s *ClaudeResetCreditService) redeemOnce(ctx context.Context, id int64, ope
 
 	// Persist the unknown marker before sending: a crash after this point blocks
 	// both a resend and another credit until the fence settles.
-	marker := claudeResetFence{Operation: operation, Outcome: ClaudeResetOutcomeUnknown, Reason: "claim_unconfirmed", At: s.now().UTC()}
+	marker := claudeResetFenceFromOutcome(operation, &ClaudeResetOutcome{Outcome: ClaudeResetOutcomeUnknown, Reason: "claim_unconfirmed"}, s.now().UTC())
 	if err = s.persistFence(ctx, fence.ID, marker); err != nil {
 		return nil, err
 	}
 	outcome := s.claim(ctx, token, proxy, org, grant.ID, operation)
-	marker.Outcome, marker.Reason = outcome.Outcome, outcome.Reason
+	if outcome.Outcome != ClaudeResetOutcomeUnknown {
+		if fresh, e := s.fetchBlock(ctx, token, proxy); e == nil {
+			outcome.Credits = projectClaudeResetCredits(fresh, s.now())
+		}
+	}
+	marker = claudeResetFenceFromOutcome(operation, outcome, marker.At)
 	persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	persistErr := s.persistFence(persistCtx, fence.ID, marker)
 	cancel()
 	if persistErr != nil {
 		return &ClaudeResetOutcome{Outcome: ClaudeResetOutcomeUnknown, Reason: "result_persistence_failed"}, nil
-	}
-	if outcome.Outcome != ClaudeResetOutcomeUnknown {
-		if fresh, e := s.fetchBlock(ctx, token, proxy); e == nil {
-			outcome.Credits = projectClaudeResetCredits(fresh, s.now())
-		}
 	}
 	return outcome, nil
 }
