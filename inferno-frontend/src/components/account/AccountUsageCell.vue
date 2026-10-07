@@ -73,6 +73,7 @@
             {{ t('admin.accounts.usageWindow.activeQuery') }}
           </button>
         </div>
+        <ClaudeResetCreditsCell :account="account" />
       </div>
 
       <!-- No data yet -->
@@ -598,6 +599,7 @@ import { formatCompactNumber } from '@/utils/format'
 import CapacityBar from '@/components/common/CapacityBar.vue'
 import AccountQuotaInfo from './AccountQuotaInfo.vue'
 import OpenAIQuotaResetCell from './OpenAIQuotaResetCell.vue'
+import ClaudeResetCreditsCell from './ClaudeResetCreditsCell.vue'
 import CNProviderQuotaCell from './CNProviderQuotaCell.vue'
 import CNProviderBalanceCell from './CNProviderBalanceCell.vue'
 import OllamaCloudUsageCell from './OllamaCloudUsageCell.vue'

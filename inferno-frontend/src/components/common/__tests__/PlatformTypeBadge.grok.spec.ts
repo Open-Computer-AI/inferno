@@ -170,10 +170,10 @@ describe('PlatformTypeBadge platform mappings', () => {
   })
 
   it.each([
-    ['pro', 'Pro 20x'],
-    ['chatgpt_pro', 'Pro 20x'],
-    ['pro_lite', 'Pro 5x'],
-    ['team', 'Business Standard'],
+    ['pro', 'Pro 200'],
+    ['chatgpt_pro', 'Pro 200'],
+    ['pro_lite', 'Pro 100'],
+    ['team', 'Business'],
     ['self_serve_business_prolite', 'Business Premium'],
   ])('maps the OpenAI %s tier to %s', (planType, label) => {
     const wrapper = mount(PlatformTypeBadge, {
@@ -190,6 +190,6 @@ describe('PlatformTypeBadge platform mappings', () => {
     })
 
     expect(wrapper.text()).toContain('Pro')
-    expect(wrapper.text()).not.toContain('Pro 20x')
+    expect(wrapper.text()).not.toContain('Pro 200')
   })
 })

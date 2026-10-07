@@ -69,6 +69,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { AccountPlatform, AccountType } from '@/types'
 import { platformLabel as sharedPlatformLabel } from '@/utils/platformColors'
+import { normalizePlanType, openAIPlanTypeLabel } from '@/utils/planType'
 import GrokFreeIcon from './GrokFreeIcon.vue'
 import PlatformIcon from './PlatformIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -112,29 +113,6 @@ const typeLabel = computed(() => {
       return props.type
   }
 })
-
-const normalizePlanType = (value?: string | null) =>
-  (value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
-
-const openAIPlanTypeLabel = (value?: string | null) => {
-  switch (normalizePlanType(value)) {
-    case 'plus':
-      return 'Plus'
-    case 'chatgptpro':
-    case 'pro':
-      return 'Pro 20x'
-    case 'prolite':
-      return 'Pro 5x'
-    case 'selfservebusinessprolite':
-      return 'Business Premium'
-    case 'team':
-      return 'Business Standard'
-    case 'free':
-      return 'Free'
-    default:
-      return ''
-  }
-}
 
 const normalizedPlanType = computed(() => normalizePlanType(props.planType))
 

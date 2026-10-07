@@ -148,9 +148,14 @@ describe('addCustomModelAllowlistItem', () => {
     expect(addCustomModelAllowlistItem(state(), '   ')).toBe<ModelAllowlistAddError>('empty')
   })
 
-  it('rejects wildcards that are not trailing', () => {
-    expect(addCustomModelAllowlistItem(state(), 'gpt-*-5.4')).toBe<ModelAllowlistAddError>('invalid_wildcard')
-    expect(addCustomModelAllowlistItem(state(), 'gpt-*-codex-*')).toBe<ModelAllowlistAddError>('invalid_wildcard')
+  it('accepts wildcard entries in any position', () => {
+    const current = state()
+    expect(addCustomModelAllowlistItem(current, 'gpt-*-5.4')).toBeNull()
+    expect(addCustomModelAllowlistItem(current, 'gpt-*-codex-*')).toBeNull()
+    expect(current.items.slice(-2)).toEqual([
+      { id: 'gpt-*-5.4', selected: true },
+      { id: 'gpt-*-codex-*', selected: true },
+    ])
   })
 
   it('rejects duplicates case-insensitively', () => {

@@ -16,6 +16,7 @@ const PROVIDER_BY_PLATFORM: Record<GroupPlatform, KeyGroupProvider> = {
   zhipu: 'domestic',
   deepseek: 'domestic',
   minimax: 'domestic',
+  typesafe: 'other',
   opencode_go: 'other',
   composite: 'other'
 }

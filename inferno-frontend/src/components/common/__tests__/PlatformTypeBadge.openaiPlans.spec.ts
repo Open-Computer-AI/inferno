@@ -13,22 +13,22 @@ function mountPlan(platform: AccountPlatform, planType: string) {
 }
 
 describe('PlatformTypeBadge OpenAI plan tiers', () => {
-  it('normalizes Pro aliases to Pro 20x', () => {
+  it('normalizes Pro aliases to Pro 200', () => {
     for (const planType of ['pro', 'chatgptpro', 'PRO', 'ChatGPT Pro']) {
-      expect(mountPlan('openai', planType).text()).toContain('Pro 20x')
+      expect(mountPlan('openai', planType).text()).toContain('Pro 200')
     }
   })
 
-  it('normalizes ProLite aliases to Pro 5x', () => {
+  it('normalizes ProLite aliases to Pro 100', () => {
     for (const planType of ['prolite', 'PROLITE', 'pro_lite']) {
       const text = mountPlan('openai', planType).text()
-      expect(text).toContain('Pro 5x')
-      expect(text).not.toContain('Pro 20x')
+      expect(text).toContain('Pro 100')
+      expect(text).not.toContain('Pro 200')
     }
   })
 
-  it('normalizes Team to Business Standard', () => {
-    expect(mountPlan('openai', 'team').text()).toContain('Business Standard')
+  it('normalizes Team to Business', () => {
+    expect(mountPlan('openai', 'team').text()).toContain('Business')
   })
 
   it('normalizes self-serve business ProLite to Business Premium', () => {
@@ -45,15 +45,15 @@ describe('PlatformTypeBadge OpenAI plan tiers', () => {
     expect(mountPlan('openai', 'abnormal').text()).toContain('admin.accounts.subscriptionAbnormal')
   })
 
-  it('falls back to the raw label for an unknown plan', () => {
-    expect(mountPlan('openai', 'enterprise').text()).toContain('enterprise')
+  it('renders the canonical label for enterprise plans', () => {
+    expect(mountPlan('openai', 'enterprise').text()).toContain('Enterprise')
   })
 
   it('does not apply ChatGPT plan naming to other platforms', () => {
     for (const platform of ['antigravity', 'grok'] as AccountPlatform[]) {
       const text = mountPlan(platform, 'pro').text()
       expect(text).toContain('Pro')
-      expect(text).not.toContain('Pro 20x')
+      expect(text).not.toContain('Pro 200')
     }
     expect(mountPlan('antigravity', 'team').text()).toContain('Team')
   })
