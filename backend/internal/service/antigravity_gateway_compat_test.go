@@ -28,6 +28,20 @@ type antigravityCompatErrorReader struct {
 	err  error
 }
 
+type antigravityCompatNotifyingWriter struct {
+	gin.ResponseWriter
+	wrote chan struct{}
+}
+
+func (w *antigravityCompatNotifyingWriter) Write(data []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(data)
+	select {
+	case w.wrote <- struct{}{}:
+	default:
+	}
+	return n, err
+}
+
 func (r *antigravityCompatErrorReader) Read(p []byte) (int, error) {
 	if r.off < len(r.data) {
 		n := copy(p, r.data[r.off:])
@@ -785,4 +799,76 @@ func TestAntigravityCompatKeepaliveAfterFirstEvent(t *testing.T) {
 	require.Contains(t, recorder.Body.String(), ": ping\n\n")
 	require.Contains(t, recorder.Header().Get("Content-Type"), "text/event-stream")
 	require.NoError(t, reader.Close())
+}
+
+func TestAntigravityCompatPreContentKeepalive(t *testing.T) {
+	c, recorder := newAntigravityCompatContext(http.MethodPost, "/v1/responses", nil)
+	writer := newAntigravityClientWriter(c.Writer, c.Writer, "test")
+	writer.beforeFirstWrite = func() { c.Header("Content-Type", "text/event-stream") }
+	start := time.Now().Add(-20 * time.Second)
+	session := newAntigravityCompatStreamSession("gemini-3.1-pro", start, newAntigravityResponsesStreamAdapter("gemini-3.1-pro"), writer)
+
+	session.writePreContentKeepalive(start.Add(14 * time.Second))
+	require.Empty(t, recorder.Body.String())
+	session.writePreContentKeepalive(start.Add(15 * time.Second))
+	require.Equal(t, ": ping\n\n", recorder.Body.String())
+	require.True(t, session.preContentKeepaliveSent)
+	require.False(t, session.hasMeaningfulData())
+}
+
+func TestAntigravityCompatHandlerPreContentKeepalive(t *testing.T) {
+	svc := newAntigravityCompatService(config.GatewayConfig{MaxLineSize: defaultMaxLineSize}, nil)
+	c, recorder := newAntigravityCompatContext(http.MethodPost, "/v1/responses", nil)
+	notifier := &antigravityCompatNotifyingWriter{ResponseWriter: c.Writer, wrote: make(chan struct{}, 1)}
+	c.Writer = notifier
+	reader, pipeWriter := io.Pipe()
+	resp := &http.Response{StatusCode: http.StatusOK, Body: reader}
+	done := make(chan error, 1)
+	go func() {
+		_, err := svc.handleAntigravityCompatStreamWithKeepaliveInterval(
+			c, resp, time.Now().Add(-10*time.Millisecond), "gemini-3.1-pro",
+			newAntigravityResponsesStreamAdapter("gemini-3.1-pro"), "test", 10*time.Millisecond, time.Second,
+		)
+		done <- err
+	}()
+
+	select {
+	case <-notifier.wrote:
+	case <-time.After(time.Second):
+		_ = pipeWriter.Close()
+		t.Fatal("no pre-content keepalive")
+	}
+	require.Equal(t, ": ping\n\n", recorder.Body.String())
+	require.NoError(t, pipeWriter.Close())
+	require.Error(t, <-done)
+	require.Contains(t, recorder.Body.String(), "event: error")
+	require.True(t, IsResponseCommitted(c))
+}
+
+func TestAntigravityCompatSignatureOnlyStreamTriggersFailover(t *testing.T) {
+	svc := newAntigravityCompatService(config.GatewayConfig{MaxLineSize: defaultMaxLineSize}, nil)
+	c, recorder := newAntigravityCompatContext(http.MethodPost, "/v1/responses", nil)
+	body := `data: {"response":{"responseId":"resp_3757","candidates":[{"content":{"parts":[{"thoughtSignature":"sig","text":""}]}}]}}` + "\n\n"
+	resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}
+
+	result, err := svc.handleResponsesStreamingFromAntigravity(c, resp, time.Now(), "gemini-3.1-pro")
+
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Empty(t, recorder.Body.String())
+}
+
+func TestAntigravityCompatMalformedFunctionCallTriggersFailover(t *testing.T) {
+	svc := newAntigravityCompatService(config.GatewayConfig{MaxLineSize: defaultMaxLineSize}, nil)
+	c, recorder := newAntigravityCompatContext(http.MethodPost, "/v1/responses", nil)
+	body := `data: {"response":{"responseId":"resp_3757","candidates":[{"finishReason":"MALFORMED_FUNCTION_CALL"}]}}` + "\n\n"
+	resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}
+
+	result, err := svc.handleResponsesStreamingFromAntigravity(c, resp, time.Now(), "gemini-3.1-pro")
+
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Empty(t, recorder.Body.String())
 }
