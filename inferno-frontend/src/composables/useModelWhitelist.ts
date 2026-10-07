@@ -10,7 +10,7 @@ const openaiModels = [
   // GPT-5.6 系列
   'gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna',
   // GPT-6 系列
-  'gpt-6', 'gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna',
+  'gpt-6', 'gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna',
   // GPT-5.5 系列
   'gpt-5.5',
   // GPT-5.4 系列
@@ -36,6 +36,7 @@ export const claudeModels = [
   'claude-opus-4-8',
   'claude-opus-5-5',
   'claude-opus-5',
+  'claude-sonnet-5-5',
   'claude-sonnet-4-6',
   'claude-sonnet-5',
   'claude-fable-5-1',
@@ -271,6 +272,7 @@ export const allModels = allModelsList.map(m => ({ value: m, label: m }))
 const anthropicPresetMappings = [
   { label: 'Fable 5.1', from: 'claude-fable-5-1', to: 'claude-fable-5-1', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Fable 5', from: 'claude-fable-5', to: 'claude-fable-5', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
+  { label: 'Sonnet 5.5', from: 'claude-sonnet-5-5', to: 'claude-sonnet-5-5', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Sonnet 5', from: 'claude-sonnet-5', to: 'claude-sonnet-5', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Sonnet 4', from: 'claude-sonnet-4-20250514', to: 'claude-sonnet-4-20250514', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Sonnet 4.5', from: 'claude-sonnet-4-5-20250929', to: 'claude-sonnet-4-5-20250929', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
@@ -296,6 +298,7 @@ const openaiPresetMappings = [
   { label: 'GPT-5.2', from: 'gpt-5.2', to: 'gpt-5.2', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'GPT-6', from: 'gpt-6', to: 'gpt-6', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'GPT-5.6', from: 'gpt-5.6', to: 'gpt-5.6', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
+  { label: 'GPT-6.1 Sol', from: 'gpt-6.1-sol', to: 'gpt-6.1-sol', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'GPT-6 Sol', from: 'gpt-6-sol', to: 'gpt-6-sol', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'GPT-5.6 Sol', from: 'gpt-5.6-sol', to: 'gpt-5.6-sol', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'GPT-5.6 Terra', from: 'gpt-5.6-terra', to: 'gpt-5.6-terra', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
@@ -382,6 +385,7 @@ const bedrockPresetMappings = [
   { label: 'Opus 4.7', from: 'claude-opus-4-7', to: 'us.anthropic.claude-opus-4-7-v1', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Opus 4.8', from: 'claude-opus-4-8', to: 'us.anthropic.claude-opus-4-8-v1', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Opus 5', from: 'claude-opus-5', to: 'us.anthropic.claude-opus-5-v1', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
+  { label: 'Sonnet 5.5', from: 'claude-sonnet-5-5', to: 'global.anthropic.claude-sonnet-5-5', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Sonnet 5', from: 'claude-sonnet-5', to: 'us.anthropic.claude-sonnet-5-v1', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Sonnet 4.6', from: 'claude-sonnet-4-6', to: 'us.anthropic.claude-sonnet-4-6', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Opus 4.5', from: 'claude-opus-4-5-thinking', to: 'us.anthropic.claude-opus-4-5-20251101-v1:0', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },

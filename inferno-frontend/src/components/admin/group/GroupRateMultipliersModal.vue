@@ -239,7 +239,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
@@ -284,7 +284,7 @@ const isValidBatchFactor = computed(() => {
     && localEntries.value.every(entry => entry.rate_multiplier == null || Number.isFinite(entry.rate_multiplier * factor))
 })
 
-let searchTimeout: ReturnType<typeof setTimeout>
+let searchTimeout: ReturnType<typeof setTimeout> | null = null
 
 const platformColorClass = computed(() => {
   switch (props.group?.platform) {
@@ -347,6 +347,13 @@ const adjustPage = () => {
   }
 }
 
+const clearSearchTimeout = () => {
+  if (searchTimeout !== null) {
+    clearTimeout(searchTimeout)
+    searchTimeout = null
+  }
+}
+
 watch(() => props.show, (val) => {
   if (val && props.group) {
     currentPage.value = 1
@@ -365,7 +372,7 @@ const handlePageSizeChange = (newSize: number) => {
 }
 
 const handleSearchUsers = () => {
-  clearTimeout(searchTimeout)
+  clearSearchTimeout()
   selectedUser.value = null
   if (!searchQuery.value.trim()) {
     searchResults.value = []
@@ -373,6 +380,7 @@ const handleSearchUsers = () => {
     return
   }
   searchTimeout = setTimeout(async () => {
+    searchTimeout = null
     try {
       const res = await adminAPI.users.list(1, 10, { search: searchQuery.value.trim() })
       searchResults.value = res.items
@@ -500,9 +508,13 @@ const handleClickOutside = () => {
   showDropdown.value = false
 }
 
-if (typeof document !== 'undefined') {
+onMounted(() => {
   document.addEventListener('click', handleClickOutside)
-}
+})
+onUnmounted(() => {
+  clearSearchTimeout()
+  document.removeEventListener('click', handleClickOutside)
+})
 </script>
 
 <style scoped>

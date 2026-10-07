@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { openAIPlanTypes, openAIPlanTypeLabel } from '@/utils/planType'
 import {
   ANTIGRAVITY_PROJECT_ID_CREDENTIAL_KEY,
   HEADER_OVERRIDE_ENABLED_CREDENTIAL_KEY,
@@ -396,17 +397,17 @@ describe('plan_type helpers', () => {
   describe('planTypeDisplayLabel', () => {
     it('maps canonical + alias values to friendly labels', () => {
       expect(planTypeDisplayLabel('plus')).toBe('Plus')
-      expect(planTypeDisplayLabel('pro')).toBe('Pro 20x')
-      expect(planTypeDisplayLabel('chatgptpro')).toBe('Pro 20x')
-      expect(planTypeDisplayLabel('prolite')).toBe('Pro 5x')
+      expect(planTypeDisplayLabel('pro')).toBe('Pro 200')
+      expect(planTypeDisplayLabel('chatgptpro')).toBe('Pro 200')
+      expect(planTypeDisplayLabel('prolite')).toBe('Pro 100')
       expect(planTypeDisplayLabel('free')).toBe('Free')
-      expect(planTypeDisplayLabel('team')).toBe('Business Standard')
+      expect(planTypeDisplayLabel('team')).toBe('Business')
       expect(planTypeDisplayLabel('self_serve_business_prolite')).toBe('Business Premium')
     })
     it('normalizes case, separators and surrounding blanks', () => {
-      expect(planTypeDisplayLabel('CHATGPTPRO')).toBe('Pro 20x')
-      expect(planTypeDisplayLabel('PROLITE')).toBe('Pro 5x')
-      expect(planTypeDisplayLabel('  Pro Lite  ')).toBe('Pro 5x')
+      expect(planTypeDisplayLabel('CHATGPTPRO')).toBe('Pro 200')
+      expect(planTypeDisplayLabel('PROLITE')).toBe('Pro 100')
+      expect(planTypeDisplayLabel('  Pro Lite  ')).toBe('Pro 100')
       expect(planTypeDisplayLabel('self-serve-business-pro-lite')).toBe('Business Premium')
     })
     it('returns unknown values verbatim', () => {
@@ -432,40 +433,23 @@ describe('plan_type helpers', () => {
     it('returns clear + current subscription presets when current is empty', () => {
       expect(buildPlanTypeOptions('', clear)).toEqual([
         { value: '', label: clear },
-        { value: 'plus', label: 'Plus' },
-        { value: 'pro', label: 'Pro 20x' },
-        { value: 'prolite', label: 'Pro 5x' },
-        { value: 'self_serve_business_prolite', label: 'Business Premium' },
-        { value: 'free', label: 'Free' }
+        ...openAIPlanTypes.map(value => ({ value, label: openAIPlanTypeLabel(value) || value }))
       ])
     })
-    it('keeps canonical chatgptpro under a single friendly "Pro 20x" option (no duplicate)', () => {
+    it('keeps canonical chatgptpro under a single friendly "Pro 200" option (no duplicate)', () => {
       const opts = buildPlanTypeOptions('chatgptpro', clear)
-      const pros = opts.filter(o => o.label === 'Pro 20x')
+      const pros = opts.filter(o => o.label === 'Pro 200')
       expect(pros).toHaveLength(1)
       expect(pros[0].value).toBe('chatgptpro')
       expect(opts.map(o => o.value)).toEqual([
         '',
-        'plus',
-        'chatgptpro',
-        'prolite',
-        'self_serve_business_prolite',
-        'free'
+        ...openAIPlanTypes.map(value => value === 'pro' ? 'chatgptpro' : value)
       ])
     })
-    it('keeps the Business Standard value as its own labeled option', () => {
+    it('keeps the team value as its own shared catalog option', () => {
       const opts = buildPlanTypeOptions('team', clear)
-      expect(opts.find(o => o.value === 'team')).toEqual({ value: 'team', label: 'Business Standard' })
-      // presets untouched
-      expect(opts.map(o => o.value)).toEqual([
-        '',
-        'plus',
-        'pro',
-        'prolite',
-        'self_serve_business_prolite',
-        'free',
-        'team'
-      ])
+      expect(opts.find(o => o.value === 'team')).toEqual({ value: 'team', label: 'Business' })
+      expect(opts.map(o => o.value)).toEqual(['', ...openAIPlanTypes])
     })
     it('appends a fully custom value with a raw label', () => {
       const opts = buildPlanTypeOptions('weird_x', clear)
@@ -474,14 +458,7 @@ describe('plan_type helpers', () => {
     it('does not duplicate an exact preset value', () => {
       const opts = buildPlanTypeOptions('pro', clear)
       expect(opts.filter(o => o.value === 'pro')).toHaveLength(1)
-      expect(opts.map(o => o.value)).toEqual([
-        '',
-        'plus',
-        'pro',
-        'prolite',
-        'self_serve_business_prolite',
-        'free'
-      ])
+      expect(opts.map(o => o.value)).toEqual(['', ...openAIPlanTypes])
     })
   })
 

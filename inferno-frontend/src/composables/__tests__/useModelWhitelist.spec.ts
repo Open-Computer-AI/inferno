@@ -4,7 +4,7 @@ vi.mock('@/api/admin/accounts', () => ({
   getAntigravityDefaultModelMapping: vi.fn()
 }))
 
-import { buildModelMappingObject, getModelsByPlatform, splitModelMappingObject } from '../useModelWhitelist'
+import { buildModelMappingObject, getModelsByPlatform, getPresetMappingsByPlatform, splitModelMappingObject } from '../useModelWhitelist'
 
 describe('useModelWhitelist', () => {
   it('openai 模型列表包含 GPT-5.4 官方快照', () => {
@@ -17,6 +17,7 @@ describe('useModelWhitelist', () => {
     expect(models).toContain('gpt-5.6')
     expect(models).toContain('gpt-6')
     expect(models).toContain('gpt-6-astra')
+    expect(models).toContain('gpt-6.1-sol')
     expect(models).toContain('gpt-6-sol')
     expect(models).toContain('gpt-6-luna')
   })
@@ -49,6 +50,20 @@ describe('useModelWhitelist', () => {
     expect(getModelsByPlatform('antigravity')).toContain('claude-opus-4-8')
     expect(getModelsByPlatform('claude')).toContain('claude-opus-5-5')
     expect(getModelsByPlatform('antigravity')).not.toContain('claude-opus-5-5')
+    expect(getModelsByPlatform('claude')).toContain('claude-sonnet-5-5')
+    expect(getModelsByPlatform('antigravity')).not.toContain('claude-sonnet-5-5')
+  })
+
+  it('keeps new Claude and GPT presets aligned with their upstream IDs', () => {
+    expect(getPresetMappingsByPlatform('openai')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'GPT-6.1 Sol', from: 'gpt-6.1-sol', to: 'gpt-6.1-sol' })
+    ]))
+    expect(getPresetMappingsByPlatform('claude')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Sonnet 5.5', from: 'claude-sonnet-5-5', to: 'claude-sonnet-5-5' })
+    ]))
+    expect(getPresetMappingsByPlatform('bedrock')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Sonnet 5.5', from: 'claude-sonnet-5-5', to: 'global.anthropic.claude-sonnet-5-5' })
+    ]))
   })
 
   it('exposes the OpenCode Go upstream model catalog separately', () => {
