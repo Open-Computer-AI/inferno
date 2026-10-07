@@ -74,6 +74,7 @@ type claudeResetFence struct {
 	Cleared       []string            `json:"cleared,omitempty"`
 	CooldownUntil *time.Time          `json:"cooldown_until,omitempty"`
 	Credits       *ClaudeResetCredits `json:"credits,omitempty"`
+	Completed     bool                `json:"completed"`
 	At            time.Time           `json:"at"`
 }
 
@@ -176,12 +177,13 @@ func (s *ClaudeResetCreditService) acquireRedeemLeases(ctx context.Context, id i
 }
 
 func (s *ClaudeResetCreditService) recoverExpiredProcessing(ctx context.Context, id int64, operation string) (*ClaudeResetOutcome, error) {
-	operationRow, err := s.idempotency.repo.GetByScopeAndKeyHash(ctx, claudeResetOperationScope, HashIdempotencyKey(operation))
+	operationKeyHash := HashIdempotencyKey(operation)
+	operationRow, err := s.idempotency.repo.GetByScopeAndKeyHash(ctx, claudeResetOperationScope, operationKeyHash)
 	if err != nil {
 		return nil, ErrIdempotencyStoreUnavail.WithCause(err)
 	}
 	now := s.now()
-	if operationRow == nil || operationRow.Status != IdempotencyStatusProcessing || operationRow.LockedUntil == nil || operationRow.LockedUntil.After(now) {
+	if !claudeResetOperationRecoverable(operationRow, now) {
 		return nil, nil
 	}
 
@@ -191,21 +193,40 @@ func (s *ClaudeResetCreditService) recoverExpiredProcessing(ctx context.Context,
 	}
 	defer release()
 
+	now = s.now()
+	operationRow, err = s.idempotency.repo.GetByScopeAndKeyHash(ctx, claudeResetOperationScope, operationKeyHash)
+	if err != nil {
+		return nil, ErrIdempotencyStoreUnavail.WithCause(err)
+	}
+	if !claudeResetOperationRecoverable(operationRow, now) {
+		return nil, nil
+	}
+
 	fence, err := s.idempotency.repo.GetByScopeAndKeyHash(ctx, claudeResetFenceScope, orgHash)
 	if err != nil {
 		return nil, ErrIdempotencyStoreUnavail.WithCause(err)
 	}
-	if fence == nil || fence.ResponseBody == nil {
+	if fence == nil || fence.ResponseBody == nil || fence.Status != IdempotencyStatusSucceeded || !fence.ExpiresAt.After(now) {
 		return nil, nil
 	}
 	var prior claudeResetFence
-	if json.Unmarshal([]byte(*fence.ResponseBody), &prior) != nil || prior.Operation != operation {
+	if json.Unmarshal([]byte(*fence.ResponseBody), &prior) != nil || !claudeResetFenceReplayable(fence, prior, operation, now) {
 		return nil, nil
 	}
 	return claudeResetOutcomeFromFence(prior, true), nil
 }
 
-func claudeResetFenceFromOutcome(operation string, outcome *ClaudeResetOutcome, at time.Time) claudeResetFence {
+func claudeResetOperationRecoverable(row *IdempotencyRecord, now time.Time) bool {
+	return row != nil && row.Status == IdempotencyStatusProcessing && row.LockedUntil != nil &&
+		!row.LockedUntil.After(now) && row.ExpiresAt.After(now)
+}
+
+func claudeResetFenceReplayable(row *IdempotencyRecord, fence claudeResetFence, operation string, now time.Time) bool {
+	return row != nil && row.Status == IdempotencyStatusSucceeded && row.ExpiresAt.After(now) &&
+		fence.Operation == operation && fence.Completed
+}
+
+func claudeResetFenceFromOutcome(operation string, outcome *ClaudeResetOutcome, at time.Time, completed bool) claudeResetFence {
 	return claudeResetFence{
 		Operation:     operation,
 		Outcome:       outcome.Outcome,
@@ -213,6 +234,7 @@ func claudeResetFenceFromOutcome(operation string, outcome *ClaudeResetOutcome, 
 		Cleared:       outcome.Cleared,
 		CooldownUntil: outcome.CooldownUntil,
 		Credits:       outcome.Credits,
+		Completed:     completed,
 		At:            at,
 	}
 }
@@ -245,7 +267,10 @@ func (s *ClaudeResetCreditService) redeemOnce(ctx context.Context, id int64, ope
 			return nil, infraerrors.Conflict("CLAUDE_RESET_UNRESOLVED", "previous reset requires reconciliation")
 		}
 		if prior.Operation == operation {
-			// A crashed or interrupted attempt of this same confirmation: never resend.
+			if !claudeResetFenceReplayable(fence, prior, operation, s.now()) {
+				return nil, ErrIdempotencyInProgress
+			}
+			// A completed attempt of this same confirmation: never resend.
 			return claudeResetOutcomeFromFence(prior, true), nil
 		}
 		if prior.Outcome == ClaudeResetOutcomeUnknown && prior.Reason == claudeResetReasonUnavailable {
@@ -278,7 +303,7 @@ func (s *ClaudeResetCreditService) redeemOnce(ctx context.Context, id int64, ope
 
 	// Persist the unknown marker before sending: a crash after this point blocks
 	// both a resend and another credit until the fence settles.
-	marker := claudeResetFenceFromOutcome(operation, &ClaudeResetOutcome{Outcome: ClaudeResetOutcomeUnknown, Reason: "claim_unconfirmed"}, s.now().UTC())
+	marker := claudeResetFenceFromOutcome(operation, &ClaudeResetOutcome{Outcome: ClaudeResetOutcomeUnknown, Reason: "claim_unconfirmed"}, s.now().UTC(), false)
 	if err = s.persistFence(ctx, fence.ID, marker); err != nil {
 		return nil, err
 	}
@@ -288,7 +313,7 @@ func (s *ClaudeResetCreditService) redeemOnce(ctx context.Context, id int64, ope
 			outcome.Credits = projectClaudeResetCredits(fresh, s.now())
 		}
 	}
-	marker = claudeResetFenceFromOutcome(operation, outcome, marker.At)
+	marker = claudeResetFenceFromOutcome(operation, outcome, marker.At, true)
 	persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	persistErr := s.persistFence(persistCtx, fence.ID, marker)
 	cancel()

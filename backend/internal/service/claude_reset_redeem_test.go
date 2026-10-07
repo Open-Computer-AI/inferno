@@ -124,21 +124,20 @@ func newRedeemService(t *testing.T, f *redeemFake) (*ClaudeResetCreditService, *
 	return s, repo, locks
 }
 
-func seedExpiredClaudeResetOperation(t *testing.T, repo *inMemoryIdempotencyRepo, id int64, key string, now time.Time) string {
+func seedClaudeResetOperation(t *testing.T, repo *inMemoryIdempotencyRepo, id int64, key string, lockedUntil, expiresAt time.Time) string {
 	t.Helper()
 	normalized, err := NormalizeIdempotencyKey(key)
 	require.NoError(t, err)
 	operation := HashIdempotencyKey(fmt.Sprintf("claude-reset:%d:%s", id, normalized))
 	fingerprint, err := BuildIdempotencyFingerprint(http.MethodPost, "/admin/accounts/:id/claude/reset-credits/redeem", fmt.Sprintf("account:%d", id), map[string]any{"account_id": id})
 	require.NoError(t, err)
-	lockedUntil := now.Add(-time.Minute)
 	record := &IdempotencyRecord{
 		Scope:              claudeResetOperationScope,
 		IdempotencyKeyHash: HashIdempotencyKey(operation),
 		RequestFingerprint: fingerprint,
 		Status:             IdempotencyStatusProcessing,
 		LockedUntil:        &lockedUntil,
-		ExpiresAt:          now.Add(time.Hour),
+		ExpiresAt:          expiresAt,
 	}
 	owner, err := repo.CreateProcessing(context.Background(), record)
 	require.NoError(t, err)
@@ -147,7 +146,12 @@ func seedExpiredClaudeResetOperation(t *testing.T, repo *inMemoryIdempotencyRepo
 	return operation
 }
 
-func seedClaudeResetFence(t *testing.T, repo *inMemoryIdempotencyRepo, operation string, fence claudeResetFence, now time.Time) {
+func seedExpiredClaudeResetOperation(t *testing.T, repo *inMemoryIdempotencyRepo, id int64, key string, now time.Time) string {
+	t.Helper()
+	return seedClaudeResetOperation(t, repo, id, key, now.Add(-time.Minute), now.Add(time.Hour))
+}
+
+func seedClaudeResetFenceWithStatus(t *testing.T, repo *inMemoryIdempotencyRepo, operation string, fence claudeResetFence, status string, expiresAt time.Time) {
 	t.Helper()
 	orgHash := HashIdempotencyKey("claude-org:" + redeemTestOrg)
 	row := &IdempotencyRecord{
@@ -155,7 +159,7 @@ func seedClaudeResetFence(t *testing.T, repo *inMemoryIdempotencyRepo, operation
 		IdempotencyKeyHash: orgHash,
 		RequestFingerprint: orgHash,
 		Status:             IdempotencyStatusProcessing,
-		ExpiresAt:          now.Add(claudeResetRecordTTL),
+		ExpiresAt:          expiresAt,
 	}
 	owner, err := repo.CreateProcessing(context.Background(), row)
 	require.NoError(t, err)
@@ -163,12 +167,25 @@ func seedClaudeResetFence(t *testing.T, repo *inMemoryIdempotencyRepo, operation
 	fence.Operation = operation
 	body, err := json.Marshal(fence)
 	require.NoError(t, err)
-	require.NoError(t, repo.MarkSucceeded(context.Background(), row.ID, http.StatusOK, string(body), now.Add(claudeResetRecordTTL)))
+	repo.mu.Lock()
+	stored := repo.data[repo.key(row.Scope, row.IdempotencyKeyHash)]
+	stored.Status = status
+	responseStatus := http.StatusOK
+	stored.ResponseStatus = &responseStatus
+	responseBody := string(body)
+	stored.ResponseBody = &responseBody
+	stored.ExpiresAt = expiresAt
+	repo.mu.Unlock()
+}
+
+func seedClaudeResetFence(t *testing.T, repo *inMemoryIdempotencyRepo, operation string, fence claudeResetFence, now time.Time) {
+	t.Helper()
+	seedClaudeResetFenceWithStatus(t, repo, operation, fence, IdempotencyStatusSucceeded, now.Add(claudeResetRecordTTL))
 }
 
 func TestClaudeResetRedeemHappyPathServerPicksNextGrant(t *testing.T) {
 	f := &redeemFake{claim: `{"result":"reset","resets_left":1,"cleared":["five_hour","seven_day"]}`}
-	s, _, _ := newRedeemService(t, f)
+	s, repo, _ := newRedeemService(t, f)
 	out, err := s.Redeem(context.Background(), 1, "op-1")
 	require.NoError(t, err)
 	require.Equal(t, ClaudeResetOutcomeReset, out.Outcome)
@@ -178,6 +195,12 @@ func TestClaudeResetRedeemHappyPathServerPicksNextGrant(t *testing.T) {
 	require.Equal(t, 1, f.postCount())
 	require.Equal(t, "grant_next", f.posts[0]["grant_id"])
 	require.Equal(t, "cedar_ember", f.posts[0]["program"])
+	orgHash := HashIdempotencyKey("claude-org:" + redeemTestOrg)
+	fence, err := repo.GetByScopeAndKeyHash(context.Background(), claudeResetFenceScope, orgHash)
+	require.NoError(t, err)
+	var storedFence claudeResetFence
+	require.NoError(t, json.Unmarshal([]byte(*fence.ResponseBody), &storedFence))
+	require.True(t, storedFence.Completed)
 
 	raw, err := json.Marshal(out)
 	require.NoError(t, err)
@@ -315,19 +338,21 @@ func TestClaudeResetRedeemUnknownOutcomeFencesOrganization(t *testing.T) {
 	}
 }
 
-func TestClaudeResetRedeemCrashAfterMarkerNeverResends(t *testing.T) {
+func TestClaudeResetRedeemIncompletePrePostFenceRemainsInProgress(t *testing.T) {
 	f := &redeemFake{claim: `{"result":"reset"}`}
 	s, _, _ := newRedeemService(t, f)
-	// Simulate a process that persisted the marker for op-1 and died mid-claim.
+	// Simulate a process that persisted the explicitly incomplete marker for op-1 and died mid-claim.
 	orgHash := HashIdempotencyKey("claude-org:" + redeemTestOrg)
 	fence, err := s.loadFence(context.Background(), orgHash)
 	require.NoError(t, err)
 	op := HashIdempotencyKey("claude-reset:1:op-1")
 	require.NoError(t, s.persistFence(context.Background(), fence.ID, claudeResetFence{Operation: op, Outcome: ClaudeResetOutcomeUnknown, Reason: "claim_unconfirmed", At: time.Now()}))
-	out, err := s.Redeem(context.Background(), 1, "op-1")
+	stored, err := s.idempotency.repo.GetByScopeAndKeyHash(context.Background(), claudeResetFenceScope, orgHash)
 	require.NoError(t, err)
-	require.Equal(t, ClaudeResetOutcomeUnknown, out.Outcome)
-	require.True(t, out.Replayed)
+	require.Contains(t, *stored.ResponseBody, `"completed":false`)
+	out, err := s.Redeem(context.Background(), 1, "op-1")
+	require.Nil(t, out)
+	require.ErrorIs(t, err, ErrIdempotencyInProgress)
 	require.Zero(t, f.postCount())
 }
 
@@ -395,6 +420,7 @@ func TestClaudeResetRedeemRecoversExpiredProcessingFromCompleteFence(t *testing.
 				Cleared:       tc.outcome.Cleared,
 				CooldownUntil: tc.outcome.CooldownUntil,
 				Credits:       tc.outcome.Credits,
+				Completed:     true,
 				At:            now,
 			}, now)
 
@@ -404,6 +430,75 @@ func TestClaudeResetRedeemRecoversExpiredProcessingFromCompleteFence(t *testing.
 			require.NoError(t, err)
 			require.Equal(t, &want, got)
 			require.True(t, got.Replayed)
+			require.Zero(t, f.postCount())
+		})
+	}
+}
+
+func TestClaudeResetRedeemRecoveryRejectsStaleReplayEvidence(t *testing.T) {
+	cases := []struct {
+		name                string
+		operationExpired    bool
+		incompleteFence     bool
+		expiredFence        bool
+		nonSucceededFence   bool
+		expiresDuringLeases bool
+	}{
+		{name: "expired operation TTL", operationExpired: true},
+		{name: "incomplete pre-POST fence", incompleteFence: true},
+		{name: "expired fence", expiredFence: true},
+		{name: "non-succeeded fence", nonSucceededFence: true},
+		{name: "operation TTL expires during lease acquisition", expiresDuringLeases: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &redeemFake{claim: `{"result":"reset"}`}
+			s, repo, _ := newRedeemService(t, f)
+			logicalNow := time.Now().UTC()
+			operationExpiresAt := logicalNow.Add(time.Hour)
+			fenceExpiresAt := logicalNow.Add(time.Hour)
+			if tc.operationExpired {
+				// Keep the row live for the coordinator's wall clock so recovery is
+				// the path under test, but expired according to the service clock.
+				logicalNow = time.Now().UTC().Add(time.Hour)
+				operationExpiresAt = logicalNow.Add(-time.Minute)
+				fenceExpiresAt = logicalNow.Add(time.Hour)
+			}
+			if tc.expiredFence {
+				fenceExpiresAt = logicalNow.Add(-time.Minute)
+			}
+			if tc.expiresDuringLeases {
+				fenceExpiresAt = logicalNow.Add(3 * time.Hour)
+			}
+			key := "stale-" + strings.ReplaceAll(tc.name, " ", "-")
+			operation := seedClaudeResetOperation(t, repo, 1, key, logicalNow.Add(-time.Minute), operationExpiresAt)
+			status := IdempotencyStatusSucceeded
+			if tc.nonSucceededFence {
+				status = IdempotencyStatusFailedRetryable
+			}
+			seedClaudeResetFenceWithStatus(t, repo, operation, claudeResetFence{
+				Outcome:   ClaudeResetOutcomeReset,
+				Completed: !tc.incompleteFence,
+				At:        logicalNow,
+			}, status, fenceExpiresAt)
+
+			if tc.expiresDuringLeases {
+				calls := 0
+				s.now = func() time.Time {
+					calls++
+					if calls == 1 {
+						return logicalNow
+					}
+					return logicalNow.Add(2 * time.Hour)
+				}
+			} else {
+				s.now = func() time.Time { return logicalNow }
+			}
+
+			out, err := s.Redeem(context.Background(), 1, key)
+			require.Nil(t, out)
+			require.ErrorIs(t, err, ErrIdempotencyInProgress)
+			require.Equal(t, "IDEMPOTENCY_IN_PROGRESS", infraerrors.Reason(err))
 			require.Zero(t, f.postCount())
 		})
 	}
