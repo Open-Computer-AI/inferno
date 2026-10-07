@@ -968,7 +968,7 @@
                 <span class="min-w-0 flex-1 break-all text-sm text-gray-700 dark:text-gray-300">
                   {{ item.id }}
                   <span
-                    v-if="item.id.includes('*')"
+                    v-if="item.id.endsWith('*')"
                     class="ml-1 rounded bg-primary-50 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
                   >
                     {{ t("admin.groups.modelAllowlist.wildcardTag") }}
@@ -2852,7 +2852,7 @@
                 <span class="min-w-0 flex-1 break-all text-sm text-gray-700 dark:text-gray-300">
                   {{ item.id }}
                   <span
-                    v-if="item.id.includes('*')"
+                    v-if="item.id.endsWith('*')"
                     class="ml-1 rounded bg-primary-50 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
                   >
                     {{ t("admin.groups.modelAllowlist.wildcardTag") }}
@@ -4950,7 +4950,7 @@ const VERSION_NEW_HIDDEN_COLUMNS: Record<number, string[]> = {
 
 const allColumns = computed<Column[]>(() => {
   const basic: Column[] = [
-    { key: "name", label: t("admin.groups.columns.name"), sortable: true },
+    { key: "name", label: t("admin.groups.columns.name"), sortable: false },
     { key: "id", label: t("admin.groups.columns.id"), sortable: true },
     {
       key: "platform",
@@ -5434,6 +5434,8 @@ const createAllowlistCustomEntry = ref("");
 const editAllowlistCustomEntry = ref("");
 const createAllowlistCustomErrorKey = ref<string | null>(null);
 const editAllowlistCustomErrorKey = ref<string | null>(null);
+const modelAllowlistErrorKey = (error: string) =>
+  `admin.groups.modelAllowlist.errors.${error === "invalid_wildcard" ? "invalidWildcard" : error}`;
 const submitCreateAllowlistCustomEntry = () => {
   const error = addCustomModelAllowlistItem(
     createModelAllowlistState,
@@ -5443,7 +5445,7 @@ const submitCreateAllowlistCustomEntry = () => {
     createAllowlistCustomEntry.value = "";
     createAllowlistCustomErrorKey.value = null;
   } else {
-    createAllowlistCustomErrorKey.value = `admin.groups.modelAllowlist.errors.${error}`;
+    createAllowlistCustomErrorKey.value = modelAllowlistErrorKey(error);
   }
 };
 const submitEditAllowlistCustomEntry = () => {
@@ -5455,7 +5457,7 @@ const submitEditAllowlistCustomEntry = () => {
     editAllowlistCustomEntry.value = "";
     editAllowlistCustomErrorKey.value = null;
   } else {
-    editAllowlistCustomErrorKey.value = `admin.groups.modelAllowlist.errors.${error}`;
+    editAllowlistCustomErrorKey.value = modelAllowlistErrorKey(error);
   }
 };
 
@@ -6327,6 +6329,7 @@ const handlePageSizeChange = (pageSize: number) => {
 };
 
 const handleSort = (key: string, order: 'asc' | 'desc') => {
+  if (key === "name") return;
   sortState.sort_by = key;
   sortState.sort_order = order;
   pagination.page = 1;

@@ -365,8 +365,6 @@ const defaultClientTab = computed(() => {
       return 'gemini'
     case 'antigravity':
       return 'claude'
-    case 'typesafe':
-      return 'systemone'
     default:
       return 'claude'
   }
@@ -462,6 +460,7 @@ const SparkleIcon = {
 
 const clientTabs = computed((): TabConfig[] => {
   if (!props.platform) return []
+  if (props.platform === 'typesafe') return []
   if (props.claudeCodeOnly) {
     return [{ id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon }]
   }
@@ -505,10 +504,6 @@ const clientTabs = computed((): TabConfig[] => {
         { id: 'codex', label: t('keys.useKeyModal.cliTabs.codexCli'), icon: TerminalIcon },
         { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
       ]
-    case 'typesafe':
-      return [
-        { id: 'systemone', label: t('keys.useKeyModal.cliTabs.systemOne'), icon: TerminalIcon }
-      ]
     default:
       return [
         { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
@@ -531,7 +526,7 @@ const openaiTabs: TabConfig[] = [
   { id: 'windows', label: 'Windows', icon: WindowsIcon }
 ]
 
-const showShellTabs = computed(() => activeClientTab.value !== 'opencode')
+const showShellTabs = computed(() => clientTabs.value.length > 0 && activeClientTab.value !== 'opencode')
 
 const showCodexAuthMode = computed(() =>
   props.platform === 'openai' &&
@@ -585,8 +580,6 @@ const platformDescription = computed(() => {
       return activeClientTab.value === 'codex'
         ? t('keys.useKeyModal.composite.codexDescription')
         : t('keys.useKeyModal.composite.description')
-    case 'typesafe':
-      return t('keys.useKeyModal.typesafe.description')
     default:
       return t('keys.useKeyModal.description')
   }
@@ -644,8 +637,6 @@ const platformNote = computed(() => {
       return activeClientTab.value === 'codex'
         ? t('keys.useKeyModal.composite.codexNote')
         : t('keys.useKeyModal.note')
-    case 'typesafe':
-      return t('keys.useKeyModal.typesafe.note')
     default:
       return t('keys.useKeyModal.note')
   }
@@ -737,6 +728,7 @@ const comment = (value: string) => wrapToken('text-slate-500', value)
 const currentFiles = computed((): FileConfig[] => {
   const baseUrl = props.baseUrl || window.location.origin
   const apiKey = props.apiKey
+  if (props.platform === 'typesafe') return []
   const baseRoot = baseUrl.replace(/\/v1\/?$/, '').replace(/\/+$/, '')
   const ensureV1 = (value: string) => {
     const trimmed = value.replace(/\/+$/, '')
@@ -774,8 +766,6 @@ const currentFiles = computed((): FileConfig[] => {
   }
 
   switch (props.platform) {
-    case 'typesafe':
-      return [generateSystemOneCurl(baseRoot, apiKey)]
     case 'openai':
       if (activeClientTab.value === 'claude') {
         // Anthropic clients append /v1/messages themselves.
@@ -829,46 +819,6 @@ const currentFiles = computed((): FileConfig[] => {
       return generateAnthropicFiles(baseUrl, apiKey)
   }
 })
-
-function generateSystemOneCurl(baseUrl: string, apiKey: string): FileConfig {
-  const endpoint = `${baseUrl}/v1/systemone`
-  const payload = `{
-  "model": "jev-latest",
-  "state": "Text to evaluate",
-  "questions": {
-    "safety": {
-      "type": "noul",
-      "instructions": "Evaluate whether the text is unsafe"
-    }
-  }
-}`
-  if (activeTab.value === 'powershell') {
-    return {
-      path: 'PowerShell',
-      content: `$headers = @{ Authorization = "Bearer ${apiKey}" }
-$body = @'
-${payload}
-'@
-Invoke-RestMethod -Method Post -Uri "${endpoint}" -Headers $headers -ContentType "application/json" -Body $body`
-    }
-  }
-  if (activeTab.value === 'cmd') {
-    return {
-      path: 'Command Prompt',
-      content: `curl -X POST "${endpoint}" ^
-  -H "Authorization: Bearer ${apiKey}" ^
-  -H "Content-Type: application/json" ^
-  --data "{\"model\":\"jev-latest\",\"state\":\"Text to evaluate\",\"questions\":{\"safety\":{\"type\":\"noul\",\"instructions\":\"Evaluate whether the text is unsafe\"}}}"`
-    }
-  }
-  return {
-    path: 'Terminal',
-    content: `curl -X POST "${endpoint}" \\
-  -H "Authorization: Bearer ${apiKey}" \\
-  -H "Content-Type: application/json" \\
-  --data '${payload}'`
-  }
-}
 
 function generateAnthropicFiles(baseUrl: string, apiKey: string): FileConfig[] {
   let path: string
@@ -1322,7 +1272,7 @@ function generateRoutedCodexFiles(
   }
   const preferredModel = preferredModels[platform] || ''
   const model = selectCodexCatalogModel(preferredModel)
-  const labels: Record<GroupPlatform, string> = {
+  const labels: Partial<Record<GroupPlatform, string>> = {
     anthropic: 'Anthropic',
     openai: 'OpenAI',
     gemini: 'Gemini',
@@ -1333,10 +1283,9 @@ function generateRoutedCodexFiles(
     deepseek: 'DeepSeek',
     minimax: 'MiniMax',
     opencode_go: 'OpenCode',
-    typesafe: 'TypeSafe / Jev',
     composite: 'Composite'
   }
-  const label = labels[platform]
+  const label = labels[platform] || 'Unknown'
   const envContent = isWindows
     ? `$env:SUB2API_API_KEY="${apiKey}"`
     : `export SUB2API_API_KEY="${apiKey}"`

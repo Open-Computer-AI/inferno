@@ -10,6 +10,7 @@
  * scripts/behaviour-parity.mjs.
  */
 import { describe, expect, it } from 'vitest'
+import { PLATFORM_QUOTA_PLATFORMS } from '@/api/admin/users'
 import { CONCRETE_PLATFORM_OPTIONS, GROUP_PLATFORM_OPTIONS } from '@/constants/platforms'
 
 const concretePlatforms = [
@@ -43,5 +44,11 @@ describe('platform option catalogs', () => {
     for (const option of GROUP_PLATFORM_OPTIONS) {
       expect(option.label.trim().length).toBeGreaterThan(0)
     }
+  })
+
+  it('keeps the unsupported TypeSafe platform out of selectable catalogs', () => {
+    expect(CONCRETE_PLATFORM_OPTIONS.map((option) => option.value)).not.toContain('typesafe')
+    expect(GROUP_PLATFORM_OPTIONS.map((option) => option.value)).not.toContain('typesafe')
+    expect(PLATFORM_QUOTA_PLATFORMS).not.toContain('typesafe')
   })
 })

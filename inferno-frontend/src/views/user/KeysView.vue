@@ -403,7 +403,7 @@
               </button>
               <!-- Import to CC Switch Button -->
               <button
-                v-if="!publicSettings?.hide_ccs_import_button"
+                v-if="!publicSettings?.hide_ccs_import_button && row.group?.platform !== 'typesafe'"
                 @click="importToCcswitch(row)"
                 class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400"
               >
@@ -1075,6 +1075,7 @@
       :api-key="selectedKey?.key || ''"
       :base-url="publicSettings?.api_base_url || ''"
       :platform="selectedKey?.group?.platform || null"
+      :claude-code-only="selectedKey?.group?.claude_code_only || false"
       :allow-messages-dispatch="selectedKey?.group?.allow_messages_dispatch || false"
       @close="closeUseKeyModal"
     />
@@ -1237,6 +1238,8 @@ import {
 } from '@/utils/keyGroupProviders'
 import {
   buildCcSwitchImportDeeplink,
+  CC_SWITCH_USAGE_SCRIPT,
+  isCcSwitchImportSupported,
   type CcSwitchClientType
 } from '@/utils/ccswitchImport'
 
@@ -2040,6 +2043,8 @@ const resetRateLimitUsage = async () => {
 const importToCcswitch = (row: ApiKey) => {
   const platform = row.group?.platform || 'anthropic'
 
+  if (!isCcSwitchImportSupported(platform)) return
+
   // For antigravity platform, show client selection dialog
   if (platform === 'antigravity') {
     pendingCcsRow.value = row
@@ -2055,22 +2060,6 @@ const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
   const baseUrl = publicSettings.value?.api_base_url || window.location.origin
   const platform = row.group?.platform || 'anthropic'
 
-  const usageScript = `({
-    request: {
-      url: "{{baseUrl}}/v1/usage",
-      method: "GET",
-      headers: { "Authorization": "Bearer {{apiKey}}" }
-    },
-    extractor: function(response) {
-      const remaining = response?.remaining ?? response?.quota?.remaining ?? response?.balance;
-      const unit = response?.unit ?? response?.quota?.unit ?? "USD";
-      return {
-        isValid: response?.is_active ?? response?.isValid ?? true,
-        remaining,
-        unit
-      };
-    }
-  })`
   const providerName = (publicSettings.value?.site_name || PRODUCT_NAME).trim() || PRODUCT_NAME
   const deeplink = buildCcSwitchImportDeeplink({
     baseUrl,
@@ -2078,7 +2067,7 @@ const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
     clientType,
     providerName,
     apiKey: row.key,
-    usageScript
+    usageScript: CC_SWITCH_USAGE_SCRIPT
   })
 
   try {

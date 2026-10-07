@@ -37,6 +37,10 @@ export const CC_SWITCH_USAGE_SCRIPT = `({
     }
   })`
 
+export function isCcSwitchImportSupported(platform: GroupPlatform | undefined | null): boolean {
+  return platform !== 'typesafe'
+}
+
 function withV1Endpoint(baseUrl: string): string {
   const normalizedBaseUrl = baseUrl.replace(/\/+$/, '')
   return normalizedBaseUrl.endsWith('/v1') ? normalizedBaseUrl : `${normalizedBaseUrl}/v1`
@@ -51,6 +55,10 @@ export function resolveCcSwitchImportConfig(
   clientType: CcSwitchClientType,
   baseUrl: string
 ): CcSwitchImportConfig {
+  if (!isCcSwitchImportSupported(platform)) {
+    throw new Error('CC Switch import is not supported for TypeSafe')
+  }
+
   switch (platform || 'anthropic') {
     case 'antigravity':
       return {

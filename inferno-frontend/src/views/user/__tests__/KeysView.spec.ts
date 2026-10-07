@@ -248,7 +248,11 @@ const mountView = async () => {
         Select: SelectStub,
         SearchInput: SearchInputStub,
         Icon: IconStub,
-        UseKeyModal: true,
+        UseKeyModal: {
+          name: 'UseKeyModal',
+          props: ['show', 'platform', 'claudeCodeOnly'],
+          template: '<div v-if="show" data-test="use-key-modal-stub" />',
+        },
         BulkEditKeysModal: true,
         EndpointPopover: true,
         GroupBadge: true,
@@ -363,6 +367,39 @@ describe('user KeysView column settings', () => {
     expect(visibleColumnKeys(wrapper)).not.toContain('last_used_at')
     expect(visibleColumnKeys(wrapper)).not.toContain('last_used_ip')
     expect(visibleColumnKeys(wrapper)).not.toContain('id')
+  })
+
+  it('passes the selected group Claude-only capability to UseKeyModal', async () => {
+    const key = {
+      ...createApiKey(),
+      group_id: 7,
+      group: {
+        id: 7,
+        platform: 'anthropic',
+        claude_code_only: true,
+      } as unknown as ApiKey['group'],
+    }
+    listKeys.mockResolvedValueOnce({ items: [key], total: 1, page: 1, page_size: 20, pages: 1 })
+
+    const wrapper = await mountView()
+    await getButtonByText(wrapper, 'keys.useKey').trigger('click')
+
+    expect(wrapper.findComponent({ name: 'UseKeyModal' }).props('claudeCodeOnly')).toBe(true)
+  })
+
+  it('hides the CC Switch import action for TypeSafe groups', async () => {
+    const key = {
+      ...createApiKey(),
+      group_id: 8,
+      group: {
+        id: 8,
+        platform: 'typesafe',
+      } as unknown as ApiKey['group'],
+    }
+    listKeys.mockResolvedValueOnce({ items: [key], total: 1, page: 1, page_size: 20, pages: 1 })
+
+    const wrapper = await mountView()
+    expect(wrapper.findAll('button').some((button) => button.text().includes('keys.importToCcSwitch'))).toBe(false)
   })
 
   it('opens bulk editing with only selected visible keys', async () => {

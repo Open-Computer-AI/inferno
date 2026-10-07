@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CC_SWITCH_USAGE_SCRIPT,
   GROK_CC_SWITCH_MODEL,
   OPENAI_CC_SWITCH_CODEX_MODEL,
-  buildCcSwitchImportDeeplink
+  buildCcSwitchImportDeeplink,
+  isCcSwitchImportSupported
 } from '@/utils/ccswitchImport'
 import type { GroupPlatform } from '@/types'
 
@@ -38,7 +40,7 @@ describe('ccswitchImport utils', () => {
 
     expect(params.get('resource')).toBe('provider')
     expect(params.get('app')).toBe('codex')
-    expect(params.get('endpoint')).toBe(`${baseInput.baseUrl}/v1`)
+    expect(params.get('endpoint')).toBe(baseInput.baseUrl)
     expect(params.get('model')).toBe(OPENAI_CC_SWITCH_CODEX_MODEL)
     expect(atob(params.get('usageScript') || '')).toBe(baseInput.usageScript)
   })
@@ -48,7 +50,7 @@ describe('ccswitchImport utils', () => {
     'https://api.example.com/',
     'https://api.example.com/v1',
     'https://api.example.com/v1/'
-  ])('imports Codex with exactly one /v1 suffix for base URL %s', (baseUrl) => {
+  ])('keeps Codex imports on the configured endpoint for base URL %s', (baseUrl) => {
     const params = paramsFromDeeplink(
       buildCcSwitchImportDeeplink({
         ...baseInput,
@@ -58,7 +60,7 @@ describe('ccswitchImport utils', () => {
       })
     )
 
-    expect(params.get('endpoint')).toBe('https://api.example.com/v1')
+    expect(params.get('endpoint')).toBe(baseUrl.replace(/\/+$/, ''))
   })
 
   it.each([
@@ -110,5 +112,34 @@ describe('ccswitchImport utils', () => {
     expect(params.get('app')).toBe('gemini')
     expect(params.get('endpoint')).toBe(`${baseInput.baseUrl}/antigravity`)
     expect(params.has('model')).toBe(false)
+  })
+
+  it('does not support TypeSafe CC Switch imports', () => {
+    expect(isCcSwitchImportSupported('typesafe')).toBe(false)
+    expect(() => buildCcSwitchImportDeeplink({
+      ...baseInput,
+      platform: 'typesafe',
+      clientType: 'claude'
+    })).toThrow('not supported')
+  })
+})
+
+describe('CC Switch usage script', () => {
+  const usageUrlFor = (baseUrl: string): string => {
+    const script = CC_SWITCH_USAGE_SCRIPT
+      .split('{{baseUrl}}').join(baseUrl)
+      .split('{{apiKey}}').join('sk-test')
+    // eslint-disable-next-line no-new-func
+    const config = new Function(`return ${script}`)() as { request: { url: string } }
+    return config.request.url
+  }
+
+  it.each([
+    'https://api.example.com',
+    'https://api.example.com/',
+    'https://api.example.com/v1',
+    'https://api.example.com/v1/'
+  ])('queries exactly one /v1/usage for base URL %s', (baseUrl) => {
+    expect(usageUrlFor(baseUrl)).toBe('https://api.example.com/v1/usage')
   })
 })

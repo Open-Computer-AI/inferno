@@ -28,12 +28,16 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CapacityBar from '@/components/common/CapacityBar.vue'
-import type { PlatformQuotaItem, PlatformQuotaPlatform } from '@/api/admin/users'
+import {
+  PLATFORM_QUOTA_PLATFORMS,
+  type PlatformQuotaItem,
+  type PlatformQuotaPlatform
+} from '@/api/admin/users'
 
 const props = defineProps<{ quotas?: PlatformQuotaItem[] }>()
 const { t } = useI18n()
 
-const PLATFORM_ORDER: PlatformQuotaPlatform[] = ['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'typesafe']
+const PLATFORM_ORDER: PlatformQuotaPlatform[] = [...PLATFORM_QUOTA_PLATFORMS]
 
 type Window = 'daily' | 'weekly' | 'monthly'
 const WINDOWS: Window[] = ['daily', 'weekly', 'monthly']
@@ -42,6 +46,7 @@ const WINDOWS: Window[] = ['daily', 'weekly', 'monthly']
 const configured = computed(() => {
   if (!props.quotas) return []
   return props.quotas
+    .filter((q) => PLATFORM_QUOTA_PLATFORMS.includes(q.platform))
     .filter(
       (q) =>
         q.daily_limit_usd != null ||
