@@ -1441,6 +1441,9 @@ func normalizeOpenAIResponsesWebSocketCompatibilityBodyWithConfig(cfg *config.Co
 type openAIResponsesCompatibilityOptions struct {
 	Config        *config.Config
 	ResponsesLite bool
+	// Compact marks the /responses/compact wire shape, which is left as-is
+	// by request-shape compatibility rewrites such as web_search history.
+	Compact bool
 }
 
 func normalizeOpenAIResponsesCompatibilityBodyWithOptions(body []byte, account *Account, opts openAIResponsesCompatibilityOptions) ([]byte, bool, error) {
@@ -1509,12 +1512,14 @@ func normalizeOpenAIResponsesCompatibilityBodyWithOptions(body []byte, account *
 			normalized = next
 			changed = true
 		}
-		webSearchBody, webSearchChanged, err := ensureOpenAIOAuthWebSearchToolForHistoryBody(normalized)
-		if err != nil {
-			return body, false, fmt.Errorf("normalize websocket body: %w", err)
+		if !opts.Compact {
+			webSearchBody, webSearchChanged, err := ensureOpenAIOAuthWebSearchToolForHistoryBody(normalized, responsesLite)
+			if err != nil {
+				return body, false, fmt.Errorf("normalize websocket body: %w", err)
+			}
+			normalized = webSearchBody
+			changed = changed || webSearchChanged
 		}
-		normalized = webSearchBody
-		changed = changed || webSearchChanged
 	}
 	needsOrphanCleanup := account != nil && account.IsOpenAIOAuthLike() &&
 		gjson.GetBytes(normalized, "input").IsArray()
@@ -1647,15 +1652,6 @@ func normalizeOpenAIPassthroughOAuthBody(body []byte, compact bool) ([]byte, boo
 			normalized = next
 			changed = true
 		}
-	}
-
-	if !compact {
-		webSearchBody, webSearchChanged, err := ensureOpenAIOAuthWebSearchToolForHistoryBody(normalized)
-		if err != nil {
-			return body, false, fmt.Errorf("normalize passthrough body: %w", err)
-		}
-		normalized = webSearchBody
-		changed = changed || webSearchChanged
 	}
 
 	if compact {
