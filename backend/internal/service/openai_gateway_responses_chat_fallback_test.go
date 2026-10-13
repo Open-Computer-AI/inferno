@@ -90,6 +90,23 @@ func TestForwardResponses_ForceChatCompletionsOmitsNoneReasoningEffort(t *testin
 	require.Nil(t, result.ReasoningEffort)
 }
 
+func TestForwardResponses_GPT61DisabledEffortAliasRejectedOnNativeResponsesIngress(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, effort := range []string{"none", "minimal"} {
+		body := []byte(`{"model":"gpt-6.1-sol-` + effort + `","input":"hi","stream":false}`)
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+		account := forceChatResponsesFallbackAccount()
+		account.Credentials["model_mapping"] = map[string]any{"gpt-6.1-sol-" + effort: "gpt-6.1-sol"}
+		svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig()}
+		_, err := svc.Forward(context.Background(), c, account, body)
+		require.Error(t, err)
+		require.Equal(t, http.StatusBadRequest, rec.Code)
+		require.Contains(t, rec.Body.String(), "gpt-6.1-sol")
+	}
+}
+
 func TestForwardResponses_PassthroughFlagWithUnsupportedResponsesUsesAccountMapping(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

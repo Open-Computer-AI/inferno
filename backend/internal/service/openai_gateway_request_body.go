@@ -2591,10 +2591,17 @@ func validateGPT61SolCompatRequest(body []byte, model string) error {
 	if gjson.GetBytes(body, "thinking.type").String() == "disabled" {
 		return openai.ValidateGPT61SolReasoningEffort(model, "none")
 	}
-	requestedModel := gjson.GetBytes(body, "model").String()
-	for _, effort := range []string{"none", "minimal"} {
-		if strings.HasSuffix(strings.ToLower(requestedModel), "-"+effort) {
-			return openai.ValidateGPT61SolReasoningEffort(model, effort)
+	// Only a canonical GPT-6.1 Sol effort alias can supply an implicit effort.
+	// Arbitrary client aliases (for example "public-none") may map to this
+	// upstream model and must not be parsed as model-effort syntax.
+	if hasExplicitEffort := gjson.GetBytes(body, "reasoning.effort").Exists() ||
+		gjson.GetBytes(body, "reasoning_effort").Exists() ||
+		gjson.GetBytes(body, "output_config.effort").Exists(); !hasExplicitEffort {
+		requestedModel := openai.CanonicalizeOpenAIModelAliasSpelling(gjson.GetBytes(body, "model").String())
+		if openai.IsGPT61SolModelSpelling(requestedModel) {
+			if effort, ok := strings.CutPrefix(requestedModel, "gpt-6.1-sol-"); ok && effort != "openai-compact" {
+				return openai.ValidateGPT61SolReasoningEffort(model, effort)
+			}
 		}
 	}
 	return nil

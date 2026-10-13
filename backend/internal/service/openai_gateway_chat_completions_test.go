@@ -1261,6 +1261,21 @@ func TestGPT61SolRejectsDisabledReasoningBeforeForwarding(t *testing.T) {
 		require.Error(t, validateGPT61SolCompatRequest([]byte(body), "gpt-6.1-sol"))
 		require.NoError(t, validateGPT61SolCompatRequest([]byte(body), "gpt-6-sol"))
 	}
+	for _, body := range []string{
+		`{"model":"public-none","reasoning_effort":"high"}`,
+		`{"model":"public-minimal","reasoning_effort":"high"}`,
+		`{"model":"gpt-6.1-sol-none","output_config":{"effort":"high"}}`,
+		`{"model":"gpt-6.1-sol-minimal","output_config":{"effort":"max"}}`,
+	} {
+		require.NoError(t, validateGPT61SolCompatRequest([]byte(body), "gpt-6.1-sol"))
+	}
+	for _, body := range []string{
+		`{"model":"gpt-6.1-sol-none"}`,
+		`{"model":"openai/GPT-6.1-SOL-minimal"}`,
+	} {
+		require.Error(t, validateGPT61SolCompatRequest([]byte(body), "openai/gpt-6.1-sol"))
+	}
+
 	for _, field := range []string{`"reasoning_effort":"none"`, `"reasoning_effort":"minimal"`, `"tools":[{"type":"function","function":{"name":"lookup"}}]`} {
 		body := []byte(`{"model":"public",` + field + `,"messages":[{"role":"user","content":"hello"}]}`)
 		rec := httptest.NewRecorder()
@@ -1272,6 +1287,16 @@ func TestGPT61SolRejectsDisabledReasoningBeforeForwarding(t *testing.T) {
 		require.Error(t, err)
 		require.Equal(t, http.StatusBadRequest, rec.Code)
 		require.Contains(t, rec.Body.String(), "gpt-6.1-sol")
+	}
+}
+
+func TestGPT61SolNativeResponsesEffortValuesArePreserved(t *testing.T) {
+	for _, effort := range []string{"none", "minimal"} {
+		body := []byte(`{"model":"gpt-6.1-sol","input":"hi","reasoning":{"effort":"` + effort + `"}}`)
+		out, changed, err := normalizeOpenAIResponsesReasoningMode(body, "gpt-6.1-sol")
+		require.NoError(t, err)
+		require.False(t, changed)
+		require.Equal(t, effort, gjson.GetBytes(out, "reasoning.effort").String())
 	}
 }
 
