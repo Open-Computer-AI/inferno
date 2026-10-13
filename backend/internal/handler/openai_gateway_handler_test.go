@@ -3177,7 +3177,11 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 			require.Error(t, readErr, "second turn should have been rejected with a close")
 			var closeErr coderws.CloseError
 			require.ErrorAs(t, readErr, &closeErr)
-			require.Equal(t, coderws.StatusPolicyViolation, closeErr.Code)
+			status := tc.closeStatus
+			if status == 0 {
+				status = coderws.StatusPolicyViolation
+			}
+			require.Equal(t, status, closeErr.Code)
 			reason := tc.closeReason
 			if reason == "" {
 				reason = "not available for this group"
