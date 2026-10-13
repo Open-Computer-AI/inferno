@@ -14,6 +14,16 @@ type ProviderEndpoints struct {
 	ProtocolRules []OpenCodeGoProtocolRule
 }
 
+// ProviderRouting 决定多协议供应商账号如何选择上游协议。
+type ProviderRouting string
+
+const (
+	// ProviderRoutingByInbound applies to single-vendor adaptive routing.
+	ProviderRoutingByInbound ProviderRouting = "by_inbound"
+	// ProviderRoutingByModel applies to multi-model aggregators such as OpenCode.
+	ProviderRoutingByModel ProviderRouting = "by_model"
+)
+
 // ProviderProfile 描述一个多协议 API Key 供应商（国产厂商或多模型聚合平台）的
 // 静态数据：各接入模式的默认端点、内置分流规则与端点路径约定。
 // 额度解析、会话头等行为差异不在这里，仍由各自的代码路径处理。
@@ -22,6 +32,8 @@ type ProviderProfile struct {
 	// DefaultMode 在 credentials.account_mode 缺失或不在 Modes 中时使用。
 	DefaultMode string
 	Modes       map[string]ProviderEndpoints
+	// Routing 覆盖该 provider 的路由策略。空值按入站协议路由。
+	Routing ProviderRouting
 	// ResponsesPath 覆盖 Responses 端点路径（按 buildOpenAIEndpointURL 的版本感知
 	// 规则拼接），空值为 /v1/responses。对自定义 base_url 的账号同样生效。
 	ResponsesPath string
@@ -50,7 +62,7 @@ func (p *ProviderProfile) SupportsProtocol(mode, protocol string) bool {
 
 // providerProfiles 是多协议 API Key 供应商的单一数据来源。新增同类供应商时在此
 // 登记一条即可获得默认端点、原生 Responses 能力判定（有 responses 条目即支持）、
-// Responses 路径约定与 IsMultiProtocolAPIKeyProvider 归属。
+// 上游协议分流方式、Responses 路径约定与 IsMultiProtocolAPIKeyProvider 归属。
 // 默认端点需与前端 credentialsBuilder.ts 的预设保持一致。
 var providerProfiles = map[string]*ProviderProfile{
 	PlatformKimi: {
@@ -130,6 +142,7 @@ var providerProfiles = map[string]*ProviderProfile{
 	},
 	PlatformOpenCodeGo: {
 		Platform:    PlatformOpenCodeGo,
+		Routing:     ProviderRoutingByModel,
 		DefaultMode: AccountModeGo,
 		Modes: map[string]ProviderEndpoints{
 			AccountModeGo: {
@@ -178,4 +191,10 @@ func (a *Account) defaultProviderBaseURL(protocol string) string {
 func (a *Account) providerSupportsProtocol(protocol string) bool {
 	profile := a.providerProfile()
 	return profile != nil && profile.SupportsProtocol(a.GetCredential("account_mode"), protocol)
+}
+
+// routesByModel 报告账号所在供应商是否按模型名分流上游协议（多模型聚合平台）。
+func (a *Account) routesByModel() bool {
+	profile := a.providerProfile()
+	return profile != nil && profile.Routing == ProviderRoutingByModel
 }

@@ -140,7 +140,7 @@ func (s *OpenAIGatewayService) nativeAnthropicTargetURL(account *Account) (strin
 	return strings.TrimRight(validatedURL, "/") + "/v1/messages", nil
 }
 
-func resolveOpenCodeGoMappedModel(account *Account, body []byte, defaultMappedModel string) string {
+func resolveMappedUpstreamModel(account *Account, body []byte, defaultMappedModel string) string {
 	original := strings.TrimSpace(gjson.GetBytes(body, "model").String())
 	billing := resolveOpenAIForwardModel(account, original, defaultMappedModel)
 	return normalizeOpenAIModelForUpstream(account, billing)
@@ -572,4 +572,11 @@ func claudeUsageToOpenAIUsage(u *ClaudeUsage) OpenAIUsage {
 		CacheCreationInputTokens: u.CacheCreationInputTokens,
 		CacheReadInputTokens:     u.CacheReadInputTokens,
 	}
+}
+
+// resolveOpenCodeGoMappedModel returns the normalized account-mapped model used by protocol rules.
+func resolveOpenCodeGoMappedModel(account *Account, body []byte, defaultMappedModel string) string {
+	requested := strings.TrimSpace(gjson.GetBytes(body, "model").String())
+	billing := resolveOpenAIForwardModel(account, requested, defaultMappedModel)
+	return normalizeOpenAIModelForUpstream(account, billing)
 }
