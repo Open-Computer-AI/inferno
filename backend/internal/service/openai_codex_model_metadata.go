@@ -9,7 +9,7 @@ import (
 
 var codexToolCapabilityFields = []string{
 	"supports_search_tool", "apply_patch_tool_type", "comp_hash", "tool_mode", "use_responses_lite",
-	"multi_agent_reasoning_effort", "multi_agent_version",
+	"multi_agent_reasoning_effort", "multi_agent_version", "service_tiers",
 }
 
 func applyCodexToolCapabilities(dst, src map[string]json.RawMessage, overwrite bool) bool {
@@ -26,7 +26,12 @@ func applyCodexToolCapabilities(dst, src map[string]json.RawMessage, overwrite b
 		}
 		// These Codex fields are nullable booleans or strings, never arbitrary objects.
 		if !bytes.Equal(value, []byte("null")) {
-			if field == "supports_search_tool" || field == "use_responses_lite" {
+			if field == "service_tiers" {
+				var tiers []any
+				if json.Unmarshal(value, &tiers) != nil {
+					continue
+				}
+			} else if field == "supports_search_tool" || field == "use_responses_lite" {
 				if !bytes.Equal(value, []byte("true")) && !bytes.Equal(value, []byte("false")) {
 					continue
 				}
@@ -256,13 +261,21 @@ func intersectUpstreamModelMetadata(modelID string, candidates []UpstreamModelMe
 		shared := len(value) > 0
 		declared := shared
 		for _, candidate := range candidates[1:] {
-			declared = declared || len(candidate.CodexToolCapabilities[field]) > 0
-			if !bytes.Equal(value, bytes.TrimSpace(candidate.CodexToolCapabilities[field])) {
+			other := bytes.TrimSpace(candidate.CodexToolCapabilities[field])
+			declared = declared || len(other) > 0
+			if field == "service_tiers" && len(value) == 0 && len(other) == 0 {
+				continue
+			}
+			if !bytes.Equal(value, other) {
 				shared = false
 			}
 		}
 		if shared {
-			result.CodexToolCapabilities[field] = value
+			if field == "service_tiers" && len(value) == 0 {
+				result.CodexToolCapabilities[field] = json.RawMessage("[]")
+			} else {
+				result.CodexToolCapabilities[field] = value
+			}
 		} else if declared {
 			fallback := json.RawMessage("null")
 			if field == "supports_search_tool" || field == "use_responses_lite" {
