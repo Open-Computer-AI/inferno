@@ -46,6 +46,8 @@ function mountTable(
   extraProps?: {
     imageRateIndependent?: boolean
     imageRateMultiplier?: number | null
+    videoRateIndependent?: boolean
+    videoRateMultiplier?: number | null
     peakWindow?: string
     peakRateMultiplier?: number | null
   }
@@ -417,6 +419,32 @@ describe('PlazaModelPricingTable', () => {
     // 倍率列展示独立倍率 1x,而非分组倍率 0.1x
     const rateCell = wrapper.findAll('tbody tr td').at(-1)!
     expect(rateCell.text()).toBe('1x')
+  })
+
+  it('视频独立倍率开启时,按秒价格 × 视频独立倍率,不乘分组倍率', () => {
+    const model = tokenModel({
+      name: 'sora-video',
+      pricing: {
+        billing_mode: 'video',
+        input_price: null,
+        output_price: null,
+        cache_write_price: null,
+        cache_read_price: null,
+        image_input_price: null,
+        image_output_price: null,
+        per_request_price: 0.5,
+        intervals: []
+      },
+      official_pricing: null
+    })
+    const wrapper = mountTable([model], 2, null, {
+      videoRateIndependent: true,
+      videoRateMultiplier: 0.7
+    })
+    expect(wrapper.text()).toContain('$0.35')
+    expect(wrapper.text()).not.toContain('$1.00')
+    const rateCell = wrapper.findAll('tbody tr td').at(-1)!
+    expect(rateCell.text()).toBe('0.7x')
   })
 
   it('生图独立倍率关闭时,按图价格仍乘分组/专属生效倍率', () => {
