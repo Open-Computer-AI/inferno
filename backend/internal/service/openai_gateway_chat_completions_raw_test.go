@@ -245,6 +245,25 @@ func TestForwardAsChatCompletions_OpenAICompatibleRawUsageGuard(t *testing.T) {
 	}
 }
 
+func TestForwardAsChatCompletions_RawGPT61AliasRejectsDisabledEffort(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"public","messages":[{"role":"user","content":"hello"}],"reasoning_effort":"minimal","stream":false}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	account := rawChatCompletionsTestAccount()
+	account.Extra = map[string]any{openai_compat.ExtraKeyResponsesSupported: false}
+	account.Credentials["model_mapping"] = map[string]any{"public": "gpt-6.1-sol"}
+	upstream := &httpUpstreamRecorder{err: errors.New("unexpected upstream call")}
+	svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig(), httpUpstream: upstream}
+	_, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "")
+	require.Error(t, err)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "gpt-6.1-sol")
+	require.Nil(t, upstream.lastReq, "raw /v1/chat/completions path must reject before forwarding")
+}
+
 func TestForwardAsRawChatCompletions_PreservesMappedGPT56MaxEffort(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

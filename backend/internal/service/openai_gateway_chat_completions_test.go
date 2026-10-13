@@ -1250,6 +1250,56 @@ func TestGPT6MappedCompatibilityBridgesKeepReasoningAndTools(t *testing.T) {
 	}
 }
 
+func TestGPT61SolValidatorSuffixEffectiveEffortMatrix(t *testing.T) {
+	fields := []struct {
+		name string
+		wrap func(string) string
+	}{
+		{name: "reasoning.effort", wrap: func(value string) string { return `"reasoning":{"effort":` + value + `}` }},
+		{name: "reasoning_effort", wrap: func(value string) string { return `"reasoning_effort":` + value }},
+		{name: "output_config.effort", wrap: func(value string) string { return `"output_config":{"effort":` + value + `}` }},
+	}
+	for _, field := range fields {
+		for _, effort := range []string{"none", "minimal"} {
+			body := `{"model":"gpt-6.1-sol-high",` + field.wrap(`"`+effort+`"`) + `}`
+			require.Error(t, validateGPT61SolCompatRequest([]byte(body), "gpt-6.1-sol"), field.name+"="+effort)
+		}
+		for _, effort := range []string{"high", "max", " HIGH "} {
+			body := `{"model":"gpt-6.1-sol-none",` + field.wrap(`"`+effort+`"`) + `}`
+			require.NoError(t, validateGPT61SolCompatRequest([]byte(body), "gpt-6.1-sol"), field.name+"="+effort)
+		}
+		for _, raw := range []string{`""`, `null`} {
+			body := `{"model":"gpt-6.1-sol-none",` + field.wrap(raw) + `}`
+			require.Error(t, validateGPT61SolCompatRequest([]byte(body), "gpt-6.1-sol"), field.name+"="+raw)
+		}
+	}
+	// The Anthropic normalizer checks output_config.effort against exact empty,
+	// unlike the reasoning fields whose extractors trim whitespace.
+	require.NoError(t, validateGPT61SolCompatRequest([]byte(`{"model":"gpt-6.1-sol-none","output_config":{"effort":" "}}`), "gpt-6.1-sol"))
+	require.Error(t, validateGPT61SolCompatRequest([]byte(`{"model":"gpt-6.1-sol-none","reasoning":{"effort":" "}}`), "gpt-6.1-sol"))
+	require.Error(t, validateGPT61SolCompatRequest([]byte(`{"model":"gpt-6.1-sol-none","reasoning_effort":" "}`), "gpt-6.1-sol"))
+}
+
+func TestGPT61SolValidatorAliasesAndFieldInteractions(t *testing.T) {
+	for _, model := range []string{"gpt-6.1-sol-none", "GPT-6.1-SOL-minimal", "openai/GPT-6.1-SOL-none", "  openai/GPT-6.1-SOL-minimal  "} {
+		body := `{"model":"` + model + `"}`
+		require.Error(t, validateGPT61SolCompatRequest([]byte(body), "openai/gpt-6.1-sol"), model)
+	}
+	for _, model := range []string{"gpt-6.1-sol-openai-compact", "openai/GPT-6.1-SOL-openai_compact"} {
+		require.NoError(t, validateGPT61SolCompatRequest([]byte(`{"model":"`+model+`"}`), "gpt-6.1-sol"), model)
+	}
+	for _, body := range []string{
+		`{"model":"public-none"}`,
+		`{"model":"public-minimal"}`,
+		`{"model":"public-none","reasoning_effort":"high"}`,
+	} {
+		require.NoError(t, validateGPT61SolCompatRequest([]byte(body), "gpt-6.1-sol"), body)
+	}
+	require.Error(t, validateGPT61SolCompatRequest([]byte(`{"model":"gpt-6.1-sol","reasoning_effort":"high","output_config":{"effort":"none"}}`), "gpt-6.1-sol"), "a conflicting disabled value is rejected")
+	require.Error(t, validateGPT61SolCompatRequest([]byte(`{"model":"gpt-6.1-sol","reasoning_effort":"high","thinking":{"type":"disabled"}}`), "gpt-6.1-sol"), "disabled thinking remains rejected even with high")
+	require.NoError(t, validateGPT61SolCompatRequest([]byte(`{"model":"gpt-6.1-sol-none"}`), "gpt-5.4"), "mapped non-GPT-6.1 upstream is not validated as GPT-6.1")
+}
+
 func TestGPT61SolRejectsDisabledReasoningBeforeForwarding(t *testing.T) {
 	for _, body := range []string{
 		`{"model":"public","reasoning_effort":"none"}`,

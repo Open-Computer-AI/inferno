@@ -3827,21 +3827,23 @@ func TestGPT61SolAPIKeyCatalogUsesFullResponses(t *testing.T) {
 func TestGPT61SolAPIKeyCatalogContextWindow(t *testing.T) {
 	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.openai.com"}}
 	for _, tc := range []struct {
-		name string
-		body string
-		want int64
+		name           string
+		body           string
+		wantContext    int64
+		wantMaxContext int64
 	}{
-		{"missing uses updated default", `{"models":[{"slug":"gpt-6.1-sol"}]}`, 500_000},
-		{"null uses updated default", `{"models":[{"slug":"gpt-6.1-sol","context_window":null}]}`, 500_000},
-		{"lower upstream window is preserved", `{"models":[{"slug":"gpt-6.1-sol","context_window":272000}]}`, 272_000},
-		{"higher upstream window is preserved", `{"models":[{"slug":"gpt-6.1-sol","context_window":1000000,"max_context_window":1000000}]}`, 1_000_000},
+		{"missing uses updated default", `{"models":[{"slug":"gpt-6.1-sol"}]}`, 500_000, 872_000},
+		{"null uses updated default", `{"models":[{"slug":"gpt-6.1-sol","context_window":null}]}`, 500_000, 872_000},
+		{"lower upstream window is preserved", `{"models":[{"slug":"gpt-6.1-sol","context_window":272000}]}`, 272_000, 872_000},
+		{"higher upstream window is preserved", `{"models":[{"slug":"gpt-6.1-sol","context_window":1000000,"max_context_window":1000000}]}`, 1_000_000, 1_000_000},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body, err := completeAPIKeyCodexModelsManifestMetadata([]byte(tc.body), true, account)
 			require.NoError(t, err)
 			models := decodeCodexManifestModels(t, body)
 			require.Len(t, models, 1)
-			require.EqualValues(t, tc.want, models[0]["context_window"])
+			require.EqualValues(t, tc.wantContext, models[0]["context_window"])
+			require.EqualValues(t, tc.wantMaxContext, models[0]["max_context_window"])
 		})
 	}
 }
