@@ -19,8 +19,8 @@ const (
 	// the UI does not pick a model. glm-5.3 is a Chat Completions catalog ID.
 	DefaultOpenCodeGoTestModel = "glm-5.3"
 
-	protocolRulesCredentialKey         = "protocol_rules"
-	maxProtocolRules         = 64
+	protocolRulesCredentialKey   = "protocol_rules"
+	maxProtocolRules             = 64
 	maxProtocolRulePatternLength = 128
 )
 

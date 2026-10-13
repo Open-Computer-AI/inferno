@@ -352,7 +352,14 @@ DEFAULT_OPENCODE_ZEN_PROTOCOL_RULES.splice(4, 0, { pattern: 'qwen3.8-max', proto
 
 /** 供应商该接入模式的内置分流规则（首条命中生效；未知模式按默认模式）。 */
 export function defaultProviderProtocolRules(platform: string, mode?: string): OpenCodeGoProtocolRule[] {
-  return normalizeProfileRules(getProviderMode(platform, mode)?.protocol_rules)
+  const rules = normalizeProfileRules(getProviderMode(platform, mode)?.protocol_rules)
+  if (platform === 'opencode_go' && mode === 'zen') {
+    const qwenException = DEFAULT_OPENCODE_ZEN_PROTOCOL_RULES.find(rule => rule.pattern === 'qwen3.8-max')
+    if (qwenException && !rules.some(rule => rule.pattern === qwenException.pattern)) {
+      rules.splice(4, 0, { ...qwenException })
+    }
+  }
+  return rules
 }
 
 export function resolveOpenCodeAccountMode(value: unknown): OpenCodeAccountMode {

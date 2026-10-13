@@ -45,25 +45,6 @@ func resolveUpstreamProtocol(account *Account, inbound, model string) string {
 	return APIProtocolResponses
 }
 
-// resolveModelRoutedProtocol 按模型名解析按模型分流账号的上游协议。
-// 显式 pinned 协议优先；adaptive 先走 credentials.protocol_rules，未配置时回落
-// profile 对应接入模式的内置规则；规则未命中或结果未知一律 Chat Completions，
-// 避免落入 Responses 转换链。
-func (a *Account) resolveModelRoutedProtocol(model string) string {
-	switch proto := a.GetAPIProtocol(); proto {
-	case APIProtocolChatCompletions, APIProtocolAnthropic, APIProtocolResponses:
-		return proto
-	}
-	if a.IsOpenCodeGo() {
-		return a.ResolveOpenCodeGoUpstreamProtocol(model)
-	}
-	profile := a.providerProfile()
-	if profile == nil {
-		return APIProtocolChatCompletions
-	}
-	return matchProtocolRules(model, profile.Endpoints(a.GetCredential("account_mode")).ProtocolRules)
-}
-
 // upstreamRoutingModel 返回参与协议分流的模型名：仅按模型分流的账号需要，按账号
 // 模型映射与上游归一后的名字匹配规则；其余账号的分流与模型无关，返回空串。
 func upstreamRoutingModel(account *Account, body []byte, defaultMappedModel string) string {
