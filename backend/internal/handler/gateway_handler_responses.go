@@ -94,6 +94,9 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		body = h.gatewayService.ReplaceModelInBody(body, reqModel)
 	}
 	bindRequestedReasoningEffort(c, body, reqModel)
+	if rejectSystemOneOnlyPlatform(c, apiKey, h.responsesErrorResponse) {
+		return
+	}
 	reqStream, ok := parseOpenAICompatibleStream(body)
 	if !ok {
 		h.responsesErrorResponse(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)

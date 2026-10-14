@@ -94,6 +94,9 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		body = h.gatewayService.ReplaceModelInBody(body, reqModel)
 	}
 	bindRequestedReasoningEffort(c, body, reqModel)
+	if rejectSystemOneOnlyPlatform(c, apiKey, h.chatCompletionsErrorResponse) {
+		return
+	}
 	reqStream, ok := parseOpenAICompatibleStream(body)
 	if !ok {
 		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)
