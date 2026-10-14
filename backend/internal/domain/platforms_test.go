@@ -6,25 +6,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// 重构前各处手写的平台列表，作为平台清单派生结果的等价基准。
+// 重构前各处手写的平台列表，作为平台清单派生结果的等价基准；新平台按 catalog 顺序补入。
 var (
 	legacyDisplayOrder = []string{
 		PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok,
-		PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformTypeSafe, PlatformOpenCodeGo, PlatformCommandCode,
+		PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformTypeSafe, PlatformOpenCodeGo, PlatformCommandCode, PlatformCline,
 	}
 	legacyCompositePrecedence = []string{
 		PlatformAnthropic, PlatformGemini, PlatformOpenAI, PlatformAntigravity, PlatformGrok,
-		PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformTypeSafe, PlatformOpenCodeGo, PlatformCommandCode,
+		PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformTypeSafe, PlatformOpenCodeGo, PlatformCommandCode, PlatformCline,
 	}
 	legacyOpenAIGateway = []string{
-		PlatformOpenAI, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformTypeSafe, PlatformOpenCodeGo, PlatformCommandCode,
+		PlatformOpenAI, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformTypeSafe, PlatformOpenCodeGo, PlatformCommandCode, PlatformCline,
 	}
 	legacyCNProviders    = []string{PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax}
 	legacyLiteLLMByPlatf = map[string]string{
 		PlatformAnthropic: "anthropic", PlatformOpenAI: "openai", PlatformGemini: "gemini",
 		PlatformAntigravity: "anthropic", PlatformGrok: "xai", PlatformKimi: "moonshot",
 		PlatformZhipu: "zhipu", PlatformDeepseek: "deepseek", PlatformMiniMax: "minimax", PlatformTypeSafe: "typesafe",
-		PlatformOpenCodeGo: "opencode-go",
+		PlatformOpenCodeGo: "opencode-go", PlatformCommandCode: "", PlatformCline: "",
 	}
 )
 
