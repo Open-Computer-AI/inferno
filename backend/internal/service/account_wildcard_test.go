@@ -437,8 +437,8 @@ func TestAccountGetModelMapping_AntigravityNormalizesGemini31ProAliases(t *testi
 
 	mapping := account.GetModelMapping()
 
-	if got := mapping["gemini-3.1-pro"]; got != domain.AntigravityGemini31ProAgentModel {
-		t.Fatalf("expected gemini-3.1-pro to map to %q, got %q", domain.AntigravityGemini31ProAgentModel, got)
+	if account.IsModelSupported("gemini-3.1-pro") {
+		t.Fatal("legacy target normalization must not add an unconfigured alias")
 	}
 	if got := mapping["gemini-3.1-pro-high"]; got != domain.AntigravityGemini31ProAgentModel {
 		t.Fatalf("expected gemini-3.1-pro-high to map to %q, got %q", domain.AntigravityGemini31ProAgentModel, got)
@@ -470,8 +470,8 @@ func TestAccountGetModelMapping_AntigravityPreservesGemini31ProOverrides(t *test
 	if got := mapping["gemini-3.1-pro-preview"]; got != "custom-preview" {
 		t.Fatalf("expected gemini-3.1-pro-preview override to be preserved, got %q", got)
 	}
-	if got := mapping["gemini-3.1-pro"]; got != domain.AntigravityGemini31ProAgentModel {
-		t.Fatalf("expected gemini-3.1-pro alias to default to %q, got %q", domain.AntigravityGemini31ProAgentModel, got)
+	if account.IsModelSupported("gemini-3.1-pro") {
+		t.Fatal("explicit overrides must not add an unconfigured alias")
 	}
 }
 
@@ -488,16 +488,10 @@ func TestAccountGetModelMapping_AntigravityGemini31ProAliasesRespectWildcard(t *
 		},
 	}
 
-	mapping := account.GetModelMapping()
-
-	if got := mapping["gemini-3.1-pro"]; got != "" {
-		t.Fatalf("expected gemini-3.1-pro exact alias to stay unset when wildcard exists, got %q", got)
-	}
-	if got := mapping["gemini-3.1-pro-high"]; got != "" {
-		t.Fatalf("expected gemini-3.1-pro-high exact alias to stay unset when wildcard exists, got %q", got)
-	}
-	if got := mapping["gemini-3.1-pro-preview"]; got != "" {
-		t.Fatalf("expected gemini-3.1-pro-preview exact alias to stay unset when wildcard exists, got %q", got)
+	for _, model := range []string{"gemini-3.1-pro", "gemini-3.1-pro-high", "gemini-3.1-pro-preview"} {
+		if got, matched := account.ResolveMappedModel(model); got != "custom-wildcard" || !matched {
+			t.Errorf("ResolveMappedModel(%q) = (%q, %v), want (custom-wildcard, true)", model, got, matched)
+		}
 	}
 }
 
@@ -591,7 +585,7 @@ func TestAccountResolveMappedModel(t *testing.T) {
 	}
 }
 
-func TestAccountGetModelMapping_AntigravityEnsuresGeminiDefaultPassthroughs(t *testing.T) {
+func TestAccountGetModelMapping_AntigravityExplicitWhitelistDoesNotReenableDefaults(t *testing.T) {
 	account := &Account{
 		Platform: PlatformAntigravity,
 		Credentials: map[string]any{
@@ -602,18 +596,12 @@ func TestAccountGetModelMapping_AntigravityEnsuresGeminiDefaultPassthroughs(t *t
 	}
 
 	mapping := account.GetModelMapping()
-	if len(antigravityDefaultPassthroughModels) != 18 {
-		t.Fatalf("expected the reviewed default passthrough list to stay at 18 entries, got %d", len(antigravityDefaultPassthroughModels))
+	if len(mapping) != 1 || account.GetMappedModel("gemini-3-pro-high") != "gemini-3.1-pro-high" {
+		t.Fatalf("expected the explicit alias to be retained, got %v", mapping)
 	}
-	if got := mapping["gemini-3-pro-high"]; got != "gemini-3.1-pro-high" {
-		t.Fatalf("expected the explicit alias to survive, got %q", got)
-	}
-	if account.IsModelSupported("claude-opus-5-5-high") {
-		t.Fatal("Gemini passthroughs must not add Claude model aliases")
-	}
-	for _, model := range antigravityDefaultPassthroughModels {
-		if got := mapping[model]; got != model {
-			t.Errorf("expected default passthrough %q -> %q, got %q", model, model, got)
+	for _, model := range []string{"gemini-3-flash", "gemini-3.1-pro-high", "gemini-3.1-pro-low", "gemini-3.7-flash-high", "claude-opus-5-5-high"} {
+		if account.IsModelSupported(model) {
+			t.Fatalf("explicit whitelist must not re-enable %q", model)
 		}
 	}
 }
@@ -631,51 +619,33 @@ func TestAccountGetModelMapping_AntigravityPreservesExactCustomPassthroughOverri
 	}
 }
 
-func TestAccountGetModelMapping_AntigravityWildcardOverridesInjectedPassthrough(t *testing.T) {
+func TestAccountGetModelMapping_AntigravityWildcardOverridesPassthrough(t *testing.T) {
 	account := &Account{Platform: PlatformAntigravity, Credentials: map[string]any{"model_mapping": map[string]any{
 		"gemini-3.6-*": "wildcard-flash-target",
 	}}}
-	mapping := account.GetModelMapping()
-	if _, exists := mapping["gemini-3.6-flash-medium"]; exists {
-		t.Fatal("wildcard coverage should suppress an injected exact passthrough")
-	}
 	if got, matched := account.ResolveMappedModel("gemini-3.6-flash-medium"); got != "wildcard-flash-target" || !matched {
 		t.Fatalf("ResolveMappedModel(gemini-3.6-flash-medium) = (%q, %v), want wildcard mapping", got, matched)
 	}
-	for _, model := range []string{"gemini-3.7-flash", "gemini-3.7-flash-high", "gemini-3.8-flash", "gemini-3.8-flash-tiered"} {
-		if got, matched := account.ResolveMappedModel(model); got != model || !matched {
-			t.Errorf("3.6 wildcard should not suppress default %q passthrough, got (%q, %v)", model, got, matched)
+}
+
+func TestAccountGetModelMapping_AntigravityCanonicalGemini31TargetDoesNotSynthesizeAliases(t *testing.T) {
+	account := &Account{Platform: PlatformAntigravity, Credentials: map[string]any{"model_mapping": map[string]any{
+		domain.AntigravityGemini31ProAgentModel: domain.AntigravityGemini31ProAgentModel,
+	}}}
+	for _, model := range []string{"gemini-3.1-pro-high", "gemini-3.1-pro-low"} {
+		if got, matched := account.ResolveMappedModel(model); got != model || matched {
+			t.Errorf("ResolveMappedModel(%q) = (%q, %v), want unconfigured model and unmatched", model, got, matched)
+		}
+		if account.IsModelSupported(model) {
+			t.Errorf("canonical target must not synthesize support for %q", model)
 		}
 	}
 }
 
-func TestAccountGetModelMapping_AntigravityWildcardCoversMissingGemini31ProAliases(t *testing.T) {
-	account := &Account{Platform: PlatformAntigravity, Credentials: map[string]any{"model_mapping": map[string]any{
-		domain.AntigravityGemini31ProAgentModel: domain.AntigravityGemini31ProAgentModel,
-		"gemini-3.1-*":                          "custom-gemini31-target",
-	}}}
-	mapping := account.GetModelMapping()
-	for _, model := range []string{"gemini-3.1-pro", "gemini-3.1-pro-high", "gemini-3.1-pro-preview"} {
-		if _, exists := mapping[model]; exists {
-			t.Errorf("wildcard coverage should suppress exact alias %q", model)
-		}
-		if got, matched := account.ResolveMappedModel(model); got != "custom-gemini31-target" || !matched {
-			t.Errorf("ResolveMappedModel(%q) = (%q, %v), want wildcard mapping", model, got, matched)
-		}
-	}
-}
-
-func TestAccountGetModelMapping_AntigravityCanonicalGemini31TargetKeepsHighAndLowRoutes(t *testing.T) {
-	account := &Account{Platform: PlatformAntigravity, Credentials: map[string]any{"model_mapping": map[string]any{
-		domain.AntigravityGemini31ProAgentModel: domain.AntigravityGemini31ProAgentModel,
-	}}}
-	for model, want := range map[string]string{
-		"gemini-3.1-pro-high": domain.AntigravityGemini31ProAgentModel,
-		"gemini-3.1-pro-low":  "gemini-3.1-pro-low",
-	} {
-		if got, matched := account.ResolveMappedModel(model); got != want || !matched {
-			t.Errorf("ResolveMappedModel(%q) = (%q, %v), want (%q, true)", model, got, matched, want)
-		}
+func TestAccountGetModelMapping_AntigravityEmptyMappingUsesDefaultCatalog(t *testing.T) {
+	account := &Account{Platform: PlatformAntigravity, Credentials: map[string]any{"model_mapping": map[string]any{}}}
+	if got := account.GetModelMapping()["gemini-3.8-flash-low"]; got != "gemini-3.8-flash-low" {
+		t.Fatalf("expected empty explicit mapping to use the default catalog entry, got %q", got)
 	}
 }
 

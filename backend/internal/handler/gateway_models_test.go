@@ -1407,7 +1407,7 @@ func modelIDsForTest(models []gatewayModelItemForTest) []string {
 	return ids
 }
 
-func TestGatewayModels_AntigravityExplicitMappingAppearsInBothCatalogs(t *testing.T) {
+func TestGatewayModels_AntigravityExplicitMappingDefinesBothCatalogs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	const groupID int64 = 93
 	mapping := map[string]any{
@@ -1451,13 +1451,7 @@ func TestGatewayModels_AntigravityExplicitMappingAppearsInBothCatalogs(t *testin
 					ids = modelIDsForTest(got.Data)
 				}
 				require.Equal(t, http.StatusOK, rec.Code)
-				// 显式条目必须同时出现在两种目录；默认透传补齐的条目不锁定。
-				for _, expectedID := range want {
-					require.Contains(t, ids, expectedID, "codex=%t", codex)
-				}
-				if platform == service.PlatformGemini {
-					require.NotContains(t, ids, "claude-opus-5-5-high", "codex=%t", codex)
-				}
+				require.ElementsMatch(t, want, ids, "codex=%t", codex)
 			}
 		})
 	}
@@ -1522,12 +1516,7 @@ func TestGatewayModels_GeminiGroupIncludesAntigravityGeminiMappings(t *testing.T
 	var got gatewayModelsResponseForTest
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	ids := modelIDsForTest(got.Data)
-	// 账号显式配置的 gemini-* 映射必须出现（resolveModelMapping 还会补一组 antigravity
-	// 默认透传别名，这里只断言显式条目与排除项，不锁定补齐后的完整集合）。
-	require.Contains(t, ids, "gemini-3.8-flash-high")
-	require.Contains(t, ids, "gemini-synced-custom")
-	require.Contains(t, ids, "gemini-3.8-flash-low")
-	require.Contains(t, ids, "gemini-native-only")
+	require.ElementsMatch(t, []string{"gemini-3.8-flash-high", "gemini-synced-custom", "gemini-3.8-flash-low", "gemini-native-only"}, ids)
 	require.NotContains(t, ids, "gemini-disabled-only")
 	require.NotContains(t, ids, "gemini-unset-only")
 	// antigravity 账号的 claude-* 映射与 anthropic 账号的映射都不应出现在 gemini 分组。
