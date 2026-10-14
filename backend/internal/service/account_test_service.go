@@ -385,7 +385,7 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	}
 
 	// Route to platform-specific test method
-	if account.IsCNProvider() {
+	if account.RoutesProtocolByInbound() {
 		switch account.GetAPIProtocol() {
 		case APIProtocolAdaptive:
 			return s.testCNProviderAdaptiveConnection(c, account, modelID, prompt)
@@ -418,6 +418,10 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 		return s.testOpenCodeGoAccountConnection(c, account, modelID, prompt)
 	}
 
+	if account.IsCommandCode() {
+		return s.testModelRoutedAccountConnection(c, account, modelID, prompt)
+	}
+
 	if account.IsTypeSafe() {
 		return s.testTypeSafeAccountConnection(c, account, prompt)
 	}
@@ -432,6 +436,48 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 // overrides that catalog. Falling through to the generic Claude tester used
 // credentials.base_url + /v1/messages?beta=true, which 404s as HTML on
 // https://opencode.ai/zen/go/v1/v1/messages.
+func (s *AccountTestService) testModelRoutedAccountConnection(c *gin.Context, account *Account, modelID string, prompt string) error {
+	testModelID := strings.TrimSpace(modelID)
+	if testModelID == "" {
+		if profile := account.providerProfile(); profile != nil {
+			testModelID = profile.DefaultTestModel
+		}
+	}
+	if testModelID == "" {
+		testModelID = openai.DefaultTestModel
+	}
+	testModelID = account.GetMappedModel(testModelID)
+	if account.IsOpenCodeGo() && IsOpenCodeUnsupportedModel(testModelID) {
+		return fmt.Errorf("model %q is not supported on OpenCode standard gateway (gemini models require Google SDK endpoint, jev models require System One endpoint)", testModelID)
+	}
+	protocol := account.resolveModelRoutedProtocol(testModelID)
+	if s.openaiGatewayService != nil {
+		protocol = s.openaiGatewayService.resolveUpstreamProtocolFor(account, "", testModelID)
+	}
+	switch protocol {
+	case APIProtocolAnthropic:
+		return s.testCNProviderAnthropicConnection(c, account, testModelID)
+	case APIProtocolResponses:
+		return s.testModelRoutedResponsesConnection(c, account, testModelID)
+	default:
+		return s.testCNProviderChatCompletionsConnection(c, account, testModelID, prompt)
+	}
+}
+
+func (s *AccountTestService) testModelRoutedResponsesConnection(c *gin.Context, account *Account, modelID string) error {
+	token := strings.TrimSpace(account.GetOpenAIProtocolAPIKey())
+	if token == "" {
+		return s.sendErrorAndEnd(c, "No API key available")
+	}
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+	c.Writer.Flush()
+	s.sendEvent(c, TestEvent{Type: "test_start", Model: modelID})
+	return s.testCNProviderAdaptiveResponsesConnection(c, account, modelID, token)
+}
+
 func (s *AccountTestService) testOpenCodeGoAccountConnection(c *gin.Context, account *Account, modelID string, prompt string) error {
 	testModelID := strings.TrimSpace(modelID)
 	if testModelID == "" {

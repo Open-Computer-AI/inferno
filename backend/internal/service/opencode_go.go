@@ -104,8 +104,9 @@ func writeOpenCodeUnsupportedModelError(c *gin.Context, isAnthropic bool, model 
 // OpenCodeGoProtocolRule is one model-pattern → native protocol mapping.
 // Pattern is an exact ID or a suffix glob (foo* / *). First match wins.
 type OpenCodeGoProtocolRule struct {
-	Pattern  string `json:"pattern"`
-	Protocol string `json:"protocol"`
+	Pattern   string   `json:"pattern"`
+	Protocol  string   `json:"protocol"`
+	Protocols []string `json:"protocols,omitempty"`
 }
 
 // DefaultOpenCodeGoProtocolRules is the built-in adaptive routing table for Go.
@@ -215,10 +216,38 @@ func parseProtocolRules(raw any) ([]OpenCodeGoProtocolRule, error) {
 			return nil, fmt.Errorf("protocol_rules[%d]: %w", i, err)
 		}
 		protocol = strings.TrimSpace(protocol)
+		rawProtocols, hasProtocols := entry["protocols"]
+		var protocols []string
+		if hasProtocols {
+			values, ok := rawProtocols.([]any)
+			if !ok {
+				return nil, fmt.Errorf("protocol_rules[%d].protocols must be an array", i)
+			}
+			for _, value := range values {
+				candidate, ok := value.(string)
+				if !ok || !isNativeUpstreamProtocol(strings.TrimSpace(candidate)) {
+					return nil, fmt.Errorf("protocol_rules[%d].protocols contains an invalid protocol", i)
+				}
+				candidate = strings.TrimSpace(candidate)
+				if !containsProtocol(protocols, candidate) {
+					protocols = append(protocols, candidate)
+				}
+			}
+			if len(protocols) == 0 {
+				return nil, fmt.Errorf("protocol_rules[%d].protocols must not be empty", i)
+			}
+		}
+		if protocol == "" && len(protocols) > 0 {
+			protocol = protocols[0]
+		}
 		if !isNativeUpstreamProtocol(protocol) {
 			return nil, fmt.Errorf("protocol_rules[%d]: protocol must be chat_completions, anthropic, or responses", i)
 		}
-		rules = append(rules, OpenCodeGoProtocolRule{Pattern: pattern, Protocol: protocol})
+		normalized := normalizeProtocolSet(protocol, protocols)
+		if len(normalized) <= 1 {
+			normalized = nil
+		}
+		rules = append(rules, OpenCodeGoProtocolRule{Pattern: pattern, Protocol: protocol, Protocols: normalized})
 	}
 	return rules, nil
 }
@@ -272,10 +301,15 @@ func NormalizeProtocolRulesCredentials(credentials map[string]any) error {
 	}
 	encoded := make([]any, 0, len(rules))
 	for _, rule := range rules {
-		encoded = append(encoded, map[string]any{
-			"pattern":  rule.Pattern,
-			"protocol": rule.Protocol,
-		})
+		entry := map[string]any{"pattern": rule.Pattern, "protocol": rule.Protocol}
+		if len(rule.Protocols) > 1 {
+			values := make([]any, len(rule.Protocols))
+			for i, protocol := range rule.Protocols {
+				values[i] = protocol
+			}
+			entry["protocols"] = values
+		}
+		encoded = append(encoded, entry)
 	}
 	credentials[protocolRulesCredentialKey] = encoded
 	return nil

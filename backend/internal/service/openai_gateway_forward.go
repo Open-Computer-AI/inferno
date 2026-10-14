@@ -164,7 +164,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 
 	// Shared router chooses a provider-native protocol before choosing conversion path.
-	if resolveUpstreamProtocol(account, APIProtocolResponses, upstreamRoutingModel(account, body, "")) == APIProtocolAnthropic {
+	if s.resolveUpstreamProtocolFor(account, APIProtocolResponses, upstreamRoutingModel(account, body, "")) == APIProtocolAnthropic {
 		defaultMappedModel := strings.TrimSpace(reqModel)
 		if account.routesByModel() {
 			// Keep existing OpenCode model rules authoritative; an unmapped request model
@@ -192,7 +192,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		originalModel = reqModel
 	}
 
-	if resolveUpstreamProtocol(account, APIProtocolResponses, upstreamRoutingModel(account, body, "")) == APIProtocolChatCompletions {
+	if s.resolveUpstreamProtocolFor(account, APIProtocolResponses, upstreamRoutingModel(account, body, "")) == APIProtocolChatCompletions {
 		return s.forwardResponsesViaRawChatCompletions(ctx, c, account, body)
 	}
 	SetActualOpenAIUpstreamEndpoint(c, openAIResponsesUpstreamEndpoint)

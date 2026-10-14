@@ -36,7 +36,9 @@ type ProviderProfile struct {
 	Routing ProviderRouting
 	// ResponsesPath 覆盖 Responses 端点路径（按 buildOpenAIEndpointURL 的版本感知
 	// 规则拼接），空值为 /v1/responses。对自定义 base_url 的账号同样生效。
-	ResponsesPath string
+	ResponsesPath    string
+	DefaultTestModel string
+	ModelCatalog     bool
 }
 
 // Endpoints 返回指定接入模式的端点；未知模式回落 DefaultMode。
@@ -137,6 +139,23 @@ var providerProfiles = map[string]*ProviderProfile{
 					APIProtocolResponses:       DefaultMiniMaxBaseURL,
 					APIProtocolAnthropic:       DefaultMiniMaxAnthropicBaseURL,
 				},
+			},
+		},
+	},
+	PlatformCommandCode: {
+		Platform:         PlatformCommandCode,
+		DefaultMode:      AccountModePayG,
+		Routing:          ProviderRoutingByModel,
+		DefaultTestModel: DefaultCommandCodeTestModel,
+		ModelCatalog:     true,
+		Modes: map[string]ProviderEndpoints{
+			AccountModePayG: {
+				BaseURLs: map[string]string{
+					APIProtocolChatCompletions: DefaultCommandCodeBaseURL,
+					APIProtocolResponses:       DefaultCommandCodeBaseURL,
+					APIProtocolAnthropic:       DefaultCommandCodeAnthropicBaseURL,
+				},
+				ProtocolRules: DefaultCommandCodeProtocolRules(),
 			},
 		},
 	},

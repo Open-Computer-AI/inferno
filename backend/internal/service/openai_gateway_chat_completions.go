@@ -123,7 +123,7 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 	if account.IsOpenCodeGo() && IsOpenCodeUnsupportedModel(routingModel) {
 		return nil, writeOpenCodeUnsupportedModelError(c, false, routingModel)
 	}
-	switch resolveUpstreamProtocol(account, inbound, routingModel) {
+	switch s.resolveUpstreamProtocolFor(account, inbound, routingModel) {
 	case APIProtocolAnthropic:
 		if isResponsesShape {
 			return s.forwardResponsesViaNativeAnthropic(ctx, c, account, body, "")
@@ -132,7 +132,9 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 	case APIProtocolChatCompletions:
 		if convertResponsesShape {
 			chatBody, err := s.convertResponsesShapedChatBody(body)
-			if err != nil { return nil, err }
+			if err != nil {
+				return nil, err
+			}
 			return s.forwardAsRawChatCompletions(ctx, c, account, chatBody, defaultMappedModel)
 		}
 		return s.forwardAsRawChatCompletions(ctx, c, account, body, defaultMappedModel)

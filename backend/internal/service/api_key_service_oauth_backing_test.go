@@ -93,11 +93,11 @@ func TestAPIKeyService_Update_RefusesEveryEditableColumnOnABackingRow(t *testing
 		"ip_blacklist — locks the agent out":                            {IPBlacklist: &blacklist},
 		"quota — starves the agent":                                     {Quota: &quota},
 		"reset_quota — erases the agent's billing ledger":               {ResetQuota: &reset},
-		"clear_expiration":                                              {ClearExpiration: true},
-		"rate_limit_5h":                                                 {RateLimit5h: &limit},
-		"rate_limit_1d":                                                 {RateLimit1d: &limit},
-		"rate_limit_7d":                                                 {RateLimit7d: &limit},
-		"reset_rate_limit_usage":                                        {ResetRateLimitUsage: &reset},
+		"clear_expiration":       {ClearExpiration: true},
+		"rate_limit_5h":          {RateLimit5h: &limit},
+		"rate_limit_1d":          {RateLimit1d: &limit},
+		"rate_limit_7d":          {RateLimit7d: &limit},
+		"reset_rate_limit_usage": {ResetRateLimitUsage: &reset},
 	}
 
 	for name, req := range cases {

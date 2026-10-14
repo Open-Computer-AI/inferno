@@ -10,14 +10,14 @@ import (
 var (
 	legacyDisplayOrder = []string{
 		PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok,
-		PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformTypeSafe, PlatformOpenCodeGo,
+		PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformTypeSafe, PlatformOpenCodeGo, PlatformCommandCode,
 	}
 	legacyCompositePrecedence = []string{
 		PlatformAnthropic, PlatformGemini, PlatformOpenAI, PlatformAntigravity, PlatformGrok,
-		PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformTypeSafe, PlatformOpenCodeGo,
+		PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformTypeSafe, PlatformOpenCodeGo, PlatformCommandCode,
 	}
 	legacyOpenAIGateway = []string{
-		PlatformOpenAI, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformTypeSafe, PlatformOpenCodeGo,
+		PlatformOpenAI, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformTypeSafe, PlatformOpenCodeGo, PlatformCommandCode,
 	}
 	legacyCNProviders    = []string{PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax}
 	legacyLiteLLMByPlatf = map[string]string{

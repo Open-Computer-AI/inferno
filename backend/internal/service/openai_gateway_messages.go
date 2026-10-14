@@ -57,7 +57,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if account.IsOpenCodeGo() && IsOpenCodeUnsupportedModel(routingModel) {
 		return nil, writeOpenCodeUnsupportedModelError(c, true, routingModel)
 	}
-	switch resolveUpstreamProtocol(account, APIProtocolAnthropic, routingModel) {
+	switch s.resolveUpstreamProtocolFor(account, APIProtocolAnthropic, routingModel) {
 	case APIProtocolAnthropic:
 		return s.forwardAnthropicViaNativeAnthropicEndpoint(ctx, c, account, body, defaultMappedModel)
 	case APIProtocolChatCompletions:
