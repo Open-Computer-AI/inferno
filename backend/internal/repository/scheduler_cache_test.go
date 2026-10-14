@@ -108,3 +108,14 @@ func TestSchedulerMetadataAccountDropsInvalidUpstreamBillingProbe(t *testing.T) 
 		require.NotContains(t, metadata.Extra, service.UpstreamBillingProbeExtraKey)
 	}
 }
+
+func TestFilterSchedulerExtraKeepsLiveMaxConcurrency(t *testing.T) {
+	filtered := filterSchedulerExtra(map[string]any{
+		"live_max_concurrency": float64(4),
+		"unrelated_key":        "dropped",
+	})
+
+	require.Equal(t, float64(4), filtered["live_max_concurrency"])
+	require.NotContains(t, filtered, "unrelated_key")
+	require.Equal(t, 4, (&service.Account{Extra: filtered}).GetLiveMaxConcurrency())
+}

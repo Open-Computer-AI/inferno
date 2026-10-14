@@ -123,6 +123,10 @@ func ValidateLiveCallRequest(request *LiveCallRequest) error {
 	return nil
 }
 
+// maxLiveCappedAccountSkips bounds how many accounts one CreateLiveCall may skip
+// because they are at accounts.extra.live_max_concurrency.
+const maxLiveCappedAccountSkips = 64
+
 // CreateLiveCall 创建 Frameless 会话。调用方须在调用期间持有普通用户槽位；
 // 调度器持有的普通账号槽位会被同一个 Live 租约原子接替。
 func (s *OpenAIGatewayService) CreateLiveCall(
@@ -159,6 +163,7 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 		model = "gpt-live"
 	}
 	var lastErr error
+	liveCappedSkips := 0
 	for attempt := 0; attempt <= 3; attempt++ {
 		selectStarted := time.Now()
 		selection, _, selectErr := s.SelectAccountWithSchedulerForCapability(
@@ -178,6 +183,10 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 			if lastErr != nil {
 				return nil, lastErr
 			}
+			if liveCappedSkips > 0 && errors.Is(selectErr, ErrNoAvailableAccounts) {
+				// Every remaining account already holds its Live session maximum.
+				return nil, ErrLiveConcurrencyFull
+			}
 			return nil, selectErr
 		}
 		if selection == nil || selection.Account == nil || !selection.Acquired {
@@ -189,20 +198,46 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 
 		account := selection.Account
 		leaseID := generateRequestID()
-		acquired, acquireErr := liveCache.AcquireLiveLease(
-			ctx,
-			account.ID,
-			account.Concurrency,
-			identity.UserID,
-			userMaxConcurrency,
-			identity.APIKeyID,
-			leaseID,
-			true,
-		)
+		var acquired, liveCapped bool
+		var acquireErr error
+		liveMaxCache, hasLiveMaxCache := liveCache.(LiveAccountLiveMaxConcurrencyCache)
+		if liveMax := account.GetLiveMaxConcurrency(); liveMax > 0 && hasLiveMaxCache {
+			acquired, liveCapped, acquireErr = liveMaxCache.AcquireLiveLeaseWithAccountLiveMax(
+				ctx,
+				account.ID,
+				account.Concurrency,
+				liveMax,
+				identity.UserID,
+				userMaxConcurrency,
+				identity.APIKeyID,
+				leaseID,
+				true,
+			)
+		} else {
+			acquired, acquireErr = liveCache.AcquireLiveLease(
+				ctx,
+				account.ID,
+				account.Concurrency,
+				identity.UserID,
+				userMaxConcurrency,
+				identity.APIKeyID,
+				leaseID,
+				true,
+			)
+		}
 		if acquireErr != nil || !acquired {
 			selection.ReleaseFunc()
 			if acquireErr != nil {
 				return nil, acquireErr
+			}
+			if liveCapped && liveCappedSkips < maxLiveCappedAccountSkips {
+				// This account is at its Live session maximum while its total
+				// concurrency (shared with regular requests) may still have room.
+				// Pick another account; this is not an upstream failover attempt.
+				excluded[account.ID] = struct{}{}
+				liveCappedSkips++
+				attempt--
+				continue
 			}
 			return nil, ErrLiveConcurrencyFull
 		}

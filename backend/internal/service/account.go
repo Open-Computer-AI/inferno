@@ -2985,6 +2985,21 @@ func (a *Account) GetMaxSessions() int {
 	return 0
 }
 
+// GetLiveMaxConcurrency 获取该账号同时持有的 Live 会话数上限
+// （extra.live_max_concurrency）。返回 0 表示未启用（缺省/0/负数），此时
+// Live 会话只受账号总并发 Concurrency 约束。
+func (a *Account) GetLiveMaxConcurrency() int {
+	if a == nil || a.Extra == nil {
+		return 0
+	}
+	if v, ok := a.Extra["live_max_concurrency"]; ok {
+		if val := parseExtraInt(v); val > 0 {
+			return val
+		}
+	}
+	return 0
+}
+
 // GetSessionIdleTimeoutMinutes 获取会话空闲超时分钟数
 // 默认值为 5 分钟
 func (a *Account) GetSessionIdleTimeoutMinutes() int {

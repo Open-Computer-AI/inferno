@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -70,4 +71,104 @@ func TestLiveLeaseExpiresWithoutRefresh(t *testing.T) {
 	refreshed, err := live.RefreshLiveLease(ctx, 10, 20, 30, "expired-live")
 	require.NoError(t, err)
 	require.False(t, refreshed)
+}
+
+func TestLiveLeaseAccountLiveMaxCapsLiveOnlyAndLeavesRegularSlots(t *testing.T) {
+	redisServer := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: redisServer.Addr()})
+	regular := NewConcurrencyCache(client, 15, 900)
+	capped, ok := regular.(service.LiveAccountLiveMaxConcurrencyCache)
+	require.True(t, ok)
+	ctx := context.Background()
+
+	// Live max 4, total 8: four Live leases fit, the fifth is refused as live-capped.
+	for i := 0; i < 4; i++ {
+		acquired, liveCapped, err := capped.AcquireLiveLeaseWithAccountLiveMax(ctx, 10, 8, 4, 20, 0, 30, fmt.Sprintf("live-%d", i), false)
+		require.NoError(t, err)
+		require.True(t, acquired)
+		require.False(t, liveCapped)
+	}
+	acquired, liveCapped, err := capped.AcquireLiveLeaseWithAccountLiveMax(ctx, 10, 8, 4, 20, 0, 30, "live-4", false)
+	require.NoError(t, err)
+	require.False(t, acquired)
+	require.True(t, liveCapped)
+	count, err := regular.GetAccountConcurrency(ctx, 10)
+	require.NoError(t, err)
+	require.Equal(t, 4, count, "a refused lease must not be recorded")
+
+	// The four remaining total slots stay open for regular (planner) requests.
+	for i := 0; i < 4; i++ {
+		ok, err := regular.AcquireAccountSlot(ctx, 10, 8, fmt.Sprintf("regular-%d", i))
+		require.NoError(t, err)
+		require.True(t, ok)
+	}
+	ok, err = regular.AcquireAccountSlot(ctx, 10, 8, "regular-over-total")
+	require.NoError(t, err)
+	require.False(t, ok)
+
+	// An existing lease is still idempotent while the account is at its Live max.
+	acquired, liveCapped, err = capped.AcquireLiveLeaseWithAccountLiveMax(ctx, 10, 8, 4, 20, 0, 30, "live-0", false)
+	require.NoError(t, err)
+	require.True(t, acquired)
+	require.False(t, liveCapped)
+
+	// Releasing a Live lease frees Live room again (3 live + 3 regular of 8).
+	require.NoError(t, regular.ReleaseAccountSlot(ctx, 10, "regular-0"))
+	live, _ := regular.(service.LiveConcurrencyCache)
+	require.NoError(t, live.ReleaseLiveLease(ctx, 10, 20, 30, "live-1"))
+	acquired, liveCapped, err = capped.AcquireLiveLeaseWithAccountLiveMax(ctx, 10, 8, 4, 20, 0, 30, "live-5", false)
+	require.NoError(t, err)
+	require.True(t, acquired)
+	require.False(t, liveCapped)
+}
+
+func TestLiveLeaseAccountLiveMaxTotalLimitStillApplies(t *testing.T) {
+	redisServer := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: redisServer.Addr()})
+	regular := NewConcurrencyCache(client, 15, 900)
+	capped := regular.(service.LiveAccountLiveMaxConcurrencyCache)
+	ctx := context.Background()
+
+	// Total 8 all taken by regular requests: a Live lease under its Live max is
+	// refused by the total check (not live-capped), exactly as before.
+	for i := 0; i < 8; i++ {
+		ok, err := regular.AcquireAccountSlot(ctx, 10, 8, fmt.Sprintf("regular-%d", i))
+		require.NoError(t, err)
+		require.True(t, ok)
+	}
+	acquired, liveCapped, err := capped.AcquireLiveLeaseWithAccountLiveMax(ctx, 10, 8, 4, 20, 0, 30, "live-0", false)
+	require.NoError(t, err)
+	require.False(t, acquired)
+	require.False(t, liveCapped)
+
+	// With replacement (the scheduler's regular slot is handed over) it fits.
+	acquired, liveCapped, err = capped.AcquireLiveLeaseWithAccountLiveMax(ctx, 10, 8, 4, 20, 0, 30, "live-0", true)
+	require.NoError(t, err)
+	require.True(t, acquired)
+	require.False(t, liveCapped)
+}
+
+func TestLiveLeaseWithoutAccountLiveMaxKeepsTotalOnlyBehaviour(t *testing.T) {
+	redisServer := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: redisServer.Addr()})
+	regular := NewConcurrencyCache(client, 15, 900)
+	live := regular.(service.LiveConcurrencyCache)
+	capped := regular.(service.LiveAccountLiveMaxConcurrencyCache)
+	ctx := context.Background()
+
+	// Legacy method and live max <= 0: Live leases are bounded only by the total.
+	for i := 0; i < 4; i++ {
+		acquired, err := live.AcquireLiveLease(ctx, 10, 8, 20, 0, 30, fmt.Sprintf("legacy-%d", i), false)
+		require.NoError(t, err)
+		require.True(t, acquired)
+	}
+	for i, liveMax := range []int{0, -1, 0, -5} {
+		acquired, liveCapped, err := capped.AcquireLiveLeaseWithAccountLiveMax(ctx, 10, 8, liveMax, 20, 0, 30, fmt.Sprintf("off-%d", i), false)
+		require.NoError(t, err)
+		require.True(t, acquired)
+		require.False(t, liveCapped)
+	}
+	acquired, err := live.AcquireLiveLease(ctx, 10, 8, 20, 0, 30, "legacy-over-total", false)
+	require.NoError(t, err)
+	require.False(t, acquired)
 }

@@ -140,6 +140,7 @@ var (
 		local ttl = tonumber(ARGV[3])
 		local leaseID = ARGV[4]
 		local replacing = tonumber(ARGV[5])
+		local accountLiveMax = tonumber(ARGV[6]) or 0
 		local now = tonumber(redis.call('TIME')[1])
 		local liveExpireBefore = now - ttl
 		redis.call('ZREMRANGEBYSCORE', accountLive, '-inf', liveExpireBefore)
@@ -148,6 +149,9 @@ var (
 		if redis.call('ZSCORE', accountLive, leaseID) ~= false then
 			return 1
 		end
+		-- 2 = the account already holds its maximum number of Live sessions
+		-- (accounts.extra.live_max_concurrency); 0 disables this check.
+		if accountLiveMax > 0 and redis.call('ZCARD', accountLive) >= accountLiveMax then return 2 end
 		local accountCount = redis.call('ZCARD', accountRegular) + redis.call('ZCARD', accountLive)
 		local userCount = redis.call('ZCARD', userRegular) + redis.call('ZCARD', userLive)
 		local allowance = 0
@@ -802,12 +806,35 @@ func (c *concurrencyCache) AcquireLiveLease(
 	leaseID string,
 	replacingRegularSlots bool,
 ) (bool, error) {
+	acquired, _, err := c.AcquireLiveLeaseWithAccountLiveMax(ctx, accountID, accountMax, 0, userID, userMax, apiKeyID, leaseID, replacingRegularSlots)
+	return acquired, err
+}
+
+// AcquireLiveLeaseWithAccountLiveMax is AcquireLiveLease with an extra per-account
+// cap on Live sessions alone (accountLiveMax <= 0 disables it). The total check
+// against accountMax (regular slots + Live leases) is unchanged. liveCapped is
+// true when the lease was refused only because the account already holds
+// accountLiveMax Live sessions, so the caller may try another account.
+func (c *concurrencyCache) AcquireLiveLeaseWithAccountLiveMax(
+	ctx context.Context,
+	accountID int64,
+	accountMax int,
+	accountLiveMax int,
+	userID int64,
+	userMax int,
+	apiKeyID int64,
+	leaseID string,
+	replacingRegularSlots bool,
+) (acquired bool, liveCapped bool, err error) {
 	if c == nil || c.rdb == nil || accountID <= 0 || userID <= 0 || apiKeyID <= 0 || leaseID == "" {
-		return false, nil
+		return false, false, nil
 	}
 	replacing := 0
 	if replacingRegularSlots {
 		replacing = 1
+	}
+	if accountLiveMax < 0 {
+		accountLiveMax = 0
 	}
 	result, err := acquireLiveLeaseScript.Run(ctx, c.rdb, []string{
 		accountSlotKey(accountID),
@@ -815,8 +842,8 @@ func (c *concurrencyCache) AcquireLiveLease(
 		userSlotKey(userID),
 		liveUserSlotKey(userID),
 		liveAPIKeySlotKey(apiKeyID),
-	}, accountMax, userMax, liveLeaseTTLSeconds, leaseID, replacing).Int()
-	return result == 1, err
+	}, accountMax, userMax, liveLeaseTTLSeconds, leaseID, replacing, accountLiveMax).Int()
+	return result == 1, result == 2, err
 }
 
 func (c *concurrencyCache) RefreshLiveLease(ctx context.Context, accountID, userID, apiKeyID int64, leaseID string) (bool, error) {

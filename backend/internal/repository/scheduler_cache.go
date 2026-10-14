@@ -991,6 +991,8 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 		"window_cost_sticky_reserve",
 		"max_sessions",
 		"session_idle_timeout_minutes",
+		// Live 会话数上限（CreateLiveCall 读取），不进投影则调度快照里永远是 0。
+		"live_max_concurrency",
 		"openai_oauth_responses_websockets_v2_enabled",
 		"openai_oauth_responses_websockets_v2_mode",
 		"openai_apikey_responses_websockets_v2_enabled",

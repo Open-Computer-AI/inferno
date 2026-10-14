@@ -108,3 +108,20 @@ type LiveConcurrencyCache interface {
 	RefreshLiveLease(ctx context.Context, accountID, userID, apiKeyID int64, leaseID string) (bool, error)
 	ReleaseLiveLease(ctx context.Context, accountID, userID, apiKeyID int64, leaseID string) error
 }
+
+// LiveAccountLiveMaxConcurrencyCache 由 Redis 实现可选提供：在账号总并发之外，
+// 再按 accounts.extra.live_max_concurrency 限制该账号同时持有的 Live 会话数。
+// liveCapped 表示仅因 Live 会话数已满被拒，调用方可换账号重试。
+type LiveAccountLiveMaxConcurrencyCache interface {
+	AcquireLiveLeaseWithAccountLiveMax(
+		ctx context.Context,
+		accountID int64,
+		accountMax int,
+		accountLiveMax int,
+		userID int64,
+		userMax int,
+		apiKeyID int64,
+		leaseID string,
+		replacingRegularSlots bool,
+	) (acquired bool, liveCapped bool, err error)
+}
