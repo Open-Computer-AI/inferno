@@ -450,7 +450,7 @@ func (s *AccountTestService) testModelRoutedAccountConnection(c *gin.Context, ac
 	}
 	protocol := account.resolveModelRoutedProtocol(testModelID)
 	if s.openaiGatewayService != nil {
-		protocol = s.openaiGatewayService.resolveUpstreamProtocolFor(account, "", testModelID)
+		protocol = s.openaiGatewayService.resolveUpstreamProtocolFor(c.Request.Context(), account, "", testModelID)
 	}
 	switch protocol {
 	case APIProtocolAnthropic:

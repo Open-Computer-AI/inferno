@@ -164,7 +164,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 
 	// Shared router chooses a provider-native protocol before choosing conversion path.
-	if s.resolveUpstreamProtocolFor(account, APIProtocolResponses, upstreamRoutingModel(account, body, "")) == APIProtocolAnthropic {
+	if s.resolveUpstreamProtocolFor(ctx, account, APIProtocolResponses, upstreamRoutingModel(account, body, "")) == APIProtocolAnthropic {
 		defaultMappedModel := strings.TrimSpace(reqModel)
 		if account.routesByModel() {
 			// Keep existing OpenCode model rules authoritative; an unmapped request model
@@ -192,7 +192,16 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		originalModel = reqModel
 	}
 
-	if s.resolveUpstreamProtocolFor(account, APIProtocolResponses, upstreamRoutingModel(account, body, "")) == APIProtocolChatCompletions {
+	// Shared router resolves model-catalog protocols across upstream batches. Keep OpenCode
+	// unsupported-model behavior local to OpenCode; other model-routed platforms use the catalog.
+	routingModel := upstreamRoutingModel(account, body, "")
+	if account.IsOpenCodeGo() && IsOpenCodeUnsupportedModel(routingModel) {
+		return nil, writeOpenCodeUnsupportedModelError(c, false, routingModel)
+	}
+	switch s.resolveUpstreamProtocolFor(ctx, account, APIProtocolResponses, routingModel) {
+	case APIProtocolAnthropic:
+		return s.forwardResponsesViaNativeAnthropic(ctx, c, account, body, reqModel)
+	case APIProtocolChatCompletions:
 		return s.forwardResponsesViaRawChatCompletions(ctx, c, account, body)
 	}
 	SetActualOpenAIUpstreamEndpoint(c, openAIResponsesUpstreamEndpoint)
