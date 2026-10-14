@@ -515,6 +515,9 @@ func (s *AccountService) TestCredentials(ctx context.Context, id int64) error {
 	case PlatformGrok:
 		// Grok OAuth credentials are validated via token exchange/refresh and request-path probes.
 		return nil
+	case PlatformTypeSafe:
+		// TypeSafe credentials are API keys; inference failures drive health and cooldown state.
+		return nil
 	default:
 		if IsMultiProtocolAPIKeyProvider(account.Platform) {
 			// 多协议 API Key 供应商（国产厂商与聚合平台）：凭证为 API Key，实际可用性

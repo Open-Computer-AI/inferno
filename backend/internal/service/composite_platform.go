@@ -130,6 +130,10 @@ func DetectModelPlatform(model string) (string, bool) {
 			return PlatformMiniMax, true
 		case "opencode", "opencode-go", "opencode_go":
 			return PlatformOpenCodeGo, true
+		case "typesafe", "jev":
+			if domain.IsConcretePlatform(domain.PlatformTypeSafe) {
+				return domain.PlatformTypeSafe, true
+			}
 		}
 		if rest != "" {
 			normalized = strings.TrimPrefix(rest, "models/")
@@ -166,6 +170,8 @@ func DetectModelPlatform(model string) (string, bool) {
 		return PlatformZhipu, true
 	case strings.HasPrefix(normalized, "deepseek-"):
 		return PlatformDeepseek, true
+	case strings.HasPrefix(normalized, "jev-") && domain.IsConcretePlatform(domain.PlatformTypeSafe):
+		return domain.PlatformTypeSafe, true
 	case strings.HasPrefix(normalized, "minimax-"),
 		strings.HasPrefix(normalized, "abab5"),
 		strings.HasPrefix(normalized, "abab6"),

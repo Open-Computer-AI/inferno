@@ -14,16 +14,8 @@ import { normalizePlatformQuotasMap, sanitizePlatformQuotasMap } from '@/api/adm
 import { platformQuotaPlatforms } from '@/api/admin/users'
 
 const concretePlatforms = [
-  'anthropic',
-  'openai',
-  'gemini',
-  'antigravity',
-  'grok',
-  'kimi',
-  'zhipu',
-  'deepseek',
-  'minimax',
-  'opencode_go'
+  'anthropic', 'openai', 'gemini', 'antigravity', 'grok',
+  'kimi', 'zhipu', 'deepseek', 'minimax', 'typesafe', 'opencode_go'
 ]
 
 describe('platform option catalogs', () => {
@@ -56,11 +48,11 @@ describe('platform catalog with a newly registered platform', () => {
     expect(listPlatformIds()).toEqual(concretePlatforms)
     expect(compositePrecedencePlatformIds()).toEqual([
       'anthropic', 'gemini', 'openai', 'antigravity', 'grok',
-      'kimi', 'zhipu', 'deepseek', 'minimax', 'opencode_go'
+      'kimi', 'zhipu', 'deepseek', 'minimax', 'typesafe', 'opencode_go'
     ])
     expect(CONCRETE_PLATFORM_OPTIONS.map((option) => option.label)).toEqual([
       'Anthropic', 'OpenAI', 'Gemini', 'Antigravity', 'Grok',
-      'Kimi', 'Zhipu GLM', 'DeepSeek', 'MiniMax', 'OpenCode'
+      'Kimi', 'Zhipu GLM', 'DeepSeek', 'MiniMax', 'TypeSafe / Jev', 'OpenCode'
     ])
     expect(platformLabel('zhipu')).toBe('Zhipu GLM')
     expect(platformLabel('composite')).toBe('Composite')

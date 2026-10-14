@@ -84,6 +84,7 @@ var v1RouteBillingClassification = []classifiedRoute{
 
 	// --- balance enforced somewhere the caller cannot get past -------------
 	{http.MethodPost, "/v1/messages", classEnforced},
+	{http.MethodPost, "/v1/systemone", classEnforced},
 	{http.MethodPost, "/v1/messages/count_tokens", classEnforced},
 	{http.MethodPost, "/v1/chat/completions", classEnforced},
 	{http.MethodPost, "/v1/embeddings", classEnforced},

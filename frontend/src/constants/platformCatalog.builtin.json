@@ -143,6 +143,13 @@
       }
     },
     {
+      "id": "typesafe",
+      "display_name": "TypeSafe / Jev",
+      "gateway": "openai",
+      "cn_provider": false,
+      "litellm_provider": "typesafe"
+    },
+    {
       "id": "opencode_go",
       "display_name": "OpenCode",
       "gateway": "openai",
@@ -226,6 +233,7 @@
     "zhipu",
     "deepseek",
     "minimax",
+    "typesafe",
     "opencode_go"
   ]
 }

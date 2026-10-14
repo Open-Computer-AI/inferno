@@ -4,9 +4,7 @@ package domain
 // 路由目标、调度快照、定价匹配等）与"某网关族"类列表都从这里派生；新增平台
 // 登记一条即可在这些位置生效，无需逐处修改或新增数据库约束迁移。
 //
-// TypeSafe / Jev 尚未在本分支 port；后续 TypeSafe port 必须在此登记，并更新
-// manifest equivalence tests before enabling its application-level registration.
-//
+// TypeSafe / Jev is registered here as a native System One platform.
 // 依赖具体实现的能力（OAuth、渠道监控、余额 / Coding Plan 探测、用量窗口、
 // Codex 模型目录等）仍由各自的代码显式列出，不在此处声明。
 
@@ -47,6 +45,7 @@ var platformList = []PlatformSpec{
 	{ID: PlatformZhipu, DisplayName: "Zhipu GLM", Gateway: PlatformGatewayOpenAI, CNProvider: true, LiteLLMProvider: "zhipu"},
 	{ID: PlatformDeepseek, DisplayName: "DeepSeek", Gateway: PlatformGatewayOpenAI, CNProvider: true, LiteLLMProvider: "deepseek"},
 	{ID: PlatformMiniMax, DisplayName: "MiniMax", Gateway: PlatformGatewayOpenAI, CNProvider: true, LiteLLMProvider: "minimax"},
+	{ID: PlatformTypeSafe, DisplayName: "TypeSafe / Jev", Gateway: PlatformGatewayOpenAI, LiteLLMProvider: "typesafe"},
 	{ID: PlatformOpenCodeGo, DisplayName: "OpenCode", Gateway: PlatformGatewayOpenAI, LiteLLMProvider: "opencode-go"},
 }
 
