@@ -20,6 +20,8 @@ func TestAccountIsGeminiThirdPartyAPIKey(t *testing.T) {
 		{"empty_base_url_is_official", geminiQuotaAPIKeyAccount(""), false},
 		{"official_base_url", geminiQuotaAPIKeyAccount("https://generativelanguage.googleapis.com"), false},
 		{"official_base_url_trailing_slash", geminiQuotaAPIKeyAccount("https://generativelanguage.googleapis.com/"), false},
+		{"official_base_url_repeated_trailing_slashes", geminiQuotaAPIKeyAccount("https://generativelanguage.googleapis.com//"), false},
+		{"official_host_explicit_default_port", geminiQuotaAPIKeyAccount("https://generativelanguage.googleapis.com:443"), true},
 		{"official_host_over_http", geminiQuotaAPIKeyAccount("http://generativelanguage.googleapis.com"), true},
 		{"official_host_with_path_prefix", geminiQuotaAPIKeyAccount("https://generativelanguage.googleapis.com/proxy"), true},
 		{"relay_base_url", geminiQuotaAPIKeyAccount("https://relay.example.com"), true},
