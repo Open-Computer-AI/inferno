@@ -77,7 +77,7 @@ func TestResolveGeminiThinkingVariant(t *testing.T) {
 		{"only -high exists: low request degrades to high", map[string]string{
 			"gemini-3.5-flash-high": "gemini-3.5-flash-high",
 		}, "gemini-3.5-flash", budget("1000"), "gemini-3.5-flash-high", true},
-		{"unconfigured default variants stay unavailable", catalog, "gemini-3.6-flash", budget("1000"), "gemini-3.6-flash-high", true},
+		{"injected default variants resolve for bare model", catalog, "gemini-3.6-flash", budget("1000"), "gemini-3.6-flash-low", true},
 		{"already suffixed: untouched", catalog, "gemini-3.8-flash-low", budget("-1"), "", false},
 		{"bare name explicitly mapped: untouched", catalog, "gemini-2.5-flash", budget("-1"), "", false},
 		{"no variants in mapping: untouched", catalog, "gemini-9.9-flash", budget("-1"), "", false},
@@ -89,10 +89,10 @@ func TestResolveGeminiThinkingVariant(t *testing.T) {
 		{"variant value is itself a mapping target", map[string]string{
 			"gemini-3.8-flash-high": "gemini-3.8-flash-tiered",
 		}, "gemini-3.8-flash", budget("-1"), "gemini-3.8-flash-tiered", true},
-		{"persisted default bare identity passthrough still resolves when variants exist", map[string]string{
+		{"persisted bare identity passthrough resolves injected low variant", map[string]string{
 			"gemini-3.8-flash":      "gemini-3.8-flash",
 			"gemini-3.8-flash-high": "gemini-3.8-flash-high",
-		}, "gemini-3.8-flash", budget("1000"), "gemini-3.8-flash-high", true},
+		}, "gemini-3.8-flash", budget("1000"), "gemini-3.8-flash-low", true},
 		{"wildcard mapping does not fabricate variants for non-tiered bare model", map[string]string{
 			"gemini-2.5*": "gemini-2.5-flash",
 		}, "gemini-2.5-flash", budget("-1"), "", false},
