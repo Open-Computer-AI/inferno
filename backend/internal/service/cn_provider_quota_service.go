@@ -189,7 +189,7 @@ func (s *CNProviderQuotaService) queryUsageForAccount(ctx context.Context, accou
 	proxyURL := s.resolveProxyURL(ctx, account)
 	callCtx, cancel := context.WithTimeout(ctx, cnQuotaUpstreamTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(callCtx, http.MethodGet, targetURL, nil)
+	req, err := http.NewRequestWithContext(WithHTTPUpstreamRedirectsDisabled(callCtx), http.MethodGet, targetURL, nil)
 	if err != nil {
 		return nil, infraerrors.Newf(http.StatusInternalServerError, "CN_QUOTA_REQUEST_BUILD_FAILED", "build request: %v", err)
 	}
