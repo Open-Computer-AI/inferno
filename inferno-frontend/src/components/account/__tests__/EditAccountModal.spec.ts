@@ -1789,46 +1789,45 @@ describe('EditAccountModal', () => {
     })
   })
 
-  it(preserves a redacted existing Vertex API key when the edit input is blank, async () => {
+  it('preserves a redacted existing Vertex API key when the edit input is blank', async () => {
     const account = buildVertexAccount()
-    account.credentials = { auth_mode: apikey, project_id: demo-project, location: us-central1, tier_id: vertex }
+    account.credentials = { auth_mode: 'apikey', project_id: 'demo-project', location: 'us-central1', tier_id: 'vertex' }
     account.credentials_status = { has_api_key: true }
     updateAccountMock.mockReset().mockResolvedValue(account)
     checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
     const wrapper = mountModal(account)
-    await wrapper.get([data-testid=edit-vertex-api-key-input]).setValue()
-    await wrapper.get(form#edit-account-form).trigger(submit.prevent)
+    await wrapper.get('[data-testid="edit-vertex-api-key-input"]').setValue('')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
     await flushPromises()
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
-    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty(api_key)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('api_key')
   })
 
-  it(treats whitespace Vertex API-key input as blank and preserves the existing key, async () => {
+  it('treats whitespace Vertex API-key input as blank and preserves the existing key', async () => {
     const account = buildVertexAccount()
-    account.credentials = { auth_mode: apikey, project_id: demo-project, location: us-central1, tier_id: vertex }
+    account.credentials = { auth_mode: 'apikey', project_id: 'demo-project', location: 'us-central1', tier_id: 'vertex' }
     account.credentials_status = { has_api_key: true }
     updateAccountMock.mockReset().mockResolvedValue(account)
     checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
     const wrapper = mountModal(account)
-    await wrapper.get([data-testid=edit-vertex-api-key-input]).setValue( )
-    await wrapper.get(form#edit-account-form).trigger(submit.prevent)
+    await wrapper.get('[data-testid="edit-vertex-api-key-input"]').setValue('   ')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
     await flushPromises()
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
-    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty(api_key)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('api_key')
   })
 
-  it(rejects a blank Vertex API key when credentials_status says no key exists, async () => {
+  it('rejects a blank Vertex API key when credentials_status says no key exists', async () => {
     const account = buildVertexAccount()
-    account.credentials = { auth_mode: apikey, project_id: demo-project, location: us-central1, tier_id: vertex }
+    account.credentials = { auth_mode: 'apikey', project_id: 'demo-project', location: 'us-central1', tier_id: 'vertex' }
     account.credentials_status = { has_api_key: false }
     updateAccountMock.mockReset()
     checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
     const wrapper = mountModal(account)
-    await wrapper.get([data-testid=edit-vertex-api-key-input]).setValue( )
-    await wrapper.get(form#edit-account-form).trigger(submit.prevent)
+    await wrapper.get('[data-testid="edit-vertex-api-key-input"]').setValue('  ')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
     await flushPromises()
     expect(updateAccountMock).not.toHaveBeenCalled()
   })
-
 
 })
