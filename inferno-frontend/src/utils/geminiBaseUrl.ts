@@ -6,9 +6,11 @@ export function isOfficialGeminiBaseUrl(raw: string | null | undefined): boolean
   if (!value) return true
   try {
     const url = new URL(value)
+    const authority = value.match(/^https:\/\/([^/?#]*)/i)?.[1]
     const path = url.pathname.replace(/\/+$/, '')
     return url.protocol === 'https:' &&
       url.hostname.toLowerCase() === OFFICIAL_GEMINI_API_HOST &&
+      authority?.toLowerCase() === OFFICIAL_GEMINI_API_HOST &&
       url.port === '' && path === '' && url.search === ''
   } catch {
     return false
