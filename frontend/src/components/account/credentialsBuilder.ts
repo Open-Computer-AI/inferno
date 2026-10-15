@@ -391,19 +391,10 @@ function builtinProtocolRules(platform: string, mode: string): OpenCodeGoProtoco
 
 export const DEFAULT_OPENCODE_GO_PROTOCOL_RULES: OpenCodeGoProtocolRule[] = builtinProtocolRules('opencode_go', 'go')
 export const DEFAULT_OPENCODE_ZEN_PROTOCOL_RULES: OpenCodeGoProtocolRule[] = builtinProtocolRules('opencode_go', 'zen')
-// Inferno-ahead explicit exception for Qwen 3.8 Max on OpenCode Zen. Keep this local rule when regenerating the catalog.
-DEFAULT_OPENCODE_ZEN_PROTOCOL_RULES.splice(4, 0, { pattern: 'qwen3.8-max', protocol: 'chat_completions' })
 
 /** 供应商该接入模式的内置分流规则（首条命中生效；未知模式按默认模式）。 */
 export function defaultProviderProtocolRules(platform: string, mode?: string): OpenCodeGoProtocolRule[] {
-  const rules = normalizeProfileRules(getProviderMode(platform, mode)?.protocol_rules)
-  if (platform === 'opencode_go' && mode === 'zen') {
-    const qwenException = DEFAULT_OPENCODE_ZEN_PROTOCOL_RULES.find(rule => rule.pattern === 'qwen3.8-max')
-    if (qwenException && !rules.some(rule => rule.pattern === qwenException.pattern)) {
-      rules.splice(4, 0, { ...qwenException })
-    }
-  }
-  return rules
+  return normalizeProfileRules(getProviderMode(platform, mode)?.protocol_rules)
 }
 
 export function resolveOpenCodeAccountMode(value: unknown): OpenCodeAccountMode {

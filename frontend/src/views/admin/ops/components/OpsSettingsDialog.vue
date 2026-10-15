@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { opsAPI } from '@/api/admin/ops'
@@ -23,7 +23,6 @@ const emit = defineEmits<{
 const loading = ref(false)
 const settingsLoaded = ref(false)
 const saving = ref(false)
-let settingsLoadRequestId = 0
 
 // 运行时设置
 const runtimeSettings = ref<OpsAlertRuntimeSettings | null>(null)
@@ -39,20 +38,8 @@ const metricThresholds = ref<OpsMetricThresholds>({
   upstream_error_rate_percent_max: 5
 })
 
-function invalidateSettingsLoad() {
-  settingsLoadRequestId++
-  loading.value = false
-  settingsLoaded.value = false
-}
-
-function closeDialog() {
-  invalidateSettingsLoad()
-  emit('close')
-}
-
 // 加载所有配置
 async function loadAllSettings() {
-  const requestId = ++settingsLoadRequestId
   settingsLoaded.value = false
   loading.value = true
   try {
@@ -62,7 +49,6 @@ async function loadAllSettings() {
       opsAPI.getAdvancedSettings(),
       opsAPI.getMetricThresholds()
     ])
-    if (requestId !== settingsLoadRequestId) return
     runtimeSettings.value = runtime
     emailConfig.value = email
     advancedSettings.value = advanced
@@ -81,11 +67,10 @@ async function loadAllSettings() {
     }
     settingsLoaded.value = true
   } catch (err: any) {
-    if (requestId !== settingsLoadRequestId) return
     console.error('[OpsSettingsDialog] Failed to load settings', err)
     appStore.showError(err?.response?.data?.detail || t('admin.ops.settings.loadFailed'))
   } finally {
-    if (requestId === settingsLoadRequestId) loading.value = false
+    loading.value = false
   }
 }
 
@@ -93,11 +78,8 @@ async function loadAllSettings() {
 watch(() => props.show, (show) => {
   if (show) {
     loadAllSettings()
-  } else {
-    invalidateSettingsLoad()
   }
 })
-onBeforeUnmount(invalidateSettingsLoad)
 
 // 邮件输入
 const alertRecipientInput = ref('')
@@ -243,7 +225,7 @@ async function saveAllSettings() {
     ])
     appStore.showSuccess(t('admin.ops.settings.saveSuccess'))
     emit('saved')
-    closeDialog()
+    emit('close')
   } catch (err: any) {
     console.error('[OpsSettingsDialog] Failed to save settings', err)
     appStore.showError(err?.response?.data?.message || err?.response?.data?.detail || t('admin.ops.settings.saveFailed'))
@@ -254,7 +236,7 @@ async function saveAllSettings() {
 </script>
 
 <template>
-  <BaseDialog :show="show" :title="t('admin.ops.settings.title')" width="extra-wide" @close="closeDialog">
+  <BaseDialog :show="show" :title="t('admin.ops.settings.title')" width="extra-wide" @close="emit('close')">
     <div v-if="loading" class="py-10 text-center text-sm text-gray-500">
       {{ t('common.loading') }}
     </div>
@@ -662,7 +644,7 @@ async function saveAllSettings() {
 
     <template #footer>
       <div class="flex justify-end gap-2">
-        <button class="btn btn-secondary" @click="closeDialog">{{ t('common.cancel') }}</button>
+        <button class="btn btn-secondary" @click="emit('close')">{{ t('common.cancel') }}</button>
         <button class="btn btn-primary" :disabled="loading || !settingsLoaded || saving || !validation.valid" @click="saveAllSettings">
           {{ saving ? t('common.saving') : t('common.save') }}
         </button>

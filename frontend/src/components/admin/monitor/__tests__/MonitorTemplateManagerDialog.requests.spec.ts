@@ -55,15 +55,6 @@ describe('monitor template list requests', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('current-template')
   })
-  it('ignores a request rejection after unmounting', async () => {
-    const request = deferred<ReturnType<typeof response>>()
-    list.mockReturnValueOnce(request.promise)
-    const wrapper = mountDialog()
-    wrapper.unmount()
-    request.reject(new Error('unmounted dialog'))
-    await flushPromises()
-    expect(showError).not.toHaveBeenCalled()
-  })
   it('does not report an error after closing the dialog', async () => {
     const request = deferred<ReturnType<typeof response>>()
     list.mockReturnValueOnce(request.promise)

@@ -53,6 +53,7 @@ const legacyZenRules = [
   { pattern: 'gpt-*', protocol: 'responses' },
   { pattern: 'muse-spark-*', protocol: 'responses' },
   { pattern: 'claude-*', protocol: 'anthropic' },
+  { pattern: 'qwen3.8-max', protocol: 'chat_completions' },
   { pattern: 'qwen*', protocol: 'anthropic' }
 ]
 
@@ -171,18 +172,9 @@ describe('credentialsBuilder derives multi-protocol data from the platform catal
     expect(OPENCODE_ZEN_BASE_URL).toBe(legacyOpenCode.zenBase)
     expect(OPENCODE_ZEN_ANTHROPIC_BASE_URL).toBe(legacyOpenCode.zenAnthropic)
     expect(DEFAULT_OPENCODE_GO_PROTOCOL_RULES).toEqual(legacyGoRules)
-    expect(DEFAULT_OPENCODE_ZEN_PROTOCOL_RULES).toEqual([
-      ...legacyZenRules.slice(0, 4),
-      { pattern: 'qwen3.8-max', protocol: 'chat_completions' },
-      ...legacyZenRules.slice(4),
-    ])
+    expect(DEFAULT_OPENCODE_ZEN_PROTOCOL_RULES).toEqual(legacyZenRules)
     expect(defaultOpenCodeProtocolRules('go')).toEqual(legacyGoRules)
-    expect(defaultOpenCodeProtocolRules('zen')).toEqual([
-      ...legacyZenRules.slice(0, 4),
-      { pattern: 'qwen3.8-max', protocol: 'chat_completions' },
-      ...legacyZenRules.slice(4),
-    ])
-    expect(defaultProviderProtocolRules('opencode_go', 'zen')).toEqual(defaultOpenCodeProtocolRules('zen'))
+    expect(defaultOpenCodeProtocolRules('zen')).toEqual(legacyZenRules)
     expect(defaultOpenCodeProtocolRules()).toEqual(legacyGoRules)
   })
 

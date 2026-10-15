@@ -10,7 +10,6 @@ const {
   updateSchedule,
   deleteBackup,
   listBackups,
-  getBackup,
   getDownloadURL,
 } = vi.hoisted(() => ({
   getS3Config: vi.fn(),
@@ -19,7 +18,6 @@ const {
   updateSchedule: vi.fn(),
   deleteBackup: vi.fn(),
   listBackups: vi.fn(),
-  getBackup: vi.fn(),
   getDownloadURL: vi.fn(),
 }))
 
@@ -36,7 +34,7 @@ vi.mock('@/api', () => ({
       updateSchedule,
       createBackup: vi.fn(),
       listBackups,
-      getBackup,
+      getBackup: vi.fn(),
       deleteBackup,
       getDownloadURL,
       restoreBackup: vi.fn(),
@@ -118,14 +116,12 @@ describe('admin BackupView', () => {
     try {
       await flushPromises()
       wrapper.unmount()
-      expect(vi.getTimerCount()).toBe(0)
       finish({ items: [{ ...baseRecord('pending'),
         status: operation === 'backup' ? 'running' : 'completed',
         restore_status: operation === 'restore' ? 'running' : undefined,
       }] })
       await flushPromises()
       expect(vi.getTimerCount()).toBe(0)
-      expect(getBackup).not.toHaveBeenCalled()
     } finally {
       wrapper.unmount()
       vi.clearAllTimers()

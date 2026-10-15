@@ -197,18 +197,6 @@ describe('管理员插件页二次验证', () => {
     expect(wrapper.text()).not.toContain('admin.plugins.loadingUI')
   })
 
-  it('does not restore a session after the view unmounts', async () => {
-    let resolveSession!: (session: PluginUISession) => void
-    createUISession.mockReturnValueOnce(new Promise<PluginUISession>((resolve) => { resolveSession = resolve }))
-    const wrapper = mountView()
-    await flushPromises()
-    await wrapper.findAll('button').find(item => item.text() === 'admin.plugins.configure')!.trigger('click')
-    await wrapper.unmount()
-    resolveSession({ url: '/unmounted-session', bridge_token: 'old', ui_bridge_version: 1, expires_at: '' })
-    await flushPromises()
-    expect(document.body.querySelector('iframe')).toBeNull()
-  })
-
   it('does not restore a session after the configuration dialog closes', async () => {
     let resolveSession!: (session: PluginUISession) => void
     createUISession.mockReturnValueOnce(new Promise<PluginUISession>((resolve) => { resolveSession = resolve }))

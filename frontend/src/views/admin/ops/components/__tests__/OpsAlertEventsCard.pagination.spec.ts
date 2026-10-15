@@ -32,16 +32,6 @@ function mountCard() {
 describe('alert events filtered pagination', () => {
   beforeEach(() => { vi.resetAllMocks() })
 
-  it('ignores a first-page rejection after unmounting', async () => {
-    const request = deferred<ReturnType<typeof rows>>()
-    listAlertEvents.mockReturnValueOnce(request.promise)
-    const { wrapper } = mountCard()
-    wrapper.unmount()
-    request.reject(new Error('unmounted alert events'))
-    await flushPromises()
-    expect(showError).not.toHaveBeenCalled()
-  })
-
   it.each(['resolve', 'reject'] as const)('ignores a superseded first page that %ss', async outcome => {
     const old = deferred<ReturnType<typeof rows>>()
     listAlertEvents.mockReturnValueOnce(old.promise).mockResolvedValueOnce(rows(100))

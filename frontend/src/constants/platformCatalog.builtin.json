@@ -143,13 +143,6 @@
       }
     },
     {
-      "id": "typesafe",
-      "display_name": "TypeSafe / Jev",
-      "gateway": "openai",
-      "cn_provider": false,
-      "litellm_provider": "typesafe"
-    },
-    {
       "id": "opencode_go",
       "display_name": "OpenCode",
       "gateway": "openai",
@@ -227,6 +220,13 @@
       }
     },
     {
+      "id": "typesafe",
+      "display_name": "TypeSafe / Jev",
+      "gateway": "anthropic",
+      "cn_provider": false,
+      "litellm_provider": "typesafe"
+    },
+    {
       "id": "command_code",
       "display_name": "Command Code",
       "gateway": "openai",
@@ -234,7 +234,6 @@
       "multi_protocol": {
         "default_mode": "payg",
         "routing": "by_model",
-        "default_test_model": "deepseek/deepseek-v4-flash",
         "model_catalog": true,
         "modes": [
           {
@@ -270,7 +269,6 @@
       "multi_protocol": {
         "default_mode": "payg",
         "routing": "by_inbound",
-        "default_test_model": "deepseek/deepseek-v4-flash",
         "modes": [
           {
             "mode": "payg",
@@ -292,8 +290,8 @@
     "zhipu",
     "deepseek",
     "minimax",
-    "typesafe",
     "opencode_go",
+    "typesafe",
     "command_code",
     "cline"
   ]

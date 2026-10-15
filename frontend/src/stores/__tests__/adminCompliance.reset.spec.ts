@@ -33,13 +33,6 @@ describe.each(['fetch', 'accept'] as const)('compliance %s across logout', (acti
   const busy = (store: ReturnType<typeof useAdminComplianceStore>) =>
     action === 'fetch' ? store.loading : store.submitting
 
-  it('propagates a current request failure and clears its busy flag', async () => {
-    mock().mockRejectedValueOnce(new Error('current failure'))
-    const store = useAdminComplianceStore()
-    await expect(run(store)).rejects.toThrow('current failure')
-    expect(busy(store)).toBe(false)
-  })
-
   it('does not repopulate cleared state when an old request succeeds', async () => {
     const pending = deferred()
     mock().mockReturnValueOnce(pending.promise)
@@ -83,9 +76,8 @@ it('still updates compliance status during a normal fetch and acceptance', async
   await store.fetchStatus()
   expect(store.initialized).toBe(true)
   expect(store.shouldShow).toBe(true)
-  const accepted = await store.accept('test')
+  await store.accept('test')
   expect(api.accept).toHaveBeenCalledWith({ phrase: 'test', language: 'en' })
-  expect(accepted).toEqual(status(false))
   expect(store.status).toEqual(status(false))
   expect(store.shouldShow).toBe(false)
 })

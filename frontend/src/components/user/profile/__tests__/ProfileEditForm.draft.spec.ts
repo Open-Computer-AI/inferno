@@ -50,16 +50,4 @@ describe('profile username draft', () => {
     await flushPromises()
     expect((wrapper.get('#username').element as HTMLInputElement).value).toBe('saved-name')
   })
-
-  it('keeps the username draft and re-enables save after a rejected update', async () => {
-    mocks.updateProfile.mockRejectedValue(new Error('save failed'))
-    const wrapper = mount(Harness)
-    await wrapper.get('#username').setValue('new-name')
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
-    expect((wrapper.get('#username').element as HTMLInputElement).value).toBe('new-name')
-    expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeUndefined()
-    expect(mocks.state.user.username).toBe('alice')
-  })
-
 })

@@ -7,6 +7,7 @@ vi.mock('vue-i18n', async (importOriginal) => ({
 }))
 enableAutoUnmount(afterEach)
 
+
 import OpsAlertRulesCard from '../OpsAlertRulesCard.vue'
 import { ref } from 'vue'
 const { createAlertRule } = vi.hoisted(() => ({ createAlertRule: vi.fn() }))

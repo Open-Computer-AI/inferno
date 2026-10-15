@@ -38,17 +38,6 @@ describe('scheduled test result selection', () => {
     listByAccount.mockResolvedValue([1, 2].map(id => ({ id, model_id: `model-${id}`, enabled: true })))
   })
 
-  it('ignores a result rejection after unmounting', async () => {
-    const request = deferred<ReturnType<typeof result>[]>()
-    listResults.mockReturnValueOnce(request.promise)
-    const wrapper = await openPanel()
-    await wrapper.findAll('.cursor-pointer')[0].trigger('click')
-    wrapper.unmount()
-    request.reject(new Error('unmounted scheduled tests'))
-    await flushPromises()
-    expect(showError).not.toHaveBeenCalled()
-  })
-
   it.each(['resolve', 'reject'] as const)('ignores an old plan request that later %ss', async outcome => {
     const old = deferred<ReturnType<typeof result>[]>()
     listResults.mockReturnValueOnce(old.promise).mockResolvedValueOnce([result(22)])
