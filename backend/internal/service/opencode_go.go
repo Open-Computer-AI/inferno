@@ -128,6 +128,7 @@ func DefaultOpenCodeZenProtocolRules() []OpenCodeGoProtocolRule {
 		{Pattern: "gpt-*", Protocol: APIProtocolResponses},
 		{Pattern: "muse-spark-*", Protocol: APIProtocolResponses},
 		{Pattern: "claude-*", Protocol: APIProtocolAnthropic},
+		{Pattern: "qwen3.8-max", Protocol: APIProtocolChatCompletions},
 		{Pattern: "qwen*", Protocol: APIProtocolAnthropic},
 	}
 }

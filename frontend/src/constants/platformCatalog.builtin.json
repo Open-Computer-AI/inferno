@@ -214,6 +214,10 @@
                 "protocol": "anthropic"
               },
               {
+                "pattern": "qwen3.8-max",
+                "protocol": "chat_completions"
+              },
+              {
                 "pattern": "qwen*",
                 "protocol": "anthropic"
               }
