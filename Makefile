@@ -26,6 +26,8 @@ FRONTEND_CRITICAL_VITEST := \
 	src/components/user/profile/__tests__/ProfileEditForm.draft.spec.ts \
 	src/components/user/profile/__tests__/ProfileBalanceNotifyCard.spec.ts \
 	src/components/user/profile/__tests__/ProfileIdentityBindingsSection.spec.ts \
+	src/components/payment/__tests__/paymentCountdown.spec.ts \
+	src/components/account/__tests__/UsageProgressBar.spec.ts \
 	src/components/common/__tests__/BaseDialog.escape.spec.ts \
 	src/components/common/__tests__/disabledSelectors.spec.ts \
 	src/components/admin/usage/__tests__/UsageCleanupDialog.spec.ts \
