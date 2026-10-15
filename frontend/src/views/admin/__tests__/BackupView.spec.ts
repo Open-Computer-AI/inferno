@@ -10,6 +10,7 @@ const {
   updateSchedule,
   deleteBackup,
   listBackups,
+  getBackup,
   getDownloadURL,
 } = vi.hoisted(() => ({
   getS3Config: vi.fn(),
@@ -18,6 +19,7 @@ const {
   updateSchedule: vi.fn(),
   deleteBackup: vi.fn(),
   listBackups: vi.fn(),
+  getBackup: vi.fn(),
   getDownloadURL: vi.fn(),
 }))
 
@@ -34,7 +36,7 @@ vi.mock('@/api', () => ({
       updateSchedule,
       createBackup: vi.fn(),
       listBackups,
-      getBackup: vi.fn(),
+      getBackup,
       deleteBackup,
       getDownloadURL,
       restoreBackup: vi.fn(),
@@ -106,6 +108,29 @@ describe('admin BackupView', () => {
     wrappers.splice(0).forEach(wrapper => wrapper.unmount())
     vi.restoreAllMocks()
     document.body.innerHTML = ''
+  })
+
+  it.each(['backup', 'restore'])('does not resume %s polling after navigation during initial loading', async (operation) => {
+    vi.useFakeTimers()
+    let finish!: (value: object) => void
+    listBackups.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const wrapper = mountBackupView()
+    try {
+      await flushPromises()
+      wrapper.unmount()
+      expect(vi.getTimerCount()).toBe(0)
+      finish({ items: [{ ...baseRecord('pending'),
+        status: operation === 'backup' ? 'running' : 'completed',
+        restore_status: operation === 'restore' ? 'running' : undefined,
+      }] })
+      await flushPromises()
+      expect(vi.getTimerCount()).toBe(0)
+      expect(getBackup).not.toHaveBeenCalled()
+    } finally {
+      wrapper.unmount()
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
   })
 
   it('显示分卷数并在下载时列出每个分卷链接', async () => {
