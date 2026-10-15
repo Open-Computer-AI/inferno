@@ -5831,7 +5831,7 @@ const handleSubmit = async () => {
     api_key: apiKeyValue.value.trim()
   }
   if (form.platform === 'gemini') {
-    credentials.tier_id = geminiTierAIStudio.value
+    if (isGeminiOfficialApiKey.value) credentials.tier_id = geminiTierAIStudio.value
   }
 
   // 国产供应商：账号模式 + 协议 + 对应端点写入凭据；后端按 account_mode 路由
