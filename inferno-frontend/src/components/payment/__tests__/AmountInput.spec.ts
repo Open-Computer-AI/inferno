@@ -27,6 +27,36 @@ describe('recharge amount input', () => {
     expect(wrapper.emitted('update:modelValue')).toEqual([[12.5]])
   })
 
+  it('shows a bonus badge and credited preview for qualifying preset amounts', () => {
+    const wrapper = mount(AmountInput, {
+      props: {
+        modelValue: null,
+        amounts: [10, 20],
+        bonusTiers: [{ min_amount: 20, bonus_percent: 25 }],
+        bonusMode: 'bonus',
+        multiplier: 1.5,
+        currency: 'USD',
+      },
+    })
+    const buttons = wrapper.findAll('.amt__chip')
+    expect(buttons[0]?.find('[data-testid="quick-amount-credited"]').text()).toBe('payment.rechargeBonus.creditedShort')
+    expect(buttons[1]?.find('[data-testid="quick-amount-bonus-badge"]').text()).toBe('+25%')
+  })
+
+  it('shows discounted pay preview for discount-mode preset amounts', () => {
+    const wrapper = mount(AmountInput, {
+      props: {
+        modelValue: null,
+        amounts: [20],
+        bonusTiers: [{ min_amount: 20, bonus_percent: 25 }],
+        bonusMode: 'discount',
+        currency: 'USD',
+      },
+    })
+    expect(wrapper.get('[data-testid="quick-amount-bonus-badge"]').text()).toBe('25% OFF')
+    expect(wrapper.get('[data-testid="quick-amount-credited"]').text()).toBe('payment.rechargeBonus.payShort')
+  })
+
   it('preserves decimal editing and allows clearing the amount', async () => {
     const wrapper = mountInput()
     const input = wrapper.get('.amt__input')

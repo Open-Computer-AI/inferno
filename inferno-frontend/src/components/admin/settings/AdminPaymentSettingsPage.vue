@@ -465,6 +465,14 @@
             </div>
           </div>
 
+          <!-- Recharge promotion tiers -->
+          <RechargeBonusTierEditor
+            v-if="form.payment_enabled"
+            v-model="form.payment_recharge_bonus_tiers"
+            v-model:mode="form.payment_recharge_bonus_mode"
+            v-model:notice="form.payment_recharge_bonus_notice"
+          />
+
           <!-- Provider Management -->
           <PaymentProviderList
             v-if="form.payment_enabled"
@@ -490,6 +498,7 @@ import { defineComponent } from 'vue'
 import BaseButton from '@/components/common/Button.vue'
 import ImageUpload from '@/components/common/ImageUpload.vue'
 import PaymentProviderList from '@/components/payment/PaymentProviderList.vue'
+import RechargeBonusTierEditor from './RechargeBonusTierEditor.vue'
 import BaseSelect from '@/components/common/Select.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import { useSettingsPageBindings } from './settingsPageBindings'
@@ -501,6 +510,7 @@ export default defineComponent({
     BaseButton,
     ImageUpload,
     PaymentProviderList,
+    RechargeBonusTierEditor,
     Toggle,
   },
   setup() {
