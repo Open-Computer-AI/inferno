@@ -245,6 +245,7 @@ const currentPage = ref(1)
 const pageSize = ref(10)
 
 let searchTimeout: ReturnType<typeof setTimeout> | null = null
+let loadVersion = 0
 
 const platformColorClass = computed(() => {
   switch (props.group?.platform) {
@@ -272,16 +273,22 @@ const cloneEntries = (entries: GroupRPMOverrideEntry[]): LocalEntry[] => {
 
 const loadEntries = async () => {
   if (!props.group) return
+  const version = loadVersion
   loading.value = true
+  serverEntries.value = []
+  localEntries.value = []
   try {
-    serverEntries.value = await adminAPI.groups.getGroupRPMOverrides(props.group.id)
+    const entries = await adminAPI.groups.getGroupRPMOverrides(props.group.id)
+    if (version !== loadVersion) return
+    serverEntries.value = entries
     localEntries.value = cloneEntries(serverEntries.value)
     adjustPage()
   } catch (error) {
+    if (version !== loadVersion) return
     appStore.showError(t('admin.groups.failedToLoad'))
     console.error('Error loading RPM overrides:', error)
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
 }
 
@@ -297,7 +304,8 @@ const clearSearchTimeout = () => {
   }
 }
 
-watch(() => props.show, (val) => {
+watch([() => props.show, () => props.group?.id], ([val]) => {
+  loadVersion++
   if (val && props.group) {
     currentPage.value = 1
     searchQuery.value = ''
@@ -429,6 +437,7 @@ onMounted(() => {
   document.addEventListener('click', handleClickOutside)
 })
 onUnmounted(() => {
+  loadVersion++
   clearSearchTimeout()
   document.removeEventListener('click', handleClickOutside)
 })
