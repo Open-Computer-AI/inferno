@@ -1755,4 +1755,24 @@ describe('AccountUsageCell', () => {
     expect(labels).not.toContain('admin.accounts.usageWindow.sevenDaySonnet')
     expect(labels).not.toContain('admin.accounts.usageWindow.sevenDayFable')
   })
+
+  it('does not simulate Gemini quota for a third-party API-key upstream', async () => {
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          platform: 'gemini',
+          type: 'apikey',
+          credentials: { base_url: 'https://api.example.test/v1' }
+        }),
+        todayStats: null,
+        todayStatsLoading: false
+      },
+      global: { stubs: { AccountQuotaInfo: true, UsageProgressBar: true } }
+    })
+    await flushPromises()
+
+    expect(getUsage).not.toHaveBeenCalled()
+    expect(wrapper.findComponent({ name: 'AccountQuotaInfo' }).exists()).toBe(false)
+  })
+
 })

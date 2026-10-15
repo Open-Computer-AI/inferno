@@ -1760,4 +1760,33 @@ describe('EditAccountModal', () => {
       expect(updateAccountMock).not.toHaveBeenCalled()
     })
   })
+
+  it('updates Vertex API-key credentials without requiring service-account JSON', async () => {
+    const account = buildVertexAccount()
+    account.credentials = {
+      auth_mode: 'apikey',
+      project_id: 'demo-project',
+      location: 'us-central1',
+      tier_id: 'vertex'
+    }
+    account.credentials_status = { has_api_key: true }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+
+    const wrapper = mountModal(account)
+    expect(wrapper.get('[data-testid="edit-vertex-api-key-input"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="edit-vertex-api-key-input"]').setValue('replacement-key')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    const credentials = updateAccountMock.mock.calls[0]?.[1]?.credentials
+    expect(credentials).toMatchObject({
+      auth_mode: 'apikey',
+      api_key: 'replacement-key',
+      project_id: 'demo-project',
+      location: 'us-central1',
+      tier_id: 'vertex'
+    })
+  })
+
 })

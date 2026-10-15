@@ -385,7 +385,7 @@
       <div v-if="geminiAuthTypeLabel" class="uc-badgerow">
         <span class="uc-badge">{{ geminiAuthTypeLabel }}</span>
         <!-- Help icon -->
-        <span class="uc-tip" tabindex="0">
+        <span v-if="showGeminiQuotaPolicy" class="uc-tip" tabindex="0">
           <i
             class="hgi-stroke hgi-help-circle"
             aria-hidden="true"
@@ -458,7 +458,7 @@
           <p class="uc-footnote">* {{ t('admin.accounts.gemini.quotaPolicy.simulatedNote') || 'Simulated quota' }}</p>
         </template>
         <!-- AI Studio Client OAuth: show unlimited flow (no usage tracking) -->
-        <div v-else class="uc-muted">
+        <div v-else-if="!showGeminiTodayStats" class="uc-muted">
           {{ t('admin.accounts.gemini.rateLimit.unlimited') }}
         </div>
       </div>
@@ -473,7 +473,7 @@
   <!-- Non-OAuth/Setup-Token accounts -->
   <div ref="rootRef" v-else class="uc">
     <!-- Gemini API Key accounts: show quota info -->
-    <AccountQuotaInfo v-if="account.platform === 'gemini'" :account="account" />
+    <AccountQuotaInfo v-if="account.platform === 'gemini' && !isGeminiThirdPartyApiKey" :account="account" />
     <!-- Key/Bedrock accounts: show today stats + optional quota bars -->
     <div v-else class="uc-body">
       <OllamaCloudUsageCell
@@ -596,6 +596,7 @@ import type { Account, AccountUsageInfo, GeminiCredentials, WindowStats } from '
 import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
 import { formatCompactNumber } from '@/utils/format'
+import { isOfficialGeminiBaseUrl } from '@/utils/geminiBaseUrl'
 import CapacityBar from '@/components/common/CapacityBar.vue'
 import AccountQuotaInfo from './AccountQuotaInfo.vue'
 import OpenAIQuotaResetCell from './OpenAIQuotaResetCell.vue'
@@ -677,8 +678,8 @@ let visibilityObserver: IntersectionObserver | null = null
 
 // Show usage windows for OAuth and Setup Token accounts
 const showUsageWindows = computed(() => {
-  // Gemini: we can always compute local usage windows from DB logs (simulated quotas).
-  if (props.account.platform === 'gemini') return true
+  // Third-party Gemini API keys have no local AI Studio quota simulation.
+  if (props.account.platform === 'gemini') return !isGeminiThirdPartyApiKey.value
   // CN providers: apikey 账号也有滚动用量窗口（coding plan）或余额（payg），
   // 由 CNProviderQuotaCell / CNProviderBalanceCell 自行探测与展示。
   if (
@@ -698,7 +699,7 @@ const shouldFetchUsage = computed(() => {
     return props.account.type === 'oauth' || props.account.type === 'setup-token'
   }
   if (props.account.platform === 'gemini') {
-    return true
+    return !isGeminiThirdPartyApiKey.value && !isGeminiVertex.value
   }
   if (props.account.platform === 'antigravity') {
     return props.account.type === 'oauth'
@@ -723,9 +724,16 @@ const cnBalanceCellVisible = computed(() => cnBalanceCellVisibleFn(props.account
 
 const isBatchManaged = computed(() => typeof props.requestBatchedUsage === 'function')
 
-const showGeminiTodayStats = computed(() => {
-  return props.account.platform === 'gemini' && props.account.type === 'service_account'
+const isGeminiVertex = computed(() =>
+  props.account.platform === 'gemini' && props.account.type === 'service_account'
+)
+const isGeminiThirdPartyApiKey = computed(() => {
+  if (props.account.platform !== 'gemini' || props.account.type !== 'apikey') return false
+  const credentials = props.account.credentials as GeminiCredentials | undefined
+  return !isOfficialGeminiBaseUrl(credentials?.base_url)
 })
+const showGeminiQuotaPolicy = computed(() => !isGeminiVertex.value)
+const showGeminiTodayStats = computed(() => isGeminiVertex.value)
 
 const geminiUsageAvailable = computed(() => {
   return (
@@ -876,9 +884,10 @@ const isGeminiCodeAssist = computed(() => {
   return creds?.oauth_type === 'code_assist' || (!creds?.oauth_type && !!creds?.project_id)
 })
 
-const geminiChannelShort = computed((): 'ai studio' | 'gcp' | 'google one' | 'client' | null => {
+const geminiChannelShort = computed((): 'ai studio' | 'vertex' | 'gcp' | 'google one' | 'client' | null => {
   if (props.account.platform !== 'gemini') return null
 
+  if (isGeminiVertex.value) return 'vertex'
   // API Key accounts are AI Studio.
   if (props.account.type === 'apikey') return 'ai studio'
 
@@ -891,7 +900,7 @@ const geminiChannelShort = computed((): 'ai studio' | 'gcp' | 'google one' | 'cl
 })
 
 const geminiUserLevel = computed((): string | null => {
-  if (props.account.platform !== 'gemini') return null
+  if (props.account.platform !== 'gemini' || isGeminiVertex.value) return null
 
   const tier = (geminiTier.value || '').toString().trim()
   const tierLower = tier.toLowerCase()

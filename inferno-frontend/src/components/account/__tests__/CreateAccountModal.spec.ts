@@ -791,4 +791,27 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
 
     expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBe(false)
   })
+
+  it('creates Gemini Vertex with API-key authentication', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Gemini')
+    await selectButtonByText(wrapper, 'Vertex')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Vertex API key')
+    await wrapper.get('[data-testid="vertex-auth-mode-apikey"]').setValue()
+    await wrapper.get('[data-testid="vertex-api-key-input"]').setValue('vertex-test-key')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    const payload = createAccountMock.mock.calls[0]?.[0]
+    expect(payload?.platform).toBe('gemini')
+    expect(payload?.type).toBe('service_account')
+    expect(payload?.credentials).toMatchObject({
+      auth_mode: 'apikey',
+      api_key: 'vertex-test-key',
+      location: 'global',
+      tier_id: 'vertex'
+    })
+    expect(payload?.credentials?.project_id).toBeUndefined()
+  })
+
 })

@@ -1141,6 +1141,43 @@
 
       <!-- Vertex Service Account -->
       <div v-if="(form.platform === 'gemini' || form.platform === 'anthropic') && accountCategory === 'service_account'" class="space-y-4">
+        <div v-if="form.platform === 'gemini'">
+          <label class="input-label">{{ t('admin.accounts.vertexAuthMode') }}</label>
+          <div class="mt-2 flex gap-4">
+            <label class="flex cursor-pointer items-center">
+              <input v-model="vertexAuthMode" type="radio" value="service_account" class="mr-2" />
+              <span class="text-sm">{{ t('admin.accounts.vertexAuthModeServiceAccount') }}</span>
+            </label>
+            <label class="flex cursor-pointer items-center">
+              <input v-model="vertexAuthMode" type="radio" value="apikey" data-testid="vertex-auth-mode-apikey" class="mr-2" />
+              <span class="text-sm">{{ t('admin.accounts.vertexAuthModeApiKey') }}</span>
+            </label>
+          </div>
+        </div>
+        <template v-if="vertexUsesApiKey">
+          <div>
+            <label class="input-label">API Key</label>
+            <input v-model="vertexApiKey" type="password" required class="input font-mono" data-testid="vertex-api-key-input" />
+            <p class="input-hint">{{ t('admin.accounts.vertexApiKeyHint') }}</p>
+          </div>
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label class="input-label">Project ID</label>
+              <input v-model="vertexProjectId" type="text" class="input font-mono" data-testid="vertex-api-key-project-id-input" :placeholder="t('admin.accounts.vertexApiKeyProjectIdPlaceholder')" />
+              <p class="input-hint">{{ t('admin.accounts.vertexApiKeyProjectIdHint') }}</p>
+            </div>
+            <div v-if="vertexProjectId.trim()">
+              <label class="input-label">Location</label>
+              <select v-model="vertexLocation" required class="input font-mono">
+                <optgroup v-for="group in VERTEX_LOCATION_OPTIONS" :key="group.label" :label="group.label">
+                  <option v-for="option in group.options" :key="option.value" :value="option.value">{{ option.label }}</option>
+                </optgroup>
+              </select>
+              <p class="input-hint">{{ t('admin.accounts.vertexLocationHint') }}</p>
+            </div>
+          </div>
+        </template>
+        <template v-else>
         <div>
           <label class="input-label">Service Account JSON</label>
           <input
@@ -1227,6 +1264,7 @@
             <p class="input-hint">{{ t('admin.accounts.vertexLocationHint') }}</p>
           </div>
         </div>
+        </template>
       </div>
 
       <!-- Antigravity model restriction (applies to OAuth + Upstream) -->
@@ -1427,7 +1465,7 @@
         </div>
 
         <!-- Gemini API Key tier selection -->
-        <div v-if="form.platform === 'gemini'">
+        <div v-if="form.platform === 'gemini' && isGeminiOfficialApiKey">
           <label class="input-label">{{ t('admin.accounts.gemini.tier.label') }}</label>
           <select v-model="geminiTierAIStudio" class="input">
             <option value="aistudio_free">{{ t('admin.accounts.gemini.tier.aiStudio.free') }}</option>
@@ -3939,6 +3977,7 @@ import {
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
 import { getAccountExpiryTimestamp } from '@/components/account/accountExpiry'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
+import { isOfficialGeminiBaseUrl } from '@/utils/geminiBaseUrl'
 import {
   OPENAI_WS_MODE_CTX_POOL,
   OPENAI_WS_MODE_OFF,
@@ -4026,7 +4065,7 @@ const apiKeyValuePlaceholder = computed(() => {
     case 'openai':
       return 'sk-proj-...'
     case 'gemini':
-      return 'AIza...'
+      return 'AQ.Ab...'
     case 'grok':
       return 'xai-...'
     case 'kimi':
@@ -4127,6 +4166,7 @@ const submitting = ref(false)
 const accountCategory = ref<'oauth-based' | 'apikey' | 'bedrock' | 'service_account'>('oauth-based') // UI selection for account category
 const addMethod = ref<AddMethod>('oauth') // For oauth-based: 'oauth' or 'setup-token'
 const apiKeyBaseUrl = ref('https://api.anthropic.com')
+const isGeminiOfficialApiKey = computed(() => isOfficialGeminiBaseUrl(apiKeyBaseUrl.value))
 const apiKeyValue = ref('')
 const upstreamBillingAutoProbeEnabled = ref(true)
 
@@ -4477,6 +4517,15 @@ const vertexProjectId = ref('')
 const vertexClientEmail = ref('')
 const vertexLocation = ref('global')
 const vertexServiceAccountDragActive = ref(false)
+const vertexAuthMode = ref<'service_account' | 'apikey'>('service_account')
+const vertexApiKey = ref('')
+const vertexUsesApiKey = computed(() => form.platform === 'gemini' && vertexAuthMode.value === 'apikey')
+watch(vertexAuthMode, () => {
+  vertexServiceAccountJson.value = ''
+  vertexProjectId.value = ''
+  vertexClientEmail.value = ''
+  vertexApiKey.value = ''
+})
 const tempUnschedEnabled = ref(false)
 const tempUnschedRules = ref<TempUnschedRuleForm[]>([])
 const getModelMappingKey = createStableObjectKeyResolver<ModelMapping>('create-model-mapping')
@@ -4872,6 +4921,8 @@ watch(
     vertexProjectId.value = ''
     vertexClientEmail.value = ''
     vertexLocation.value = 'global'
+    vertexAuthMode.value = 'service_account'
+    vertexApiKey.value = ''
     // Reset Anthropic/Antigravity-specific settings when switching to other platforms
     if (newPlatform !== 'anthropic' && newPlatform !== 'antigravity') {
       interceptWarmupRequests.value = false
@@ -5370,6 +5421,8 @@ const resetForm = () => {
   vertexProjectId.value = ''
   vertexClientEmail.value = ''
   vertexLocation.value = 'global'
+  vertexAuthMode.value = 'service_account'
+  vertexApiKey.value = ''
   tempUnschedEnabled.value = false
   tempUnschedRules.value = []
   geminiOAuthType.value = 'code_assist'
@@ -5716,6 +5769,26 @@ const handleSubmit = async () => {
   if ((form.platform === 'gemini' || form.platform === 'anthropic') && accountCategory.value === 'service_account') {
     if (!form.name.trim()) {
       appStore.showError(t('admin.accounts.pleaseEnterAccountName'))
+      return
+    }
+    if (vertexUsesApiKey.value) {
+      if (!vertexApiKey.value.trim()) {
+        appStore.showError(t('admin.accounts.vertexApiKeyRequired'))
+        return
+      }
+      const projectId = vertexProjectId.value.trim()
+      if (projectId && !vertexLocation.value.trim()) {
+        appStore.showError(t('admin.accounts.vertexLocationRequired'))
+        return
+      }
+      const credentials: Record<string, unknown> = {
+        auth_mode: 'apikey',
+        api_key: vertexApiKey.value.trim(),
+        location: vertexLocation.value.trim() || 'global',
+        tier_id: 'vertex'
+      }
+      if (projectId) credentials.project_id = projectId
+      await createAccountAndFinish(form.platform, 'service_account' as AccountType, credentials)
       return
     }
     if (!parseVertexServiceAccountJson()) {

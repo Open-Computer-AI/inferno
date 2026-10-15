@@ -611,6 +611,13 @@ export default {
       vertexSaJsonUploadHint: 'After uploading or dropping a JSON file, the project_id will be auto-extracted. Key content is only used for account creation.',
       vertexSaJsonEditHint: 'Service Account JSON is not shown on the edit page; to change the JSON, delete the account and recreate it.',
       vertexProjectIdPlaceholder: 'Auto-extracted from JSON',
+      vertexAuthMode: 'Authentication',
+      vertexAuthModeServiceAccount: 'Service Account JSON',
+      vertexAuthModeApiKey: 'API Key',
+      vertexApiKeyHint: 'Use a Google Cloud API key for Vertex AI Gemini. Explicit context caching is not supported with API-key authentication.',
+      vertexApiKeyRequired: 'Please enter an API key',
+      vertexApiKeyProjectIdPlaceholder: 'Optional',
+      vertexApiKeyProjectIdHint: 'Leave empty to use the global endpoint. Enter a project ID to use the project endpoint and choose a location.',
       vertexLocationHint: 'Available locations vary by Vertex model. Select the default endpoint location for this account.',
       vertexLocationRequired: 'Please enter a Vertex location',
       vertexSaJsonMissingFields: 'Service Account JSON is missing project_id, client_email, or private_key',
@@ -1410,7 +1417,7 @@ export default {
         modelPassthroughDesc:
           'All model requests are forwarded directly to the Gemini API without model restrictions or mappings.',
         baseUrlHint: 'Leave default for official Gemini API',
-        apiKeyHint: 'Your Gemini API Key (starts with AIza)',
+        apiKeyHint: 'New AI Studio keys start with AQ. (legacy keys start with AIza); for a third-party upstream, use the key it provides',
         tier: {
           label: 'Account Tier',
           hint: 'Tip: The system will try to auto-detect the tier first; if auto-detection is unavailable or fails, your selected tier is used as a fallback (simulated quota).',
