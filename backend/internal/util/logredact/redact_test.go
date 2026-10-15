@@ -53,6 +53,21 @@ func TestRedactText_GeminiAPIKeys(t *testing.T) {
 	}
 }
 
+func TestRedactText_GeminiAuthKeyInsideJSONStrings(t *testing.T) {
+	authKey := "AQ." + "Ab" + strings.Repeat("Xy9_-z", 8)
+	in := `{"error":{"message":"API key invalid: ` + authKey + `","details":["retry with ` + authKey + `",{"note":"` + authKey + `"}]},"api_key":"` + authKey + `"}`
+	out := RedactText(in)
+	if strings.Contains(out, authKey) {
+		t.Fatalf("Gemini auth key leaked in JSON: %q", out)
+	}
+	if !strings.Contains(out, `"api_key":"***"`) {
+		t.Fatalf("expected named API-key field to remain fully redacted, got %q", out)
+	}
+	if strings.Count(out, "AQ.***") != 3 {
+		t.Fatalf("expected three free-text key redactions, got %q", out)
+	}
+}
+
 func TestRedactText_GeminiAuthKeyPrefixAloneUnchanged(t *testing.T) {
 	in := "key format AQ.Ab... is documented"
 	if out := RedactText(in); out != in {

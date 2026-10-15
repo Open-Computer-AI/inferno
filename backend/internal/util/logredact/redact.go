@@ -71,6 +71,7 @@ func RedactJSON(raw []byte, extraKeys ...string) string {
 	}
 	keys := buildKeySet(extraKeys)
 	redacted := redactValueWithDepth(value, keys, 0)
+	redacted = redactGeminiAuthKeysInValue(redacted)
 	encoded, err := json.Marshal(redacted)
 	if err != nil {
 		return "<redacted>"
@@ -196,6 +197,30 @@ func buildKeySet(extraKeys []string) map[string]struct{} {
 		keys[normalized] = struct{}{}
 	}
 	return keys
+}
+
+// redactGeminiAuthKeysInValue scrubs AQ.Ab keys embedded in unstructured JSON
+// string values, including nested objects and arrays. Named sensitive fields are
+// already replaced by redactValueWithDepth and remain fully redacted.
+func redactGeminiAuthKeysInValue(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for key, item := range v {
+			out[key] = redactGeminiAuthKeysInValue(item)
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			out[i] = redactGeminiAuthKeysInValue(item)
+		}
+		return out
+	case string:
+		return reGeminiAuthKey.ReplaceAllString(v, "AQ.***")
+	default:
+		return value
+	}
 }
 
 func redactValueWithDepth(value any, keys map[string]struct{}, depth int) any {
