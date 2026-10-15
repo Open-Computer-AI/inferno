@@ -30,6 +30,7 @@ FRONTEND_CRITICAL_VITEST := \
 	src/components/account/__tests__/UsageProgressBar.spec.ts \
 	src/components/common/__tests__/BaseDialog.escape.spec.ts \
 	src/components/common/__tests__/disabledSelectors.spec.ts \
+	src/components/admin/group/__tests__/GroupModal.cleanup.spec.ts \
 	src/components/admin/usage/__tests__/UsageCleanupDialog.spec.ts \
 	src/views/admin/__tests__/BackupView.spec.ts \
 	src/views/admin/__tests__/PluginsView.spec.ts \
