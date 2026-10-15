@@ -25,6 +25,8 @@ FRONTEND_CRITICAL_VITEST := \
 	src/stores/__tests__/adminCompliance.reset.spec.ts \
 	src/components/user/profile/__tests__/ProfileEditForm.draft.spec.ts \
 	src/components/user/profile/__tests__/ProfileIdentityBindingsSection.spec.ts \
+	src/components/common/__tests__/BaseDialog.escape.spec.ts \
+	src/components/common/__tests__/disabledSelectors.spec.ts \
 	src/views/admin/__tests__/PluginsView.spec.ts \
 	src/views/admin/__tests__/SettingsView.spec.ts \
 	src/features/channel-monitor-v2/__tests__/designSystem.structure.spec.ts \
