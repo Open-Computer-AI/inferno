@@ -631,9 +631,8 @@ func TestHandleGeminiUpstreamError_VertexRetryInfoUsesParsedDelay(t *testing.T) 
 	require.WithinDuration(t, before.Add(39*time.Second), repo.lastRateLimitReset, 2*time.Second)
 }
 
-// Vertex（service_account）429 响应不带任何可解析的重置时间时，走短冷却兜底，
-// 不再冷却到 PST 午夜（按量付费没有每日配额，长冷却会导致整组不可用）。
-func TestHandleGeminiUpstreamError_VertexFallbackUsesShortCooldown(t *testing.T) {
+// Vertex shared-capacity 429 is request-scoped; do not cool the service account.
+func TestHandleGeminiUpstreamError_VertexSharedCapacityKeepsAccountSchedulable(t *testing.T) {
 	repo := &rateLimit429AccountRepoStub{}
 	svc := &GeminiMessagesCompatService{accountRepo: repo}
 
@@ -647,14 +646,43 @@ func TestHandleGeminiUpstreamError_VertexFallbackUsesShortCooldown(t *testing.T)
 	}
 	body := []byte(`{"error":{"code":429,"message":"Resource exhausted. Please try again later.","status":"RESOURCE_EXHAUSTED"}}`)
 
-	before := time.Now()
 	svc.handleGeminiUpstreamError(context.Background(), account, http.StatusTooManyRequests, http.Header{}, body)
 
+	require.Zero(t, repo.rateLimitCalls)
+}
+
+func TestIsVertexSharedCapacity429(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{name: "generic resource exhausted", body: `{"error":{"code":429,"message":"Resource exhausted. Please try again later.","status":"RESOURCE_EXHAUSTED"}}`, want: true},
+		{name: "array wrapped", body: `[{"error":{"code":429,"message":"Resource exhausted. Please try again later.","status":"RESOURCE_EXHAUSTED"}}]`, want: true},
+		{name: "empty details", body: `{"error":{"code":429,"message":"Resource exhausted. Please try again later.","status":"RESOURCE_EXHAUSTED","details":[]}}`, want: true},
+		{name: "quota wording", body: `{"error":{"code":429,"message":"Resource exhausted: project quota exceeded. Please try again later.","status":"RESOURCE_EXHAUSTED"}}`, want: false},
+		{name: "provisioned throughput", body: `{"error":{"code":429,"message":"Resource exhausted. Exceeded Provisioned Throughput. Please try again later.","status":"RESOURCE_EXHAUSTED"}}`, want: false},
+		{name: "retry details", body: `{"error":{"code":429,"message":"Resource exhausted. Please try again later.","status":"RESOURCE_EXHAUSTED","details":[{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"5s"}]}}`, want: false},
+		{name: "other status", body: `{"error":{"code":429,"message":"Resource exhausted. Please try again later.","status":"UNAVAILABLE"}}`, want: false},
+		{name: "other wording", body: `{"error":{"code":429,"message":"Rate limit exceeded","status":"RESOURCE_EXHAUSTED"}}`, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, isVertexSharedCapacity429([]byte(tt.body)))
+		})
+	}
+}
+
+func TestHandleGeminiUpstreamError_VertexAccountScoped429UsesShortCooldown(t *testing.T) {
+	repo := &rateLimit429AccountRepoStub{}
+	svc := &GeminiMessagesCompatService{accountRepo: repo}
+	account := &Account{ID: 608, Platform: PlatformGemini, Type: AccountTypeServiceAccount, Credentials: map[string]any{"project_id": "my-vertex-project"}}
+	body := []byte(`{"error":{"code":429,"message":"Quota exceeded for project requests per minute.","status":"RESOURCE_EXHAUSTED"}}`)
+	before := time.Now()
+	svc.handleGeminiUpstreamError(context.Background(), account, http.StatusTooManyRequests, http.Header{}, body)
 	require.Equal(t, 1, repo.rateLimitCalls)
-	require.Equal(t, int64(602), repo.lastRateLimitID)
+	require.Equal(t, int64(608), repo.lastRateLimitID)
 	require.WithinDuration(t, before.Add(geminiVertexFallbackCooldown), repo.lastRateLimitReset, 2*time.Second)
-	// 显式守护：不应被冷却超过 15 分钟（更不应到次日 PST 午夜）
-	require.True(t, repo.lastRateLimitReset.Before(before.Add(15*time.Minute)))
 }
 
 // API Key（AI Studio）无法解析重置时间时仍冷却到 PST 午夜，行为保持不变。

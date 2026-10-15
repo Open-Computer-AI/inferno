@@ -3145,7 +3145,13 @@ func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Cont
 				logger.LegacyPrintf("service.gemini_messages_compat", "[Gemini 429] Account %d (Google One OAuth, tier=%s, project=%s) rate limited, cooldown=%v", account.ID, tierID, projectID, time.Until(ra).Truncate(time.Second))
 			}
 		} else if account.IsVertexServiceAccount() {
-			// Vertex 按量付费：短窗限速，无每日配额，短冷却后即可恢复
+			// Shared capacity exhaustion is upstream-wide, not an account quota. Keep
+			// this account schedulable and let the request retry on the same account.
+			if isVertexSharedCapacity429(body) {
+				logger.LegacyPrintf("service.gemini_messages_compat", "[Gemini 429] Account %d (Vertex service account, project=%s) shared capacity exhausted, account stays schedulable", account.ID, projectID)
+				return
+			}
+			// Project quota and provisioned-throughput limits are account scoped.
 			ra = time.Now().Add(geminiVertexFallbackCooldown)
 			logger.LegacyPrintf("service.gemini_messages_compat", "[Gemini 429] Account %d (Vertex service account, project=%s) rate limited, cooldown=%v", account.ID, projectID, time.Until(ra).Truncate(time.Second))
 		} else {
@@ -3168,6 +3174,27 @@ func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Cont
 	_ = s.accountRepo.SetRateLimited(ctx, account.ID, resetTime)
 	logger.LegacyPrintf("service.gemini_messages_compat", "[Gemini 429] Account %d rate limited until %v (oauth_type=%s, tier=%s)",
 		account.ID, resetTime, oauthType, tierID)
+}
+
+// isVertexSharedCapacity429 recognizes Vertex's generic shared-capacity exhaustion
+// response. Quota details, retry hints, and account-specific quota wording remain
+// account-scoped and continue through the normal cooldown path.
+func isVertexSharedCapacity429(body []byte) bool {
+	errObj := gjson.GetBytes(body, "error")
+	if !errObj.Exists() {
+		errObj = gjson.GetBytes(body, "0.error")
+	}
+	if !errObj.IsObject() || !strings.EqualFold(strings.TrimSpace(errObj.Get("status").String()), "RESOURCE_EXHAUSTED") {
+		return false
+	}
+	if len(errObj.Get("details").Array()) > 0 {
+		return false
+	}
+	message := strings.ToLower(errObj.Get("message").String())
+	if !strings.Contains(message, "resource exhausted") || !strings.Contains(message, "try again later") {
+		return false
+	}
+	return !strings.Contains(message, "quota") && !strings.Contains(message, "provisioned throughput")
 }
 
 // ParseGeminiRateLimitResetTime 解析 Gemini 格式的 429 响应，返回重置时间的 Unix 时间戳
