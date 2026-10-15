@@ -129,6 +129,7 @@ const wechatQrUrl = ref('')
 const redirecting = ref(false)
 const showPaymentElement = ref(false)
 
+let disposed = false
 let stripeInstance: Stripe | null = null
 let elementsInstance: StripeElements | null = null
 let redirectTimer: ReturnType<typeof setTimeout> | null = null
@@ -167,6 +168,7 @@ onMounted(async () => {
 
     const { loadStripe } = await import('@stripe/stripe-js/pure')
     const stripe = await loadStripe(publishableKey)
+    if (disposed) return
     if (!stripe) { initError.value = t('payment.stripeLoadFailed'); return }
 
     stripeInstance = stripe
@@ -207,6 +209,7 @@ async function confirmAlipay(stripe: Stripe, clientSecret: string, orderId: numb
   redirecting.value = true
   const returnUrl = window.location.origin + '/payment/result?order_id=' + orderId + '&status=success'
   const { error } = await stripe.confirmAlipayPayment(clientSecret, { return_url: returnUrl })
+  if (disposed) return
   if (error) {
     redirecting.value = false
     stripeError.value = error.message || t('payment.result.failed')
@@ -221,6 +224,7 @@ async function confirmWechatPay(stripe: Stripe, clientSecret: string) {
     payment_method_options: { wechat_pay: { client: isMobileDevice() ? 'mobile_web' : 'web' } },
   })
 
+  if (disposed) return
   if (error) {
     stripeError.value = error.message || t('payment.result.failed')
     return
@@ -241,6 +245,7 @@ async function confirmWechatPay(stripe: Stripe, clientSecret: string) {
 }
 
 function mountPaymentElement(stripe: Stripe, clientSecret: string) {
+  if (disposed) return
   const isDark = document.documentElement.classList.contains('dark')
   const elements = stripe.elements({
     clientSecret,
@@ -252,7 +257,10 @@ function mountPaymentElement(stripe: Stripe, clientSecret: string) {
     paymentMethodOrder: ['alipay', 'wechat_pay', 'card', 'link'],
   } as Record<string, unknown>)
   paymentElement.mount('#stripe-payment-element')
-  paymentElement.on('ready', () => { stripeReady.value = true })
+  paymentElement.on('ready', () => {
+    if (disposed) return
+    stripeReady.value = true
+  })
 }
 
 async function handleGenericPay() {
@@ -267,6 +275,7 @@ async function handleGenericPay() {
       },
       redirect: 'if_required',
     })
+    if (disposed) return
     if (error) {
       stripeError.value = error.message || t('payment.result.failed')
     } else {
@@ -274,9 +283,10 @@ async function handleGenericPay() {
       scheduleClose()
     }
   } catch (err: unknown) {
+    if (disposed) return
     stripeError.value = extractI18nErrorMessage(err, t, 'payment.errors', t('payment.result.failed'))
   } finally {
-    stripeSubmitting.value = false
+    if (!disposed) stripeSubmitting.value = false
   }
 }
 
@@ -284,9 +294,10 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 
 function startPolling() {
   const orderId = Number(route.query.order_id)
-  if (!orderId) return
+  if (!orderId || disposed) return
   pollTimer = setInterval(async () => {
     const o = await paymentStore.pollOrderStatus(orderId)
+    if (disposed) return
     if (!o) return
     if (o.status === 'COMPLETED' || o.status === 'PAID') {
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
@@ -298,16 +309,22 @@ function startPolling() {
 }
 
 function scheduleClose() {
+  if (disposed) return
   if (window.opener) {
-    redirectTimer = setTimeout(() => { window.close() }, 2000)
+    redirectTimer = setTimeout(() => {
+      if (disposed) return
+      window.close()
+    }, 2000)
   } else {
     redirectTimer = setTimeout(() => {
+      if (disposed) return
       router.push({ path: '/payment/result', query: { order_id: String(route.query.order_id || ''), status: 'success' } })
     }, 2000)
   }
 }
 
 onUnmounted(() => {
+  disposed = true
   if (redirectTimer) clearTimeout(redirectTimer)
   if (pollTimer) clearInterval(pollTimer)
 })
