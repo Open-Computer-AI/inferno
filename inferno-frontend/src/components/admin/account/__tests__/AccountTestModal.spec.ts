@@ -148,6 +148,20 @@ describe('AccountTestModal', () => {
     expect(preview.attributes('src')).toBe('data:image/png;base64,QUJD')
   })
 
+  it('Antigravity OAuth image models show the image-test prompt', async () => {
+    const wrapper = mountModal({
+      id: 43,
+      name: 'Antigravity OAuth',
+      platform: 'antigravity',
+      type: 'oauth',
+      status: 'active'
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    expect(wrapper.find('textarea.textarea-stub').exists()).toBe(true)
+  })
+
   it('grok 账号测试默认选择 Grok 模型', async () => {
     getAvailableModels.mockResolvedValue([
       { id: 'grok-4.3', display_name: 'Grok 4.3' },

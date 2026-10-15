@@ -142,6 +142,23 @@ describe('useModelWhitelist', () => {
     expect(models).toContain('gemini-3.1-pro')
   })
 
+  it('Gemini 4 Argon uses native model IDs and Antigravity tier mappings', () => {
+    expect(getModelsByPlatform('gemini')).toContain('gemini-4-argon')
+    const antigravityModels = getModelsByPlatform('antigravity')
+    expect(antigravityModels).not.toContain('gemini-4-argon')
+    expect(antigravityModels).toEqual(expect.arrayContaining([
+      'gemini-4-argon-high',
+      'gemini-4-argon-medium',
+      'gemini-4-argon-low'
+    ]))
+    expect(getPresetMappingsByPlatform('antigravity')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ from: 'gemini-4-argon', to: 'gemini-4-argon-high' }),
+      expect.objectContaining({ from: 'gemini-4-argon-high', to: 'gemini-4-argon-high' }),
+      expect.objectContaining({ from: 'gemini-4-argon-medium', to: 'gemini-4-argon-medium' }),
+      expect.objectContaining({ from: 'gemini-4-argon-low', to: 'gemini-4-argon-low' })
+    ]))
+  })
+
   it('whitelist 模式会忽略通配符条目', () => {
     const mapping = buildModelMappingObject('whitelist', ['claude-*', 'gemini-3.1-flash-image'], [])
     expect(mapping).toEqual({

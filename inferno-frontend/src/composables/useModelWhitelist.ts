@@ -55,7 +55,8 @@ const geminiModels = [
   'gemini-2.5-pro',
   'gemini-3.5-flash',
   'gemini-3-flash-preview',
-  'gemini-3-pro-preview'
+  'gemini-3-pro-preview',
+  'gemini-4-argon'
 ]
 
 // Antigravity 官方支持的模型（精确匹配）
@@ -88,6 +89,10 @@ const antigravityModels = [
   'gemini-3.1-pro-high',
   'gemini-3.1-pro-low',
   'gemini-3-pro-image',
+  // Gemini 4 Argon tiered models
+  'gemini-4-argon-high',
+  'gemini-4-argon-medium',
+  'gemini-4-argon-low',
   // 其他
   'gpt-oss-120b-medium',
   'tab_flash_lite_preview'
@@ -342,6 +347,11 @@ const grokPresetMappings = [
 
 // Antigravity 预设映射（支持通配符）
 const antigravityPresetMappings = [
+  // Gemini 4 Argon tiers
+  { label: '4 Argon→High', from: 'gemini-4-argon', to: 'gemini-4-argon-high', color: 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400' },
+  { label: '4 Argon High', from: 'gemini-4-argon-high', to: 'gemini-4-argon-high', color: 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-400' },
+  { label: '4 Argon Medium', from: 'gemini-4-argon-medium', to: 'gemini-4-argon-medium', color: 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400' },
+  { label: '4 Argon Low', from: 'gemini-4-argon-low', to: 'gemini-4-argon-low', color: 'bg-lime-100 text-lime-700 hover:bg-lime-200 dark:bg-lime-900/30 dark:text-lime-400' },
   // Claude 通配符映射
   { label: 'Claude→Sonnet', from: 'claude-*', to: 'claude-sonnet-4-5', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
   { label: 'Fable 5.1', from: 'claude-fable-5-1', to: 'claude-fable-5-1', color: 'bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[color-mix(in_oklch,var(--brand)_14%,var(--card))]' },
