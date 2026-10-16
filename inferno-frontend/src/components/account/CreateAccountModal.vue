@@ -1393,6 +1393,7 @@
             v-model="apiKeyBaseUrl"
             type="text"
             class="input"
+            data-testid="create-account-base-url"
             :placeholder="apiKeyBaseUrlPlaceholder"
           />
           <p v-if="baseUrlHint" class="input-hint">{{ baseUrlHint }}</p>
@@ -1445,6 +1446,48 @@
             :placeholder="apiKeyValuePlaceholder"
           />
           <p v-if="apiKeyHint" class="input-hint">{{ apiKeyHint }}</p>
+        </div>
+
+        <div
+          v-if="form.platform === 'gemini' && !isGeminiOfficialApiKey"
+          class="border-t border-gray-200 pt-4 dark:border-dark-600"
+          data-testid="explicit-cache-upstream-section"
+        >
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <label class="input-label mb-0">{{ t('admin.accounts.explicitCacheUpstream') }}</label>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.accounts.explicitCacheUpstreamHint') }}
+              </p>
+            </div>
+            <Toggle
+              v-model="explicitCacheUpstreamEnabled"
+              data-testid="explicit-cache-upstream-toggle"
+              :aria-label="t('admin.accounts.explicitCacheUpstream')"
+            />
+          </div>
+          <div v-if="explicitCacheUpstreamEnabled" class="mt-3 rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
+            <p class="text-xs text-blue-700 dark:text-blue-400">
+              <Icon name="exclamationCircle" size="sm" class="mr-1 inline" :stroke-width="2" />
+              {{ t('admin.accounts.explicitCacheUpstreamInfo') }}
+            </p>
+          </div>
+          <div v-if="explicitCacheUpstreamEnabled" class="mt-3">
+            <label class="input-label">{{ t('admin.accounts.explicitCacheUpstreamMaxTTL') }}</label>
+            <input
+              v-model="explicitCacheUpstreamMaxTTL"
+              data-testid="explicit-cache-upstream-max-ttl"
+              type="number"
+              min="1"
+              :max="MAX_EXPLICIT_CACHE_UPSTREAM_TTL_SECONDS"
+              step="1"
+              class="input"
+              :placeholder="String(MAX_EXPLICIT_CACHE_UPSTREAM_TTL_SECONDS)"
+            />
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.explicitCacheUpstreamMaxTTLHint') }}
+            </p>
+          </div>
         </div>
 
         <!-- 上游倍率自动探测：全部 API-key 平台可用（所在区块已限定 apikey 类型） -->
@@ -3982,6 +4025,11 @@ import { getAccountExpiryTimestamp } from '@/components/account/accountExpiry'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
 import { isOfficialGeminiBaseUrl } from '@/utils/geminiBaseUrl'
 import {
+  applyExplicitCacheUpstreamCredentials,
+  MAX_EXPLICIT_CACHE_UPSTREAM_TTL_SECONDS,
+  normalizeExplicitCacheUpstreamMaxTTL
+} from '@/utils/geminiExplicitCache'
+import {
   OPENAI_WS_MODE_CTX_POOL,
   OPENAI_WS_MODE_OFF,
   OPENAI_WS_MODE_PASSTHROUGH,
@@ -4170,6 +4218,8 @@ const accountCategory = ref<'oauth-based' | 'apikey' | 'bedrock' | 'service_acco
 const addMethod = ref<AddMethod>('oauth') // For oauth-based: 'oauth' or 'setup-token'
 const apiKeyBaseUrl = ref('https://api.anthropic.com')
 const isGeminiOfficialApiKey = computed(() => isOfficialGeminiBaseUrl(apiKeyBaseUrl.value))
+const explicitCacheUpstreamEnabled = ref(false)
+const explicitCacheUpstreamMaxTTL = ref<string | number>('')
 const apiKeyValue = ref('')
 const upstreamBillingAutoProbeEnabled = ref(true)
 
@@ -5349,6 +5399,8 @@ const resetForm = () => {
   adaptiveBaseUrls.value = { chat_completions: '', anthropic: '', responses: '' }
   apiKeyBaseUrl.value = 'https://api.anthropic.com'
   apiKeyValue.value = ''
+  explicitCacheUpstreamEnabled.value = false
+  explicitCacheUpstreamMaxTTL.value = ''
   upstreamBillingAutoProbeEnabled.value = true
   editQuotaLimit.value = null
   editQuotaDailyLimit.value = null
@@ -5835,6 +5887,21 @@ const handleSubmit = async () => {
   }
   if (form.platform === 'gemini') {
     if (isGeminiOfficialApiKey.value) credentials.tier_id = geminiTierAIStudio.value
+    if (!isGeminiOfficialApiKey.value && explicitCacheUpstreamEnabled.value) {
+      try {
+        normalizeExplicitCacheUpstreamMaxTTL(explicitCacheUpstreamMaxTTL.value)
+      } catch {
+        appStore.showError(t('admin.accounts.explicitCacheUpstreamInvalidTTL', {
+          max: MAX_EXPLICIT_CACHE_UPSTREAM_TTL_SECONDS
+        }))
+        return
+      }
+    }
+    applyExplicitCacheUpstreamCredentials(
+      credentials,
+      !isGeminiOfficialApiKey.value && explicitCacheUpstreamEnabled.value,
+      explicitCacheUpstreamMaxTTL.value
+    )
   }
 
   // 国产供应商：账号模式 + 协议 + 对应端点写入凭据；后端按 account_mode 路由

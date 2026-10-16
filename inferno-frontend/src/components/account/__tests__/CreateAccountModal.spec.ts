@@ -7,6 +7,7 @@ const {
   probeUpstreamBillingMock,
   syncUpstreamModelsMock,
   showWarningMock,
+  showErrorMock,
   importCodexSessionMock,
   createOpenAICodexPATMock,
   authIsSimpleMode,
@@ -15,6 +16,7 @@ const {
   probeUpstreamBillingMock: vi.fn(),
   syncUpstreamModelsMock: vi.fn(),
   showWarningMock: vi.fn(),
+  showErrorMock: vi.fn(),
   importCodexSessionMock: vi.fn(),
   createOpenAICodexPATMock: vi.fn(),
   authIsSimpleMode: { value: true },
@@ -22,7 +24,7 @@ const {
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
-    showError: vi.fn(),
+    showError: showErrorMock,
     showSuccess: vi.fn(),
     showWarning: showWarningMock,
   }),
@@ -814,4 +816,130 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(payload?.credentials?.project_id).toBeUndefined()
   })
 
+})
+
+describe('CreateAccountModal Gemini explicit-cache upstream', () => {
+  beforeEach(() => {
+    authIsSimpleMode.value = true
+    createAccountMock.mockReset().mockResolvedValue({ id: 45, platform: 'gemini', type: 'apikey' })
+    probeUpstreamBillingMock.mockReset().mockResolvedValue({})
+    syncUpstreamModelsMock.mockReset().mockResolvedValue({ models: [], metadata: {} })
+    showWarningMock.mockReset()
+    showErrorMock.mockReset()
+  })
+
+  async function openCustomGeminiKey() {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Gemini')
+    await selectButtonByText(wrapper, 'admin.accounts.gemini.accountType.apiKeyTitle')
+    await wrapper.findAll('form#create-account-form input[type="text"]')[0].setValue('Gemini proxy')
+    await wrapper.get('[data-testid="create-account-base-url"]').setValue('https://gateway.example.com')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('AQ.test-key')
+    return wrapper
+  }
+
+  it('saves the switch and normalized TTL for a custom Gemini API-key upstream', async () => {
+    const wrapper = await openCustomGeminiKey()
+    await wrapper.get('[data-testid="explicit-cache-upstream-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="explicit-cache-upstream-max-ttl"]').setValue('1200')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toEqual({
+      base_url: 'https://gateway.example.com',
+      api_key: 'AQ.test-key',
+      explicit_cache_upstream: true,
+      explicit_cache_upstream_max_ttl_seconds: 1200,
+      model_mapping: {
+        'gemini-3.1-flash-image': 'gemini-3.1-flash-image',
+        'gemini-2.5-flash-image': 'gemini-2.5-flash-image',
+        'gemini-2.0-flash': 'gemini-2.0-flash',
+        'gemini-2.5-flash': 'gemini-2.5-flash',
+        'gemini-2.5-pro': 'gemini-2.5-pro',
+        'gemini-3.5-flash': 'gemini-3.5-flash',
+        'gemini-3-flash-preview': 'gemini-3-flash-preview',
+        'gemini-3-pro-preview': 'gemini-3-pro-preview',
+        'gemini-4-argon': 'gemini-4-argon'
+      }
+    })
+  })
+
+  it('sends only the switch when the enabled TTL cap is blank', async () => {
+    const wrapper = await openCustomGeminiKey()
+    await wrapper.get('[data-testid="explicit-cache-upstream-toggle"]').trigger('click')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    const credentials = createAccountMock.mock.calls[0]?.[0]?.credentials
+    expect(credentials).toHaveProperty('explicit_cache_upstream', true)
+    expect(credentials).not.toHaveProperty('explicit_cache_upstream_max_ttl_seconds')
+  })
+
+  it('shows a validation error and does not submit an invalid nonblank TTL', async () => {
+    const wrapper = await openCustomGeminiKey()
+    await wrapper.get('[data-testid="explicit-cache-upstream-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="explicit-cache-upstream-max-ttl"]').setValue('0.9')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(showErrorMock).toHaveBeenCalledWith(
+      'admin.accounts.explicitCacheUpstreamInvalidTTL'
+    )
+    expect(createAccountMock).not.toHaveBeenCalled()
+  })
+
+  it('drops explicit-cache settings when the base URL becomes official', async () => {
+    const wrapper = await openCustomGeminiKey()
+    await wrapper.get('[data-testid="explicit-cache-upstream-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="create-account-base-url"]').setValue(
+      'https://generativelanguage.googleapis.com'
+    )
+    expect(wrapper.find('[data-testid="explicit-cache-upstream-section"]').exists()).toBe(false)
+
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toEqual({
+      base_url: 'https://generativelanguage.googleapis.com',
+      api_key: 'AQ.test-key',
+      tier_id: 'aistudio_free',
+      model_mapping: {
+        'gemini-3.1-flash-image': 'gemini-3.1-flash-image',
+        'gemini-2.5-flash-image': 'gemini-2.5-flash-image',
+        'gemini-2.0-flash': 'gemini-2.0-flash',
+        'gemini-2.5-flash': 'gemini-2.5-flash',
+        'gemini-2.5-pro': 'gemini-2.5-pro',
+        'gemini-3.5-flash': 'gemini-3.5-flash',
+        'gemini-3-flash-preview': 'gemini-3-flash-preview',
+        'gemini-3-pro-preview': 'gemini-3-pro-preview',
+        'gemini-4-argon': 'gemini-4-argon'
+      }
+    })
+  })
+
+  it('does not render the control for other platforms or Gemini OAuth accounts', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    expect(wrapper.find('[data-testid="explicit-cache-upstream-section"]').exists()).toBe(false)
+
+    await selectButtonByText(wrapper, 'Gemini')
+    await selectButtonByText(wrapper, 'admin.accounts.gemini.accountType.oauthTitle')
+    expect(wrapper.find('[data-testid="explicit-cache-upstream-section"]').exists()).toBe(false)
+  })
+
+  it('resets the switch and TTL when the create modal is reopened', async () => {
+    const wrapper = await openCustomGeminiKey()
+    await wrapper.get('[data-testid="explicit-cache-upstream-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="explicit-cache-upstream-max-ttl"]').setValue('1200')
+
+    await wrapper.setProps({ show: false })
+    await wrapper.setProps({ show: true })
+    await selectButtonByText(wrapper, 'Gemini')
+    await selectButtonByText(wrapper, 'admin.accounts.gemini.accountType.apiKeyTitle')
+    await wrapper.get('[data-testid="create-account-base-url"]').setValue('https://gateway.example.com')
+
+    expect(wrapper.get('[data-testid="explicit-cache-upstream-toggle"]').attributes('aria-checked')).toBe('false')
+    expect(wrapper.find('[data-testid="explicit-cache-upstream-max-ttl"]').exists()).toBe(false)
+  })
 })

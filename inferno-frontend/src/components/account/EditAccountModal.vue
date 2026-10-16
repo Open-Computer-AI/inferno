@@ -34,6 +34,7 @@
             v-model="editBaseUrl"
             type="text"
             class="input"
+            data-testid="edit-account-base-url"
             :placeholder="
               account.platform === 'openai'
                 ? 'https://api.openai.com'
@@ -75,6 +76,47 @@
           <p v-if="!cnSupportsNativeResponses(account.platform)" class="input-hint">
             {{ t('admin.accounts.cnProviders.apiProtocol.responsesFallbackDesc') }}
           </p>
+        </div>
+        <div
+          v-if="account.platform === 'gemini' && account.type === 'apikey' && !isOfficialGeminiBaseUrl(editBaseUrl)"
+          class="border-t border-gray-200 pt-4 dark:border-dark-600"
+          data-testid="explicit-cache-upstream-section"
+        >
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <label class="input-label mb-0">{{ t('admin.accounts.explicitCacheUpstream') }}</label>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.accounts.explicitCacheUpstreamHint') }}
+              </p>
+            </div>
+            <Toggle
+              v-model="explicitCacheUpstreamEnabled"
+              data-testid="explicit-cache-upstream-toggle"
+              :aria-label="t('admin.accounts.explicitCacheUpstream')"
+            />
+          </div>
+          <div v-if="explicitCacheUpstreamEnabled" class="mt-3 rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
+            <p class="text-xs text-blue-700 dark:text-blue-400">
+              <Icon name="exclamationCircle" size="sm" class="mr-1 inline" :stroke-width="2" />
+              {{ t('admin.accounts.explicitCacheUpstreamInfo') }}
+            </p>
+          </div>
+          <div v-if="explicitCacheUpstreamEnabled" class="mt-3">
+            <label class="input-label">{{ t('admin.accounts.explicitCacheUpstreamMaxTTL') }}</label>
+            <input
+              v-model="explicitCacheUpstreamMaxTTL"
+              data-testid="explicit-cache-upstream-max-ttl"
+              type="number"
+              min="1"
+              :max="MAX_EXPLICIT_CACHE_UPSTREAM_TTL_SECONDS"
+              step="1"
+              class="input"
+              :placeholder="String(MAX_EXPLICIT_CACHE_UPSTREAM_TTL_SECONDS)"
+            />
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.explicitCacheUpstreamMaxTTLHint') }}
+            </p>
+          </div>
         </div>
         <!-- OpenCode Zen vs Go account mode -->
         <div v-if="isCNApiKeyAccount && account.platform === 'opencode_go'">
@@ -3083,6 +3125,12 @@ import Checkbox from '@/components/common/Checkbox.vue'
 import Select from '@/components/common/Select.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Toggle from '@/components/common/Toggle.vue'
+import { isOfficialGeminiBaseUrl } from '@/utils/geminiBaseUrl'
+import {
+  applyExplicitCacheUpstreamCredentials,
+  MAX_EXPLICIT_CACHE_UPSTREAM_TTL_SECONDS,
+  normalizeExplicitCacheUpstreamMaxTTL
+} from '@/utils/geminiExplicitCache'
 import Icon from '@/components/icons/Icon.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
@@ -3311,6 +3359,8 @@ interface TempUnschedRuleForm {
 const submitting = ref(false)
 const editBaseUrl = ref('https://api.anthropic.com')
 const editApiKey = ref('')
+const explicitCacheUpstreamEnabled = ref(false)
+const explicitCacheUpstreamMaxTTL = ref<string | number>('')
 
 // ── 国产供应商（Kimi / Zhipu / DeepSeek）account_mode / api_protocol 编辑 ──
 // account_mode 决定额度/余额监控路径，api_protocol 决定转发端点与格式；
@@ -4086,6 +4136,20 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 
   // Load intercept warmup requests setting (applies to all account types)
   const credentials = newAccount.credentials as Record<string, unknown> | undefined
+  explicitCacheUpstreamEnabled.value =
+    newAccount.platform === 'gemini' && newAccount.type === 'apikey' && credentials?.explicit_cache_upstream === true
+  if (explicitCacheUpstreamEnabled.value) {
+    try {
+      explicitCacheUpstreamMaxTTL.value =
+        normalizeExplicitCacheUpstreamMaxTTL(credentials?.explicit_cache_upstream_max_ttl_seconds) ?? ''
+    } catch {
+      // Preserve invalid legacy values so the control displays them and submit can explain the error.
+      const savedTTL = credentials?.explicit_cache_upstream_max_ttl_seconds
+      explicitCacheUpstreamMaxTTL.value = typeof savedTTL === 'string' || typeof savedTTL === 'number' ? savedTTL : ''
+    }
+  } else {
+    explicitCacheUpstreamMaxTTL.value = ''
+  }
   interceptWarmupRequests.value = credentials?.intercept_warmup_requests === true
   autoPauseOnExpired.value = newAccount.auto_pause_on_expired === true
   editVertexProjectId.value = ''
@@ -5207,6 +5271,26 @@ const handleSubmit = async () => {
         delete newCredentials.pool_mode
         delete newCredentials.pool_mode_retry_count
         delete newCredentials.pool_mode_retry_status_codes
+      }
+
+      if (props.account.platform === 'gemini') {
+        const enableExplicitCacheUpstream =
+          !isOfficialGeminiBaseUrl(editBaseUrl.value) && explicitCacheUpstreamEnabled.value
+        if (enableExplicitCacheUpstream) {
+          try {
+            normalizeExplicitCacheUpstreamMaxTTL(explicitCacheUpstreamMaxTTL.value)
+          } catch {
+            appStore.showError(t('admin.accounts.explicitCacheUpstreamInvalidTTL', {
+              max: MAX_EXPLICIT_CACHE_UPSTREAM_TTL_SECONDS
+            }))
+            return
+          }
+        }
+        applyExplicitCacheUpstreamCredentials(
+          newCredentials,
+          enableExplicitCacheUpstream,
+          explicitCacheUpstreamMaxTTL.value
+        )
       }
 
       // Add custom error codes if enabled

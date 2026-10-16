@@ -1850,3 +1850,161 @@ describe('EditAccountModal', () => {
   })
 
 })
+
+describe('EditAccountModal Gemini explicit-cache upstream', () => {
+  const buildGeminiAccount = (overrides: Record<string, unknown> = {}) => ({
+    ...buildAccount(),
+    platform: 'gemini',
+    credentials: {
+      api_key: 'AQ.test-key',
+      base_url: 'https://gateway.example.com',
+      unrelated: 'keep-me',
+      ...overrides
+    }
+  } as any)
+
+  beforeEach(() => {
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    showErrorMock.mockReset()
+    showSuccessMock.mockReset()
+  })
+
+  it('loads and saves explicit-cache settings and the TTL cap', async () => {
+    const account = buildGeminiAccount({
+      explicit_cache_upstream: true,
+      explicit_cache_upstream_max_ttl_seconds: 1800
+    })
+    updateAccountMock.mockResolvedValue(account)
+    const wrapper = mountModal(account)
+
+    expect(wrapper.find('[data-testid="explicit-cache-upstream-section"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="explicit-cache-upstream-toggle"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.get<HTMLInputElement>('[data-testid="explicit-cache-upstream-max-ttl"]').element.value).toBe('1800')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toEqual({
+      api_key: 'AQ.test-key',
+      base_url: 'https://gateway.example.com',
+      unrelated: 'keep-me',
+      explicit_cache_upstream: true,
+      explicit_cache_upstream_max_ttl_seconds: 1800
+    })
+  })
+
+  it('removes both saved settings on save and reload while preserving other credentials', async () => {
+    const account = buildGeminiAccount({
+      explicit_cache_upstream: true,
+      explicit_cache_upstream_max_ttl_seconds: 1800
+    })
+    updateAccountMock.mockImplementation(async (_id, payload) => ({
+      ...account,
+      credentials: payload.credentials
+    }))
+    const wrapper = mountModal(account)
+
+    await wrapper.get('[data-testid="explicit-cache-upstream-toggle"]').trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    const savedCredentials = updateAccountMock.mock.calls[0]?.[1]?.credentials
+    expect(savedCredentials).toEqual({
+      api_key: 'AQ.test-key',
+      base_url: 'https://gateway.example.com',
+      unrelated: 'keep-me'
+    })
+    const savedAccount = { ...account, credentials: savedCredentials }
+    const reloaded = mountModal(savedAccount)
+    expect(reloaded.find('[data-testid="explicit-cache-upstream-section"]').exists()).toBe(true)
+    expect(reloaded.get('[data-testid="explicit-cache-upstream-toggle"]').attributes('aria-checked')).toBe('false')
+    expect(reloaded.find('[data-testid="explicit-cache-upstream-max-ttl"]').exists()).toBe(false)
+    expect(savedAccount.credentials).toEqual({
+      api_key: 'AQ.test-key',
+      base_url: 'https://gateway.example.com',
+      unrelated: 'keep-me'
+    })
+  })
+
+  it('removes stale settings from an account already using the official host', async () => {
+    const account = buildGeminiAccount({
+      base_url: 'https://generativelanguage.googleapis.com',
+      explicit_cache_upstream: true,
+      explicit_cache_upstream_max_ttl_seconds: 1800
+    })
+    updateAccountMock.mockResolvedValue(account)
+    const wrapper = mountModal(account)
+
+    expect(wrapper.find('[data-testid="explicit-cache-upstream-section"]').exists()).toBe(false)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toEqual({
+      api_key: 'AQ.test-key',
+      base_url: 'https://generativelanguage.googleapis.com',
+      unrelated: 'keep-me'
+    })
+  })
+
+  it('keeps the form synced when a saved explicit-cache TTL is invalid', async () => {
+    const account = buildGeminiAccount({
+      explicit_cache_upstream: true,
+      explicit_cache_upstream_max_ttl_seconds: 0
+    })
+    const wrapper = mountModal(account)
+
+    expect(wrapper.get<HTMLInputElement>('[data-tour="edit-account-form-name"]').element.value).toBe('OpenAI Key')
+    expect(wrapper.get('[data-testid="explicit-cache-upstream-toggle"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.get<HTMLInputElement>('[data-testid="explicit-cache-upstream-max-ttl"]').element.value).toBe('0')
+  })
+
+  it('allows a blank TTL to clear only the cap while keeping the switch enabled', async () => {
+    const account = buildGeminiAccount({
+      explicit_cache_upstream: true,
+      explicit_cache_upstream_max_ttl_seconds: 1800
+    })
+    updateAccountMock.mockResolvedValue(account)
+    const wrapper = mountModal(account)
+    await wrapper.get('[data-testid="explicit-cache-upstream-max-ttl"]').setValue('')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toEqual({
+      api_key: 'AQ.test-key',
+      base_url: 'https://gateway.example.com',
+      unrelated: 'keep-me',
+      explicit_cache_upstream: true
+    })
+  })
+
+  it('rejects invalid nonblank TTL input without updating', async () => {
+    const account = buildGeminiAccount({
+      explicit_cache_upstream: true,
+      explicit_cache_upstream_max_ttl_seconds: 1800
+    })
+    const wrapper = mountModal(account)
+    await wrapper.get('[data-testid="explicit-cache-upstream-max-ttl"]').setValue('0.9')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(showErrorMock).toHaveBeenCalledWith('admin.accounts.explicitCacheUpstreamInvalidTTL')
+    expect(updateAccountMock).not.toHaveBeenCalled()
+  })
+
+  it('reloads settings when switching between Gemini accounts', async () => {
+    const first = buildGeminiAccount({
+      explicit_cache_upstream: true,
+      explicit_cache_upstream_max_ttl_seconds: 1800
+    })
+    const wrapper = mountModal(first)
+    expect(wrapper.get('[data-testid="explicit-cache-upstream-toggle"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.get<HTMLInputElement>('[data-testid="explicit-cache-upstream-max-ttl"]').element.value).toBe('1800')
+
+    const second = buildGeminiAccount({ base_url: 'https://second-gateway.example.com' })
+    await wrapper.setProps({ account: second })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="explicit-cache-upstream-toggle"]').attributes('aria-checked')).toBe('false')
+    expect(wrapper.find('[data-testid="explicit-cache-upstream-max-ttl"]').exists()).toBe(false)
+  })
+})
