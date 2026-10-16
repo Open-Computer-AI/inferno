@@ -1286,6 +1286,15 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 			return nil, transportErr
 		}
 
+		// 引用缓存不存在、上游网关持有缓存的账号不可用先于错误策略识别：错误策略会写临时不可调度，
+		// 重试与换号也无法恢复。
+		if passthrough, rebuilt := s.cachedContentPassthroughInLoop(ctx, account, resp); passthrough {
+			resp = rebuilt
+			break
+		} else {
+			resp = rebuilt
+		}
+
 		// 错误策略优先：匹配则跳过重试直接处理。
 		checked, rebuilt := s.checkErrorPolicyInLoop(ctx, account, resp, mappedModel)
 		resp = rebuilt
@@ -1379,6 +1388,14 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 
 	if resp.StatusCode >= 400 {
 		respBody := s.readUpstreamErrorBody(resp)
+		// 引用缓存不存在是请求问题：统一返回 403，不改账号状态、不换号。
+		if isGeminiCachedContentNotFound(resp.StatusCode, respBody) {
+			return nil, s.writeGeminiCachedContentNotFound(c, account, resp, respBody, requestID, isOAuth)
+		}
+		// 上游网关的限流 / 不可用只针对其持有缓存的账号：不改本账号状态，交由绑定请求的耗尽处理透传。
+		if isGeminiBoundCacheUpstreamPassthrough(ctx, account, resp.StatusCode) {
+			return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: respBody}
+		}
 		// Best-effort fallback for OAuth tokens missing AI Studio scopes when calling countTokens.
 		// This avoids Gemini SDKs failing hard during preflight token counting.
 		// Checked before error policy so it always works regardless of custom error codes.
@@ -1601,6 +1618,27 @@ func (s *GeminiMessagesCompatService) finalErrorPolicy(
 	return s.rateLimitService.CheckErrorPolicy(ctx, account, statusCode, body, mappedModel)
 }
 
+// cachedContentPassthroughInLoop 判断上游响应是否跳过同号重试与错误策略直接处理：引用缓存不存在，
+// 或绑定缓存的请求在上游网关账号上收到的 429 / 5xx。读取过的响应体以内存副本重建。
+func (s *GeminiMessagesCompatService) cachedContentPassthroughInLoop(ctx context.Context, account *Account, resp *http.Response) (passthrough bool, rebuilt *http.Response) {
+	if isGeminiBoundCacheUpstreamPassthrough(ctx, account, resp.StatusCode) {
+		return true, resp
+	}
+	switch resp.StatusCode {
+	case http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound:
+	default:
+		return false, resp
+	}
+	body := s.readUpstreamErrorBody(resp)
+	_ = resp.Body.Close()
+	rebuilt = &http.Response{
+		StatusCode: resp.StatusCode,
+		Header:     resp.Header.Clone(),
+		Body:       io.NopCloser(bytes.NewReader(body)),
+	}
+	return isGeminiCachedContentNotFound(resp.StatusCode, body), rebuilt
+}
+
 func (s *GeminiMessagesCompatService) shouldRetryGeminiUpstreamError(account *Account, statusCode int) bool {
 	switch statusCode {
 	case 429, 500, 502, 503, 504, 529:
@@ -1706,25 +1744,7 @@ func (s *GeminiMessagesCompatService) writeGeminiCustomCodeSkippedError(c *gin.C
 // 并记录 ops 错误事件。状态码保真：下游据此区分请求级错误与可重试的链路故障。
 func (s *GeminiMessagesCompatService) writeGeminiNativeUpstreamError(c *gin.Context, account *Account, resp *http.Response, respBody []byte, requestID string, isOAuth bool) error {
 	respBody = unwrapIfNeeded(isOAuth, respBody)
-	upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
-	upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
-	upstreamDetail := s.upstreamErrorDetail(respBody)
-	if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
-		logger.LegacyPrintf("service.gemini_messages_compat", "[Gemini] native upstream error %d: %s", resp.StatusCode, truncateForLog(respBody, s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes))
-	}
-	setOpsUpstreamError(c, resp.StatusCode, upstreamMsg, upstreamDetail)
-	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-		ProxyID:            opsUpstreamProxyID(account),
-		ProxyName:          opsUpstreamProxyName(account),
-		Platform:           account.Platform,
-		AccountID:          account.ID,
-		AccountName:        account.Name,
-		UpstreamStatusCode: resp.StatusCode,
-		UpstreamRequestID:  requestID,
-		Kind:               "http_error",
-		Message:            upstreamMsg,
-		Detail:             upstreamDetail,
-	})
+	upstreamMsg := s.recordGeminiNativeUpstreamError(c, account, resp.StatusCode, respBody, requestID)
 
 	contentType := resp.Header.Get("Content-Type")
 	if contentType == "" {
@@ -1736,6 +1756,41 @@ func (s *GeminiMessagesCompatService) writeGeminiNativeUpstreamError(c *gin.Cont
 		return fmt.Errorf("gemini upstream error: %d", resp.StatusCode)
 	}
 	return fmt.Errorf("gemini upstream error: %d message=%s", resp.StatusCode, upstreamMsg)
+}
+
+// writeGeminiCachedContentNotFound 记录上游原始错误，并向客户端统一返回缓存不存在的 403：
+// 各上游的响应形态不同，且 Vertex 的文案含上游缓存资源 ID。失败由请求引用的缓存决定，ops 按客户端请求错误统计。
+func (s *GeminiMessagesCompatService) writeGeminiCachedContentNotFound(c *gin.Context, account *Account, resp *http.Response, respBody []byte, requestID string, isOAuth bool) error {
+	respBody = unwrapIfNeeded(isOAuth, respBody)
+	upstreamMsg := s.recordGeminiNativeUpstreamError(c, account, resp.StatusCode, respBody, requestID)
+	MarkOpsRequestScopedError(c, "permission_error")
+	MarkResponseCommitted(c)
+	c.Data(http.StatusForbidden, "application/json", []byte(GeminiCachedContentNotFoundResponse))
+	return fmt.Errorf("gemini upstream error: %d message=%s", resp.StatusCode, upstreamMsg)
+}
+
+// recordGeminiNativeUpstreamError 把上游错误响应登记到 ops 上下文，返回脱敏后的上游错误文案。
+func (s *GeminiMessagesCompatService) recordGeminiNativeUpstreamError(c *gin.Context, account *Account, statusCode int, respBody []byte, requestID string) string {
+	upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
+	upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+	upstreamDetail := s.upstreamErrorDetail(respBody)
+	if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
+		logger.LegacyPrintf("service.gemini_messages_compat", "[Gemini] native upstream error %d: %s", statusCode, truncateForLog(respBody, s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes))
+	}
+	setOpsUpstreamError(c, statusCode, upstreamMsg, upstreamDetail)
+	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+		ProxyID:            opsUpstreamProxyID(account),
+		ProxyName:          opsUpstreamProxyName(account),
+		Platform:           account.Platform,
+		AccountID:          account.ID,
+		AccountName:        account.Name,
+		UpstreamStatusCode: statusCode,
+		UpstreamRequestID:  requestID,
+		Kind:               "http_error",
+		Message:            upstreamMsg,
+		Detail:             upstreamDetail,
+	})
+	return upstreamMsg
 }
 
 func sleepGeminiBackoff(attempt int) {
@@ -2558,6 +2613,25 @@ func isGeminiInsufficientScope(headers http.Header, body []byte) bool {
 	}
 	lower := strings.ToLower(string(body))
 	return strings.Contains(lower, "insufficient authentication scopes") || strings.Contains(lower, "access_token_scope_insufficient")
+}
+
+// isGeminiCachedContentNotFound 识别请求引用的显式缓存不存在（含已过期、已删除、不属于当前项目）时上游的响应，
+// 这类响应由请求的 cachedContent 决定，与账号凭据状态无关：
+//   - AI Studio 及本系统网关：一律 403 "CachedContent not found (or permission denied)"；
+//   - Vertex 生成请求：400 "Invalid resource state for cache content {id}."；
+//   - Vertex 缓存资源 GET / PATCH / DELETE：404 "Cached content {id} is not found."。
+func isGeminiCachedContentNotFound(statusCode int, body []byte) bool {
+	lower := strings.ToLower(string(body))
+	switch statusCode {
+	case http.StatusForbidden:
+		return strings.Contains(lower, "cachedcontent not found")
+	case http.StatusBadRequest:
+		return strings.Contains(lower, "invalid resource state for cache content")
+	case http.StatusNotFound:
+		return strings.Contains(lower, "cached content") && strings.Contains(lower, "not found")
+	default:
+		return false
+	}
 }
 
 func estimateGeminiCountTokens(reqBody []byte) int {
