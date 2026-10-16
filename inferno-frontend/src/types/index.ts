@@ -557,6 +557,15 @@ export interface ReasoningEffortMapping {
   model?: string
 }
 
+/** Per-locale translated group name and description; empty fields fall back to defaults. */
+export interface GroupLocaleText {
+  name?: string
+  description?: string
+}
+
+/** Group text translations keyed by interface locale. */
+export type GroupI18n = Record<string, GroupLocaleText>
+
 export interface Group {
   id: number
   name: string
@@ -620,6 +629,7 @@ export interface Group {
 }
 
 export interface AdminGroup extends Group {
+  i18n?: GroupI18n
   force_openai_fast: boolean
   free_openai_fast: boolean
   model_pricing: import('@/api/admin/channels').ChannelModelPricing[]
@@ -792,6 +802,7 @@ export interface UpdateApiKeyRequest {
 export interface CreateGroupRequest {
   name: string
   description?: string | null
+  i18n?: GroupI18n
   platform?: GroupPlatform
   rate_multiplier?: number
   is_exclusive?: boolean
@@ -858,6 +869,7 @@ export interface CreateGroupRequest {
 export interface UpdateGroupRequest {
   name?: string
   description?: string | null
+  i18n?: GroupI18n
   platform?: GroupPlatform
   rate_multiplier?: number
   is_exclusive?: boolean
