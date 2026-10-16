@@ -812,6 +812,7 @@ func TestDefaultPricingIncludesGemini4ArgonRates(t *testing.T) {
 			require.InDelta(t, tc.output*1.8, pricing.OutputCostPerTokenPriority, 1e-15)
 			require.InDelta(t, tc.read*1.8, pricing.CacheReadInputTokenCostPriority, 1e-15)
 			require.Zero(t, pricing.LongContextInputTokenThreshold)
+			require.Zero(t, pricing.CacheStorageCostPerTokenPerHour)
 		})
 	}
 	require.Contains(t, pricingSvc.ListModelNamesByProvider("gemini"), "gemini-4-argon")
