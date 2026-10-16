@@ -201,6 +201,7 @@ export default {
         empty: 'No OpenAI token stats for the current filters',
         table: {
           model: 'Model',
+          account: 'Account',
           requestCount: 'Requests',
           avgTokensPerSec: 'Avg tokens/sec',
           avgFirstTokenMs: 'Avg first token latency (ms)',
@@ -452,6 +453,7 @@ export default {
           kind: 'Kind',
           platform: 'Platform',
           model: 'Model',
+          account: 'Account',
           duration: 'Duration',
           status: 'Status',
           requestId: 'Request ID',

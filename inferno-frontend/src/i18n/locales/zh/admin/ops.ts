@@ -196,6 +196,7 @@ export default {
         empty: '当前筛选条件下暂无 OpenAI Token 请求统计数据',
         table: {
           model: '模型',
+          account: '账号',
           requestCount: '请求数',
           avgTokensPerSec: '平均 Tokens/秒',
           avgFirstTokenMs: '平均首 Token 延迟(ms)',
@@ -452,6 +453,7 @@ export default {
           kind: '类型',
           platform: '平台',
           model: '模型',
+          account: '账号',
           duration: '耗时',
           status: '状态码',
           requestId: '请求ID',

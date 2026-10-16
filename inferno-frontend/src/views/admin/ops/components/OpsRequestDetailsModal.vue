@@ -34,6 +34,7 @@ import { useClipboard } from '@/composables/useClipboard'
 import { useAppStore } from '@/stores'
 import { opsAPI, type OpsRequestDetailsParams, type OpsRequestDetail } from '@/api/admin/ops'
 import { parseTimeRangeMinutes, formatDateTime } from '../utils/opsFormatters'
+import { getAccountNameMap } from '../utils/accountNameMap'
 
 export interface OpsRequestDetailsPreset {
   title: string
@@ -74,6 +75,8 @@ const items = ref<OpsRequestDetail[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(10)
+const accountNameById = ref<Map<number, string>>(new Map())
+const forcedRefreshAccountIds = new Set<number>()
 
 const close = () => emit('update:modelValue', false)
 
@@ -120,6 +123,7 @@ const fetchData = async () => {
     const res = await opsAPI.listRequestDetails(params)
     items.value = res.items || []
     total.value = res.total || 0
+    refreshAccountNames()
   } catch (e: any) {
     console.error('[OpsRequestDetailsModal] Failed to fetch request details', e)
     appStore.showError(e?.message || t('admin.ops.requestDetails.failedToLoad'))
@@ -180,6 +184,30 @@ async function handleCopyRequestId(requestId: string) {
 function openErrorDetail(errorId: number | null | undefined) {
   if (!errorId) return
   emit('openErrorDetail', errorId)
+}
+
+async function refreshAccountNames() {
+  const ids = items.value
+    .map(row => row.account_id)
+    .filter((id): id is number => typeof id === 'number' && id > 0)
+  if (ids.length === 0) return
+  try {
+    let map = await getAccountNameMap()
+    const missingIds = ids.filter(id => !map.has(id) && !forcedRefreshAccountIds.has(id))
+    if (missingIds.length > 0) {
+      for (const id of missingIds) forcedRefreshAccountIds.add(id)
+      map = await getAccountNameMap(true)
+    }
+    accountNameById.value = map
+  } catch (e) {
+    console.warn('[OpsRequestDetailsModal] Failed to load account names', e)
+  }
+}
+
+function accountLabel(row: OpsRequestDetail): string {
+  const id = row.account_id
+  if (typeof id !== 'number' || id <= 0) return '-'
+  return accountNameById.value.get(id) || `#${id}`
 }
 
 /* A real identifier beats the array index: paging replaces the whole array, and
@@ -249,6 +277,7 @@ function latencyValue(row: OpsRequestDetail) {
                   </div>
 
                   <p class="reqd__model">{{ row.model || '-' }}</p>
+                  <p v-if="typeof row.account_id === 'number' && row.account_id > 0" class="reqd__model reqd__account" :title="accountLabel(row)">{{ t('admin.ops.requestDetails.table.account') }}: {{ accountLabel(row) }}</p>
 
                   <div class="reqd__facts">
                     <span class="reqd__fact">{{ latencyLabel }}: {{ latencyValue(row) }}</span>
@@ -283,6 +312,7 @@ function latencyValue(row: OpsRequestDetail) {
                     <th scope="col">{{ t('admin.ops.requestDetails.table.kind') }}</th>
                     <th scope="col">{{ t('admin.ops.requestDetails.table.platform') }}</th>
                     <th scope="col">{{ t('admin.ops.requestDetails.table.model') }}</th>
+                    <th scope="col">{{ t('admin.ops.requestDetails.table.account') }}</th>
                     <th scope="col">{{ latencyLabel }}</th>
                     <th scope="col">{{ t('admin.ops.requestDetails.table.status') }}</th>
                     <th scope="col">{{ t('admin.ops.requestDetails.table.requestId') }}</th>
@@ -300,6 +330,7 @@ function latencyValue(row: OpsRequestDetail) {
                       <span class="reqd__platform">{{ row.platform || 'unknown' }}</span>
                     </td>
                     <td class="reqd__td--model" :title="row.model || ''">{{ row.model || '-' }}</td>
+                    <td class="reqd__td--model" :title="accountLabel(row)">{{ accountLabel(row) }}</td>
                     <td class="reqd__td--nowrap reqd__td--num">{{ latencyValue(row) }}</td>
                     <td class="reqd__td--nowrap">
                       <!-- A chip implies a recorded value. A null status gets plain
