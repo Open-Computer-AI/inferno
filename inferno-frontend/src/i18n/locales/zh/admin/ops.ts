@@ -115,6 +115,8 @@ export default {
       max: 'max',
       requests: '请求数',
       requestsTitle: '请求',
+      outputTps: '输出 TPS',
+      outputTpsSamples: '有效请求数：{count}',
       upstream: '上游',
       client: '客户端',
       system: '系统',
@@ -845,6 +847,7 @@ export default {
         sla: '服务等级协议达成率，排除业务限制（如余额不足、配额超限）的成功请求占比。',
         errors: '错误统计，包括总错误数、错误率和上游错误率。',
         latency: '请求时长统计，包括 p50、p90、p95、p99 等百分位数。',
+        outputTps: '单个请求的输出 Token 速率（tok/s），包含首 Token 等待时间。此指标不同于系统聚合 TPS；不计图像和非文本请求。',
         ttft: '首 Token 延迟（Time To First Token），衡量流式响应的首 Token 返回速度。',
         health: '系统健康评分（0-100），综合考虑 SLA、错误率和资源使用情况。'
       },

@@ -115,6 +115,8 @@ export default {
       max: 'max:',
       requests: 'Requests',
       requestsTitle: 'Requests',
+      outputTps: 'Output TPS',
+      outputTpsSamples: '{count} valid requests',
       upstream: 'Upstream',
       client: 'Client',
       system: 'System',
@@ -844,6 +846,7 @@ export default {
         errors: 'Error statistics, including total errors, error rate, and upstream error rate.',
         upstreamErrors: 'Upstream error statistics, excluding rate limit errors (429/529).',
         latency: 'Request duration statistics, including p50, p90, p95, p99 percentiles.',
+        outputTps: 'Per-request output-token rate (tok/s), including first-token wait. This differs from aggregate system TPS; image and non-text requests are excluded.',
         ttft: 'Time To First Token, measuring the speed of first token return in streaming responses.',
         health: 'System health score (0-100), considering SLA, error rate, and resource usage.'
       },
