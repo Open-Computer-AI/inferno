@@ -122,6 +122,10 @@ func TestCanonicalizeReturnURLRejectsNonPlainHostAndUserinfo(t *testing.T) {
 		{"host matched via referer", "https://" + badHost + "/payment/result", "app.example.com", "https://" + badHost + "/purchase"},
 		{"host matched via request host", "https://" + badHost + "/payment/result", badHost, ""},
 		{"userinfo", "https://a&b=c@app.example.com/payment/result", "app.example.com", ""},
+		{"port on foreign host", "https://evil.com:443/payment/result", "example.com", ""},
+		{"suffix host", "https://example.com.evil.com/payment/result", "example.com", ""},
+		{"userinfo host confusion", "https://example.com@evil.com/payment/result", "example.com", ""},
+		{"trailing dot host", "https://example.com./payment/result", "example.com", ""},
 	}
 	for _, tc := range cases {
 		if got, err := CanonicalizeReturnURL(tc.raw, tc.srcHost, tc.srcURL); err == nil {
