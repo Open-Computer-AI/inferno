@@ -37,6 +37,17 @@ describe('June Select keyboard focus', () => {
     expect(document.activeElement).toBe(wrapper.get('button').element)
   })
 
+  it('does not consume Enter while an IME composition is active', async () => {
+    await open(false)
+    await press('ArrowDown')
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, isComposing: true })
+    document.activeElement!.dispatchEvent(event)
+    await nextTick()
+    expect(event.defaultPrevented).toBe(false)
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(wrapper.get('button').attributes('aria-expanded')).toBe('true')
+  })
+
   it('allows Escape to close a non-searchable dropdown and restore trigger focus', async () => {
     await open(false)
     await press('Escape')
