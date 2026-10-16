@@ -93,6 +93,8 @@ export default {
       tokens: 'Token',
       cache: '缓存',
       recentUsage: '最近使用',
+      actualSpending: '实际消费 ($)',
+      spendingAcrossUsers: '{count} 位用户的每日实际消费',
       acrossUsers: '{count} 位用户的每日 Token 用量',
       otherUsers: '其他（{count}）',
       tokensUnit: 'Token',

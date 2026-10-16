@@ -99,6 +99,8 @@ export default {
       accountCost: 'Cost',
       noDataAvailable: 'No data available',
       recentUsage: 'Recent usage',
+      actualSpending: 'Actual spending ($)',
+      spendingAcrossUsers: 'Actual spending per day across {count} user | Actual spending per day across {count} users',
       acrossUsers: 'Tokens per day across {count} user | Tokens per day across {count} users',
       otherUsers: 'Other ({count})',
       tokensUnit: 'tokens',
