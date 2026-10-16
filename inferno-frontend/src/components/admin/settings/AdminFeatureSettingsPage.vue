@@ -299,6 +299,18 @@
               <Toggle v-model="form.cyber_session_block_enabled" />
             </div>
 
+            <div>
+              <label class="field-label">
+                {{ t('admin.settings.features.riskControl.riskControlUserAllowlist') }}
+              </label>
+              <OpenAIFastPolicyUserSelector
+                v-model="riskControlAllowlistedUserIds"
+              />
+              <p class="mt-1 text-xs text-[var(--muted-foreground)]">
+                {{ t('admin.settings.features.riskControl.riskControlUserAllowlistHint') }}
+              </p>
+            </div>
+
             <div v-if="form.cyber_session_block_enabled">
               <label class="field-label">
                 {{ t('admin.settings.features.riskControl.cyberSessionBlockTTL') }}
@@ -741,11 +753,12 @@ import AppButton from '@/components/common/Button.vue'
 import Checkbox from '@/components/common/Checkbox.vue'
 import Segmented from '@/components/common/Segmented.vue'
 import Toggle from '@/components/common/Toggle.vue'
+import OpenAIFastPolicyUserSelector from '@/views/admin/settings/OpenAIFastPolicyUserSelector.vue'
 import { useSettingsPageBindings } from './settingsPageBindings'
 
 export default defineComponent({
   name: 'AdminFeatureSettingsPage',
-  components: { AppButton, BaseDialog, Checkbox, Segmented, Toggle },
+  components: { AppButton, BaseDialog, Checkbox, OpenAIFastPolicyUserSelector, Segmented, Toggle },
   setup() {
     return useSettingsPageBindings()
   },

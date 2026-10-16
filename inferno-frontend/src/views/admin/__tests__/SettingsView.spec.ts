@@ -7,6 +7,7 @@ import enSettings from "@/i18n/locales/en/admin/settings";
 import zhCommon from "@/i18n/locales/zh/common";
 import zhSettings from "@/i18n/locales/zh/admin/settings";
 import SettingsView from "../SettingsView.vue";
+import OpenAIFastPolicyUserSelector from "../settings/OpenAIFastPolicyUserSelector.vue";
 
 const {
   getSettings,
@@ -642,6 +643,47 @@ async function openFeaturesTab(wrapper: ReturnType<typeof mountView>) {
   await featuresTabButton?.trigger("click");
   await flushPromises();
 }
+
+
+describe("admin SettingsView risk-control allowlist", () => {
+  it("loads selected IDs and saves selector changes through the settings API", async () => {
+    getSettings.mockReset();
+    updateSettings.mockReset();
+    getSettings.mockResolvedValue({
+      ...baseSettingsResponse,
+      cyber_policy_user_allowlist: "7, 12",
+    });
+    updateSettings.mockImplementation(async (payload) => ({
+      ...baseSettingsResponse,
+      ...payload,
+    }));
+
+    const wrapper = mountView();
+    await flushPromises();
+    await openFeaturesTab(wrapper);
+
+    const selector = wrapper.findComponent(OpenAIFastPolicyUserSelector);
+    expect(selector.exists()).toBe(true);
+    expect(selector.props("modelValue")).toEqual([7, 12]);
+    selector.vm.$emit("update:modelValue", [7, 12, 42]);
+    await flushPromises();
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ cyber_policy_user_allowlist: "7,12,42" }),
+    );
+
+    selector.vm.$emit("update:modelValue", []);
+    await flushPromises();
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+    expect(updateSettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({ cyber_policy_user_allowlist: "" }),
+    );
+    wrapper.unmount();
+  });
+});
 
 describe("admin SettingsView email domain quota copy", () => {
   it("documents the email domain quota and empty-whitelist behavior in both locales", () => {

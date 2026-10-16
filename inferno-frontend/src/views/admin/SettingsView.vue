@@ -933,6 +933,7 @@ const form = reactive<SettingsForm>({
   payment_enabled: false,
   subscription_enabled: true,
   risk_control_enabled: false,
+  cyber_policy_user_allowlist: "",
   cyber_session_block_enabled: false,
   cyber_session_block_ttl_seconds: 3600,
   payment_min_amount: 1,
@@ -2797,6 +2798,7 @@ async function saveSettings() {
       payment_enabled: form.payment_enabled,
       subscription_enabled: form.subscription_enabled,
       risk_control_enabled: form.risk_control_enabled,
+      cyber_policy_user_allowlist: form.cyber_policy_user_allowlist,
       cyber_session_block_enabled: form.cyber_session_block_enabled,
       cyber_session_block_ttl_seconds:
         Number(form.cyber_session_block_ttl_seconds) || 3600,
