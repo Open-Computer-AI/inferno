@@ -477,6 +477,8 @@ export function getModelsByPlatform(platform: string): string[] {
     case 'doubao': return doubaoModels
     case 'minimax': return minimaxModels
     case 'typesafe': return ['jev-latest']
+    // Cline's multi-vendor catalog is dynamic; empty means no model restriction.
+    case 'cline': return []
     case 'baidu': return baiduModels
     case 'spark': return sparkModels
     case 'hunyuan': return hunyuanModels

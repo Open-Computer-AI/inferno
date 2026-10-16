@@ -874,6 +874,16 @@ export default {
         testModeCompact: 'Compact 探测',
         modelRestrictionDisabledByPassthrough: '已开启自动透传：模型白名单/映射不会生效。',
       },
+      commandCode: {
+        baseUrlHint: 'Command Code Provider API 基础 URL。',
+        apiKeyPlaceholder: 'Command Code API Key',
+        apiKeyHint: '请输入 Command Code 账号的 API Key。',
+      },
+      cline: {
+        baseUrlHint: 'Cline API 基础 URL。',
+        apiKeyPlaceholder: 'Cline API Key',
+        apiKeyHint: '请输入 Cline 账号的 API Key。',
+      },
       grok: {
         baseUrlHint: 'Grok OAuth 账号会转发到官方 xAI API Base URL。',
         apiKeyHint: 'Grok 订阅支持使用 OAuth refresh token；API Key 账号不在本次范围内。',

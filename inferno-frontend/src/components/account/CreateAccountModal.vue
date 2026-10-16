@@ -4096,6 +4096,8 @@ const withUpstreamRequestIdHeader = <T extends Record<string, unknown> | undefin
 
 // Platform-specific hints for API Key type
 const baseUrlHint = computed(() => {
+  if (form.platform === 'command_code') return t('admin.accounts.commandCode.baseUrlHint')
+  if (form.platform === 'cline') return t('admin.accounts.cline.baseUrlHint')
   if (form.platform === 'openai') return t('admin.accounts.openai.baseUrlHint')
   if (form.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
   if (form.platform === 'grok') return ''
@@ -4103,6 +4105,8 @@ const baseUrlHint = computed(() => {
 })
 
 const apiKeyHint = computed(() => {
+  if (form.platform === 'command_code') return t('admin.accounts.commandCode.apiKeyHint')
+  if (form.platform === 'cline') return t('admin.accounts.cline.apiKeyHint')
   if (form.platform === 'openai') return t('admin.accounts.openai.apiKeyHint')
   if (form.platform === 'gemini') return t('admin.accounts.gemini.apiKeyHint')
   if (form.platform === 'grok') return ''
@@ -4149,6 +4153,10 @@ const apiKeyValuePlaceholder = computed(() => {
     case 'minimax':
     case 'opencode_go':
       return 'sk-...'
+    case 'command_code':
+      return t('admin.accounts.commandCode.apiKeyPlaceholder')
+    case 'cline':
+      return t('admin.accounts.cline.apiKeyPlaceholder')
     default:
       return 'sk-ant-...'
   }

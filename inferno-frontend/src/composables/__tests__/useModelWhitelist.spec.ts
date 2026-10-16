@@ -72,6 +72,13 @@ describe('useModelWhitelist', () => {
     ]))
   })
 
+  it('leaves Cline model whitelist empty for its dynamic multi-vendor catalog', () => {
+    const models = getModelsByPlatform('cline')
+
+    expect(models).toEqual([])
+    expect(buildModelMappingObject('whitelist', models, [])).toBeNull()
+  })
+
   it('exposes the OpenCode Go upstream model catalog separately', () => {
     const models = getModelsByPlatform('opencode_go')
 

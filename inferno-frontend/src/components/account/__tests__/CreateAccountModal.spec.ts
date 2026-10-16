@@ -201,6 +201,29 @@ async function openCodexImportStep(toggleClicks = 0, requestIdHeader?: string) {
   return wrapper
 }
 
+describe('CreateAccountModal provider platform fields', () => {
+  it.each([
+    ['Command Code', 'commandCode'],
+    ['Cline', 'cline'],
+  ])('shows %s-specific API URL and key copy', async (platform, key) => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, platform)
+    if (platform === 'Command Code') {
+      await selectButtonByText(wrapper, 'admin.accounts.cnProviders.apiProtocol.chatCompletions')
+    }
+
+    expect(wrapper.get('[data-testid="create-account-base-url"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain(`admin.accounts.${key}.baseUrlHint`)
+    expect(wrapper.get('form#create-account-form input[type="password"]').attributes('placeholder')).toBe(
+      `admin.accounts.${key}.apiKeyPlaceholder`
+    )
+    expect(wrapper.text()).toContain(`admin.accounts.${key}.apiKeyHint`)
+    if (platform === 'Cline') {
+      expect(wrapper.text()).toContain('admin.accounts.supportsAllModels')
+    }
+  })
+})
+
 describe('CreateAccountModal OpenAI long-context billing', () => {
   beforeEach(() => {
     authIsSimpleMode.value = true
