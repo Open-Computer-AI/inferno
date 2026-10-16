@@ -704,6 +704,80 @@ func TestConvertClaudeMessagesToGeminiGenerateContent_AddsThoughtSignatureForToo
 	}
 }
 
+func TestConvertClaudeMessagesToGeminiGenerateContent_ExtractsToolResultImages(t *testing.T) {
+	claudeReq := map[string]any{
+		"messages": []any{
+			map[string]any{
+				"role": "assistant",
+				"content": []any{map[string]any{
+					"type": "tool_use", "id": "toolu_123", "name": "inspect",
+					"input": map[string]any{"path": "image.png"},
+				}},
+			},
+			map[string]any{
+				"role": "user",
+				"content": []any{
+					map[string]any{
+						"type": "tool_result", "tool_use_id": "toolu_123",
+						"content": []any{
+							map[string]any{"type": "text", "text": "found it"},
+							map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": "image/png", "data": "aGVsbG8="}},
+						},
+					},
+					map[string]any{
+						"type": "tool_result", "tool_use_id": "toolu_123",
+						"content": []any{
+							map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": "image/jpeg", "data": "d29ybGQ="}},
+							map[string]any{"type": "image", "source": map[string]any{"type": "url", "url": "https://example.com/image.jpg"}},
+						},
+					},
+				},
+			},
+		},
+	}
+	body, err := json.Marshal(claudeReq)
+	require.NoError(t, err)
+
+	converted, err := convertClaudeMessagesToGeminiGenerateContent(body)
+	require.NoError(t, err)
+	var geminiReq map[string]any
+	require.NoError(t, json.Unmarshal(converted, &geminiReq))
+	contents, ok := geminiReq["contents"].([]any)
+	require.True(t, ok)
+	require.Len(t, contents, 2)
+	content, ok := contents[1].(map[string]any)
+	require.True(t, ok)
+	parts, ok := content["parts"].([]any)
+	require.True(t, ok)
+	require.Len(t, parts, 4)
+
+	firstPart, ok := parts[0].(map[string]any)
+	require.True(t, ok)
+	firstResponse, ok := firstPart["functionResponse"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "inspect", firstResponse["name"])
+	firstResponseBody, ok := firstResponse["response"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "found it", firstResponseBody["content"])
+
+	secondPart, ok := parts[1].(map[string]any)
+	require.True(t, ok)
+	secondResponse, ok := secondPart["functionResponse"].(map[string]any)
+	require.True(t, ok)
+	secondResponseBody, ok := secondResponse["response"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "[image attached below]", secondResponseBody["content"])
+
+	for i, want := range []struct{ mimeType, data string }{{"image/png", "aGVsbG8="}, {"image/jpeg", "d29ybGQ="}} {
+		imagePart, ok := parts[i+2].(map[string]any)
+		require.True(t, ok)
+		image, ok := imagePart["inlineData"].(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, want.mimeType, image["mimeType"])
+		require.Equal(t, want.data, image["data"])
+	}
+}
+
 func TestEnsureGeminiFunctionCallThoughtSignatures_InsertsWhenMissing(t *testing.T) {
 	geminiReq := map[string]any{
 		"contents": []any{
