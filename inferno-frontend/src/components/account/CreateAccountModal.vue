@@ -228,6 +228,22 @@
             <PlatformIcon platform="opencode_go" size="sm" />
             OpenCode
           </button>
+          <button
+            type="button"
+            @click="selectProviderPlatform('command_code')"
+            :aria-pressed="form.platform === 'command_code'"
+            :class="['flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all', form.platform === 'command_code' ? 'bg-white text-neutral-700 shadow-sm dark:bg-dark-600 dark:text-neutral-200' : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200']"
+          >
+            <PlatformIcon platform="command_code" size="sm" aria-hidden="true" /> Command Code
+          </button>
+          <button
+            type="button"
+            @click="selectProviderPlatform('cline')"
+            :aria-pressed="form.platform === 'cline'"
+            :class="['flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all', form.platform === 'cline' ? 'bg-white text-violet-600 shadow-sm dark:bg-dark-600 dark:text-violet-300' : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200']"
+          >
+            <PlatformIcon platform="cline" size="sm" aria-hidden="true" /> Cline
+          </button>
         </div>
       </div>
 
@@ -4095,6 +4111,9 @@ const apiKeyHint = computed(() => {
 
 // Base URL / API Key 占位符：国产供应商随账号类型变化。
 const apiKeyBaseUrlPlaceholder = computed(() => {
+  if (form.platform === 'command_code') {
+    return defaultCNBaseUrl('command_code', 'payg', apiProtocol.value) || 'https://api.commandcode.ai/provider/v1'
+  }
   if (isMultiProtocolPlatform.value) {
     const mode = form.platform === 'opencode_go' ? openCodeAccountMode.value : accountMode.value
     return defaultCNBaseUrl(form.platform, mode, apiProtocol.value) || 'https://api.example.com'
@@ -4106,6 +4125,8 @@ const apiKeyBaseUrlPlaceholder = computed(() => {
       return 'https://generativelanguage.googleapis.com'
     case 'grok':
       return 'https://api.x.ai/v1'
+    case 'cline':
+      return 'https://api.cline.bot/api/v1'
     default:
       return 'https://api.anthropic.com'
   }
@@ -4242,7 +4263,7 @@ const adaptiveBaseUrls = ref<Record<CnNativeApiProtocol, string>>({
 })
 const isCNPlatform = computed(() => isCNProviderPlatform(form.platform))
 const isOpenCodeGoPlatform = computed(() => form.platform === 'opencode_go')
-const isMultiProtocolPlatform = computed(() => isCNPlatform.value || isOpenCodeGoPlatform.value)
+const isMultiProtocolPlatform = computed(() => isCNPlatform.value || isOpenCodeGoPlatform.value || form.platform === 'command_code')
 function currentOpenCodeOrCNMode(): CnAccountMode | OpenCodeAccountMode {
   return isOpenCodeGoPlatform.value ? openCodeAccountMode.value : accountMode.value
 }
@@ -4254,8 +4275,9 @@ const cnPresetPlatform = computed<CnProviderPlatform>(() => {
   }
   return 'kimi'
 })
-const adaptivePresetPlatform = computed<CnProviderPlatform | 'opencode_go'>(() => {
+const adaptivePresetPlatform = computed<CnProviderPlatform | 'opencode_go' | 'command_code'>(() => {
   if (form.platform === 'opencode_go') return 'opencode_go'
+  if (form.platform === 'command_code') return 'command_code'
   return cnPresetPlatform.value
 })
 // 当前平台可选的协议档（responses 仅 deepseek / kimi）。
@@ -4280,7 +4302,7 @@ const cnAdaptiveProtocolOptions = computed<Array<{ value: CnNativeApiProtocol; l
 })
 
 function resetAdaptiveBaseUrls(
-  platform: CnProviderPlatform | 'opencode_go',
+  platform: CnProviderPlatform | 'opencode_go' | 'command_code',
   mode: CnAccountMode | OpenCodeAccountMode
 ) {
   adaptiveBaseUrls.value = defaultCNAdaptiveBaseUrls(platform, mode)
@@ -4330,6 +4352,15 @@ function selectCNPlatform(platform: CnProviderPlatform) {
   }
   apiKeyBaseUrl.value = defaultCNBaseUrl(platform, accountMode.value, apiProtocol.value)
   resetAdaptiveBaseUrls(platform, accountMode.value)
+}
+function selectProviderPlatform(platform: 'command_code' | 'cline') {
+  form.platform = platform
+  form.type = 'apikey'
+  accountCategory.value = 'apikey'
+  accountMode.value = 'payg'
+  apiProtocol.value = platform === 'command_code' ? 'adaptive' : 'chat_completions'
+  apiKeyBaseUrl.value = defaultCNBaseUrl(platform, 'payg', 'chat_completions')
+  if (platform === 'command_code') resetAdaptiveBaseUrls('command_code', 'payg')
 }
 function selectOpenCodeGoPlatform() {
   form.platform = 'opencode_go'
@@ -4916,7 +4947,7 @@ watch(
   () => form.platform,
   (newPlatform) => {
     // Reset base URL based on platform
-    if (isCNProviderPlatform(newPlatform) || newPlatform === 'opencode_go') {
+    if (isCNProviderPlatform(newPlatform) || newPlatform === 'opencode_go' || newPlatform === 'command_code') {
       const mode = newPlatform === 'opencode_go' ? openCodeAccountMode.value : accountMode.value
       apiKeyBaseUrl.value = defaultCNBaseUrl(newPlatform, mode, apiProtocol.value)
     } else {
@@ -4927,7 +4958,9 @@ watch(
             ? 'https://generativelanguage.googleapis.com'
             : newPlatform === 'grok'
               ? 'https://api.x.ai/v1'
-              : 'https://api.anthropic.com'
+              : newPlatform === 'cline'
+                ? 'https://api.cline.bot/api/v1'
+                : 'https://api.anthropic.com'
     }
     // Clear model-related settings
     allowedModels.value = []
@@ -5878,7 +5911,11 @@ const handleSubmit = async () => {
         ? 'https://generativelanguage.googleapis.com'
         : form.platform === 'grok'
           ? 'https://api.x.ai/v1'
-          : 'https://api.anthropic.com'
+          : form.platform === 'command_code'
+            ? 'https://api.commandcode.ai/provider/v1'
+            : form.platform === 'cline'
+              ? 'https://api.cline.bot/api/v1'
+              : 'https://api.anthropic.com'
 
   // Build credentials with optional model mapping
   const credentials: Record<string, unknown> = {
@@ -5907,7 +5944,7 @@ const handleSubmit = async () => {
   // 国产供应商：账号模式 + 协议 + 对应端点写入凭据；后端按 account_mode 路由
   // 额度/余额探测，按 api_protocol 路由转发端点与格式。注意 CN apikey 走本函数
   // 的通用路径（直接 doCreateAccount），不经过 createAccountAndFinish。
-  if (isCNProviderPlatform(form.platform) || form.platform === 'opencode_go') {
+  if (isCNProviderPlatform(form.platform) || form.platform === 'opencode_go' || form.platform === 'command_code') {
     const mode = form.platform === 'opencode_go' ? openCodeAccountMode.value : accountMode.value
     credentials.account_mode = mode
     credentials.api_protocol = apiProtocol.value

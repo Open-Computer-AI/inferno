@@ -72,6 +72,7 @@ vi.mock('vue-i18n', async () => {
 
 import CreateAccountModal from '../CreateAccountModal.vue'
 import UpstreamRequestIdHeaderField from '../UpstreamRequestIdHeaderField.vue'
+import { defaultCNBaseUrl } from '../credentialsBuilder'
 
 const BaseDialogStub = defineComponent({
   name: 'BaseDialog',
@@ -604,6 +605,94 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
         responses: 'https://api.minimaxi.com/v1'
       }
     })
+  })
+
+
+  it('submits Command Code with by-model adaptive endpoint defaults', async () => {
+    authIsSimpleMode.value = false
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Command Code')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Command Code account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('cc-test-key')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock.mock.calls[0]?.[0]?.type).toBe('apikey')
+    expect(createAccountMock.mock.calls[0]?.[0]?.platform).toBe('command_code')
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({
+      account_mode: 'payg',
+      api_protocol: 'adaptive',
+      base_url: 'https://api.commandcode.ai/provider/v1',
+      api_base_urls: {
+        chat_completions: 'https://api.commandcode.ai/provider/v1',
+        anthropic: 'https://api.commandcode.ai/provider',
+        responses: 'https://api.commandcode.ai/provider/v1'
+      }
+    })
+  })
+
+  it('submits Cline as an OpenAI-compatible API-key account', async () => {
+    authIsSimpleMode.value = false
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Cline')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Cline account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('cline-test-key')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock.mock.calls[0]?.[0]?.type).toBe('apikey')
+    expect(createAccountMock.mock.calls[0]?.[0]?.platform).toBe('cline')
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({
+      base_url: 'https://api.cline.bot/api/v1',
+      api_key: 'cline-test-key'
+    })
+    // Backend provider profile has only a Chat Completions native endpoint.
+    expect(defaultCNBaseUrl('cline', 'payg', 'chat_completions')).toBe('https://api.cline.bot/api/v1')
+    expect(defaultCNBaseUrl('cline', 'payg', 'responses')).toBe('')
+    expect(defaultCNBaseUrl('cline', 'payg', 'anthropic')).toBe('')
+  })
+
+
+  it.each([
+    ['chatCompletions', 'chat_completions', 'https://api.commandcode.ai/provider/v1'],
+    ['anthropic', 'anthropic', 'https://api.commandcode.ai/provider'],
+    ['responses', 'responses', 'https://api.commandcode.ai/provider/v1']
+  ])('uses the Command Code %s endpoint placeholder and cleared-input default', async (label, protocol, expectedUrl) => {
+    authIsSimpleMode.value = false
+    createAccountMock.mockClear()
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Command Code')
+    await selectButtonByText(wrapper, `admin.accounts.cnProviders.apiProtocol.${label}`)
+    const baseUrl = wrapper.get<HTMLInputElement>('[data-testid="create-account-base-url"]')
+    expect(baseUrl.attributes('placeholder')).toBe(expectedUrl)
+    await baseUrl.setValue('')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Command Code endpoint')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('cc-test-key')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock.mock.calls[0]?.[0]?.type).toBe('apikey')
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({ api_protocol: protocol, base_url: expectedUrl })
+  })
+
+  it('preserves provider selection and API-key mode while switching to and from existing providers', async () => {
+    authIsSimpleMode.value = false
+    createAccountMock.mockClear()
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Command Code')
+    expect(wrapper.get('button[aria-pressed="true"]').text()).toContain('Command Code')
+    await selectButtonByText(wrapper, 'OpenAI')
+    expect(wrapper.find('button[aria-pressed="true"]').exists()).toBe(false)
+    await selectButtonByText(wrapper, 'Cline')
+    expect(wrapper.get('button[aria-pressed="true"]').text()).toContain('Cline')
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'Command Code')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('switched provider')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('cc-key')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock.mock.calls[0]?.[0]).toMatchObject({ platform: 'command_code', type: 'apikey' })
   })
 
   it('submits OpenCode Zen and GO endpoint and protocol defaults', async () => {

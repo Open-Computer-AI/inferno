@@ -79,7 +79,7 @@ const readMode = (): string => {
   return typeof mode === 'string' ? mode : ''
 }
 
-const visible = computed(() => cnQuotaCellVisible(props.account.platform, readMode()))
+const visible = computed(() => cnQuotaCellVisible(props.account.platform, readMode(), props.account))
 
 const loading = ref(false)
 const error = ref<string | null>(null)

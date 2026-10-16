@@ -262,7 +262,7 @@ export type CnAccountMode = 'payg' | 'coding'
 export type OpenCodeAccountMode = 'zen' | 'go'
 export type CnProviderPlatform = 'kimi' | 'zhipu' | 'deepseek' | 'minimax'
 
-/** deepseek / kimi / minimax 支持原生 responses；adaptive 会按入站协议选择原生端点。 */
+/** DeepSeek / Kimi / MiniMax / Command Code 支持原生 Responses；自适应账号按上游能力分流。 */
 export type CnApiProtocol = 'adaptive' | 'chat_completions' | 'anthropic' | 'responses'
 export type CnNativeApiProtocol = Exclude<CnApiProtocol, 'adaptive'>
 
@@ -272,7 +272,7 @@ export function isCNProviderPlatform(platform: string): platform is CnProviderPl
 
 /** DeepSeek、Kimi 与 MiniMax 提供原生 Responses 端点。 */
 export function cnSupportsNativeResponses(platform: string): boolean {
-  return platform === 'deepseek' || platform === 'kimi' || platform === 'minimax' || platform === 'opencode_go'
+  return platform === 'deepseek' || platform === 'kimi' || platform === 'minimax' || platform === 'opencode_go' || platform === 'command_code'
 }
 
 export const OPENCODE_GO_BASE_URL = 'https://opencode.ai/zen/go/v1'
@@ -358,7 +358,7 @@ export function applyOpenCodeGoProtocolRules(
 }
 
 export function isMultiProtocolApiKeyPlatform(platform: string): boolean {
-  return platform === 'kimi' || platform === 'zhipu' || platform === 'deepseek' || platform === 'minimax' || platform === 'opencode_go'
+  return platform === 'kimi' || platform === 'zhipu' || platform === 'deepseek' || platform === 'minimax' || platform === 'opencode_go' || platform === 'command_code'
 }
 
 export interface CnBaseUrlPreset {
@@ -412,6 +412,9 @@ export function defaultCNBaseUrl(
   mode: CnAccountMode | OpenCodeAccountMode,
   protocol: CnApiProtocol = 'chat_completions'
 ): string {
+  if (platform === 'cline') {
+    return protocol === 'chat_completions' ? 'https://api.cline.bot/api/v1' : ''
+  }
   if (protocol === 'anthropic') {
     switch (platform) {
       case 'kimi':
@@ -424,6 +427,8 @@ export function defaultCNBaseUrl(
         return 'https://api.minimaxi.com/anthropic'
       case 'opencode_go':
         return mode === 'zen' ? OPENCODE_ZEN_ANTHROPIC_BASE_URL : OPENCODE_GO_ANTHROPIC_BASE_URL
+      case 'command_code':
+        return 'https://api.commandcode.ai/provider'
       default:
         return ''
     }
@@ -442,6 +447,8 @@ export function defaultCNBaseUrl(
       return 'https://api.minimaxi.com/v1'
     case 'opencode_go':
       return mode === 'zen' ? OPENCODE_ZEN_BASE_URL : OPENCODE_GO_BASE_URL
+    case 'command_code':
+      return 'https://api.commandcode.ai/provider/v1'
     default:
       return ''
   }
@@ -449,7 +456,7 @@ export function defaultCNBaseUrl(
 
 /** 返回自适应模式下需要配置的原生协议及其默认端点。 */
 export function defaultCNAdaptiveBaseUrls(
-  platform: CnProviderPlatform | 'opencode_go',
+  platform: CnProviderPlatform | 'opencode_go' | 'command_code',
   mode: CnAccountMode | OpenCodeAccountMode
 ): Record<CnNativeApiProtocol, string> {
   return {
@@ -463,12 +470,52 @@ export function defaultCNAdaptiveBaseUrls(
 // CNProviderQuotaCell / CNProviderBalanceCell 与 AccountUsageCell 的占位符判定
 // 共用，避免多处复制条件后一处改另一处漏改。
 
-export function cnQuotaCellVisible(platform: string, accountMode: string): boolean {
+type ProviderUsageAccount = { type?: string; credentials?: Record<string, unknown> }
+
+/**
+ * Resolve the same effective Chat Completions base URL as Account.GetOpenAIBaseURL.
+ * Cline is fixed-protocol, so api_base_urls is never consulted. Command Code defaults
+ * to adaptive by-model routing; its chat entry is active only for adaptive accounts.
+ */
+export function providerUsageBaseUrl(platform: string, account?: ProviderUsageAccount): string {
+  const credentials = account?.credentials || {}
+  const read = (value: unknown) => typeof value === 'string' ? value.trim() : ''
+  const protocol = read(credentials.api_protocol)
+  if (platform === 'command_code') {
+    const adaptive = protocol === 'adaptive' || !['chat_completions', 'anthropic', 'responses'].includes(protocol)
+    if (adaptive) {
+      const urls = credentials.api_base_urls
+      const chatUrl = urls && typeof urls === 'object'
+        ? read((urls as Record<string, unknown>).chat_completions)
+        : ''
+      if (chatUrl) return chatUrl
+    }
+  }
+  const baseUrl = read(credentials.base_url)
+  if (baseUrl) return baseUrl
+  return defaultCNBaseUrl(platform, 'payg', 'chat_completions')
+}
+
+function isOfficialProviderUsageAccount(platform: string, account?: ProviderUsageAccount): boolean {
+  if (account?.type !== 'apikey') return false
+  const officialHost = platform === 'command_code' ? 'api.commandcode.ai' : 'api.cline.bot'
+  try {
+    const target = new URL(providerUsageBaseUrl(platform, account))
+    // Mirrors backend host policy: HTTPS + exact hostname; non-default ports are allowed.
+    return target.protocol.toLowerCase() === 'https:' && target.hostname.toLowerCase() === officialHost
+  } catch {
+    return false
+  }
+}
+
+export function cnQuotaCellVisible(platform: string, accountMode: string, account?: ProviderUsageAccount): boolean {
   if (platform === 'opencode_go') return accountMode !== 'zen'
+  if (platform === 'command_code' || platform === 'cline') return isOfficialProviderUsageAccount(platform, account)
   return (platform === 'kimi' || platform === 'zhipu' || platform === 'minimax') && accountMode === 'coding'
 }
 
-export function cnBalanceCellVisible(platform: string, accountMode: string): boolean {
+export function cnBalanceCellVisible(platform: string, accountMode: string, account?: ProviderUsageAccount): boolean {
+  if (platform === 'command_code' || platform === 'cline') return isOfficialProviderUsageAccount(platform, account)
   return (platform === 'kimi' || platform === 'deepseek' || platform === 'minimax') && accountMode !== 'coding'
 }
 

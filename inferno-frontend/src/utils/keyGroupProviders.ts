@@ -18,6 +18,8 @@ const PROVIDER_BY_PLATFORM: Record<GroupPlatform, KeyGroupProvider> = {
   minimax: 'domestic',
   typesafe: 'other',
   opencode_go: 'other',
+  command_code: 'other',
+  cline: 'other',
   composite: 'other'
 }
 

@@ -23,7 +23,9 @@ const concretePlatforms = [
   'zhipu',
   'deepseek',
   'minimax',
-  'opencode_go'
+  'opencode_go',
+  'command_code',
+  'cline'
 ]
 
 describe('platform option catalogs', () => {

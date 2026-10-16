@@ -372,6 +372,75 @@ describe('EditAccountModal', () => {
     showWarningMock.mockReset()
   })
 
+
+  it('round-trips adaptive Command Code endpoints and treats a missing protocol as adaptive', async () => {
+    for (const credentials of [
+      {
+        api_key: 'cc-test', api_protocol: 'adaptive', base_url: 'https://api.commandcode.ai/provider/v1',
+        api_base_urls: { chat_completions: 'https://api.commandcode.ai/provider/v1', anthropic: 'https://api.commandcode.ai/provider', responses: 'https://api.commandcode.ai/provider/v1' }
+      },
+      { api_key: 'cc-test', base_url: 'https://api.commandcode.ai/provider/v1' },
+      {
+        api_key: 'cc-test', api_protocol: 'adaptive', base_url: 'https://relay.example/v1',
+        api_base_urls: { chat_completions: 'https://relay.example/v1', anthropic: 'https://relay.example/messages', responses: 'https://relay.example/v1' }
+      }
+    ]) {
+      const account = { ...buildAccount(), id: 71, name: 'Command Code', platform: 'command_code', credentials } as any
+      updateAccountMock.mockReset().mockResolvedValue(account)
+      checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+      const wrapper = mountModal(account)
+      await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+      await flushPromises()
+      const saved = updateAccountMock.mock.calls[0]?.[1]?.credentials
+      expect(saved?.api_protocol).toBe('adaptive')
+      expect(saved?.api_base_urls).toEqual('api_base_urls' in credentials ? credentials.api_base_urls : {
+        chat_completions: 'https://api.commandcode.ai/provider/v1',
+        anthropic: 'https://api.commandcode.ai/provider',
+        responses: 'https://api.commandcode.ai/provider/v1'
+      })
+    }
+  })
+
+  it.each([
+    ['chatCompletions', 'chat_completions', 'https://api.commandcode.ai/provider/v1'],
+    ['anthropic', 'anthropic', 'https://api.commandcode.ai/provider'],
+    ['responses', 'responses', 'https://api.commandcode.ai/provider/v1']
+  ])('saves Command Code %s protocol defaults', async (label, protocol, expectedUrl) => {
+    const account = { ...buildAccount(), id: 72, name: 'Command Code', platform: 'command_code', credentials: { api_key: 'cc-test', api_protocol: 'adaptive', base_url: 'https://api.commandcode.ai/provider/v1' } } as any
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+    const option = wrapper.findAll('button').find(button => button.text().includes(`admin.accounts.cnProviders.apiProtocol.${label}`))
+    expect(option).toBeDefined()
+    await option!.trigger('click')
+    await flushPromises()
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toMatchObject({ api_protocol: protocol, base_url: expectedUrl })
+  })
+
+
+  it('preserves a custom Command Code single-protocol endpoint on edit', async () => {
+    const custom = 'https://cc-relay.example/provider/v1'
+    const account = { ...buildAccount(), id: 74, name: 'Command Code relay', platform: 'command_code', credentials: { api_key: 'cc-test', api_protocol: 'chat_completions', base_url: custom } } as any
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toMatchObject({ api_protocol: 'chat_completions', base_url: custom })
+  })
+
+  it.each(['https://api.cline.bot/api/v1', 'https://relay.example/v1'])('preserves existing and custom Cline base URL %s', async baseUrl => {
+    const account = { ...buildAccount(), id: 73, name: 'Cline', platform: 'cline', credentials: { api_key: 'cline-test', base_url: baseUrl } } as any
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.base_url).toBe(baseUrl)
+  })
+
   it('passes existing non-identity mappings to the whitelist selector and preserves them on save', async () => {
     const account = buildAccount()
     account.credentials.model_mapping = { 'gpt-5.2': 'gpt-5.2', 'gpt-latest': 'deepseek-chat' }
