@@ -79,6 +79,18 @@ describe('GroupRateMultipliersModal new override validation', () => {
     expect(mocks.batchSetGroupRateMultipliers).toHaveBeenCalledWith(1, [{ user_id: 7, rate_multiplier: value }])
   })
 
+  it.each(['0', '-1'])('rejects nonpositive edited rate %s', async (value) => {
+    const wrapper = await mountWithExistingRates([{ user_id: 7, rate_multiplier: 2 }])
+    const vm = wrapper.vm as unknown as {
+      localEntries: Array<{ rate_multiplier: number | null }>
+      updateLocalRate: (userId: number, value: string) => void
+    }
+
+    vm.updateLocalRate(7, value)
+
+    expect(vm.localEntries[0].rate_multiplier).toBe(2)
+  })
+
   it.each([
     ['NaN', Number.NaN],
     ['Infinity', Number.POSITIVE_INFINITY],
