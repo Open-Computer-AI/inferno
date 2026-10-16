@@ -4,6 +4,7 @@ import type { OpsDashboardOverview } from '@/api/admin/ops'
 import { flushPromises, mount, shallowMount } from '@vue/test-utils'
 import OpsStatCard from '../OpsStatCard.vue'
 import OpsDashboardHeader from '../OpsDashboardHeader.vue'
+import { formatDateTimeLocalInput } from '@/utils/format'
 import OpsRequestDetailsModal from '../OpsRequestDetailsModal.vue'
 
 const { listRequestDetails, viewport } = vi.hoisted(() => ({
@@ -74,6 +75,27 @@ describe('Ops request latency details', () => {
     expect(wrapper.text()).not.toContain('5000 ms')
     if (desktop) expect(wrapper.findAll('tbody tr')[2].findAll('td')[4].text()).toBe('-')
     else expect(wrapper.text()).toContain('admin.ops.ttftLabel: -')
+    wrapper.unmount()
+  })
+
+  it('initializes the custom range using local datetime-local values', async () => {
+    const wrapper = shallowMount(OpsDashboardHeader, {
+      props: { overview: {} as OpsDashboardOverview, platform: '', groupId: null, timeRange: '1h', queryMode: 'auto', loading: false, lastUpdated: null },
+    })
+    const vm = wrapper.vm as unknown as {
+      handleTimeRangeChange: (value: string) => void
+      customStartTimeInput: string
+      customEndTimeInput: string
+    }
+    const before = new Date()
+    vm.handleTimeRangeChange('custom')
+    const start = vm.customStartTimeInput
+    const end = vm.customEndTimeInput
+    const after = new Date()
+    expect(end).toBe(formatDateTimeLocalInput(Math.floor(after.getTime() / 1000)))
+    expect(start).toBe(formatDateTimeLocalInput(Math.floor((before.getTime() - 60 * 60 * 1000) / 1000)))
+    expect(start).not.toContain('Z')
+    expect(end).not.toContain('Z')
     wrapper.unmount()
   })
 
