@@ -4,8 +4,8 @@ package service
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
+	"regexp"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
@@ -116,25 +116,35 @@ func TestBuildPlatformCatalogReturnsCopies(t *testing.T) {
 	require.NotEqual(t, "mutated", LookupProviderProfile(PlatformOpenCodeGo).Modes[AccountModeGo].ProtocolRules[0].Protocol)
 }
 
-// 前端内置的平台清单（接口加载前与加载失败时使用）必须与后端一致。
-// 更新平台清单或 profile 后运行：
-//
-//	UPDATE_PLATFORM_CATALOG=1 go test -tags unit ./internal/service/ -run TestFrontendBuiltinPlatformCatalogInSync
-func TestFrontendBuiltinPlatformCatalogInSync(t *testing.T) {
-	const path = "../../../frontend/src/constants/platformCatalog.builtin.json"
-	want, err := json.MarshalIndent(BuildPlatformCatalog(), "", "  ")
+// Inferno's selectors intentionally use a scoped catalog rather than mirroring every
+// upstream/backend platform profile. Keep every concrete platform selectable in the
+// Inferno UI resolvable by the backend, without comparing against pristine frontend/.
+func TestInfernoFrontendConcretePlatformOptionsExistInBackendCatalog(t *testing.T) {
+	const path = "../../../inferno-frontend/src/constants/platforms.ts"
+	source, err := os.ReadFile(path)
 	require.NoError(t, err)
-	want = append(want, '\n')
 
-	if os.Getenv("UPDATE_PLATFORM_CATALOG") == "1" {
-		require.NoError(t, os.WriteFile(path, want, 0o644))
-		return
+	declaration := regexp.MustCompile(`(?s)export const CONCRETE_PLATFORM_OPTIONS\s*=\s*\[(.*?)\]\s*as const`)
+	match := declaration.FindSubmatch(source)
+	require.Len(t, match, 2, "Inferno concrete platform selector list not found")
+	valuePattern := regexp.MustCompile(`\{\s*value:\s*'([^']+)'`)
+	frontendValues := valuePattern.FindAllSubmatch(match[1], -1)
+	require.NotEmpty(t, frontendValues, "Inferno concrete platform selector list is empty")
+
+	backendIDs := make(map[string]struct{})
+	for _, platform := range BuildPlatformCatalog().Platforms {
+		backendIDs[platform.ID] = struct{}{}
 	}
-	got, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		t.Skip("frontend sources not available")
+	seen := make(map[string]struct{}, len(frontendValues))
+	for _, entry := range frontendValues {
+		id := string(entry[1])
+		_, duplicate := seen[id]
+		require.False(t, duplicate, "duplicate Inferno concrete platform %q", id)
+		seen[id] = struct{}{}
+		_, supported := backendIDs[id]
+		require.True(t, supported, "Inferno concrete platform %q is missing from the backend catalog", id)
 	}
-	require.NoError(t, err)
-	require.JSONEq(t, string(want), string(got),
-		"frontend/src/constants/platformCatalog.builtin.json 与后端平台清单不一致，按测试注释重新生成")
+
+	groupOptions := regexp.MustCompile(`(?s)export const GROUP_PLATFORM_OPTIONS\s*=\s*\[.*?\{\s*value:\s*'composite'`)
+	require.Regexp(t, groupOptions, source, "Inferno group platform selectors must include composite")
 }

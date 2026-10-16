@@ -24,7 +24,8 @@ func TestAnthropicMessagesCredentialAllowed(t *testing.T) {
 		{PlatformAnthropic, AccountTypeSetupToken, true},
 		{PlatformAnthropic, AccountTypeServiceAccount, true},
 		{PlatformAnthropic, AccountTypeBedrock, true},
-		{PlatformTypeSafe, AccountTypeOAuth, true},
+		// Inferno registers TypeSafe/Jev through the OpenAI gateway, so its OAuth credentials must not use Anthropic Messages.
+		{PlatformTypeSafe, AccountTypeOAuth, false},
 		{PlatformOpenAI, AccountTypeAPIKey, true},
 		{PlatformDeepseek, AccountTypeAPIKey, true},
 		{PlatformOpenAI, AccountTypeOAuth, false},
