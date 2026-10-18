@@ -1,6 +1,93 @@
 package service
 
-import "fmt"
+import (
+	"context"
+	"errors"
+	"fmt"
+)
+
+const (
+	ConcurrencyModeShared = "shared"
+	ConcurrencyModeSplit  = "split"
+)
+
+var ErrConcurrencyPolicyRuntimeNotApplied = errors.New("concurrency policy persisted but runtime publication failed")
+var ErrConcurrencyPolicyGenerationStale = errors.New("concurrency policy generation is stale")
+var ErrConcurrencyPolicyGenerationConflict = errors.New("concurrency policy generation conflicts with published policy")
+
+// ConcurrencyPolicyPublisher is the narrow DB-to-Redis acknowledgement fence
+// used by administrative writes. Implementations must update the authoritative
+// generation monotonically and reject stale/conflicting publications.
+type ConcurrencyPolicyPublisher interface {
+	PublishAccountConcurrencyPolicy(ctx context.Context, accountID int64, policy ConcurrencyPolicy, generation int64) error
+	PublishUserConcurrencyPolicy(ctx context.Context, userID int64, policy ConcurrencyPolicy, generation int64) error
+}
+
+// ConcurrencyPolicyPatch is the explicit admin/API patch shape. A nil patch
+// means the caller omitted concurrency_policy and the stored policy must be
+// preserved. The mode is required when the object is present so JSON null and
+// an omitted object cannot be confused with an explicit reset.
+type ConcurrencyPolicyPatch struct {
+	Mode     string `json:"mode"`
+	Live     *int   `json:"live,omitempty"`
+	Requests *int   `json:"requests,omitempty"`
+}
+
+func (p *ConcurrencyPolicyPatch) Validate() error {
+	if p == nil {
+		return fmt.Errorf("concurrency_policy patch is nil")
+	}
+	switch p.Mode {
+	case ConcurrencyModeShared:
+		if p.Live != nil || p.Requests != nil {
+			return fmt.Errorf("shared concurrency policy must not include live or requests")
+		}
+		return nil
+	case ConcurrencyModeSplit:
+		if p.Live == nil {
+			return fmt.Errorf("split concurrency policy requires live")
+		}
+		if p.Requests == nil {
+			return fmt.Errorf("split concurrency policy requires requests")
+		}
+		if *p.Live <= 0 {
+			return fmt.Errorf("split concurrency policy live must be > 0")
+		}
+		if *p.Requests <= 0 {
+			return fmt.Errorf("split concurrency policy requests must be > 0")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported concurrency policy mode %q", p.Mode)
+	}
+}
+
+// Resolve returns owned copies of the nullable fields to be persisted. Shared
+// mode deliberately resolves to a NULL pair; its legacy Concurrency field is
+// the shared limit and is not modified by this patch.
+func (p *ConcurrencyPolicyPatch) Resolve() (live, requests *int, err error) {
+	if err := p.Validate(); err != nil {
+		return nil, nil, err
+	}
+	if p.Mode == ConcurrencyModeShared {
+		return nil, nil, nil
+	}
+	liveValue, requestValue := *p.Live, *p.Requests
+	return &liveValue, &requestValue, nil
+}
+
+func applyConcurrencyPolicyPatch(patch *ConcurrencyPolicyPatch) (live, requests *int, err error) {
+	return patch.Resolve()
+}
+
+// policyGenerationAfterPatch is kept small and deterministic so callers can
+// test that omitted policy patches do not invalidate unrelated active leases.
+func policyGenerationAfterPatch(current int64, patch *ConcurrencyPolicyPatch) int64 {
+	if patch == nil {
+		return current
+	}
+	return current + 1
+}
 
 // ConcurrencyClass identifies the workload class selected by the server.
 // Callers must derive this from the endpoint/capability rather than accepting
@@ -19,6 +106,27 @@ type ConcurrencyPolicy struct {
 	Shared  int
 	Live    *int
 	Request *int
+}
+
+func (p ConcurrencyPolicy) Mode() string {
+	if p.Live != nil && p.Request != nil {
+		return ConcurrencyModeSplit
+	}
+	return ConcurrencyModeShared
+}
+
+func (a *Account) ConcurrencyMode() string {
+	if a != nil && a.LiveConcurrency != nil && a.RequestConcurrency != nil {
+		return ConcurrencyModeSplit
+	}
+	return ConcurrencyModeShared
+}
+
+func (u *User) ConcurrencyMode() string {
+	if u != nil && u.LiveConcurrency != nil && u.RequestConcurrency != nil {
+		return ConcurrencyModeSplit
+	}
+	return ConcurrencyModeShared
 }
 
 // IsSplit reports whether the policy contains the complete split pair. It is

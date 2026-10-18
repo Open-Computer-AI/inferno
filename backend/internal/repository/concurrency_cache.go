@@ -33,6 +33,8 @@ const (
 	liveAccountSlotKeyPrefix = "concurrency:live:account:"
 	liveUserSlotKeyPrefix    = "concurrency:live:user:"
 	liveAPIKeySlotKeyPrefix  = "concurrency:live:api_key:"
+	accountPolicyKeyPrefix   = "concurrency:policy:account:"
+	userPolicyKeyPrefix      = "concurrency:policy:user:"
 	// API-key-scoped client WebSocket ingress leases use a shorter TTL than
 	// ordinary request slots, because idle ingress sessions do not hold a turn slot.
 	openAIWSIngressLeaseKeyPrefix  = "concurrency:openai_ws_ingress:api_key:"
@@ -104,6 +106,71 @@ var (
 		end
 
 		return {0, now}
+	`)
+
+	// publishConcurrencyPolicyScript stores one complete policy document only
+	// when its generation is newer than the authoritative Redis document. Equal
+	// generations are idempotent only when every value matches; this prevents a
+	// stale DB snapshot from silently replacing a newer policy after a cache miss.
+	publishConcurrencyPolicyScript = redis.NewScript(`
+		redis.replicate_commands()
+		local key = KEYS[1]
+		local incomingGeneration = tonumber(ARGV[1])
+		if incomingGeneration == nil or incomingGeneration < 0 then
+			return -3
+		end
+		local function validInteger(value, minimum)
+			if value == false or value == nil or value == '' then
+				return false
+			end
+			local number = tonumber(value)
+			return number ~= nil and number >= minimum and math.floor(number) == number
+		end
+		local function validAuthority()
+			local mode = redis.call('HGET', key, 'mode')
+			local shared = redis.call('HGET', key, 'shared')
+			local live = redis.call('HGET', key, 'live')
+			local request = redis.call('HGET', key, 'request')
+			if mode == false or shared == false or live == false or request == false then
+				return false
+			end
+			if mode == 'shared' then
+				return validInteger(shared, 0) and live == '' and request == ''
+			end
+			if mode == 'split' then
+				return shared == '' and validInteger(live, 1) and validInteger(request, 1)
+			end
+			return false
+		end
+		local currentGeneration = redis.call('HGET', key, 'generation')
+		if currentGeneration ~= false then
+			currentGeneration = tonumber(currentGeneration)
+			if currentGeneration == nil then
+				return -3
+			end
+			if not validAuthority() then
+				return -3
+			end
+			if incomingGeneration < currentGeneration then
+				return -1
+			end
+			if incomingGeneration == currentGeneration then
+				if redis.call('HGET', key, 'mode') ~= ARGV[2]
+					or redis.call('HGET', key, 'shared') ~= ARGV[3]
+					or redis.call('HGET', key, 'live') ~= ARGV[4]
+					or redis.call('HGET', key, 'request') ~= ARGV[5] then
+					return -2
+				end
+				return 1
+			end
+		end
+		redis.call('HSET', key,
+			'generation', ARGV[1],
+			'mode', ARGV[2],
+			'shared', ARGV[3],
+			'live', ARGV[4],
+			'request', ARGV[5])
+		return 1
 	`)
 
 	// getCountScript 统计有序集合中的槽位数量并清理过期条目
@@ -377,6 +444,62 @@ func NewConcurrencyCache(rdb *redis.Client, slotTTLMinutes int, waitQueueTTLSeco
 	}
 }
 
+func concurrencyPolicyPublicationArgs(policy service.ConcurrencyPolicy, generation int64) ([]any, error) {
+	if err := service.ValidateConcurrencyPolicy(policy); err != nil {
+		return nil, err
+	}
+	if generation < 0 {
+		return nil, fmt.Errorf("concurrency policy generation must be non-negative")
+	}
+	args := []any{generation, policy.Mode(), strconv.Itoa(policy.Shared), "", ""}
+	if policy.IsSplit() {
+		args[2] = ""
+		args[3] = strconv.Itoa(*policy.Live)
+		args[4] = strconv.Itoa(*policy.Request)
+	}
+	return args, nil
+}
+
+func (c *concurrencyCache) publishConcurrencyPolicy(ctx context.Context, key string, policy service.ConcurrencyPolicy, generation int64) error {
+	if c == nil || c.rdb == nil || key == "" {
+		return fmt.Errorf("concurrency policy cache is unavailable")
+	}
+	args, err := concurrencyPolicyPublicationArgs(policy, generation)
+	if err != nil {
+		return err
+	}
+	result, err := publishConcurrencyPolicyScript.Run(ctx, c.rdb, []string{key}, args...).Int()
+	if err != nil {
+		return err
+	}
+	switch result {
+	case 1:
+		return nil
+	case -1:
+		return service.ErrConcurrencyPolicyGenerationStale
+	case -2:
+		return service.ErrConcurrencyPolicyGenerationConflict
+	case -3:
+		return fmt.Errorf("malformed authoritative concurrency policy")
+	default:
+		return fmt.Errorf("unexpected concurrency policy publication result %d", result)
+	}
+}
+
+func (c *concurrencyCache) PublishAccountConcurrencyPolicy(ctx context.Context, accountID int64, policy service.ConcurrencyPolicy, generation int64) error {
+	if accountID <= 0 {
+		return fmt.Errorf("account ID must be positive")
+	}
+	return c.publishConcurrencyPolicy(ctx, accountConcurrencyPolicyKey(accountID), policy, generation)
+}
+
+func (c *concurrencyCache) PublishUserConcurrencyPolicy(ctx context.Context, userID int64, policy service.ConcurrencyPolicy, generation int64) error {
+	if userID <= 0 {
+		return fmt.Errorf("user ID must be positive")
+	}
+	return c.publishConcurrencyPolicy(ctx, userConcurrencyPolicyKey(userID), policy, generation)
+}
+
 // Helper functions for key generation
 func accountSlotKey(accountID int64) string {
 	return fmt.Sprintf("%s%d", accountSlotKeyPrefix, accountID)
@@ -400,6 +523,14 @@ func liveUserSlotKey(userID int64) string {
 
 func liveAPIKeySlotKey(apiKeyID int64) string {
 	return fmt.Sprintf("%s%d", liveAPIKeySlotKeyPrefix, apiKeyID)
+}
+
+func accountConcurrencyPolicyKey(accountID int64) string {
+	return fmt.Sprintf("%s%d", accountPolicyKeyPrefix, accountID)
+}
+
+func userConcurrencyPolicyKey(userID int64) string {
+	return fmt.Sprintf("%s%d", userPolicyKeyPrefix, userID)
 }
 
 func openAIWSIngressLeaseKey(apiKeyID int64) string {

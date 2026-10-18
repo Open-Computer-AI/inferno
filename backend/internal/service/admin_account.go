@@ -307,6 +307,10 @@ func (s *adminServiceImpl) DuplicateAccount(ctx context.Context, id int64, actor
 		SkipDefaultGroupBind:  true,
 		SkipMixedChannelCheck: true,
 	}
+	if source.LiveConcurrency != nil && source.RequestConcurrency != nil {
+		live, requests := *source.LiveConcurrency, *source.RequestConcurrency
+		input.ConcurrencyPolicy = &ConcurrencyPolicyPatch{Mode: ConcurrencyModeSplit, Live: &live, Requests: &requests}
+	}
 	accountExtra, err := normalizeOpenAILongContextBillingExtra(input.Platform, input.Extra)
 	if err != nil {
 		return nil, fmt.Errorf("normalize duplicate account extra: %w", err)
@@ -318,6 +322,9 @@ func (s *adminServiceImpl) DuplicateAccount(ctx context.Context, id int64, actor
 	if err != nil {
 		return nil, err
 	}
+	if err := applyAccountConcurrencyPolicy(duplicate, input.ConcurrencyPolicy); err != nil {
+		return nil, err
+	}
 	// A copied credential must be reviewed before it can share live traffic with its source.
 	duplicate.Schedulable = false
 	if s.accountDuplicateRepo == nil {
@@ -325,6 +332,11 @@ func (s *adminServiceImpl) DuplicateAccount(ctx context.Context, id int64, actor
 	}
 	if err := s.accountDuplicateRepo.CreateWithAccountGroups(ctx, duplicate, groups); err != nil {
 		return nil, fmt.Errorf("create duplicate account: %w", err)
+	}
+	if input.ConcurrencyPolicy != nil {
+		if err := s.publishAccountConcurrencyPolicy(ctx, duplicate); err != nil {
+			return nil, err
+		}
 	}
 	for i := range groups {
 		groups[i].AccountID = duplicate.ID
@@ -341,6 +353,29 @@ func normalizeAccountConcurrency(platform, accountType string, concurrency int) 
 		}
 	}
 	return concurrency
+}
+
+func applyAccountConcurrencyPolicy(account *Account, patch *ConcurrencyPolicyPatch) error {
+	if patch == nil {
+		return nil
+	}
+	live, requests, err := applyConcurrencyPolicyPatch(patch)
+	if err != nil {
+		return err
+	}
+	if patch.Mode == ConcurrencyModeSplit &&
+		(account == nil || !account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityLive)) {
+		return infraerrors.BadRequest(
+			"ACCOUNT_LIVE_CONCURRENCY_UNSUPPORTED",
+			"split concurrency policy requires a Live-capable OpenAI OAuth account",
+		)
+	}
+	if account == nil {
+		return ErrAccountNilInput
+	}
+	account.LiveConcurrency = live
+	account.RequestConcurrency = requests
+	return nil
 }
 
 // ValidateOpenAILongContextBillingExtra validates the OpenAI account billing flag when present.
@@ -509,8 +544,16 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	if err != nil {
 		return nil, err
 	}
+	if err := applyAccountConcurrencyPolicy(account, input.ConcurrencyPolicy); err != nil {
+		return nil, err
+	}
 	if err := s.accountRepo.Create(ctx, account); err != nil {
 		return nil, err
+	}
+	if input.ConcurrencyPolicy != nil {
+		if err := s.publishAccountConcurrencyPolicy(ctx, account); err != nil {
+			return nil, err
+		}
 	}
 
 	// 绑定分组
@@ -752,6 +795,12 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if input.Concurrency != nil {
 		account.Concurrency = normalizeAccountConcurrency(account.Platform, account.Type, *input.Concurrency)
 	}
+	if input.ConcurrencyPolicy != nil {
+		if err := applyAccountConcurrencyPolicy(account, input.ConcurrencyPolicy); err != nil {
+			return nil, err
+		}
+		account.ConcurrencyPolicyChanged = true
+	}
 	// 只在指针非 nil 时更新 Priority（支持设置为 0）
 	if input.Priority != nil {
 		account.Priority = *input.Priority
@@ -843,6 +892,11 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			if err := s.accountRepo.UpdateExtra(ctx, account.ID, settings); err != nil {
 				return nil, err
 			}
+		}
+	}
+	if input.Concurrency != nil || input.ConcurrencyPolicy != nil {
+		if err := s.publishAccountConcurrencyPolicy(ctx, account); err != nil {
+			return nil, err
 		}
 	}
 
@@ -939,7 +993,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 
 	// 预取所有目标账号，供凭据守卫/代理守卫/混合渠道检查共用，避免多次 DB 查询。
 	var cachedTargets []*Account
-	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || openAISettings.any() || input.ProbeEnabled != nil || input.RateMultiplier != nil {
+	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || openAISettings.any() || input.ProbeEnabled != nil || input.RateMultiplier != nil || input.Concurrency != nil || input.ConcurrencyPolicy != nil {
 		loaded, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
 		if err != nil {
 			return nil, err
@@ -950,6 +1004,17 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	for _, account := range cachedTargets {
 		if account != nil {
 			targetsByID[account.ID] = account
+		}
+	}
+	if input.ConcurrencyPolicy != nil {
+		for _, accountID := range input.AccountIDs {
+			account, ok := targetsByID[accountID]
+			if !ok {
+				return nil, ErrAccountNotFound
+			}
+			if err := applyAccountConcurrencyPolicy(account, input.ConcurrencyPolicy); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if openAISettings.any() {
@@ -1052,6 +1117,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		Credentials:                input.Credentials,
 		Extra:                      input.Extra,
 		ProbeEnabled:               input.ProbeEnabled,
+		ConcurrencyPolicy:          input.ConcurrencyPolicy,
 		EnsureCodexFingerprintSeed: ShouldEnsureCodexFingerprintSeedForExtraUpdates(input.Extra),
 	}
 	if input.ProbeEnabled != nil {
@@ -1105,6 +1171,17 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	// Run bulk update for column/jsonb fields first.
 	if _, err := s.accountRepo.BulkUpdate(ctx, input.AccountIDs, repoUpdates); err != nil {
 		return nil, err
+	}
+	if input.Concurrency != nil || input.ConcurrencyPolicy != nil {
+		updatedAccounts, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
+		if err != nil {
+			return nil, err
+		}
+		for _, account := range updatedAccounts {
+			if err := s.publishAccountConcurrencyPolicy(ctx, account); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	// 将 proxy 变更传播到每个目标账号的 spark 影子账号

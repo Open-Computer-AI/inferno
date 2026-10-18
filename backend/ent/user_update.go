@@ -171,6 +171,81 @@ func (_u *UserUpdate) AddConcurrency(v int) *UserUpdate {
 	return _u
 }
 
+// SetLiveConcurrency sets the "live_concurrency" field.
+func (_u *UserUpdate) SetLiveConcurrency(v int) *UserUpdate {
+	_u.mutation.ResetLiveConcurrency()
+	_u.mutation.SetLiveConcurrency(v)
+	return _u
+}
+
+// SetNillableLiveConcurrency sets the "live_concurrency" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableLiveConcurrency(v *int) *UserUpdate {
+	if v != nil {
+		_u.SetLiveConcurrency(*v)
+	}
+	return _u
+}
+
+// AddLiveConcurrency adds value to the "live_concurrency" field.
+func (_u *UserUpdate) AddLiveConcurrency(v int) *UserUpdate {
+	_u.mutation.AddLiveConcurrency(v)
+	return _u
+}
+
+// ClearLiveConcurrency clears the value of the "live_concurrency" field.
+func (_u *UserUpdate) ClearLiveConcurrency() *UserUpdate {
+	_u.mutation.ClearLiveConcurrency()
+	return _u
+}
+
+// SetRequestConcurrency sets the "request_concurrency" field.
+func (_u *UserUpdate) SetRequestConcurrency(v int) *UserUpdate {
+	_u.mutation.ResetRequestConcurrency()
+	_u.mutation.SetRequestConcurrency(v)
+	return _u
+}
+
+// SetNillableRequestConcurrency sets the "request_concurrency" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableRequestConcurrency(v *int) *UserUpdate {
+	if v != nil {
+		_u.SetRequestConcurrency(*v)
+	}
+	return _u
+}
+
+// AddRequestConcurrency adds value to the "request_concurrency" field.
+func (_u *UserUpdate) AddRequestConcurrency(v int) *UserUpdate {
+	_u.mutation.AddRequestConcurrency(v)
+	return _u
+}
+
+// ClearRequestConcurrency clears the value of the "request_concurrency" field.
+func (_u *UserUpdate) ClearRequestConcurrency() *UserUpdate {
+	_u.mutation.ClearRequestConcurrency()
+	return _u
+}
+
+// SetConcurrencyPolicyGeneration sets the "concurrency_policy_generation" field.
+func (_u *UserUpdate) SetConcurrencyPolicyGeneration(v int64) *UserUpdate {
+	_u.mutation.ResetConcurrencyPolicyGeneration()
+	_u.mutation.SetConcurrencyPolicyGeneration(v)
+	return _u
+}
+
+// SetNillableConcurrencyPolicyGeneration sets the "concurrency_policy_generation" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableConcurrencyPolicyGeneration(v *int64) *UserUpdate {
+	if v != nil {
+		_u.SetConcurrencyPolicyGeneration(*v)
+	}
+	return _u
+}
+
+// AddConcurrencyPolicyGeneration adds value to the "concurrency_policy_generation" field.
+func (_u *UserUpdate) AddConcurrencyPolicyGeneration(v int64) *UserUpdate {
+	_u.mutation.AddConcurrencyPolicyGeneration(v)
+	return _u
+}
+
 // SetStatus sets the "status" field.
 func (_u *UserUpdate) SetStatus(v string) *UserUpdate {
 	_u.mutation.SetStatus(v)
@@ -1063,6 +1138,30 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedConcurrency(); ok {
 		_spec.AddField(user.FieldConcurrency, field.TypeInt, value)
 	}
+	if value, ok := _u.mutation.LiveConcurrency(); ok {
+		_spec.SetField(user.FieldLiveConcurrency, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedLiveConcurrency(); ok {
+		_spec.AddField(user.FieldLiveConcurrency, field.TypeInt, value)
+	}
+	if _u.mutation.LiveConcurrencyCleared() {
+		_spec.ClearField(user.FieldLiveConcurrency, field.TypeInt)
+	}
+	if value, ok := _u.mutation.RequestConcurrency(); ok {
+		_spec.SetField(user.FieldRequestConcurrency, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedRequestConcurrency(); ok {
+		_spec.AddField(user.FieldRequestConcurrency, field.TypeInt, value)
+	}
+	if _u.mutation.RequestConcurrencyCleared() {
+		_spec.ClearField(user.FieldRequestConcurrency, field.TypeInt)
+	}
+	if value, ok := _u.mutation.ConcurrencyPolicyGeneration(); ok {
+		_spec.SetField(user.FieldConcurrencyPolicyGeneration, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedConcurrencyPolicyGeneration(); ok {
+		_spec.AddField(user.FieldConcurrencyPolicyGeneration, field.TypeInt64, value)
+	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(user.FieldStatus, field.TypeString, value)
 	}
@@ -1883,6 +1982,81 @@ func (_u *UserUpdateOne) SetNillableConcurrency(v *int) *UserUpdateOne {
 // AddConcurrency adds value to the "concurrency" field.
 func (_u *UserUpdateOne) AddConcurrency(v int) *UserUpdateOne {
 	_u.mutation.AddConcurrency(v)
+	return _u
+}
+
+// SetLiveConcurrency sets the "live_concurrency" field.
+func (_u *UserUpdateOne) SetLiveConcurrency(v int) *UserUpdateOne {
+	_u.mutation.ResetLiveConcurrency()
+	_u.mutation.SetLiveConcurrency(v)
+	return _u
+}
+
+// SetNillableLiveConcurrency sets the "live_concurrency" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableLiveConcurrency(v *int) *UserUpdateOne {
+	if v != nil {
+		_u.SetLiveConcurrency(*v)
+	}
+	return _u
+}
+
+// AddLiveConcurrency adds value to the "live_concurrency" field.
+func (_u *UserUpdateOne) AddLiveConcurrency(v int) *UserUpdateOne {
+	_u.mutation.AddLiveConcurrency(v)
+	return _u
+}
+
+// ClearLiveConcurrency clears the value of the "live_concurrency" field.
+func (_u *UserUpdateOne) ClearLiveConcurrency() *UserUpdateOne {
+	_u.mutation.ClearLiveConcurrency()
+	return _u
+}
+
+// SetRequestConcurrency sets the "request_concurrency" field.
+func (_u *UserUpdateOne) SetRequestConcurrency(v int) *UserUpdateOne {
+	_u.mutation.ResetRequestConcurrency()
+	_u.mutation.SetRequestConcurrency(v)
+	return _u
+}
+
+// SetNillableRequestConcurrency sets the "request_concurrency" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableRequestConcurrency(v *int) *UserUpdateOne {
+	if v != nil {
+		_u.SetRequestConcurrency(*v)
+	}
+	return _u
+}
+
+// AddRequestConcurrency adds value to the "request_concurrency" field.
+func (_u *UserUpdateOne) AddRequestConcurrency(v int) *UserUpdateOne {
+	_u.mutation.AddRequestConcurrency(v)
+	return _u
+}
+
+// ClearRequestConcurrency clears the value of the "request_concurrency" field.
+func (_u *UserUpdateOne) ClearRequestConcurrency() *UserUpdateOne {
+	_u.mutation.ClearRequestConcurrency()
+	return _u
+}
+
+// SetConcurrencyPolicyGeneration sets the "concurrency_policy_generation" field.
+func (_u *UserUpdateOne) SetConcurrencyPolicyGeneration(v int64) *UserUpdateOne {
+	_u.mutation.ResetConcurrencyPolicyGeneration()
+	_u.mutation.SetConcurrencyPolicyGeneration(v)
+	return _u
+}
+
+// SetNillableConcurrencyPolicyGeneration sets the "concurrency_policy_generation" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableConcurrencyPolicyGeneration(v *int64) *UserUpdateOne {
+	if v != nil {
+		_u.SetConcurrencyPolicyGeneration(*v)
+	}
+	return _u
+}
+
+// AddConcurrencyPolicyGeneration adds value to the "concurrency_policy_generation" field.
+func (_u *UserUpdateOne) AddConcurrencyPolicyGeneration(v int64) *UserUpdateOne {
+	_u.mutation.AddConcurrencyPolicyGeneration(v)
 	return _u
 }
 
@@ -2807,6 +2981,30 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 	}
 	if value, ok := _u.mutation.AddedConcurrency(); ok {
 		_spec.AddField(user.FieldConcurrency, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.LiveConcurrency(); ok {
+		_spec.SetField(user.FieldLiveConcurrency, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedLiveConcurrency(); ok {
+		_spec.AddField(user.FieldLiveConcurrency, field.TypeInt, value)
+	}
+	if _u.mutation.LiveConcurrencyCleared() {
+		_spec.ClearField(user.FieldLiveConcurrency, field.TypeInt)
+	}
+	if value, ok := _u.mutation.RequestConcurrency(); ok {
+		_spec.SetField(user.FieldRequestConcurrency, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedRequestConcurrency(); ok {
+		_spec.AddField(user.FieldRequestConcurrency, field.TypeInt, value)
+	}
+	if _u.mutation.RequestConcurrencyCleared() {
+		_spec.ClearField(user.FieldRequestConcurrency, field.TypeInt)
+	}
+	if value, ok := _u.mutation.ConcurrencyPolicyGeneration(); ok {
+		_spec.SetField(user.FieldConcurrencyPolicyGeneration, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedConcurrencyPolicyGeneration(); ok {
+		_spec.AddField(user.FieldConcurrencyPolicyGeneration, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(user.FieldStatus, field.TypeString, value)

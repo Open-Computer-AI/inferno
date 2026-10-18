@@ -26,8 +26,10 @@ type User struct {
 	// Both nil preserves the legacy shared Concurrency limit.
 	LiveConcurrency    *int
 	RequestConcurrency *int
-	Status             string
-	AllowedGroups      []int64
+	// ConcurrencyPolicyGeneration monotonically orders policy publications.
+	ConcurrencyPolicyGeneration int64
+	Status                      string
+	AllowedGroups               []int64
 	// RestrictPublicGroups narrows the public groups this user may bind to the
 	// ones listed in AllowedGroups. False keeps the default, where every public
 	// group is bindable.

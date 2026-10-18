@@ -144,6 +144,10 @@ type RedeemService struct {
 	affiliateService     *AffiliateService
 }
 
+type concurrencyPolicyMutationPublisher interface {
+	PublishCurrentConcurrencyPolicy(ctx context.Context, userID int64) error
+}
+
 // NewRedeemService 创建兑换码服务实例
 func NewRedeemService(
 	redeemRepo RedeemCodeRepository,
@@ -511,6 +515,13 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 	// 提交事务
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit transaction: %w", err)
+	}
+	if redeemCode.Type == RedeemTypeConcurrency {
+		if publisher, ok := s.redeemUserRepo.(concurrencyPolicyMutationPublisher); ok {
+			if err := publisher.PublishCurrentConcurrencyPolicy(ctx, userID); err != nil {
+				return nil, fmt.Errorf("%w: user_id=%d: %v", ErrConcurrencyPolicyRuntimeNotApplied, userID, err)
+			}
+		}
 	}
 
 	// 事务提交成功后失效缓存

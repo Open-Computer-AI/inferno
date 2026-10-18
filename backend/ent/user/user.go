@@ -33,6 +33,12 @@ const (
 	FieldFrozenBalance = "frozen_balance"
 	// FieldConcurrency holds the string denoting the concurrency field in the database.
 	FieldConcurrency = "concurrency"
+	// FieldLiveConcurrency holds the string denoting the live_concurrency field in the database.
+	FieldLiveConcurrency = "live_concurrency"
+	// FieldRequestConcurrency holds the string denoting the request_concurrency field in the database.
+	FieldRequestConcurrency = "request_concurrency"
+	// FieldConcurrencyPolicyGeneration holds the string denoting the concurrency_policy_generation field in the database.
+	FieldConcurrencyPolicyGeneration = "concurrency_policy_generation"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
 	// FieldUsername holds the string denoting the username field in the database.
@@ -207,6 +213,9 @@ var Columns = []string{
 	FieldBalance,
 	FieldFrozenBalance,
 	FieldConcurrency,
+	FieldLiveConcurrency,
+	FieldRequestConcurrency,
+	FieldConcurrencyPolicyGeneration,
 	FieldStatus,
 	FieldUsername,
 	FieldNotes,
@@ -270,6 +279,8 @@ var (
 	DefaultFrozenBalance float64
 	// DefaultConcurrency holds the default value on creation for the "concurrency" field.
 	DefaultConcurrency int
+	// DefaultConcurrencyPolicyGeneration holds the default value on creation for the "concurrency_policy_generation" field.
+	DefaultConcurrencyPolicyGeneration int64
 	// DefaultStatus holds the default value on creation for the "status" field.
 	DefaultStatus string
 	// StatusValidator is a validator for the "status" field. It is called by the builders before save.
@@ -355,6 +366,21 @@ func ByFrozenBalance(opts ...sql.OrderTermOption) OrderOption {
 // ByConcurrency orders the results by the concurrency field.
 func ByConcurrency(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldConcurrency, opts...).ToFunc()
+}
+
+// ByLiveConcurrency orders the results by the live_concurrency field.
+func ByLiveConcurrency(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLiveConcurrency, opts...).ToFunc()
+}
+
+// ByRequestConcurrency orders the results by the request_concurrency field.
+func ByRequestConcurrency(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRequestConcurrency, opts...).ToFunc()
+}
+
+// ByConcurrencyPolicyGeneration orders the results by the concurrency_policy_generation field.
+func ByConcurrencyPolicyGeneration(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldConcurrencyPolicyGeneration, opts...).ToFunc()
 }
 
 // ByStatus orders the results by the status field.

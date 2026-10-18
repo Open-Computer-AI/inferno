@@ -10,20 +10,24 @@ import (
 )
 
 type User struct {
-	ID            int64      `json:"id"`
-	Email         string     `json:"email"`
-	Username      string     `json:"username"`
-	AvatarSeed    string     `json:"avatar_seed,omitempty"`
-	Role          string     `json:"role"`
-	Balance       float64    `json:"balance"`
-	FrozenBalance float64    `json:"frozen_balance"`
-	Concurrency   int        `json:"concurrency"`
-	Status        string     `json:"status"`
-	AllowedGroups []int64    `json:"allowed_groups"`
-	LastActiveAt  *time.Time `json:"last_active_at,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	DeletedAt     *time.Time `json:"deleted_at,omitempty"`
+	ID                          int64      `json:"id"`
+	Email                       string     `json:"email"`
+	Username                    string     `json:"username"`
+	AvatarSeed                  string     `json:"avatar_seed,omitempty"`
+	Role                        string     `json:"role"`
+	Balance                     float64    `json:"balance"`
+	FrozenBalance               float64    `json:"frozen_balance"`
+	Concurrency                 int        `json:"concurrency"`
+	LiveConcurrency             *int       `json:"live_concurrency,omitempty"`
+	RequestConcurrency          *int       `json:"request_concurrency,omitempty"`
+	ConcurrencyMode             string     `json:"concurrency_mode"`
+	ConcurrencyPolicyGeneration int64      `json:"concurrency_policy_generation"`
+	Status                      string     `json:"status"`
+	AllowedGroups               []int64    `json:"allowed_groups"`
+	LastActiveAt                *time.Time `json:"last_active_at,omitempty"`
+	CreatedAt                   time.Time  `json:"created_at"`
+	UpdatedAt                   time.Time  `json:"updated_at"`
+	DeletedAt                   *time.Time `json:"deleted_at,omitempty"`
 
 	// 余额不足通知
 	BalanceNotifyEnabled       bool               `json:"balance_notify_enabled"`
@@ -211,24 +215,28 @@ type Account struct {
 	Type     string  `json:"type"`
 	// Credentials 经 RedactCredentials 处理后只含非敏感子键；敏感 token / api_key / 私钥
 	// 的存在性通过 CredentialsStatus（has_<key>）暴露，原始值不返回前端。
-	Credentials             map[string]any                 `json:"credentials"`
-	CredentialsStatus       map[string]bool                `json:"credentials_status,omitempty"`
-	Extra                   map[string]any                 `json:"extra"`
-	OllamaCloudUsage        *service.OllamaCloudUsageState `json:"ollama_cloud_usage,omitempty"`
-	ProxyID                 *int64                         `json:"proxy_id"`
-	ProxyFallbackOriginID   *int64                         `json:"proxy_fallback_origin_id"`
-	ProxyFallbackOriginName *string                        `json:"proxy_fallback_origin_name,omitempty"`
-	Concurrency             int                            `json:"concurrency"`
-	LoadFactor              *int                           `json:"load_factor,omitempty"`
-	Priority                int                            `json:"priority"`
-	RateMultiplier          float64                        `json:"rate_multiplier"`
-	Status                  string                         `json:"status"`
-	ErrorMessage            string                         `json:"error_message"`
-	LastUsedAt              *time.Time                     `json:"last_used_at"`
-	ExpiresAt               *int64                         `json:"expires_at"`
-	AutoPauseOnExpired      bool                           `json:"auto_pause_on_expired"`
-	CreatedAt               time.Time                      `json:"created_at"`
-	UpdatedAt               time.Time                      `json:"updated_at"`
+	Credentials                 map[string]any                 `json:"credentials"`
+	CredentialsStatus           map[string]bool                `json:"credentials_status,omitempty"`
+	Extra                       map[string]any                 `json:"extra"`
+	OllamaCloudUsage            *service.OllamaCloudUsageState `json:"ollama_cloud_usage,omitempty"`
+	ProxyID                     *int64                         `json:"proxy_id"`
+	ProxyFallbackOriginID       *int64                         `json:"proxy_fallback_origin_id"`
+	ProxyFallbackOriginName     *string                        `json:"proxy_fallback_origin_name,omitempty"`
+	Concurrency                 int                            `json:"concurrency"`
+	LiveConcurrency             *int                           `json:"live_concurrency,omitempty"`
+	RequestConcurrency          *int                           `json:"request_concurrency,omitempty"`
+	ConcurrencyMode             string                         `json:"concurrency_mode"`
+	ConcurrencyPolicyGeneration int64                          `json:"concurrency_policy_generation"`
+	LoadFactor                  *int                           `json:"load_factor,omitempty"`
+	Priority                    int                            `json:"priority"`
+	RateMultiplier              float64                        `json:"rate_multiplier"`
+	Status                      string                         `json:"status"`
+	ErrorMessage                string                         `json:"error_message"`
+	LastUsedAt                  *time.Time                     `json:"last_used_at"`
+	ExpiresAt                   *int64                         `json:"expires_at"`
+	AutoPauseOnExpired          bool                           `json:"auto_pause_on_expired"`
+	CreatedAt                   time.Time                      `json:"created_at"`
+	UpdatedAt                   time.Time                      `json:"updated_at"`
 
 	Schedulable bool `json:"schedulable"`
 
