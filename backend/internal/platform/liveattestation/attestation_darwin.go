@@ -81,7 +81,7 @@ type macOSSignals struct {
 	Scale     float64  `json:"scale"`
 }
 
-func NewProvider() Provider {
+func newLocalProvider() Provider {
 	paths := []string{chatGPTApplicationPath}
 	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
 		paths = append(paths, filepath.Join(home, "Applications", "ChatGPT.app"))

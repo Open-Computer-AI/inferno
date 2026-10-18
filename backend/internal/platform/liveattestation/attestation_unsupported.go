@@ -6,7 +6,7 @@ import "context"
 
 type unsupportedProvider struct{}
 
-func NewProvider() Provider {
+func newLocalProvider() Provider {
 	return unsupportedProvider{}
 }
 

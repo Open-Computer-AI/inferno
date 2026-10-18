@@ -223,7 +223,7 @@ func TestRealDeviceCheckHelperMatchesOneShot(t *testing.T) {
 	if testing.Short() {
 		t.Skip("uses the installed ChatGPT app")
 	}
-	provider := NewProvider().(*darwinProvider)
+	provider := NewLocalProvider().(*darwinProvider)
 	defer provider.helper.stop()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()

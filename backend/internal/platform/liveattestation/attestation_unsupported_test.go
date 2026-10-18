@@ -9,7 +9,7 @@ import (
 )
 
 func TestUnsupportedProviderReturnsExplicitPlatformError(t *testing.T) {
-	provider := NewProvider()
+	provider := NewLocalProvider()
 	if err := provider.Check(context.Background()); !errors.Is(err, ErrUnsupportedPlatform) {
 		t.Fatalf("Check() error = %v, want ErrUnsupportedPlatform", err)
 	}
