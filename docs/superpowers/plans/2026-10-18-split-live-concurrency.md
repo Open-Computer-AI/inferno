@@ -40,7 +40,8 @@ Add focused policy definitions in `backend/internal/service/concurrency_policy.g
 - `ValidateConcurrencyPolicy(policy ConcurrencyPolicy) error` and `EffectiveConcurrencyLimit(policy ConcurrencyPolicy, class ConcurrencyClass) (limit int, shared bool, err error)`.
 - `ConcurrencySnapshot { Request int; Live int; Total int }`, where Total is always Request+Live.
 - `LiveAdmissionRequest { AccountID int64; AccountPolicy ConcurrencyPolicy; UserID int64; UserPolicy ConcurrencyPolicy; APIKeyID int64; LeaseID string }`.
-- `LiveAdmissionResult { Acquired bool; DeniedScope string; Snapshot ConcurrencySnapshot }`, with denied scope account/user; Redis/service errors remain Go errors.
+- `LiveAdmissionResult { Acquired bool; DeniedScope string; Snapshot ConcurrencySnapshot; Reservation *LiveReservation }`, with denied scope account/user; Redis/service errors remain Go errors.
+- `LiveReservation` carries account/user/API-key IDs, LeaseID, account/user policy generations and the validated policy snapshots. Its `Release(ctx context.Context) error` is idempotent; `Refresh(ctx context.Context) (bool, error)` preserves ownership; `TransferToCall(record *LiveCallRecord) error` installs that same lease exactly once and hands refresh ownership to the session observer/controller without a renewal gap. A successful admission returns a non-nil handle; failed admission returns none. CreateLiveCall adopts this handle, never invents/reacquires its ID.
 
 Extend the Live cache/service with atomic `AcquireLiveReservation(ctx context.Context, request LiveAdmissionRequest) (LiveAdmissionResult, error)`. The scheduler passes the generated leaseID and owns release until it transfers the reservation to `CreateLiveCall`. The call record keeps the same ID and existing refresh/release paths.
 
@@ -68,7 +69,8 @@ Admin writes use an optional `concurrency_policy` object: omitted preserves poli
 - [ ] Write tests for NULL defaults, atomic complete split update, omitted-policy preservation, explicit shared reset, invalid half-pair rollback, bulk update and cache invalidation.
 - [ ] Add nullable integer columns to accounts/users with a DB check: both NULL OR both non-NULL and >0. Include explicit non-NULL checks; SQL CHECK permits UNKNOWN otherwise.
 - [ ] Run repository `make generate` from backend to regenerate Ent/wiring as required; inspect output and retain only necessary generation changes.
-- [ ] Wire repository mappings/create/update, admin patch/create/bulk, DTOs and auth/scheduler cache payloads. Old cached snapshots missing new fields must decode to shared mode. Invalidate affected user/account caches on policy edits.
+- [ ] Wire repository mappings/create/update, admin patch/create/bulk, DTOs and auth/scheduler cache payloads. Old cached snapshots missing both new fields decode to shared mode for compatibility; an explicit invalid pair never does. Invalidate affected user/account caches on policy edits. Reject account split enablement unless the account is a supported Live-capable OpenAI account.
+- [ ] Add monotonic account/user concurrency-policy generations and publish the effective policy/generation into Redis after the DB commit, before acknowledging an admin edit. Atomic admission checks both supplied generations against the authoritative Redis generations; a stale worker must reload policy and retry, not admit under its cached cap. If publication fails, report the edit as not runtime-applied and recover through the existing outbox/reconciliation pattern; never claim success. Initialize authoritative policy from DB before admission when absent. Preserve valid active leases through edits. Test that every admission ordered after an acknowledged update uses the new generation.
 - [ ] Cover account import/export/duplicate and existing admin CLI body pass-through. Existing concurrency-only edits, user batch limits and redeem/default logic must preserve split policy.
 - [ ] Run focused service/handler tests plus repository migration/integration tests using an isolated Postgres DB. Verify migration on populated shared fixtures and backward-compatible reads. Commit `feat: persist opt-in concurrency policies`.
 
@@ -81,7 +83,7 @@ Admin writes use an optional `concurrency_policy` object: omitted preserves poli
 - [ ] Write table tests for all four mixed account/user modes: shared/shared, split/shared, shared/split, split/split. Verify which scope rejects.
 - [ ] Write `TestSplitConcurrencyIndependentBudgets`: acquire4Live+2requests; fifthLive and thirdrequest fail; repeat with either class saturated first. Mirror at user scope across two accounts/API keys.
 - [ ] Implement Lua class-aware counts using existing key namespaces. A Live reservation atomically checks account/user and inserts account/user/API-key Live entries once; no replacing allowance. Ordinary acquisition checks its policy and keeps normal release ownership.
-- [ ] Preserve Redis time, expiry cleanup, lease renewal and idempotent release. Missing/malformed policy must return an error, not accidentally admit unlimited work.
+- [ ] Preserve Redis time, expiry cleanup, lease renewal and idempotent release. Both absent optional fields in a validated legacy object mean shared mode. Explicit half-pairs, nonpositive split limits, malformed values, absent authoritative Redis policy or generation mismatch must never become unlimited admission; initialize/reload or fail the admission. Check policy generations in the same Lua operation that reserves capacity.
 - [ ] Run `GOTOOLCHAIN=go1.27.0 go test -tags=unit ./internal/repository ./internal/service -run 'Test(SplitConcurrency|LiveLease|ConcurrencyPolicy)'`.
 - [ ] Run real-Redis concurrent integration tests with many competing acquires: peak admitted4/2, no dropped/duplicate ownership, cancellations release and expired leases recover. Test startup cleanup does not erase other workers' Live leases.
 - [ ] Commit `feat: enforce atomic Live and request concurrency budgets`.
@@ -94,10 +96,11 @@ Admin writes use an optional `concurrency_policy` object: omitted preserves poli
 
 - [ ] Write failing tests for Live admission while ordinary slots are full and vice versa; run with advanced scheduler enabled/disabled, sticky selection, load balance, fresh-load fallback and failed first account.
 - [ ] Propagate server-derived class through scheduling request, candidate filtering, class load rates, wait plans, fresh reads and fallback. Load-cache key includes class and policy/effective limit. Keep load-factor preference distinct from enforcement caps.
-- [ ] Remove ordinary user acquisition from Live handler. Live account selection atomically reserves account/user Live capacity using the existing auth identity; return lease ownership to CreateLiveCall.
+- [ ] Remove ordinary user acquisition from Live handler. Live account selection atomically reserves account/user Live capacity using the existing auth identity; return the typed LiveReservation handle to CreateLiveCall. Live capacity exhaustion remains non-waiting as today; do not introduce a Live wait queue. Ordinary wait behavior remains supported.
 - [ ] Generate one leaseID per account attempt, adopt it in the successful record, and release on every failed/canceled creation. Ensure the next failed-over attempt has its own ownership. Do not reacquire or add replacing allowance after success.
 - [ ] Cover simultaneous fifth creation, cancellation after upstream success/before record save, record-save failure, attestation/upstream failure, retries, sideband attach/reconnect, normal/abrupt close, terminal404/410, observer takeover and expiry. Creation reservations must survive a slow upstream request: renew at the existing lease interval while owned, and stop renewal on transfer/failure. Abort/release if renewal is lost.
-- [ ] Retain account model/group/health/proxy/alias eligibility and existing Live finalization/accounting. Add policy-change-in-flight test: existing lease is retained; new admissions obey the new cap.
+- [ ] Add shared-mode observable regression tests against existing fixtures for both advanced and legacy/disabled schedulers: unchanged account/user caps, eligibility, failover, rejection/non-waiting Live behavior, ordinary waiting and cleanup. Counts alone do not prove compatibility.
+- [ ] Retain account model/group/health/proxy/alias eligibility and existing Live finalization/accounting. Add policy-change-in-flight test: existing lease is retained; racing admissions with stale account/user generations cannot pass, and all admissions after the acknowledged update obey the new cap.
 - [ ] Run `GOTOOLCHAIN=go1.27.0 go test -tags=unit ./internal/service ./internal/handler ./internal/repository` and require new tests plus existing shared fixtures PASS. Commit `feat: schedule Live sessions with independent reservations`.
 
 ## Task 5: User-wide enforcement and error/metric breakdown
@@ -157,5 +160,6 @@ After the limiter is accepted, add bounded run-ID and purpose labels to Athena m
 
 - [ ] Scope coverage: Tasks1–2 policy/persistence/admin/cache; Task3 atomic enforcement; Task4 scheduler/Live ownership; Task5 user-wide paths/diagnostics; Task6 UI; Tasks7–8 review/real load/rollout.
 - [ ] Review Focus failures each have a named owning task/test. No split default expansion and no old/new enforcement mix.
+- [ ] Policy-update fence: distinguish DB persistence from acknowledged runtime application; never acknowledge a new cap before Redis can reject old-generation admissions.
 - [ ] Interface, ownership and patch naming are consistent across all tasks; resolve actual caller signatures before writing code rather than inventing adapters that bypass policy.
 - [ ] Completion means simultaneous4Live+2ordinary proven, excess admissions rejected, cleanup verified, relevant checks passed, UI functional, reviewed commit/SHA recorded and production/Air untouched. Merely compiling or showing counters is insufficient.
