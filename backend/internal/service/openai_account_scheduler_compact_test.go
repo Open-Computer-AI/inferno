@@ -220,6 +220,92 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForLiveNeverUsesOrdinary
 	}
 }
 
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForLiveReturnsTypedErrorWhenEligibleCapacityIsFull(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		advanced  bool
+		loadBatch bool
+		sticky    bool
+	}{
+		{name: "legacy"},
+		{name: "legacy_sticky", sticky: true},
+		{name: "legacy_load_batch", loadBatch: true},
+		{name: "advanced", advanced: true, loadBatch: true},
+		{name: "advanced_sticky", advanced: true, loadBatch: true, sticky: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetOpenAIAdvancedSchedulerSettingCacheForTest()
+			defer resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+			groupID, accountID := int64(91100), int64(72010)
+			const sessionHash = "live-full-capacity-sticky"
+			liveLimit, requestLimit := 2, 3
+			concurrencyCache := &schedulerTestConcurrencyCache{loadMap: map[int64]*AccountLoadInfo{
+				accountID: {AccountID: accountID, LoadRate: 100, CurrentConcurrency: liveLimit},
+			}}
+			gatewayCache := &schedulerTestGatewayCache{}
+			if tc.sticky {
+				gatewayCache.sessionBindings = map[string]int64{sessionHash: accountID}
+			}
+			cfg := &config.Config{}
+			cfg.Gateway.Scheduling.LoadBatchEnabled = tc.loadBatch
+			svc := &OpenAIGatewayService{
+				accountRepo: schedulerTestOpenAIAccountRepo{accounts: []Account{{
+					ID: accountID, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+					Status: StatusActive, Schedulable: true, Concurrency: 1,
+					LiveConcurrency: &liveLimit, RequestConcurrency: &requestLimit,
+					Credentials: map[string]any{"access_token": "live-capacity-test-token"},
+				}}},
+				cache:              gatewayCache,
+				cfg:                cfg,
+				concurrencyService: NewConcurrencyService(concurrencyCache),
+			}
+			if tc.advanced {
+				svc.rateLimitService = newOpenAIAdvancedSchedulerRateLimitService("true")
+			}
+
+			selection, _, err := svc.SelectAccountWithSchedulerForLive(
+				context.Background(), &groupID, "", sessionHashIf(tc.sticky, sessionHash), "gpt-live", nil,
+				OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityLive, false, false, false,
+			)
+			var capacityErr *ConcurrencyCapacityError
+			require.ErrorAs(t, err, &capacityErr)
+			require.Nil(t, selection)
+			require.Equal(t, ConcurrencyClassLive, capacityErr.Class)
+			require.Equal(t, "account", capacityErr.Scope)
+			require.Equal(t, "capacity_exhausted", capacityErr.Reason)
+		})
+	}
+}
+
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForLiveDoesNotRelabelIneligiblePool(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+	defer resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	accountID, groupID := int64(72011), int64(91101)
+	loadLimit := 1
+	svc := &OpenAIGatewayService{
+		accountRepo: schedulerTestOpenAIAccountRepo{accounts: []Account{{
+			ID: accountID, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+			Status: StatusActive, Schedulable: true, Concurrency: loadLimit,
+		}}},
+		cache: &schedulerTestGatewayCache{},
+		cfg:   &config.Config{},
+		concurrencyService: NewConcurrencyService(&schedulerTestConcurrencyCache{loadMap: map[int64]*AccountLoadInfo{
+			accountID: {AccountID: accountID, LoadRate: 100, CurrentConcurrency: loadLimit},
+		}}),
+	}
+
+	selection, _, err := svc.SelectAccountWithSchedulerForLive(
+		context.Background(), &groupID, "", "", "gpt-live", nil,
+		OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityLive, false, false, false,
+	)
+	require.ErrorIs(t, err, ErrNoAvailableAccounts)
+	var capacityErr *ConcurrencyCapacityError
+	require.NotErrorAs(t, err, &capacityErr)
+	require.Nil(t, selection)
+}
+
 func sessionHashIf(enabled bool, value string) string {
 	if enabled {
 		return value

@@ -233,7 +233,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	userReleaseFunc, err := geminiConcurrency.AcquireUserPolicySlotWithWait(c, authSubject.UserID, concurrencyPolicyFromAuthSubject(authSubject), authSubject.ConcurrencyPolicyGeneration, stream, &streamStarted)
 	if err != nil {
 		reqLog.Warn("gemini.user_slot_acquire_failed", zap.Error(err))
-		googleError(c, http.StatusTooManyRequests, err.Error())
+		googleErrorWithConcurrencyCapacity(c, http.StatusTooManyRequests, err.Error(), err)
 		return
 	}
 	// 确保请求取消时也会释放槽位，避免长连接被动中断造成泄漏
@@ -430,43 +430,56 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 				googleError(c, http.StatusServiceUnavailable, "No available Gemini accounts")
 				return
 			}
-			accountWaitCounted := false
-			canWait, err := geminiConcurrency.IncrementAccountWaitCount(c.Request.Context(), account.ID, selection.WaitPlan.MaxWaiting)
-			if err != nil {
-				reqLog.Warn("gemini.account_wait_counter_increment_failed", zap.Int64("account_id", account.ID), zap.Error(err))
-			} else if !canWait {
-				reqLog.Info("gemini.account_wait_queue_full",
-					zap.Int64("account_id", account.ID),
-					zap.Int("max_waiting", selection.WaitPlan.MaxWaiting),
-				)
-				googleError(c, http.StatusTooManyRequests, "Too many pending requests, please retry later")
-				return
-			}
-			if err == nil && canWait {
-				accountWaitCounted = true
-			}
-			defer func() {
-				if accountWaitCounted {
-					geminiConcurrency.DecrementAccountWaitCount(c.Request.Context(), account.ID)
-				}
-			}()
-
-			accountReleaseFunc, err = geminiConcurrency.AcquireAccountSlotWithWaitTimeout(
-				c,
-				account.ID,
-				selection.WaitPlan.MaxConcurrency,
-				selection.WaitPlan.Timeout,
-				stream,
-				&streamStarted,
+			var initialCapacityError *service.ConcurrencyCapacityError
+			var accountAcquired bool
+			accountReleaseFunc, accountAcquired, initialCapacityError, err = geminiConcurrency.TryAcquireAccountSlotWithCapacity(
+				c.Request.Context(), account.ID, selection.WaitPlan.MaxConcurrency,
 			)
 			if err != nil {
-				reqLog.Warn("gemini.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
-				googleError(c, http.StatusTooManyRequests, err.Error())
+				reqLog.Warn("gemini.account_slot_quick_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+				googleErrorWithConcurrencyCapacity(c, http.StatusTooManyRequests, err.Error(), err)
 				return
 			}
-			if accountWaitCounted {
-				geminiConcurrency.DecrementAccountWaitCount(c.Request.Context(), account.ID)
-				accountWaitCounted = false
+			if !accountAcquired {
+				accountWaitCounted := false
+				canWait, waitErr := geminiConcurrency.IncrementAccountWaitCount(c.Request.Context(), account.ID, selection.WaitPlan.MaxWaiting)
+				if waitErr != nil {
+					reqLog.Warn("gemini.account_wait_counter_increment_failed", zap.Int64("account_id", account.ID), zap.Error(waitErr))
+				} else if !canWait {
+					reqLog.Info("gemini.account_wait_queue_full",
+						zap.Int64("account_id", account.ID),
+						zap.Int("max_waiting", selection.WaitPlan.MaxWaiting),
+					)
+					queueErr := &WaitQueueFullError{SlotType: "account", CapacityError: initialCapacityError}
+					googleErrorWithConcurrencyCapacity(c, http.StatusTooManyRequests, queueErr.Error(), queueErr)
+					return
+				}
+				if waitErr == nil && canWait {
+					accountWaitCounted = true
+				}
+				defer func() {
+					if accountWaitCounted {
+						geminiConcurrency.DecrementAccountWaitCount(c.Request.Context(), account.ID)
+					}
+				}()
+
+				accountReleaseFunc, err = geminiConcurrency.AcquireAccountSlotWithWaitTimeout(
+					c,
+					account.ID,
+					selection.WaitPlan.MaxConcurrency,
+					selection.WaitPlan.Timeout,
+					stream,
+					&streamStarted,
+				)
+				if err != nil {
+					reqLog.Warn("gemini.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+					googleErrorWithConcurrencyCapacity(c, http.StatusTooManyRequests, err.Error(), err)
+					return
+				}
+				if accountWaitCounted {
+					geminiConcurrency.DecrementAccountWaitCount(c.Request.Context(), account.ID)
+					accountWaitCounted = false
+				}
 			}
 		}
 		// 终检与准入后绑定使用选号结果携带的门（见 responses 同名注释）。
@@ -697,6 +710,23 @@ func googleError(c *gin.Context, status int, message string) {
 			"status":  googleapi.HTTPStatusToGoogleStatus(status),
 		},
 	})
+}
+
+func googleErrorWithConcurrencyCapacity(c *gin.Context, status int, message string, err error) {
+	capacityErr := concurrencyCapacityErrorFrom(err)
+	if capacityErr == nil {
+		googleError(c, status, message)
+		return
+	}
+	errorBody := gin.H{
+		"code":    status,
+		"message": message,
+		"status":  googleapi.HTTPStatusToGoogleStatus(status),
+	}
+	for key, value := range concurrencyCapacityMetadata(capacityErr) {
+		errorBody[key] = value
+	}
+	c.JSON(status, gin.H{"error": errorBody})
 }
 
 func writeUpstreamResponse(c *gin.Context, res *service.UpstreamHTTPResult) {

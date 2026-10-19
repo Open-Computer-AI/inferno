@@ -350,6 +350,17 @@ func (h *ConcurrencyHelper) TryAcquireAccountSlot(ctx context.Context, accountID
 	return result.ReleaseFunc, true, nil
 }
 
+func (h *ConcurrencyHelper) TryAcquireAccountSlotWithCapacity(ctx context.Context, accountID int64, maxConcurrency int) (func(), bool, *service.ConcurrencyCapacityError, error) {
+	result, err := h.acquireAccountSlotResult(ctx, accountID, maxConcurrency)
+	if err != nil {
+		return nil, false, nil, err
+	}
+	if !result.Acquired {
+		return nil, false, result.CapacityError, nil
+	}
+	return result.ReleaseFunc, true, nil, nil
+}
+
 func (h *ConcurrencyHelper) acquireAccountSlotResult(ctx context.Context, accountID int64, maxConcurrency int) (*service.AcquireResult, error) {
 	return h.concurrencyService.AcquireAccountPolicySlot(ctx, accountID, service.ConcurrencyClassRequest, maxConcurrency)
 }

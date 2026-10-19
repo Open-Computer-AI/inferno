@@ -46,3 +46,14 @@ func concurrencyCapacityErrorFrom(err error) *service.ConcurrencyCapacityError {
 	}
 	return nil
 }
+
+func concurrencyCapacityMetadata(capacityErr *service.ConcurrencyCapacityError) map[string]string {
+	if capacityErr == nil {
+		return nil
+	}
+	return map[string]string{
+		"concurrency_class":  string(capacityErr.Class),
+		"concurrency_scope":  capacityErr.Scope,
+		"concurrency_reason": capacityErr.Reason,
+	}
+}

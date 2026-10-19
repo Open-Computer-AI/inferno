@@ -1554,6 +1554,11 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	if requireCompact && baseCandidateCount > 0 {
 		return nil, ErrNoAvailableCompactAccounts
 	}
+	if err == nil {
+		if capacityErr := liveAccountCapacityError(candidates, loadMap, admissionClass); capacityErr != nil {
+			return nil, capacityErr
+		}
+	}
 	return nil, ErrNoAvailableAccounts
 }
 

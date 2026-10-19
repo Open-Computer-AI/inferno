@@ -160,6 +160,31 @@ type openAIAccountLoadSelectionAttempt struct {
 	err                 error
 }
 
+// liveAccountCapacityError reports exhaustion only when the class-aware load
+// snapshot proves that every already-eligible account is at its Live limit.
+// Missing, stale, or request-class snapshots are not enough to classify a
+// selection failure as capacity exhaustion.
+func liveAccountCapacityError(accounts []*Account, loadMap map[int64]*AccountLoadInfo, class ConcurrencyClass) *ConcurrencyCapacityError {
+	if class != ConcurrencyClassLive || len(accounts) == 0 {
+		return nil
+	}
+	for _, account := range accounts {
+		limit, valid := accountAdmissionLimit(account, class)
+		if !valid || limit <= 0 {
+			return nil
+		}
+		loadInfo, ok := loadMap[account.ID]
+		if !ok || loadInfo == nil || loadInfo.CurrentConcurrency < limit {
+			return nil
+		}
+	}
+	return &ConcurrencyCapacityError{
+		Class:  ConcurrencyClassLive,
+		Scope:  "account",
+		Reason: "capacity_exhausted",
+	}
+}
+
 func (m *openAIAccountSchedulerMetrics) recordSelect(decision OpenAIAccountScheduleDecision) {
 	if m == nil {
 		return
@@ -1556,6 +1581,18 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			loadMap = batchLoad
 		}
 	}
+	classifyLiveCapacityExhaustion := func(err error) error {
+		if errors.Is(err, ErrNoAvailableAccounts) {
+			if capacityErr := liveAccountCapacityError(filtered, loadMap, req.AdmissionClass); capacityErr != nil {
+				return capacityErr
+			}
+		}
+		return err
+	}
+	finishFallback := func(attempt openAIAccountLoadSelectionAttempt) (*AccountSelectionResult, int, int, float64, error) {
+		result, candidateCount, topK, loadSkew, finishErr := s.finishLoadBalanceSelectionFallback(ctx, req, attempt, budget, filterStats)
+		return result, candidateCount, topK, loadSkew, classifyLiveCapacityExhaustion(finishErr)
+	}
 
 	if req.SubscriptionPriority {
 		subscriptionAccounts, regularAccounts := partitionOpenAIChatGPTSubscriptionAccounts(filtered)
@@ -1591,9 +1628,9 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 				if subErr == nil && subResult != nil {
 					return subResult, subCandidateCount, subTopK, subLoadSkew, nil
 				}
-				return result, candidateCount, topK, loadSkew, fallbackErr
+				return result, candidateCount, topK, loadSkew, classifyLiveCapacityExhaustion(fallbackErr)
 			}
-			return s.finishLoadBalanceSelectionFallback(ctx, req, attempt, budget, filterStats)
+			return finishFallback(attempt)
 		}
 	}
 
@@ -1604,7 +1641,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	if attempt.result != nil {
 		return attempt.result, attempt.candidateCount, attempt.topK, attempt.loadSkew, nil
 	}
-	return s.finishLoadBalanceSelectionFallback(ctx, req, attempt, budget, filterStats)
+	return finishFallback(attempt)
 }
 
 func partitionOpenAIChatGPTSubscriptionAccounts(accounts []*Account) ([]*Account, []*Account) {

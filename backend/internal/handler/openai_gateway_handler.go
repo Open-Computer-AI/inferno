@@ -2018,10 +2018,20 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 	reqLog *zap.Logger,
 	writeError openAISlotErrorWriter,
 ) (func(), openAISlotAcquireResult) {
+	hasCustomErrorWriter := writeError != nil
 	if writeError == nil {
 		writeError = func(status int, errType, message string) {
 			h.handleStreamingAwareError(c, status, errType, message, *streamStarted)
 		}
+	}
+	writeAcquireError := func(err error, status int, errType, message string) {
+		if !hasCustomErrorWriter {
+			if capacityErr := concurrencyCapacityErrorFrom(err); capacityErr != nil {
+				h.handleConcurrencyCapacityError(c, capacityErr, *streamStarted)
+				return
+			}
+		}
+		writeError(status, errType, message)
 	}
 	if selection == nil || selection.Account == nil {
 		markOpsRoutingCapacityLimited(c)
@@ -2059,7 +2069,7 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 		return nil, openAISlotAcquireFailed
 	}
 
-	fastReleaseFunc, fastAcquired, err := h.concurrencyHelper.TryAcquireAccountSlot(
+	fastReleaseFunc, fastAcquired, initialCapacityError, err := h.concurrencyHelper.TryAcquireAccountSlotWithCapacity(
 		ctx,
 		account.ID,
 		selection.WaitPlan.MaxConcurrency,
@@ -2067,7 +2077,7 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 	if err != nil {
 		reqLog.Warn("openai.account_slot_quick_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		status, errType, message := concurrencyErrorResponse(err, "account")
-		writeError(status, errType, message)
+		writeAcquireError(err, status, errType, message)
 		return nil, openAISlotAcquireFailed
 	}
 	if fastAcquired {
@@ -2097,7 +2107,11 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 			zap.Int64("account_id", account.ID),
 			zap.Int("max_waiting", selection.WaitPlan.MaxWaiting),
 		)
-		writeError(http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later")
+		if !hasCustomErrorWriter && initialCapacityError != nil {
+			h.handleConcurrencyCapacityError(c, initialCapacityError, *streamStarted)
+		} else {
+			writeError(http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later")
+		}
 		return nil, openAISlotAcquireFailed
 	}
 
@@ -2121,7 +2135,7 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 	if err != nil {
 		reqLog.Warn("openai.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		status, errType, message := concurrencyErrorResponse(err, "account")
-		writeError(status, errType, message)
+		writeAcquireError(err, status, errType, message)
 		return nil, openAISlotAcquireFailed
 	}
 
@@ -3178,15 +3192,51 @@ func (h *OpenAIGatewayHandler) acquireImageGenerationSlot(c *gin.Context, stream
 // handleConcurrencyError handles concurrency-related acquire errors.
 func (h *OpenAIGatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotType string, streamStarted bool) {
 	if capacityErr := concurrencyCapacityErrorFrom(err); capacityErr != nil {
-		if streamStarted {
-			h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", capacityErr.Error(), true)
-		} else {
-			h.concurrencyCapacityErrorResponse(c, capacityErr)
-		}
+		h.handleConcurrencyCapacityError(c, capacityErr, streamStarted)
 		return
 	}
 	status, errType, message := concurrencyErrorResponse(err, slotType)
 	h.handleStreamingAwareError(c, status, errType, message, streamStarted)
+}
+
+func (h *OpenAIGatewayHandler) handleConcurrencyCapacityError(c *gin.Context, capacityErr *service.ConcurrencyCapacityError, streamStarted bool) {
+	if service.StopOpenAICompactSSEKeepaliveCommitted(c) {
+		streamStarted = true
+	}
+	if !streamStarted {
+		h.concurrencyCapacityErrorResponse(c, capacityErr)
+		return
+	}
+	h.writeConcurrencyCapacitySSE(c, capacityErr)
+}
+
+func (h *OpenAIGatewayHandler) writeConcurrencyCapacitySSE(c *gin.Context, capacityErr *service.ConcurrencyCapacityError) {
+	message := "Concurrency capacity exhausted"
+	if capacityErr != nil {
+		message = capacityErr.Error()
+	}
+	service.MarkOpsStreamError(c, "rate_limit_error", message, http.StatusTooManyRequests)
+	if inboundIsResponses(c) {
+		if writeResponsesFailedSSEWithCapacity(c, "rate_limit_error", message, capacityErr) {
+			return
+		}
+	}
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		return
+	}
+	errorObject := gin.H{"type": "rate_limit_error", "code": "concurrency_capacity", "message": message}
+	for key, value := range concurrencyCapacityMetadata(capacityErr) {
+		errorObject[key] = value
+	}
+	payload, err := json.Marshal(gin.H{"error": errorObject})
+	if err != nil {
+		payload = []byte(`{"error":{"type":"rate_limit_error","message":"Concurrency capacity exhausted"}}`)
+	}
+	if _, err := fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", payload); err != nil {
+		_ = c.Error(err)
+	}
+	flusher.Flush()
 }
 
 func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, streamStarted bool) {
@@ -3553,20 +3603,16 @@ func (h *OpenAIGatewayHandler) concurrencyCapacityErrorResponse(c *gin.Context, 
 		message = capacityErr.Error()
 	}
 	if service.StopOpenAICompactSSEKeepaliveCommitted(c) {
-		service.MarkOpsStreamError(c, "rate_limit_error", message, http.StatusTooManyRequests)
-		if writeResponsesFailedSSE(c, "rate_limit_error", message) {
-			return
-		}
+		h.writeConcurrencyCapacitySSE(c, capacityErr)
+		return
 	}
 	errorBody := gin.H{
 		"type":    "rate_limit_error",
 		"code":    "concurrency_capacity",
 		"message": message,
 	}
-	if capacityErr != nil {
-		errorBody["concurrency_class"] = string(capacityErr.Class)
-		errorBody["concurrency_scope"] = capacityErr.Scope
-		errorBody["concurrency_reason"] = capacityErr.Reason
+	for key, value := range concurrencyCapacityMetadata(capacityErr) {
+		errorBody[key] = value
 	}
 	c.JSON(http.StatusTooManyRequests, gin.H{"error": errorBody})
 }
