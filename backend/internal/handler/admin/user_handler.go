@@ -22,7 +22,22 @@ import (
 // UserWithConcurrency wraps AdminUser with current concurrency info
 type UserWithConcurrency struct {
 	dto.AdminUser
-	CurrentConcurrency int `json:"current_concurrency"`
+	CurrentConcurrency        *int   `json:"current_concurrency"`
+	CurrentLiveConcurrency    *int   `json:"current_live_concurrency"`
+	CurrentRequestConcurrency *int   `json:"current_request_concurrency"`
+	ConcurrencyReadError      string `json:"concurrency_read_error,omitempty"`
+}
+
+func setUserConcurrencySnapshot(item *UserWithConcurrency, snapshot service.ConcurrencySnapshot) {
+	if item == nil {
+		return
+	}
+	request := snapshot.Request
+	live := snapshot.Live
+	total := request + live
+	item.CurrentRequestConcurrency = &request
+	item.CurrentLiveConcurrency = &live
+	item.CurrentConcurrency = &total
 }
 
 // UserHandler handles admin user management
@@ -159,17 +174,20 @@ func (h *UserHandler) List(c *gin.Context) {
 		return
 	}
 
-	// Batch get current concurrency (nil map if unavailable)
-	var loadInfo map[int64]*service.UserLoadInfo
+	// Batch get class-separated current concurrency. A failed read stays
+	// unknown; it must not be rendered as an occupied count of zero.
+	concurrencySnapshots := make(map[int64]service.ConcurrencySnapshot)
+	concurrencyReadError := false
 	if len(users) > 0 && h.concurrencyService != nil {
-		usersConcurrency := make([]service.UserWithConcurrency, len(users))
+		userIDs := make([]int64, len(users))
 		for i := range users {
-			usersConcurrency[i] = service.UserWithConcurrency{
-				ID:             users[i].ID,
-				MaxConcurrency: users[i].Concurrency,
-			}
+			userIDs[i] = users[i].ID
 		}
-		loadInfo, _ = h.concurrencyService.GetUsersLoadBatch(c.Request.Context(), usersConcurrency)
+		if snapshots, snapshotErr := h.concurrencyService.GetUserConcurrencySnapshotBatch(c.Request.Context(), userIDs); snapshotErr == nil && snapshots != nil {
+			concurrencySnapshots = snapshots
+		} else {
+			concurrencyReadError = true
+		}
 	}
 
 	// Build response with concurrency info
@@ -178,8 +196,10 @@ func (h *UserHandler) List(c *gin.Context) {
 		out[i] = UserWithConcurrency{
 			AdminUser: *dto.UserFromServiceAdmin(&users[i]),
 		}
-		if info := loadInfo[users[i].ID]; info != nil {
-			out[i].CurrentConcurrency = info.CurrentConcurrency
+		if snapshot, ok := concurrencySnapshots[users[i].ID]; ok {
+			setUserConcurrencySnapshot(&out[i], snapshot)
+		} else if concurrencyReadError || h.concurrencyService != nil {
+			out[i].ConcurrencyReadError = "unavailable"
 		}
 	}
 
@@ -442,6 +462,36 @@ func (h *UserHandler) GetUserAPIKeys(c *gin.Context) {
 	out := make([]dto.APIKey, 0, len(keys))
 	for i := range keys {
 		out = append(out, *dto.APIKeyFromService(&keys[i]))
+	}
+	if h.concurrencyService != nil && len(keys) > 0 {
+		keyIDs := make([]int64, len(keys))
+		for i := range keys {
+			keyIDs[i] = keys[i].ID
+		}
+		snapshots, snapshotErr := h.concurrencyService.GetAPIKeyConcurrencySnapshotBatch(c.Request.Context(), keyIDs)
+		for i := range out {
+			if snapshotErr != nil {
+				out[i].CurrentConcurrency = nil
+				out[i].CurrentLiveConcurrency = nil
+				out[i].CurrentRequestConcurrency = nil
+				out[i].ConcurrencyReadError = "unavailable"
+				continue
+			}
+			snapshot, ok := snapshots[keyIDs[i]]
+			if !ok {
+				out[i].CurrentConcurrency = nil
+				out[i].CurrentLiveConcurrency = nil
+				out[i].CurrentRequestConcurrency = nil
+				out[i].ConcurrencyReadError = "unavailable"
+				continue
+			}
+			request := snapshot.Request
+			live := snapshot.Live
+			total := request + live
+			out[i].CurrentConcurrency = &total
+			out[i].CurrentLiveConcurrency = &live
+			out[i].CurrentRequestConcurrency = &request
+		}
 	}
 	response.Paginated(c, out, total, page, pageSize)
 }

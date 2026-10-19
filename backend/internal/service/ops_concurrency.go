@@ -130,10 +130,15 @@ func (s *OpsService) GetConcurrencyStats(
 
 	collectedAt := time.Now()
 	loadMap := s.getAccountsLoadMapBestEffort(ctx, accounts)
+	snapshots, snapshotReadError := s.getAccountSnapshotsForOps(ctx, accounts)
 
 	platform := make(map[string]*PlatformConcurrencyInfo)
 	group := make(map[int64]*GroupConcurrencyInfo)
 	account := make(map[int64]*AccountConcurrencyInfo)
+	platformSnapshots := make(map[string]ConcurrencySnapshot)
+	platformSnapshotKnown := make(map[string]bool)
+	groupSnapshots := make(map[int64]ConcurrencySnapshot)
+	groupSnapshotKnown := make(map[int64]bool)
 
 	for _, acc := range accounts {
 		if acc.ID <= 0 {
@@ -164,6 +169,10 @@ func (s *OpsService) GetConcurrencyStats(
 			currentInUse = int64(load.CurrentConcurrency)
 			waiting = int64(load.WaitingCount)
 		}
+		snapshot, snapshotKnown := snapshots[acc.ID]
+		if snapshotKnown {
+			currentInUse = int64(snapshot.Request + snapshot.Live)
+		}
 
 		// Account-level view picks one display group (the first group).
 		displayGroupID := int64(0)
@@ -190,6 +199,11 @@ func (s *OpsService) GetConcurrencyStats(
 			if info.MaxCapacity > 0 {
 				info.LoadPercentage = float64(info.CurrentInUse) / float64(info.MaxCapacity) * 100
 			}
+			if snapshotKnown {
+				info.CurrentRequestConcurrency, info.CurrentLiveConcurrency, info.CurrentConcurrency = concurrencySnapshotPointers(snapshot)
+			} else if snapshotReadError || s.concurrencyService != nil {
+				info.ConcurrencyReadError = "unavailable"
+			}
 			account[acc.ID] = info
 		}
 
@@ -204,6 +218,16 @@ func (s *OpsService) GetConcurrencyStats(
 			p.MaxCapacity += int64(acc.Concurrency)
 			p.CurrentInUse += currentInUse
 			p.WaitingInQueue += waiting
+			if s.concurrencyService != nil {
+				if _, seen := platformSnapshotKnown[acc.Platform]; !seen {
+					platformSnapshotKnown[acc.Platform] = true
+				}
+				if snapshotKnown && !snapshotReadError && platformSnapshotKnown[acc.Platform] {
+					platformSnapshots[acc.Platform] = addConcurrencySnapshots(platformSnapshots[acc.Platform], snapshot)
+				} else {
+					platformSnapshotKnown[acc.Platform] = false
+				}
+			}
 		}
 
 		// Group aggregation (one account may contribute to multiple groups).
@@ -227,6 +251,16 @@ func (s *OpsService) GetConcurrencyStats(
 			g.MaxCapacity += int64(acc.Concurrency)
 			g.CurrentInUse += currentInUse
 			g.WaitingInQueue += waiting
+			if s.concurrencyService != nil {
+				if _, seen := groupSnapshotKnown[grp.ID]; !seen {
+					groupSnapshotKnown[grp.ID] = true
+				}
+				if snapshotKnown && !snapshotReadError && groupSnapshotKnown[grp.ID] {
+					groupSnapshots[grp.ID] = addConcurrencySnapshots(groupSnapshots[grp.ID], snapshot)
+				} else {
+					groupSnapshotKnown[grp.ID] = false
+				}
+			}
 		} else {
 			for _, grp := range acc.Groups {
 				if grp == nil || grp.ID <= 0 {
@@ -250,6 +284,33 @@ func (s *OpsService) GetConcurrencyStats(
 				g.MaxCapacity += int64(acc.Concurrency)
 				g.CurrentInUse += currentInUse
 				g.WaitingInQueue += waiting
+				if s.concurrencyService != nil {
+					if _, seen := groupSnapshotKnown[grp.ID]; !seen {
+						groupSnapshotKnown[grp.ID] = true
+					}
+					if snapshotKnown && !snapshotReadError && groupSnapshotKnown[grp.ID] {
+						groupSnapshots[grp.ID] = addConcurrencySnapshots(groupSnapshots[grp.ID], snapshot)
+					} else {
+						groupSnapshotKnown[grp.ID] = false
+					}
+				}
+			}
+		}
+	}
+
+	if s.concurrencyService != nil {
+		for platformName, info := range platform {
+			if !snapshotReadError && platformSnapshotKnown[platformName] {
+				info.CurrentRequestConcurrency, info.CurrentLiveConcurrency, info.CurrentConcurrency = concurrencySnapshotPointers(platformSnapshots[platformName])
+			} else {
+				info.ConcurrencyReadError = "unavailable"
+			}
+		}
+		for groupID, info := range group {
+			if !snapshotReadError && groupSnapshotKnown[groupID] {
+				info.CurrentRequestConcurrency, info.CurrentLiveConcurrency, info.CurrentConcurrency = concurrencySnapshotPointers(groupSnapshots[groupID])
+			} else {
+				info.ConcurrencyReadError = "unavailable"
 			}
 		}
 	}
@@ -356,6 +417,89 @@ func (s *OpsService) getUsersLoadMapBestEffort(ctx context.Context, users []User
 	return out
 }
 
+// getAccountSnapshotsForOps reads class-aware occupancy in bounded batches.
+// The second return value means a strict read was attempted and failed; the
+// caller uses it to expose unknown diagnostics instead of zeroes.
+func (s *OpsService) getAccountSnapshotsForOps(ctx context.Context, accounts []Account) (map[int64]ConcurrencySnapshot, bool) {
+	if s == nil || s.concurrencyService == nil || len(accounts) == 0 {
+		return map[int64]ConcurrencySnapshot{}, false
+	}
+	ids := make([]int64, 0, len(accounts))
+	seen := make(map[int64]struct{}, len(accounts))
+	for _, account := range accounts {
+		if account.ID <= 0 {
+			continue
+		}
+		if _, ok := seen[account.ID]; ok {
+			continue
+		}
+		seen[account.ID] = struct{}{}
+		ids = append(ids, account.ID)
+	}
+	result := make(map[int64]ConcurrencySnapshot, len(ids))
+	for i := 0; i < len(ids); i += opsConcurrencyBatchChunkSize {
+		end := i + opsConcurrencyBatchChunkSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		part, err := s.concurrencyService.GetAccountConcurrencySnapshotBatch(ctx, ids[i:end])
+		if err != nil {
+			return nil, true
+		}
+		for id, snapshot := range part {
+			result[id] = snapshot
+		}
+	}
+	return result, false
+}
+
+func (s *OpsService) getUserSnapshotsForOps(ctx context.Context, users []User) (map[int64]ConcurrencySnapshot, bool) {
+	if s == nil || s.concurrencyService == nil || len(users) == 0 {
+		return map[int64]ConcurrencySnapshot{}, false
+	}
+	ids := make([]int64, 0, len(users))
+	seen := make(map[int64]struct{}, len(users))
+	for _, user := range users {
+		if user.ID <= 0 {
+			continue
+		}
+		if _, ok := seen[user.ID]; ok {
+			continue
+		}
+		seen[user.ID] = struct{}{}
+		ids = append(ids, user.ID)
+	}
+	result := make(map[int64]ConcurrencySnapshot, len(ids))
+	for i := 0; i < len(ids); i += opsConcurrencyBatchChunkSize {
+		end := i + opsConcurrencyBatchChunkSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		part, err := s.concurrencyService.GetUserConcurrencySnapshotBatch(ctx, ids[i:end])
+		if err != nil {
+			return nil, true
+		}
+		for id, snapshot := range part {
+			result[id] = snapshot
+		}
+	}
+	return result, false
+}
+
+func concurrencySnapshotPointers(snapshot ConcurrencySnapshot) (request, live, total *int64) {
+	requestValue := int64(snapshot.Request)
+	liveValue := int64(snapshot.Live)
+	totalValue := requestValue + liveValue
+	return &requestValue, &liveValue, &totalValue
+}
+
+func addConcurrencySnapshots(left, right ConcurrencySnapshot) ConcurrencySnapshot {
+	left.Request += right.Request
+	left.Live += right.Live
+	left.Total = left.Request + left.Live
+	return left
+}
+
 // GetUserConcurrencyStats returns real-time concurrency usage for all active users.
 func (s *OpsService) GetUserConcurrencyStats(ctx context.Context) (map[int64]*UserConcurrencyInfo, *time.Time, error) {
 	if err := s.RequireMonitoringEnabled(ctx); err != nil {
@@ -369,6 +513,7 @@ func (s *OpsService) GetUserConcurrencyStats(ctx context.Context) (map[int64]*Us
 
 	collectedAt := time.Now()
 	loadMap := s.getUsersLoadMapBestEffort(ctx, users)
+	snapshots, snapshotReadError := s.getUserSnapshotsForOps(ctx, users)
 
 	result := make(map[int64]*UserConcurrencyInfo)
 
@@ -384,9 +529,13 @@ func (s *OpsService) GetUserConcurrencyStats(ctx context.Context) (map[int64]*Us
 			currentInUse = int64(load.CurrentConcurrency)
 			waiting = int64(load.WaitingCount)
 		}
+		snapshot, snapshotKnown := snapshots[u.ID]
+		if snapshotKnown {
+			currentInUse = int64(snapshot.Request + snapshot.Live)
+		}
 
 		// Skip users with no concurrency activity
-		if currentInUse == 0 && waiting == 0 {
+		if currentInUse == 0 && waiting == 0 && !snapshotReadError && !snapshotKnown {
 			continue
 		}
 
@@ -400,6 +549,11 @@ func (s *OpsService) GetUserConcurrencyStats(ctx context.Context) (map[int64]*Us
 		}
 		if info.MaxCapacity > 0 {
 			info.LoadPercentage = float64(info.CurrentInUse) / float64(info.MaxCapacity) * 100
+		}
+		if snapshotKnown && !snapshotReadError {
+			info.CurrentRequestConcurrency, info.CurrentLiveConcurrency, info.CurrentConcurrency = concurrencySnapshotPointers(snapshot)
+		} else if snapshotReadError || s.concurrencyService != nil {
+			info.ConcurrencyReadError = "unavailable"
 		}
 		result[u.ID] = info
 	}

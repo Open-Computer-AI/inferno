@@ -1457,6 +1457,77 @@ func (c *concurrencyCache) GetAccountConcurrencyBatch(ctx context.Context, accou
 	return result, nil
 }
 
+// getConcurrencySnapshotBatch reads regular and Live occupancy separately
+// from the same Redis time reference. Expired members are removed before the
+// cards are read, so Total is always the exact sum of the two classes.
+func (c *concurrencyCache) getConcurrencySnapshotBatch(
+	ctx context.Context,
+	ids []int64,
+	regularKey func(int64) string,
+	liveKey func(int64) string,
+) (map[int64]service.ConcurrencySnapshot, error) {
+	if len(ids) == 0 {
+		return map[int64]service.ConcurrencySnapshot{}, nil
+	}
+	if c == nil || c.rdb == nil {
+		return nil, errors.New("redis concurrency cache unavailable")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	now, err := c.rdb.Time(ctx).Result()
+	if err != nil {
+		return nil, fmt.Errorf("redis TIME: %w", err)
+	}
+	regularCutoff := now.Unix() - int64(c.slotTTLSeconds)
+	liveCutoff := now.Unix() - liveLeaseTTLSeconds
+
+	type snapshotCommands struct {
+		id      int64
+		regular *redis.IntCmd
+		live    *redis.IntCmd
+	}
+	pipe := c.rdb.Pipeline()
+	commands := make([]snapshotCommands, 0, len(ids))
+	for _, id := range ids {
+		regularSlotKey := regularKey(id)
+		liveSlotKey := liveKey(id)
+		pipe.ZRemRangeByScore(ctx, regularSlotKey, "-inf", strconv.FormatInt(regularCutoff, 10))
+		pipe.ZRemRangeByScore(ctx, liveSlotKey, "-inf", strconv.FormatInt(liveCutoff, 10))
+		commands = append(commands, snapshotCommands{
+			id:      id,
+			regular: pipe.ZCard(ctx, regularSlotKey),
+			live:    pipe.ZCard(ctx, liveSlotKey),
+		})
+	}
+	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
+		return nil, fmt.Errorf("concurrency snapshot pipeline: %w", err)
+	}
+
+	result := make(map[int64]service.ConcurrencySnapshot, len(ids))
+	for _, command := range commands {
+		if err := command.regular.Err(); err != nil {
+			return nil, fmt.Errorf("regular concurrency snapshot for %d: %w", command.id, err)
+		}
+		if err := command.live.Err(); err != nil {
+			return nil, fmt.Errorf("live concurrency snapshot for %d: %w", command.id, err)
+		}
+		request := int(command.regular.Val())
+		live := int(command.live.Val())
+		result[command.id] = service.ConcurrencySnapshot{
+			Request: request,
+			Live:    live,
+			Total:   request + live,
+		}
+	}
+	return result, nil
+}
+
+func (c *concurrencyCache) GetAccountConcurrencySnapshotBatch(ctx context.Context, accountIDs []int64) (map[int64]service.ConcurrencySnapshot, error) {
+	return c.getConcurrencySnapshotBatch(ctx, accountIDs, accountSlotKey, liveAccountSlotKey)
+}
+
 // User slot operations
 
 func (c *concurrencyCache) AcquireUserSlot(ctx context.Context, userID int64, maxConcurrency int, requestID string) (bool, error) {
@@ -1491,6 +1562,10 @@ func (c *concurrencyCache) GetUserConcurrency(ctx context.Context, userID int64)
 		return 0, err
 	}
 	return result, nil
+}
+
+func (c *concurrencyCache) GetUserConcurrencySnapshotBatch(ctx context.Context, userIDs []int64) (map[int64]service.ConcurrencySnapshot, error) {
+	return c.getConcurrencySnapshotBatch(ctx, userIDs, userSlotKey, liveUserSlotKey)
 }
 
 func (c *concurrencyCache) TrackAPIKeySlot(ctx context.Context, apiKeyID int64, requestID string) error {
@@ -1636,6 +1711,10 @@ func (c *concurrencyCache) GetAPIKeyConcurrencyBatch(ctx context.Context, apiKey
 		result[cmd.apiKeyID] = int(cmd.zcardCmd.Val() + cmd.liveCmd.Val())
 	}
 	return result, nil
+}
+
+func (c *concurrencyCache) GetAPIKeyConcurrencySnapshotBatch(ctx context.Context, apiKeyIDs []int64) (map[int64]service.ConcurrencySnapshot, error) {
+	return c.getConcurrencySnapshotBatch(ctx, apiKeyIDs, apiKeySlotKey, liveAPIKeySlotKey)
 }
 
 // Wait queue operations

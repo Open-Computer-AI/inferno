@@ -193,13 +193,28 @@ type CheckMixedChannelRequest struct {
 // AccountWithConcurrency extends Account with real-time concurrency info
 type AccountWithConcurrency struct {
 	*dto.Account
-	CurrentConcurrency int                          `json:"current_concurrency"`
-	SchedulerScore     *AccountSchedulerScore       `json:"scheduler_score,omitempty"`
-	SchedulerScores    []AccountSchedulerGroupScore `json:"scheduler_scores,omitempty"`
+	CurrentConcurrency        *int                         `json:"current_concurrency"`
+	CurrentLiveConcurrency    *int                         `json:"current_live_concurrency"`
+	CurrentRequestConcurrency *int                         `json:"current_request_concurrency"`
+	ConcurrencyReadError      string                       `json:"concurrency_read_error,omitempty"`
+	SchedulerScore            *AccountSchedulerScore       `json:"scheduler_score,omitempty"`
+	SchedulerScores           []AccountSchedulerGroupScore `json:"scheduler_scores,omitempty"`
 	// 以下字段仅对 Anthropic OAuth/SetupToken 账号有效，且仅在启用相应功能时返回
 	CurrentWindowCost *float64 `json:"current_window_cost,omitempty"` // 当前窗口费用
 	ActiveSessions    *int     `json:"active_sessions,omitempty"`     // 当前活跃会话数
 	CurrentRPM        *int     `json:"current_rpm,omitempty"`         // 当前分钟 RPM 计数
+}
+
+func setAccountConcurrencySnapshot(item *AccountWithConcurrency, snapshot service.ConcurrencySnapshot) {
+	if item == nil {
+		return
+	}
+	request := snapshot.Request
+	live := snapshot.Live
+	total := request + live
+	item.CurrentRequestConcurrency = &request
+	item.CurrentLiveConcurrency = &live
+	item.CurrentConcurrency = &total
 }
 
 type AccountSchedulerScore struct {
@@ -228,16 +243,21 @@ func (h *AccountHandler) accountResponseFromService(account *service.Account) *d
 
 func (h *AccountHandler) buildAccountResponseWithRuntime(ctx context.Context, account *service.Account) AccountWithConcurrency {
 	item := AccountWithConcurrency{
-		Account:            h.accountResponseFromService(account),
-		CurrentConcurrency: 0,
+		Account: h.accountResponseFromService(account),
 	}
 	if account == nil {
 		return item
 	}
 
 	if h.concurrencyService != nil {
-		if counts, err := h.concurrencyService.GetAccountConcurrencyBatch(ctx, []int64{account.ID}); err == nil {
-			item.CurrentConcurrency = counts[account.ID]
+		if snapshots, err := h.concurrencyService.GetAccountConcurrencySnapshotBatch(ctx, []int64{account.ID}); err == nil {
+			if snapshot, ok := snapshots[account.ID]; ok {
+				setAccountConcurrencySnapshot(&item, snapshot)
+			} else {
+				item.ConcurrencyReadError = "unavailable"
+			}
+		} else {
+			item.ConcurrencyReadError = "unavailable"
 		}
 	}
 
@@ -558,7 +578,8 @@ func (h *AccountHandler) List(c *gin.Context) {
 		accountIDs[i] = acc.ID
 	}
 
-	concurrencyCounts := make(map[int64]int)
+	concurrencySnapshots := make(map[int64]service.ConcurrencySnapshot)
+	concurrencyReadError := false
 	var windowCosts map[int64]float64
 	var activeSessions map[int64]int
 	var rpmCounts map[int64]int
@@ -579,8 +600,10 @@ func (h *AccountHandler) List(c *gin.Context) {
 
 	// 始终获取并发数（Redis ZCARD，极低开销）
 	if h.concurrencyService != nil {
-		if cc, ccErr := h.concurrencyService.GetAccountConcurrencyBatch(c.Request.Context(), accountIDs); ccErr == nil && cc != nil {
-			concurrencyCounts = cc
+		if snapshots, snapshotErr := h.concurrencyService.GetAccountConcurrencySnapshotBatch(c.Request.Context(), accountIDs); snapshotErr == nil && snapshots != nil {
+			concurrencySnapshots = snapshots
+		} else {
+			concurrencyReadError = true
 		}
 	}
 
@@ -654,10 +677,14 @@ func (h *AccountHandler) List(c *gin.Context) {
 	for i := range accounts {
 		acc := &accounts[i]
 		item := AccountWithConcurrency{
-			Account:            h.accountResponseFromService(acc),
-			CurrentConcurrency: concurrencyCounts[acc.ID],
-			SchedulerScore:     schedulerScores[acc.ID],
-			SchedulerScores:    schedulerGroupScores[acc.ID],
+			Account:         h.accountResponseFromService(acc),
+			SchedulerScore:  schedulerScores[acc.ID],
+			SchedulerScores: schedulerGroupScores[acc.ID],
+		}
+		if snapshot, ok := concurrencySnapshots[acc.ID]; ok {
+			setAccountConcurrencySnapshot(&item, snapshot)
+		} else if concurrencyReadError || h.concurrencyService != nil {
+			item.ConcurrencyReadError = "unavailable"
 		}
 
 		// 添加窗口费用（仅当启用时）

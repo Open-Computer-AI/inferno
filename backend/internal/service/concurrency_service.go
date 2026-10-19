@@ -55,6 +55,23 @@ type ConcurrencyCache interface {
 	CleanupStaleProcessSlots(ctx context.Context, activeRequestPrefix string) error
 }
 
+// ConcurrencySnapshotCache is the strict class-aware read surface used by
+// diagnostics. It is optional so existing cache doubles and legacy wrappers
+// can continue to implement ConcurrencyCache without inventing split counts.
+// Implementations must return an error when Redis cannot provide an
+// authoritative snapshot; callers must not turn that error into zero.
+type ConcurrencySnapshotCache interface {
+	GetAccountConcurrencySnapshotBatch(ctx context.Context, accountIDs []int64) (map[int64]ConcurrencySnapshot, error)
+	GetUserConcurrencySnapshotBatch(ctx context.Context, userIDs []int64) (map[int64]ConcurrencySnapshot, error)
+}
+
+// APIKeyConcurrencySnapshotCache is the API-key counterpart of
+// ConcurrencySnapshotCache. API-key counts are occupancy statistics only; they
+// do not represent an API-key quota.
+type APIKeyConcurrencySnapshotCache interface {
+	GetAPIKeyConcurrencySnapshotBatch(ctx context.Context, apiKeyIDs []int64) (map[int64]ConcurrencySnapshot, error)
+}
+
 type APIKeyConcurrencyCache interface {
 	TrackAPIKeySlot(ctx context.Context, apiKeyID int64, requestID string) error
 	ReleaseAPIKeySlot(ctx context.Context, apiKeyID int64, requestID string) error
@@ -576,12 +593,53 @@ func (s *ConcurrencyService) GetAPIKeyConcurrencyBatch(ctx context.Context, apiK
 	return result, nil
 }
 
+// GetAPIKeyConcurrencySnapshotBatch returns class-separated API-key
+// occupancy. Unlike the legacy aggregate method, this method propagates a
+// Redis read failure so diagnostics can render an unknown value.
+func (s *ConcurrencyService) GetAPIKeyConcurrencySnapshotBatch(ctx context.Context, apiKeyIDs []int64) (map[int64]ConcurrencySnapshot, error) {
+	if len(apiKeyIDs) == 0 {
+		return map[int64]ConcurrencySnapshot{}, nil
+	}
+	if s == nil || s.cache == nil {
+		return nil, errors.New("concurrency cache unavailable")
+	}
+
+	redisCtx, cancel := concurrencySnapshotContext(ctx)
+	defer cancel()
+	if cache, ok := s.cache.(APIKeyConcurrencySnapshotCache); ok {
+		return cache.GetAPIKeyConcurrencySnapshotBatch(redisCtx, apiKeyIDs)
+	}
+
+	cache, ok := s.cache.(APIKeyConcurrencyCache)
+	if !ok {
+		return nil, errors.New("api key concurrency snapshot unavailable")
+	}
+	counts, err := cache.GetAPIKeyConcurrencyBatch(redisCtx, apiKeyIDs)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[int64]ConcurrencySnapshot, len(apiKeyIDs))
+	for _, apiKeyID := range apiKeyIDs {
+		count := counts[apiKeyID]
+		result[apiKeyID] = ConcurrencySnapshot{Request: count, Total: count}
+	}
+	return result, nil
+}
+
 func zeroAPIKeyConcurrencyMap(apiKeyIDs []int64) map[int64]int {
 	result := make(map[int64]int, len(apiKeyIDs))
 	for _, apiKeyID := range apiKeyIDs {
 		result[apiKeyID] = 0
 	}
 	return result
+}
+
+func concurrencySnapshotContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	baseCtx := context.Background()
+	if ctx != nil {
+		baseCtx = context.WithoutCancel(ctx)
+	}
+	return context.WithTimeout(baseCtx, apiKeyConcurrencyFetchTimeout)
 }
 
 // ============================================
@@ -874,4 +932,58 @@ func (s *ConcurrencyService) GetAccountConcurrencyBatch(ctx context.Context, acc
 	defer cancel()
 
 	return s.cache.GetAccountConcurrencyBatch(redisCtx, accountIDs)
+}
+
+// GetAccountConcurrencySnapshotBatch returns class-separated account
+// occupancy, propagating read failures instead of fabricating zeroes.
+func (s *ConcurrencyService) GetAccountConcurrencySnapshotBatch(ctx context.Context, accountIDs []int64) (map[int64]ConcurrencySnapshot, error) {
+	if len(accountIDs) == 0 {
+		return map[int64]ConcurrencySnapshot{}, nil
+	}
+	if s == nil || s.cache == nil {
+		return nil, errors.New("concurrency cache unavailable")
+	}
+
+	redisCtx, cancel := concurrencySnapshotContext(ctx)
+	defer cancel()
+	if cache, ok := s.cache.(ConcurrencySnapshotCache); ok {
+		return cache.GetAccountConcurrencySnapshotBatch(redisCtx, accountIDs)
+	}
+	counts, err := s.cache.GetAccountConcurrencyBatch(redisCtx, accountIDs)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[int64]ConcurrencySnapshot, len(accountIDs))
+	for _, accountID := range accountIDs {
+		count := counts[accountID]
+		result[accountID] = ConcurrencySnapshot{Request: count, Total: count}
+	}
+	return result, nil
+}
+
+// GetUserConcurrencySnapshotBatch returns class-separated user occupancy. A
+// legacy cache is adapted one user at a time with the shared count represented
+// as request occupancy; the concrete Redis cache supplies both classes.
+func (s *ConcurrencyService) GetUserConcurrencySnapshotBatch(ctx context.Context, userIDs []int64) (map[int64]ConcurrencySnapshot, error) {
+	if len(userIDs) == 0 {
+		return map[int64]ConcurrencySnapshot{}, nil
+	}
+	if s == nil || s.cache == nil {
+		return nil, errors.New("concurrency cache unavailable")
+	}
+
+	redisCtx, cancel := concurrencySnapshotContext(ctx)
+	defer cancel()
+	if cache, ok := s.cache.(ConcurrencySnapshotCache); ok {
+		return cache.GetUserConcurrencySnapshotBatch(redisCtx, userIDs)
+	}
+	result := make(map[int64]ConcurrencySnapshot, len(userIDs))
+	for _, userID := range userIDs {
+		count, err := s.cache.GetUserConcurrency(redisCtx, userID)
+		if err != nil {
+			return nil, err
+		}
+		result[userID] = ConcurrencySnapshot{Request: count, Total: count}
+	}
+	return result, nil
 }

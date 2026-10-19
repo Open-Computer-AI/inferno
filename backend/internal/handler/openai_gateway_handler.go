@@ -3537,6 +3537,32 @@ func (h *OpenAIGatewayHandler) errorResponse(c *gin.Context, status int, errType
 	})
 }
 
+// concurrencyCapacityErrorResponse preserves the standard OpenAI 429 shape
+// while exposing only the class/scope/reason needed by diagnostics.
+func (h *OpenAIGatewayHandler) concurrencyCapacityErrorResponse(c *gin.Context, capacityErr *service.ConcurrencyCapacityError) {
+	message := "Concurrency capacity exhausted"
+	if capacityErr != nil {
+		message = capacityErr.Error()
+	}
+	if service.StopOpenAICompactSSEKeepaliveCommitted(c) {
+		service.MarkOpsStreamError(c, "rate_limit_error", message, http.StatusTooManyRequests)
+		if writeResponsesFailedSSE(c, "rate_limit_error", message) {
+			return
+		}
+	}
+	errorBody := gin.H{
+		"type":    "rate_limit_error",
+		"code":    "concurrency_capacity",
+		"message": message,
+	}
+	if capacityErr != nil {
+		errorBody["concurrency_class"] = string(capacityErr.Class)
+		errorBody["concurrency_scope"] = capacityErr.Scope
+		errorBody["concurrency_reason"] = capacityErr.Reason
+	}
+	c.JSON(http.StatusTooManyRequests, gin.H{"error": errorBody})
+}
+
 // openAICompactKeepaliveInterval 复用流式 keepalive 配置作为 compact 下游
 // 心跳间隔；0 表示禁用（与流式路径语义一致）。
 func (h *OpenAIGatewayHandler) openAICompactKeepaliveInterval() time.Duration {

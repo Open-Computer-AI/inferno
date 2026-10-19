@@ -226,6 +226,9 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 			if selection != nil && selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()
 			}
+			if lastErr != nil {
+				return nil, lastErr
+			}
 			return nil, ErrLiveConcurrencyFull
 		}
 
@@ -277,10 +280,18 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 			}
 			if admission.DeniedScope == "account" {
 				excluded[account.ID] = struct{}{}
-				lastErr = ErrLiveConcurrencyFull
+				lastErr = &ConcurrencyCapacityError{
+					Class:  ConcurrencyClassLive,
+					Scope:  admission.DeniedScope,
+					Reason: "capacity_exhausted",
+				}
 				continue
 			}
-			return nil, ErrLiveConcurrencyFull
+			return nil, &ConcurrencyCapacityError{
+				Class:  ConcurrencyClassLive,
+				Scope:  admission.DeniedScope,
+				Reason: "capacity_exhausted",
+			}
 		}
 		reservation.StartRefresh(ctx)
 

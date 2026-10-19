@@ -17,6 +17,25 @@ var ErrConcurrencyPolicyGenerationConflict = errors.New("concurrency policy gene
 var ErrConcurrencyPolicyAdmissionUnavailable = errors.New("concurrency policy authority is unavailable")
 var ErrConcurrencyPolicyAdmissionStale = errors.New("concurrency policy admission snapshot is stale")
 
+// ConcurrencyCapacityError carries the server-derived workload class and the
+// Redis admission scope that rejected it. It is intentionally free of request
+// IDs, credentials, and payload data so it is safe to return as diagnostics.
+type ConcurrencyCapacityError struct {
+	Class  ConcurrencyClass
+	Scope  string
+	Reason string
+}
+
+func (e *ConcurrencyCapacityError) Error() string {
+	if e == nil {
+		return "concurrency capacity exhausted"
+	}
+	if e.Scope == "" {
+		return fmt.Sprintf("%s concurrency capacity exhausted", e.Class)
+	}
+	return fmt.Sprintf("%s concurrency capacity exhausted for %s", e.Class, e.Scope)
+}
+
 // ConcurrencyPolicyPublisher is the narrow DB-to-Redis acknowledgement fence
 // used by administrative writes. Implementations must update the authoritative
 // generation monotonically and reject stale/conflicting publications.
