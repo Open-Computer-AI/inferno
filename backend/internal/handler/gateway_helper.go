@@ -18,6 +18,29 @@ import (
 
 const gatewayStreamHeartbeatBytesKey = "gateway_stream_heartbeat_bytes"
 
+func concurrencyPolicyFromAuthSubject(subject middleware2.AuthSubject) service.ConcurrencyPolicy {
+	return service.ConcurrencyPolicy{
+		Shared:  subject.Concurrency,
+		Live:    subject.LiveConcurrency,
+		Request: subject.RequestConcurrency,
+	}
+}
+
+func requestConcurrencyForAccount(account *service.Account) int {
+	if account == nil {
+		return 0
+	}
+	limit, _, err := service.EffectiveConcurrencyLimit(service.ConcurrencyPolicy{
+		Shared:  account.Concurrency,
+		Live:    account.LiveConcurrency,
+		Request: account.RequestConcurrency,
+	}, service.ConcurrencyClassRequest)
+	if err != nil {
+		return account.Concurrency
+	}
+	return limit
+}
+
 func recordGatewayStreamHeartbeat(c *gin.Context, written int) {
 	if c == nil || written <= 0 {
 		return
@@ -238,6 +261,28 @@ func (h *ConcurrencyHelper) TryAcquireUserSlotForAPIKey(ctx context.Context, use
 	return h.withAPIKeySlot(ctx, apiKeyID, releaseFunc), true, nil
 }
 
+func (h *ConcurrencyHelper) TryAcquireUserPolicySlot(ctx context.Context, userID int64, policy service.ConcurrencyPolicy, generation int64) (func(), bool, error) {
+	if !policy.IsSplit() {
+		return h.TryAcquireUserSlot(ctx, userID, policy.Shared)
+	}
+	result, err := h.concurrencyService.AcquireUserPolicySlot(ctx, userID, policy, generation)
+	if err != nil {
+		return nil, false, err
+	}
+	if !result.Acquired {
+		return nil, false, nil
+	}
+	return result.ReleaseFunc, true, nil
+}
+
+func (h *ConcurrencyHelper) TryAcquireUserPolicySlotForAPIKey(ctx context.Context, userID int64, policy service.ConcurrencyPolicy, generation int64, apiKeyID int64) (func(), bool, error) {
+	releaseFunc, acquired, err := h.TryAcquireUserPolicySlot(ctx, userID, policy, generation)
+	if err != nil || !acquired {
+		return releaseFunc, acquired, err
+	}
+	return h.withAPIKeySlot(ctx, apiKeyID, releaseFunc), true, nil
+}
+
 // AcquireOpenAIWSIngressLease bounds the whole client WebSocket lifecycle,
 // independently from per-turn user and account slots.
 func (h *ConcurrencyHelper) AcquireOpenAIWSIngressLease(ctx context.Context, apiKeyID int64, maxConnections int) (*service.OpenAIWSIngressLease, bool, error) {
@@ -265,6 +310,47 @@ func (h *ConcurrencyHelper) TryAcquireAccountSlot(ctx context.Context, accountID
 // streamStarted is updated if streaming response has begun.
 func (h *ConcurrencyHelper) AcquireUserSlotWithWait(c *gin.Context, userID int64, maxConcurrency int, isStream bool, streamStarted *bool) (func(), error) {
 	return h.acquireUserSlotWithWaitTimeout(c, userID, maxConcurrency, maxConcurrencyWait, isStream, streamStarted)
+}
+
+func (h *ConcurrencyHelper) AcquireUserPolicySlotWithWait(c *gin.Context, userID int64, policy service.ConcurrencyPolicy, generation int64, isStream bool, streamStarted *bool) (func(), error) {
+	if !policy.IsSplit() {
+		return h.AcquireUserSlotWithWait(c, userID, policy.Shared, isStream, streamStarted)
+	}
+	requestLimit := 1
+	if policy.Request != nil && *policy.Request > 0 {
+		requestLimit = *policy.Request
+	}
+	return h.acquireUserPolicySlotWithWaitTimeout(c, userID, policy, generation, requestLimit, maxConcurrencyWait, isStream, streamStarted)
+}
+
+func (h *ConcurrencyHelper) acquireUserPolicySlotWithWaitTimeout(c *gin.Context, userID int64, policy service.ConcurrencyPolicy, generation int64, waitLimit int, timeout time.Duration, isStream bool, streamStarted *bool) (func(), error) {
+	ctx := c.Request.Context()
+	releaseFunc, acquired, err := h.TryAcquireUserPolicySlot(ctx, userID, policy, generation)
+	if err != nil {
+		return nil, err
+	}
+	if acquired {
+		return h.withAPIKeySlotFromGin(c, releaseFunc), nil
+	}
+	queueLimit := service.CalculateMaxWait(waitLimit) - waitLimit
+	if queueLimit < 1 {
+		queueLimit = 1
+	}
+	canWait, err := h.IncrementWaitCount(ctx, userID, queueLimit)
+	if err != nil {
+		return nil, err
+	}
+	if !canWait {
+		return nil, &WaitQueueFullError{SlotType: "user"}
+	}
+	defer h.DecrementWaitCount(ctx, userID)
+	releaseFunc, err = h.waitForSlotWithPingTimeoutUsing(c, "user", userID, waitLimit, timeout, isStream, streamStarted, false, func(waitCtx context.Context) (*service.AcquireResult, error) {
+		return h.concurrencyService.AcquireUserPolicySlot(waitCtx, userID, policy, generation)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return h.withAPIKeySlotFromGin(c, releaseFunc), nil
 }
 
 func (h *ConcurrencyHelper) acquireUserSlotWithWaitTimeout(c *gin.Context, userID int64, maxConcurrency int, timeout time.Duration, isStream bool, streamStarted *bool) (func(), error) {
@@ -355,10 +441,17 @@ func (h *ConcurrencyHelper) waitForSlotWithPing(c *gin.Context, slotType string,
 
 // waitForSlotWithPingTimeout waits for a concurrency slot with a custom timeout.
 func (h *ConcurrencyHelper) waitForSlotWithPingTimeout(c *gin.Context, slotType string, id int64, maxConcurrency int, timeout time.Duration, isStream bool, streamStarted *bool, tryImmediate bool) (func(), error) {
+	return h.waitForSlotWithPingTimeoutUsing(c, slotType, id, maxConcurrency, timeout, isStream, streamStarted, tryImmediate, nil)
+}
+
+func (h *ConcurrencyHelper) waitForSlotWithPingTimeoutUsing(c *gin.Context, slotType string, id int64, maxConcurrency int, timeout time.Duration, isStream bool, streamStarted *bool, tryImmediate bool, customAcquire func(context.Context) (*service.AcquireResult, error)) (func(), error) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), timeout)
 	defer cancel()
 
 	acquireSlot := func() (*service.AcquireResult, error) {
+		if customAcquire != nil {
+			return customAcquire(ctx)
+		}
 		if slotType == "user" {
 			return h.concurrencyService.AcquireUserSlot(ctx, id, maxConcurrency)
 		}

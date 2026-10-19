@@ -21,18 +21,20 @@ type helperConcurrencyCacheStub struct {
 	accountSeq []bool
 	userSeq    []bool
 
-	accountAcquireCalls int
-	userAcquireCalls    int
-	accountReleaseCalls int
-	userReleaseCalls    int
-	waitAllowed         bool
-	waitIncrementCalls  int
-	waitDecrementCalls  int
-	waitMaxWait         int
-	waitIncrementHook   func()
-	apiKeyTrackCalls    int
-	apiKeyReleaseCalls  int
-	apiKeyTrackIDs      []int64
+	accountAcquireCalls    int
+	userAcquireCalls       int
+	accountReleaseCalls    int
+	userReleaseCalls       int
+	waitAllowed            bool
+	waitIncrementCalls     int
+	waitDecrementCalls     int
+	waitMaxWait            int
+	waitIncrementHook      func()
+	apiKeyTrackCalls       int
+	apiKeyReleaseCalls     int
+	apiKeyTrackIDs         []int64
+	policyUserAcquireCalls int
+	policyUserReleaseCalls int
 }
 
 func (s *helperConcurrencyCacheStub) AcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
@@ -94,6 +96,29 @@ func (s *helperConcurrencyCacheStub) ReleaseUserSlot(ctx context.Context, userID
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.userReleaseCalls++
+	return nil
+}
+
+func (s *helperConcurrencyCacheStub) AcquireUserConcurrency(_ context.Context, _ service.UserConcurrencyAdmissionRequest) (service.ConcurrencyAdmissionResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.policyUserAcquireCalls++
+	if len(s.userSeq) == 0 {
+		return service.ConcurrencyAdmissionResult{}, nil
+	}
+	acquired := s.userSeq[0]
+	s.userSeq = s.userSeq[1:]
+	return service.ConcurrencyAdmissionResult{Acquired: acquired}, nil
+}
+
+func (s *helperConcurrencyCacheStub) RefreshUserConcurrency(context.Context, service.UserConcurrencyAdmissionRequest) (bool, error) {
+	return true, nil
+}
+
+func (s *helperConcurrencyCacheStub) ReleaseUserConcurrency(context.Context, service.UserConcurrencyAdmissionRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.policyUserReleaseCalls++
 	return nil
 }
 
@@ -336,6 +361,33 @@ func TestTryAcquireUserSlotForAPIKey_TracksAPIKeySlot(t *testing.T) {
 	release()
 
 	require.Equal(t, 1, cache.userReleaseCalls)
+	require.Equal(t, 1, cache.apiKeyReleaseCalls)
+}
+
+func TestAcquireUserPolicySlotWithWait_UsesSplitUserCacheAndStatsOnlyAPIKeyTracking(t *testing.T) {
+	live, requests := 4, 2
+	cache := &helperConcurrencyCacheStub{userSeq: []bool{true}}
+	helper := NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, 5*time.Millisecond)
+	c, _ := newHelperTestContext(http.MethodPost, "/v1/chat/completions")
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{ID: 77})
+	streamStarted := false
+
+	release, err := helper.AcquireUserPolicySlotWithWait(
+		c,
+		202,
+		service.ConcurrencyPolicy{Live: &live, Request: &requests},
+		9,
+		false,
+		&streamStarted,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, release)
+	require.Equal(t, 1, cache.policyUserAcquireCalls)
+	require.Equal(t, 0, cache.userAcquireCalls, "split policy must not use the legacy shared user slot")
+	require.Equal(t, 1, cache.apiKeyTrackCalls, "API-key tracking is statistics-only")
+
+	release()
+	require.Equal(t, 1, cache.policyUserReleaseCalls)
 	require.Equal(t, 1, cache.apiKeyReleaseCalls)
 }
 
