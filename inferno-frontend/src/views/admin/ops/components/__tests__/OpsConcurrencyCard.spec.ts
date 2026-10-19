@@ -107,6 +107,37 @@ describe('OpsConcurrencyCard account state', () => {
     expect(wrapper.get('.conc__state').text()).toBe('1m')
   })
 
+  it('renders unknown and hides the load bar when strict concurrency is unavailable', async () => {
+    mockConcurrency.mockResolvedValue({
+      enabled: true,
+      account: {
+        7: {
+          account_name: 'acct-7',
+          platform: 'anthropic',
+          group_id: 1,
+          group_name: 'default',
+          current_in_use: 4,
+          current_concurrency: null,
+          concurrency_read_error: 'unavailable',
+          max_capacity: 4,
+          waiting_in_queue: 0,
+          load_percentage: 100
+        }
+      }
+    })
+    mockAvailability.mockResolvedValue({
+      enabled: true,
+      account: { 7: { account_name: 'acct-7', platform: 'anthropic', group_id: 1 } }
+    })
+    const wrapper = mount(OpsConcurrencyCard, {
+      props: { platformFilter: 'anthropic', groupIdFilter: 1, refreshToken: 0 }
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('common.unknown/4')
+    expect(wrapper.find('.conc__fill').exists()).toBe(false)
+  })
+
   /* Available is the state nearly every account is in. A chip on every healthy
      row is colour that marks nothing, so it carries no fill of its own. */
   it('gives the healthy state no colour of its own', async () => {

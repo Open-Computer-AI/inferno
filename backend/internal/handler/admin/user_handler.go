@@ -459,40 +459,7 @@ func (h *UserHandler) GetUserAPIKeys(c *gin.Context) {
 		return
 	}
 
-	out := make([]dto.APIKey, 0, len(keys))
-	for i := range keys {
-		out = append(out, *dto.APIKeyFromService(&keys[i]))
-	}
-	if h.concurrencyService != nil && len(keys) > 0 {
-		keyIDs := make([]int64, len(keys))
-		for i := range keys {
-			keyIDs[i] = keys[i].ID
-		}
-		snapshots, snapshotErr := h.concurrencyService.GetAPIKeyConcurrencySnapshotBatch(c.Request.Context(), keyIDs)
-		for i := range out {
-			if snapshotErr != nil {
-				out[i].CurrentConcurrency = nil
-				out[i].CurrentLiveConcurrency = nil
-				out[i].CurrentRequestConcurrency = nil
-				out[i].ConcurrencyReadError = "unavailable"
-				continue
-			}
-			snapshot, ok := snapshots[keyIDs[i]]
-			if !ok {
-				out[i].CurrentConcurrency = nil
-				out[i].CurrentLiveConcurrency = nil
-				out[i].CurrentRequestConcurrency = nil
-				out[i].ConcurrencyReadError = "unavailable"
-				continue
-			}
-			request := snapshot.Request
-			live := snapshot.Live
-			total := request + live
-			out[i].CurrentConcurrency = &total
-			out[i].CurrentLiveConcurrency = &live
-			out[i].CurrentRequestConcurrency = &request
-		}
-	}
+	out := apiKeyDTOsWithConcurrency(c.Request.Context(), keys, h.concurrencyService)
 	response.Paginated(c, out, total, page, pageSize)
 }
 

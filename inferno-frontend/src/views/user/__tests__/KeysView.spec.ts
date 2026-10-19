@@ -34,6 +34,7 @@ const messages: Record<string, string> = {
   'common.name': 'Name',
   'common.refresh': 'Refresh',
   'common.status': 'Status',
+  'common.unknown': 'Unknown',
   'keys.apiKey': 'API Key',
   'keys.allGroups': 'All Groups',
   'keys.allStatus': 'All Status',
@@ -392,6 +393,19 @@ describe('user KeysView column settings', () => {
     const wrapper = await mountView()
 
     expect(wrapper.get('[data-test="current-concurrency"]').text()).toBe('3')
+  })
+
+  it('renders unknown when current concurrency is unavailable', async () => {
+    listKeys.mockResolvedValueOnce({
+      items: [{ ...createApiKey(), current_concurrency: null, concurrency_read_error: 'unavailable' }],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    })
+    const wrapper = await mountView()
+
+    expect(wrapper.get('[data-test="current-concurrency"]').text()).toBe('Unknown')
   })
 
   it('marks current concurrency as sortable', async () => {

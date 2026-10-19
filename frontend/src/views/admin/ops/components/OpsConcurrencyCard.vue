@@ -33,6 +33,27 @@ function safeNumber(n: unknown): number {
   return typeof n === 'number' && Number.isFinite(n) ? n : 0
 }
 
+type StrictConcurrencyInfo = {
+  current_concurrency?: number | null
+  concurrency_read_error?: string | null
+}
+
+function strictCurrent(info: StrictConcurrencyInfo): number | null {
+  if (info.concurrency_read_error || typeof info.current_concurrency !== 'number' || !Number.isFinite(info.current_concurrency)) {
+    return null
+  }
+  return info.current_concurrency
+}
+
+function strictPercentage(current: number | null, capacity: number): number | null {
+  if (current == null) return null
+  return capacity > 0 ? Math.round((current / capacity) * 100) : 0
+}
+
+function formatConcurrency(current: number | null, capacity: number): string {
+  return current == null ? `${t('common.unknown')}/${capacity}` : `${current}/${capacity}`
+}
+
 // 计算显示维度
 const displayDimension = computed<'platform' | 'group' | 'account' | 'user'>(() => {
   if (showByUser.value) {
@@ -59,11 +80,11 @@ interface SummaryRow {
   error_accounts: number
   // 并发统计
   total_concurrency: number
-  used_concurrency: number
+  used_concurrency: number | null
   waiting_in_queue: number
   // 计算字段
   availability_percentage: number
-  concurrency_percentage: number
+  concurrency_percentage: number | null
 }
 
 // 账号详细行数据
@@ -73,10 +94,10 @@ interface AccountRow {
   platform: string
   group_name: string
   // 并发
-  current_in_use: number
+  current_in_use: number | null
   max_capacity: number
   waiting_in_queue: number
-  load_percentage: number
+  load_percentage: number | null
   // 状态
   is_available: boolean
   is_rate_limited: boolean
@@ -93,10 +114,10 @@ interface UserRow {
   user_id: number
   user_email: string
   username: string
-  current_in_use: number
+  current_in_use: number | null
   max_capacity: number
   waiting_in_queue: number
-  load_percentage: number
+  load_percentage: number | null
 }
 
 // 平台维度汇总
@@ -113,7 +134,7 @@ const platformRows = computed((): SummaryRow[] => {
     const totalAccounts = safeNumber(avail.total_accounts)
     const availableAccounts = safeNumber(avail.available_count)
     const totalConcurrency = safeNumber(conc.max_capacity)
-    const usedConcurrency = safeNumber(conc.current_in_use)
+    const usedConcurrency = strictCurrent(conc)
 
     return {
       key: platform,
@@ -127,9 +148,9 @@ const platformRows = computed((): SummaryRow[] => {
       used_concurrency: usedConcurrency,
       waiting_in_queue: safeNumber(conc.waiting_in_queue),
       availability_percentage: totalAccounts > 0 ? Math.round((availableAccounts / totalAccounts) * 100) : 0,
-      concurrency_percentage: totalConcurrency > 0 ? Math.round((usedConcurrency / totalConcurrency) * 100) : 0
+      concurrency_percentage: strictPercentage(usedConcurrency, totalConcurrency)
     }
-  }).sort((a, b) => b.concurrency_percentage - a.concurrency_percentage)
+  }).sort((a, b) => (b.concurrency_percentage ?? -1) - (a.concurrency_percentage ?? -1))
 })
 
 // 分组维度汇总
@@ -152,7 +173,7 @@ const groupRows = computed((): SummaryRow[] => {
       const totalAccounts = safeNumber(avail.total_accounts)
       const availableAccounts = safeNumber(avail.available_count)
       const totalConcurrency = safeNumber(conc.max_capacity)
-      const usedConcurrency = safeNumber(conc.current_in_use)
+      const usedConcurrency = strictCurrent(conc)
 
       return {
         key: gid,
@@ -167,12 +188,12 @@ const groupRows = computed((): SummaryRow[] => {
         used_concurrency: usedConcurrency,
         waiting_in_queue: safeNumber(conc.waiting_in_queue),
         availability_percentage: totalAccounts > 0 ? Math.round((availableAccounts / totalAccounts) * 100) : 0,
-        concurrency_percentage: totalConcurrency > 0 ? Math.round((usedConcurrency / totalConcurrency) * 100) : 0
+        concurrency_percentage: strictPercentage(usedConcurrency, totalConcurrency)
       }
     })
     .filter((row): row is NonNullable<typeof row> => row !== null)
 
-  return rows.sort((a, b) => b.concurrency_percentage - a.concurrency_percentage)
+  return rows.sort((a, b) => (b.concurrency_percentage ?? -1) - (a.concurrency_percentage ?? -1))
 })
 
 // 账号维度详细
@@ -194,15 +215,17 @@ const accountRows = computed((): AccountRow[] => {
         }
       }
 
+      const currentInUse = strictCurrent(conc)
+      const maxCapacity = safeNumber(conc.max_capacity)
       return {
         key: aid,
         name: String(conc.account_name || avail.account_name || `Account ${aid}`),
         platform: String(conc.platform || avail.platform || ''),
         group_name: String(conc.group_name || avail.group_name || ''),
-        current_in_use: safeNumber(conc.current_in_use),
-        max_capacity: safeNumber(conc.max_capacity),
+        current_in_use: currentInUse,
+        max_capacity: maxCapacity,
         waiting_in_queue: safeNumber(conc.waiting_in_queue),
-        load_percentage: safeNumber(conc.load_percentage),
+        load_percentage: strictPercentage(currentInUse, maxCapacity),
         is_available: avail.is_available || false,
         is_rate_limited: avail.is_rate_limited || false,
         rate_limit_remaining_sec: avail.rate_limit_remaining_sec,
@@ -219,7 +242,7 @@ const accountRows = computed((): AccountRow[] => {
     if (a.has_error !== b.has_error) return a.has_error ? -1 : 1
     if (a.is_rate_limited !== b.is_rate_limited) return a.is_rate_limited ? -1 : 1
     // 然后按负载排序
-    return b.load_percentage - a.load_percentage
+    return (b.load_percentage ?? -1) - (a.load_percentage ?? -1)
   })
 })
 
@@ -230,18 +253,20 @@ const userRows = computed((): UserRow[] => {
   return Object.keys(userStats)
     .map(uid => {
       const u = userStats[uid] || {}
+      const currentInUse = strictCurrent(u)
+      const maxCapacity = safeNumber(u.max_capacity)
       return {
         key: uid,
         user_id: safeNumber(u.user_id),
         user_email: u.user_email || `User ${uid}`,
         username: u.username || '',
-        current_in_use: safeNumber(u.current_in_use),
-        max_capacity: safeNumber(u.max_capacity),
+        current_in_use: currentInUse,
+        max_capacity: maxCapacity,
         waiting_in_queue: safeNumber(u.waiting_in_queue),
-        load_percentage: safeNumber(u.load_percentage)
+        load_percentage: strictPercentage(currentInUse, maxCapacity)
       }
     })
-    .sort((a, b) => b.current_in_use - a.current_in_use || b.load_percentage - a.load_percentage)
+    .sort((a, b) => (b.current_in_use ?? -1) - (a.current_in_use ?? -1) || (b.load_percentage ?? -1) - (a.load_percentage ?? -1))
 })
 
 // 根据维度选择数据
@@ -422,13 +447,14 @@ watch(
               </span>
             </div>
             <div class="flex shrink-0 items-center gap-2 text-[10px]">
-              <span class="font-mono font-bold text-gray-900 dark:text-white"> {{ row.current_in_use }}/{{ row.max_capacity }} </span>
-              <span :class="['font-bold', getLoadTextClass(row.load_percentage)]"> {{ Math.round(row.load_percentage) }}% </span>
+              <span class="font-mono font-bold text-gray-900 dark:text-white"> {{ formatConcurrency(row.current_in_use, row.max_capacity) }} </span>
+              <span v-if="row.load_percentage == null" class="font-bold"> {{ t('common.unknown') }} </span>
+              <span v-else :class="['font-bold', getLoadTextClass(row.load_percentage)]"> {{ row.load_percentage }}% </span>
             </div>
           </div>
 
           <!-- 进度条 -->
-          <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700">
+          <div v-if="row.load_percentage != null" class="h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700">
             <div class="h-full rounded-full transition-all duration-300" :class="getLoadBarClass(row.load_percentage)" :style="getLoadBarStyle(row.load_percentage)"></div>
           </div>
 
@@ -455,13 +481,14 @@ watch(
               </span>
             </div>
             <div class="flex shrink-0 items-center gap-2 text-[10px]">
-              <span class="font-mono font-bold text-gray-900 dark:text-white"> {{ row.used_concurrency }}/{{ row.total_concurrency }} </span>
-              <span :class="['font-bold', getLoadTextClass(row.concurrency_percentage)]"> {{ row.concurrency_percentage }}% </span>
+              <span class="font-mono font-bold text-gray-900 dark:text-white"> {{ formatConcurrency(row.used_concurrency, row.total_concurrency) }} </span>
+              <span v-if="row.concurrency_percentage == null" class="font-bold"> {{ t('common.unknown') }} </span>
+              <span v-else :class="['font-bold', getLoadTextClass(row.concurrency_percentage)]"> {{ row.concurrency_percentage }}% </span>
             </div>
           </div>
 
           <!-- 进度条 -->
-          <div class="mb-2 h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700">
+          <div v-if="row.concurrency_percentage != null" class="mb-2 h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700">
             <div
               class="h-full rounded-full transition-all duration-300"
               :class="getLoadBarClass(row.concurrency_percentage)"
@@ -530,7 +557,7 @@ watch(
             </div>
             <div class="flex shrink-0 items-center gap-2">
               <!-- 并发使用 -->
-              <span class="font-mono text-[11px] font-bold text-gray-900 dark:text-white"> {{ row.current_in_use }}/{{ row.max_capacity }} </span>
+              <span class="font-mono text-[11px] font-bold text-gray-900 dark:text-white"> {{ formatConcurrency(row.current_in_use, row.max_capacity) }} </span>
               <!-- 状态徽章 -->
               <span
                 v-if="row.is_available"
@@ -583,7 +610,7 @@ watch(
           </div>
 
           <!-- 进度条 -->
-          <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700">
+          <div v-if="row.load_percentage != null" class="h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700">
             <div class="h-full rounded-full transition-all duration-300" :class="getLoadBarClass(row.load_percentage)" :style="getLoadBarStyle(row.load_percentage)"></div>
           </div>
 
