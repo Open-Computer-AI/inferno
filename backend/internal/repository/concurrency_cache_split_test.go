@@ -174,6 +174,120 @@ func TestSplitConcurrency_FailsClosedForAbsentOrMismatchedPolicyAuthority(t *tes
 	require.Error(t, err, "malformed policy authority must fail closed")
 }
 
+func TestSplitConcurrency_RefreshPreservesOwnedLeaseAcrossPolicyGenerationEdit(t *testing.T) {
+	mini := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mini.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	cache := &concurrencyCache{rdb: rdb, slotTTLSeconds: 900}
+	ctx := context.Background()
+	initial := splitConcurrencyPolicy(4, 2)
+	require.NoError(t, cache.PublishAccountConcurrencyPolicy(ctx, 301, initial, 1))
+	require.NoError(t, cache.PublishUserConcurrencyPolicy(ctx, 302, initial, 1))
+	request := service.ConcurrencyAdmissionRequest{
+		AccountID:         301,
+		AccountPolicy:     initial,
+		AccountGeneration: 1,
+		UserID:            302,
+		UserPolicy:        initial,
+		UserGeneration:    1,
+		APIKeyID:          303,
+		Class:             service.ConcurrencyClassLive,
+		ReservationID:     "refresh-across-policy-edit",
+	}
+	acquired, err := cache.AcquireConcurrency(ctx, request)
+	require.NoError(t, err)
+	require.True(t, acquired.Acquired)
+
+	updated := splitConcurrencyPolicy(5, 3)
+	require.NoError(t, cache.PublishAccountConcurrencyPolicy(ctx, 301, updated, 2))
+	refreshed, err := cache.RefreshConcurrency(ctx, request)
+	require.NoError(t, err, "an active owner must remain refreshable after a policy generation edit")
+	require.True(t, refreshed)
+	require.Equal(t, int64(1), mustZCard(t, rdb, liveAccountSlotKey(301)))
+	require.Equal(t, int64(1), mustZCard(t, rdb, liveUserSlotKey(302)))
+}
+
+func TestSplitConcurrency_RejectsReservationIDCrossClassCollision(t *testing.T) {
+	mini := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mini.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	cache := &concurrencyCache{rdb: rdb, slotTTLSeconds: 900}
+	ctx := context.Background()
+	policy := splitConcurrencyPolicy(4, 2)
+	require.NoError(t, cache.PublishAccountConcurrencyPolicy(ctx, 401, policy, 1))
+	require.NoError(t, cache.PublishUserConcurrencyPolicy(ctx, 402, policy, 1))
+
+	request := func(class service.ConcurrencyClass) service.ConcurrencyAdmissionRequest {
+		return service.ConcurrencyAdmissionRequest{
+			AccountID:         401,
+			AccountPolicy:     policy,
+			AccountGeneration: 1,
+			UserID:            402,
+			UserPolicy:        policy,
+			UserGeneration:    1,
+			APIKeyID:          403,
+			Class:             class,
+			ReservationID:     "cross-class-collision",
+		}
+	}
+
+	live, err := cache.AcquireConcurrency(ctx, request(service.ConcurrencyClassLive))
+	require.NoError(t, err)
+	require.True(t, live.Acquired)
+	_, err = cache.AcquireConcurrency(ctx, request(service.ConcurrencyClassRequest))
+	require.Error(t, err, "a request reservation must not reuse a Live reservation ID")
+	require.Equal(t, int64(0), mustZCard(t, rdb, accountSlotKey(401)))
+	require.Equal(t, int64(1), mustZCard(t, rdb, liveAccountSlotKey(401)))
+	require.NoError(t, cache.ReleaseConcurrency(ctx, request(service.ConcurrencyClassLive)))
+
+	regular, err := cache.AcquireConcurrency(ctx, request(service.ConcurrencyClassRequest))
+	require.NoError(t, err)
+	require.True(t, regular.Acquired)
+	_, err = cache.AcquireConcurrency(ctx, request(service.ConcurrencyClassLive))
+	require.Error(t, err, "a Live reservation must not reuse a request reservation ID")
+	require.Equal(t, int64(1), mustZCard(t, rdb, accountSlotKey(401)))
+	require.Equal(t, int64(0), mustZCard(t, rdb, liveAccountSlotKey(401)))
+}
+
+func TestSplitConcurrency_FractionalRedisAuthorityFailsClosed(t *testing.T) {
+	mini := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mini.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	cache := &concurrencyCache{rdb: rdb, slotTTLSeconds: 900}
+	ctx := context.Background()
+	policy := splitConcurrencyPolicy(4, 2)
+	require.NoError(t, cache.PublishAccountConcurrencyPolicy(ctx, 501, policy, 1))
+	require.NoError(t, cache.PublishUserConcurrencyPolicy(ctx, 502, policy, 1))
+
+	request := service.ConcurrencyAdmissionRequest{
+		AccountID:         501,
+		AccountPolicy:     policy,
+		AccountGeneration: 1,
+		UserID:            502,
+		UserPolicy:        policy,
+		UserGeneration:    1,
+		APIKeyID:          503,
+		Class:             service.ConcurrencyClassLive,
+		ReservationID:     "fractional-authority",
+	}
+	for field, value := range map[string]string{
+		"shared":  "2.5",
+		"live":    "4.5",
+		"request": "2.5",
+	} {
+		mini.HSet(accountConcurrencyPolicyKey(501), "mode", "split", "shared", "", "live", "4", "request", "2", field, value)
+		_, err := cache.AcquireConcurrency(ctx, request)
+		require.Error(t, err, "fractional %s authority must fail closed", field)
+		mini.HSet(accountConcurrencyPolicyKey(501), "mode", "split", "shared", "", "live", "4", "request", "2")
+	}
+
+	mini.HSet(accountConcurrencyPolicyKey(501), "generation", "1.5", "mode", "split", "shared", "", "live", "4", "request", "2")
+	_, err := cache.AcquireConcurrency(ctx, request)
+	require.Error(t, err, "fractional generation must fail closed")
+	err = cache.PublishAccountConcurrencyPolicy(ctx, 501, policy, 2)
+	require.Error(t, err, "publication must not overwrite a fractional generation")
+}
+
 func mustZCard(t *testing.T, rdb *redis.Client, key string) int64 {
 	t.Helper()
 	count, err := rdb.ZCard(context.Background(), key).Result()

@@ -115,6 +115,48 @@ func TestConcurrencyPolicyPublicationRejectsMalformedHigherGeneration(t *testing
 	}
 }
 
+func TestConcurrencyPolicyNegativeSharedLegacyLimitRemainsValidEverywhere(t *testing.T) {
+	mini := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mini.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	cache := &concurrencyCache{rdb: rdb, slotTTLSeconds: 900}
+	ctx := context.Background()
+
+	initial := service.ConcurrencyPolicy{Shared: -1}
+	require.NoError(t, cache.PublishAccountConcurrencyPolicy(ctx, 21, initial, 0))
+	require.NoError(t, cache.PublishAccountConcurrencyPolicy(ctx, 21, initial, 0), "equal negative shared publication is idempotent")
+	require.NoError(t, cache.PublishAccountConcurrencyPolicy(ctx, 21, service.ConcurrencyPolicy{Shared: -2}, 1), "newer negative shared publication remains valid")
+
+	key := accountConcurrencyPolicyKey(21)
+	require.Equal(t, "-2", mini.HGet(key, "shared"))
+	mini.Del(key)
+	repo := &currentPolicyOutboxRepo{events: []service.ConcurrencyPolicyOutboxEvent{{
+		EntityType: "account",
+		EntityID:   21,
+		Generation: 2,
+		Policy:     service.ConcurrencyPolicy{Shared: -3},
+	}}}
+	reconciler := service.NewConcurrencyPolicyReconciler(repo, cache)
+	require.NoError(t, reconciler.ReconcileCurrentOnce(ctx))
+	require.Equal(t, "-3", mini.HGet(key, "shared"))
+
+	policy := service.ConcurrencyPolicy{Shared: -3}
+	require.NoError(t, cache.PublishUserConcurrencyPolicy(ctx, 22, policy, 2))
+	result, err := cache.AcquireConcurrency(ctx, service.ConcurrencyAdmissionRequest{
+		AccountID:         21,
+		AccountPolicy:     policy,
+		AccountGeneration: 2,
+		UserID:            22,
+		UserPolicy:        policy,
+		UserGeneration:    2,
+		APIKeyID:          23,
+		Class:             service.ConcurrencyClassLive,
+		ReservationID:     "negative-shared-live",
+	})
+	require.NoError(t, err)
+	require.True(t, result.Acquired, "negative legacy shared limits retain unlimited semantics")
+}
+
 func TestConcurrencyPolicyReconcilerRestoresPublishedPolicyAfterRedisKeyLoss(t *testing.T) {
 	mini := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mini.Addr()})

@@ -114,17 +114,17 @@ var (
 	// stale DB snapshot from silently replacing a newer policy after a cache miss.
 	publishConcurrencyPolicyScript = redis.NewScript(`
 		redis.replicate_commands()
-		local key = KEYS[1]
-		local incomingGeneration = tonumber(ARGV[1])
-		if incomingGeneration == nil or incomingGeneration < 0 then
-			return -3
-		end
 		local function validInteger(value, minimum)
 			if value == false or value == nil or value == '' then
 				return false
 			end
 			local number = tonumber(value)
-			return number ~= nil and number >= minimum and math.floor(number) == number
+			return number ~= nil and (minimum == nil or number >= minimum) and math.floor(number) == number
+		end
+		local key = KEYS[1]
+		local incomingGeneration = tonumber(ARGV[1])
+		if not validInteger(ARGV[1], 0) then
+			return -3
 		end
 		local function validAuthority()
 			local mode = redis.call('HGET', key, 'mode')
@@ -135,7 +135,7 @@ var (
 				return false
 			end
 			if mode == 'shared' then
-				return validInteger(shared, 0) and live == '' and request == ''
+				return validInteger(shared, nil) and live == '' and request == ''
 			end
 			if mode == 'split' then
 				return shared == '' and validInteger(live, 1) and validInteger(request, 1)
@@ -144,10 +144,10 @@ var (
 		end
 		local currentGeneration = redis.call('HGET', key, 'generation')
 		if currentGeneration ~= false then
-			currentGeneration = tonumber(currentGeneration)
-			if currentGeneration == nil then
+			if not validInteger(currentGeneration, 0) then
 				return -3
 			end
+			currentGeneration = tonumber(currentGeneration)
 			if not validAuthority() then
 				return -3
 			end
@@ -266,22 +266,25 @@ var (
 				return nil, -10
 			end
 			local generation = tonumber(rawGeneration)
-			if generation == nil then
+			if generation == nil or generation < 0 or math.floor(generation) ~= generation then
 				return nil, -10
 			end
 			if generation ~= expectedGeneration then
 				return nil, -11
 			end
 			if mode == 'shared' then
-				if live ~= '' or request ~= '' or tonumber(shared) == nil then
+				local sharedLimit = tonumber(shared)
+				if live ~= '' or request ~= '' or sharedLimit == nil or math.floor(sharedLimit) ~= sharedLimit then
 					return nil, -10
 				end
-				return {tonumber(shared), 0, 1}, nil
+				return {sharedLimit, 0, 1}, nil
 			end
 			if mode == 'split' then
 				local liveLimit = tonumber(live)
 				local requestLimit = tonumber(request)
-				if shared ~= '' or liveLimit == nil or requestLimit == nil or liveLimit <= 0 or requestLimit <= 0 then
+				if shared ~= '' or liveLimit == nil or requestLimit == nil
+					or math.floor(liveLimit) ~= liveLimit or math.floor(requestLimit) ~= requestLimit
+					or liveLimit <= 0 or requestLimit <= 0 then
 					return nil, -10
 				end
 				return {liveLimit, requestLimit, 0}, nil
@@ -331,11 +334,15 @@ var (
 		if not userShared and class == 'request' then userCount = userRequestCount end
 
 		if class ~= 'request' and class ~= 'live' then return {-10} end
+		local accountRegularOwner = redis.call('ZSCORE', accountRegular, reservationID)
+		local userRegularOwner = redis.call('ZSCORE', userRegular, reservationID)
+		local accountLiveOwner = redis.call('ZSCORE', accountLive, reservationID)
+		local userLiveOwner = redis.call('ZSCORE', userLive, reservationID)
+		local apiOwner = redis.call('ZSCORE', apiLive, reservationID)
 		if class == 'request' then
-			local accountOwner = redis.call('ZSCORE', accountRegular, reservationID)
-			local userOwner = redis.call('ZSCORE', userRegular, reservationID)
-			if accountOwner ~= false or userOwner ~= false then
-				if accountOwner == false or userOwner == false then return {-12} end
+			if accountLiveOwner ~= false or userLiveOwner ~= false or apiOwner ~= false then return {-12} end
+			if accountRegularOwner ~= false or userRegularOwner ~= false then
+				if accountRegularOwner == false or userRegularOwner == false then return {-12} end
 				redis.call('ZADD', accountRegular, now, reservationID)
 				redis.call('ZADD', userRegular, now, reservationID)
 				redis.call('EXPIRE', accountRegular, regularTTL)
@@ -355,11 +362,9 @@ var (
 			return {1, '', accountRequestCount + 1, accountLiveCount, userRequestCount + 1, userLiveCount, now}
 		end
 
-		local accountOwner = redis.call('ZSCORE', accountLive, reservationID)
-		local userOwner = redis.call('ZSCORE', userLive, reservationID)
-		local apiOwner = redis.call('ZSCORE', apiLive, reservationID)
-		if accountOwner ~= false or userOwner ~= false or apiOwner ~= false then
-			if accountOwner == false or userOwner == false or apiOwner == false then return {-12} end
+		if accountRegularOwner ~= false or userRegularOwner ~= false then return {-12} end
+		if accountLiveOwner ~= false or userLiveOwner ~= false or apiOwner ~= false then
+			if accountLiveOwner == false or userLiveOwner == false or apiOwner == false then return {-12} end
 			redis.call('ZADD', accountLive, now, reservationID)
 			redis.call('ZADD', userLive, now, reservationID)
 			redis.call('ZADD', apiLive, now, reservationID)
@@ -399,18 +404,27 @@ var (
 		local reservationID = ARGV[5]
 		local liveTTL = 60
 
-		local function authorityValid(key, expectedGeneration)
+		local function authorityValid(key)
 			local generation = tonumber(redis.call('HGET', key, 'generation') or '')
 			local mode = redis.call('HGET', key, 'mode')
 			local shared = redis.call('HGET', key, 'shared')
 			local live = redis.call('HGET', key, 'live')
 			local request = redis.call('HGET', key, 'request')
-			if generation == nil or generation ~= expectedGeneration or mode == false or shared == false or live == false or request == false then return false end
-			if mode == 'shared' then return live == '' and request == '' and tonumber(shared) ~= nil end
-			if mode == 'split' then return shared == '' and tonumber(live) ~= nil and tonumber(request) ~= nil and tonumber(live) > 0 and tonumber(request) > 0 end
+			if generation == nil or generation < 0 or math.floor(generation) ~= generation or mode == false or shared == false or live == false or request == false then return false end
+			if mode == 'shared' then
+				local sharedLimit = tonumber(shared)
+				return live == '' and request == '' and sharedLimit ~= nil and math.floor(sharedLimit) == sharedLimit
+			end
+			if mode == 'split' then
+				local liveLimit = tonumber(live)
+				local requestLimit = tonumber(request)
+				return shared == '' and liveLimit ~= nil and requestLimit ~= nil
+					and math.floor(liveLimit) == liveLimit and math.floor(requestLimit) == requestLimit
+					and liveLimit > 0 and requestLimit > 0
+			end
 			return false
 		end
-		if not authorityValid(accountPolicy, expectedAccountGeneration) or not authorityValid(userPolicy, expectedUserGeneration) then return {-10} end
+		if not authorityValid(accountPolicy) or not authorityValid(userPolicy) then return {-10} end
 		local now = tonumber(redis.call('TIME')[1])
 		if class == 'request' then
 			redis.call('ZREMRANGEBYSCORE', accountRegular, '-inf', now - regularTTL)
@@ -843,7 +857,7 @@ func (c *concurrencyCache) RefreshConcurrency(ctx context.Context, request servi
 	if regularTTL <= 0 {
 		regularTTL = defaultSlotTTLMinutes * 60
 	}
-	result, err := refreshConcurrencyScript.Run(ctx, c.rdb, []string{
+	raw, err := refreshConcurrencyScript.Run(ctx, c.rdb, []string{
 		accountConcurrencyPolicyKey(request.AccountID),
 		userConcurrencyPolicyKey(request.UserID),
 		accountSlotKey(request.AccountID),
@@ -851,9 +865,13 @@ func (c *concurrencyCache) RefreshConcurrency(ctx context.Context, request servi
 		userSlotKey(request.UserID),
 		liveUserSlotKey(request.UserID),
 		liveAPIKeySlotKey(request.APIKeyID),
-	}, string(request.Class), request.AccountGeneration, request.UserGeneration, regularTTL, request.ReservationID).Int()
+	}, string(request.Class), request.AccountGeneration, request.UserGeneration, regularTTL, request.ReservationID).Result()
 	if err != nil {
 		return false, err
+	}
+	result, err := redisScriptInt64At(raw, 0)
+	if err != nil {
+		return false, fmt.Errorf("parse concurrency refresh result: %w", err)
 	}
 	if result < 0 {
 		return false, fmt.Errorf("%w: refresh authority is invalid", service.ErrConcurrencyPolicyAdmissionUnavailable)
