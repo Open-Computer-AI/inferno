@@ -183,6 +183,16 @@ describe('BulkEditAccountModal', () => {
     expect(wrapper.find('[data-test="bulk-concurrency-policy-section"]').exists()).toBe(false)
   })
 
+  it('has no concurrency policy control when selected capability metadata is incomplete', () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['oauth'],
+      selectedAuthModesComplete: false
+    })
+
+    expect(wrapper.find('[data-test="bulk-concurrency-policy-section"]').exists()).toBe(false)
+  })
+
   it('后端拒绝修改同步账号倍率时展示专用错误', async () => {
     vi.mocked(adminAPI.accounts.bulkUpdate).mockRejectedValueOnce({
       status: 409,

@@ -86,9 +86,17 @@ const OAuthAuthorizationFlowStub = defineComponent({
     initialInputMethod: String,
   },
   data: () => ({ inputMethod: 'manual' }),
-  emits: ['import-codex-session', 'import-codex-pat'],
+  methods: {
+    reset() {
+      this.inputMethod = 'manual'
+    },
+  },
+  emits: ['import-codex-session', 'import-codex-pat', 'update:inputMethod'],
   template: `
     <div>
+      <button data-testid="choose-refresh-token" @click="inputMethod = 'refresh_token'; $emit('update:inputMethod', 'refresh_token')">refresh</button>
+      <button data-testid="choose-agent-identity" @click="inputMethod = 'agent_identity'; $emit('update:inputMethod', 'agent_identity')">agent</button>
+      <button data-testid="choose-codex-pat" @click="inputMethod = 'codex_pat'; $emit('update:inputMethod', 'codex_pat')">pat method</button>
       <button data-testid="import-codex-session" @click="$emit('import-codex-session', 'session-json')">session</button>
       <button data-testid="import-codex-pat" @click="$emit('import-codex-pat', 'pat-token')">pat</button>
     </div>
@@ -505,6 +513,28 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(importCodexSessionMock.mock.calls[0]?.[0]?.concurrency_policy).toBeUndefined()
   })
 
+  it('resets and explains concurrency policy when an unsupported OpenAI import method is chosen', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await wrapper.get('[data-test="concurrency-mode"]').setValue('split')
+    await wrapper.get('[data-test="live-concurrency-input"]').setValue('4')
+    await wrapper.get('[data-test="request-concurrency-input"]').setValue('2')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Codex import')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+
+    await wrapper.get('[data-testid="choose-codex-pat"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="openai-concurrency-policy-unsupported-hint"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="choose-refresh-token"]').trigger('click')
+    expect(wrapper.find('[data-test="openai-concurrency-policy-unsupported-hint"]').exists()).toBe(false)
+    const backButton = wrapper.findAll('button').find((button) => button.text() === 'common.back')
+    expect(backButton).toBeDefined()
+    await backButton!.trigger('click')
+    expect(wrapper.find('[data-test="concurrency-policy-fields"]').exists()).toBe(true)
+    expect((wrapper.get('[data-test="concurrency-mode"]').element as HTMLSelectElement).value).toBe('shared')
+  })
+
   it('does not submit concurrency policy with Codex session import', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'OpenAI')
@@ -552,7 +582,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
 
     const flow = wrapper.getComponent(OAuthAuthorizationFlowStub)
-    flow.vm.inputMethod = 'agent_identity'
+    await flow.get('[data-testid="choose-agent-identity"]').trigger('click')
     flow.vm.$emit('import-codex-session', JSON.stringify({
       auth_mode: 'agentIdentity',
       agent_identity: { agent_runtime_id: 'runtime' }

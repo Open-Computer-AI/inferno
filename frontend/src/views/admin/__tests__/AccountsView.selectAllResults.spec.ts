@@ -79,7 +79,7 @@ const makeAccounts = (count: number) => Array.from({ length: count }, (_, index)
 
 const AccountBulkActionsBarStub = {
   props: ['selectedIds', 'totalResults', 'selectingAll', 'allResultsSelected'],
-  emits: ['select-all-results', 'select-page', 'clear'],
+  emits: ['select-all-results', 'select-page', 'edit-selected', 'clear'],
   template: `
     <div>
       <span data-test="selected-count">{{ selectedIds.length }}</span>
@@ -87,7 +87,17 @@ const AccountBulkActionsBarStub = {
       <span data-test="all-results-selected">{{ String(allResultsSelected) }}</span>
       <button data-test="select-page" @click="$emit('select-page')">select page</button>
       <button data-test="select-all-results" @click="$emit('select-all-results')">select all</button>
+      <button data-test="edit-selected" @click="$emit('edit-selected')">edit selected</button>
       <button data-test="clear" @click="$emit('clear')">clear</button>
+    </div>
+  `
+}
+
+const BulkEditAccountModalStub = {
+  props: ['show', 'target', 'selectedAuthModesComplete'],
+  template: `
+    <div v-if="show">
+      <span data-test="bulk-edit-metadata-complete">{{ String(target?.selectedAuthModesComplete ?? selectedAuthModesComplete) }}</span>
     </div>
   `
 }
@@ -122,7 +132,7 @@ const mountView = () => mount(AccountsView, {
       TLSFingerprintProfilesModal: true,
       CreateAccountModal: true,
       EditAccountModal: true,
-      BulkEditAccountModal: true,
+      BulkEditAccountModal: BulkEditAccountModalStub,
       PlatformTypeBadge: true,
       AccountCapacityCell: true,
       AccountStatusIndicator: true,
@@ -224,5 +234,51 @@ describe('admin AccountsView select all filtered results', () => {
     expect(wrapper.get('[data-test="selected-count"]').text()).toBe('20')
     expect(wrapper.get('[data-test="all-results-selected"]').text()).toBe('false')
     expect(showError).toHaveBeenCalledWith('admin.accounts.bulkActions.selectAllFailed')
+  })
+
+  it('keeps split policy unavailable when select-all-results includes an off-page PAT', async () => {
+    const firstPageAccount = {
+      id: 1,
+      name: 'normal-oauth',
+      platform: 'openai',
+      type: 'oauth',
+      status: 'active',
+      schedulable: true,
+      created_at: '2026-07-23T00:00:00Z',
+      updated_at: '2026-07-23T00:00:00Z'
+    }
+    const offPagePAT = {
+      ...firstPageAccount,
+      id: 2,
+      name: 'codex-pat',
+      credentials: { auth_mode: 'personalAccessToken' }
+    }
+    listAccounts.mockImplementation(async (_page: number, pageSize: number) => {
+      if (pageSize === 1000) {
+        return {
+          items: [firstPageAccount, offPagePAT],
+          total: 2,
+          page: 1,
+          page_size: 1000,
+          pages: 1
+        }
+      }
+      return {
+        items: [firstPageAccount],
+        total: 2,
+        page: 1,
+        page_size: 1,
+        pages: 2
+      }
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="select-all-results"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="edit-selected"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="bulk-edit-metadata-complete"]').text()).toBe('false')
   })
 })

@@ -465,6 +465,7 @@
       :selected-platforms="selPlatforms"
       :selected-types="selTypes"
       :selected-auth-modes="selAuthModes"
+      :selected-auth-modes-complete="selectedAuthModesComplete"
       :target="bulkEditTarget ?? undefined"
       :proxies="proxies"
       :groups="groups"
@@ -550,6 +551,7 @@ type AccountBulkEditTarget =
       selectedPlatforms: AccountPlatform[]
       selectedTypes: AccountType[]
       selectedAuthModes: string[]
+      selectedAuthModesComplete: boolean
     }
   | {
       mode: 'filtered'
@@ -567,6 +569,7 @@ type AccountBulkEditTarget =
       selectedPlatforms: AccountPlatform[]
       selectedTypes: AccountType[]
       selectedAuthModes: string[]
+      selectedAuthModesComplete: boolean
     }
 const selPlatforms = computed<AccountPlatform[]>(() => {
   const platforms = new Set(
@@ -1124,6 +1127,10 @@ const allResultsSelected = computed(() => {
   if (!snapshot || snapshot.size === 0 || snapshot.size !== selectedSet.value.size) return false
   return Array.from(snapshot).every(id => selectedSet.value.has(id))
 })
+const selectedAuthModesComplete = computed(() =>
+  selectedAllResultIDs.value === null &&
+  selIds.value.every((id) => accounts.value.some((account) => account.id === id))
+)
 
 const clearSelection = () => {
   selectionRequestVersion.value++
@@ -2142,7 +2149,8 @@ const openBulkEditSelected = () => {
     accountIds: [...selIds.value],
     selectedPlatforms: [...selPlatforms.value],
     selectedTypes: [...selTypes.value],
-    selectedAuthModes: [...selAuthModes.value]
+    selectedAuthModes: [...selAuthModes.value],
+    selectedAuthModesComplete: selectedAuthModesComplete.value
   }
   showBulkEdit.value = true
 }
@@ -2157,7 +2165,8 @@ const openBulkEditFiltered = async () => {
     previewCount: preview.total,
     selectedPlatforms,
     selectedTypes,
-    selectedAuthModes
+    selectedAuthModes,
+    selectedAuthModesComplete: false
   }
   showBulkEdit.value = true
 }

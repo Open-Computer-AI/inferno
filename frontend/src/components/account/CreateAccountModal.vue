@@ -3448,9 +3448,17 @@
         @validate-session-token="handleValidateSessionToken"
         @import-codex-session="handleOpenAIImportCodexSession"
         @import-codex-pat="handleOpenAIImportCodexPAT"
+        @update:input-method="handleOAuthInputMethodChange"
         @import-sso="handleGrokImportSSO"
         @authorize-password="handleGrokAuthorizePassword"
       />
+      <p
+        v-if="isOpenAIConcurrencyUnsupportedInputMethod"
+        data-test="openai-concurrency-policy-unsupported-hint"
+        class="input-hint"
+      >
+        {{ t('admin.concurrencyPolicy.unsupportedImportHint') }}
+      </p>
 
     </div>
 
@@ -4014,6 +4022,7 @@ interface TempUnschedRuleForm {
 // State
 const step = ref(1)
 const submitting = ref(false)
+const selectedOAuthInputMethod = ref<AuthInputMethod>('manual')
 const accountCategory = ref<'oauth-based' | 'apikey' | 'bedrock' | 'service_account'>('oauth-based') // UI selection for account category
 const addMethod = ref<AddMethod>('oauth') // For oauth-based: 'oauth' or 'setup-token'
 const apiKeyBaseUrl = ref('https://api.anthropic.com')
@@ -4547,9 +4556,25 @@ const form = reactive({
 const concurrencyMode = ref<ConcurrencyMode>('shared')
 const liveConcurrency = ref<ConcurrencyLimitInput>('')
 const requestConcurrency = ref<ConcurrencyLimitInput>('')
-const isOpenAISplitEligible = computed(() =>
-  form.platform === 'openai' && form.type === 'oauth'
+const isOpenAIConcurrencyUnsupportedInputMethod = computed(() =>
+  form.platform === 'openai' &&
+  form.type === 'oauth' &&
+  ['codex_session', 'agent_identity', 'codex_pat'].includes(selectedOAuthInputMethod.value)
 )
+const isOpenAISplitEligible = computed(() =>
+  form.platform === 'openai' &&
+  form.type === 'oauth' &&
+  !isOpenAIConcurrencyUnsupportedInputMethod.value
+)
+
+const handleOAuthInputMethodChange = (method: AuthInputMethod) => {
+  selectedOAuthInputMethod.value = method
+  if (isOpenAIConcurrencyUnsupportedInputMethod.value) {
+    concurrencyMode.value = 'shared'
+    liveConcurrency.value = ''
+    requestConcurrency.value = ''
+  }
+}
 
 const getCreateConcurrencyPolicy = (
   platform: AccountPlatform,
@@ -5127,6 +5152,7 @@ const submitCreateAccount = async (payload: CreateAccountRequest) => {
 // Methods
 const resetForm = () => {
   step.value = 1
+  selectedOAuthInputMethod.value = 'manual'
   form.name = ''
   form.notes = ''
   form.platform = 'anthropic'
@@ -5700,6 +5726,7 @@ const handleSubmit = async () => {
 
 const goBackToBasicInfo = () => {
   step.value = 1
+  selectedOAuthInputMethod.value = 'manual'
   oauth.resetState()
   openaiOAuth.resetState()
   geminiOAuth.resetState()

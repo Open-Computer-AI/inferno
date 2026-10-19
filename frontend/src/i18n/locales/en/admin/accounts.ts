@@ -12,7 +12,8 @@ export default {
     hint: 'Split mode requires positive integer limits for both workloads.',
     positiveInteger: 'Enter a positive whole number up to {max}.',
     unknown: 'Unknown',
-    invalid: 'Enter valid positive Live and request limits.'
+    invalid: 'Enter valid positive Live and request limits.',
+    unsupportedImportHint: 'This import method does not support concurrency policies; the selected policy was reset.'
   },
     accounts: {
       title: 'Account Management',

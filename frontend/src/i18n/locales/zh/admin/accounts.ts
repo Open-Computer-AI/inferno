@@ -12,7 +12,8 @@ export default {
     hint: '分开模式必须为两类任务分别填写正整数限制。',
     positiveInteger: '请输入不超过 {max} 的正整数。',
     unknown: '未知',
-    invalid: '请输入有效的 Live 与请求正整数限制。'
+    invalid: '请输入有效的 Live 与请求正整数限制。',
+    unsupportedImportHint: '此导入方式不支持并发策略，已重置所选策略。'
   },
     accounts: {
       title: '账号管理',
