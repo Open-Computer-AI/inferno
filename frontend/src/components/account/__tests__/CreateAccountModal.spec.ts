@@ -505,7 +505,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(importCodexSessionMock.mock.calls[0]?.[0]?.concurrency_policy).toBeUndefined()
   })
 
-  it('submits a split concurrency policy with Codex session import', async () => {
+  it('does not submit concurrency policy with Codex session import', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'OpenAI')
     await wrapper.get('[data-test="concurrency-mode"]').setValue('split')
@@ -516,11 +516,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await wrapper.get('[data-testid="import-codex-session"]').trigger('click')
     await flushPromises()
 
-    expect(importCodexSessionMock.mock.calls[0]?.[0]?.concurrency_policy).toEqual({
-      mode: 'split',
-      live: 4,
-      requests: 2
-    })
+    expect(importCodexSessionMock.mock.calls[0]?.[0]?.concurrency_policy).toBeUndefined()
   })
 
   it('leaves Codex PAT import billing ownership to the backend', async () => {
@@ -530,6 +526,40 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
 
     expect(createOpenAICodexPATMock).toHaveBeenCalledTimes(1)
     expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBeUndefined()
+  })
+
+  it('does not submit concurrency policy with Codex PAT import', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await wrapper.get('[data-test="concurrency-mode"]').setValue('split')
+    await wrapper.get('[data-test="live-concurrency-input"]').setValue('4')
+    await wrapper.get('[data-test="request-concurrency-input"]').setValue('2')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Codex PAT')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await wrapper.get('[data-testid="import-codex-pat"]').trigger('click')
+    await flushPromises()
+
+    expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.concurrency_policy).toBeUndefined()
+  })
+
+  it('does not submit concurrency policy with Agent Identity import', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await wrapper.get('[data-test="concurrency-mode"]').setValue('split')
+    await wrapper.get('[data-test="live-concurrency-input"]').setValue('4')
+    await wrapper.get('[data-test="request-concurrency-input"]').setValue('2')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Agent Identity')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+
+    const flow = wrapper.getComponent(OAuthAuthorizationFlowStub)
+    flow.vm.inputMethod = 'agent_identity'
+    flow.vm.$emit('import-codex-session', JSON.stringify({
+      auth_mode: 'agentIdentity',
+      agent_identity: { agent_runtime_id: 'runtime' }
+    }))
+    await flushPromises()
+
+    expect(importCodexSessionMock.mock.calls[0]?.[0]?.concurrency_policy).toBeUndefined()
   })
 
   it('sends explicit true for Codex session import after the toggle is enabled', async () => {

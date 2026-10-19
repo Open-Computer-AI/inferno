@@ -1553,6 +1553,7 @@ import {
 import type { OpenAIWSMode } from '@/utils/openaiWsMode'
 import {
   buildConcurrencyPolicy,
+  isOpenAIAuthModeLiveConcurrencyEligible,
   type ConcurrencyLimitInput
 } from '@/utils/concurrencyPolicy'
 interface Props {
@@ -1560,12 +1561,14 @@ interface Props {
   accountIds: number[]
   selectedPlatforms: AccountPlatform[]
   selectedTypes: AccountType[]
+  selectedAuthModes?: string[]
   target?: {
     mode: 'selected' | 'filtered'
     filters?: Record<string, unknown>
     previewCount?: number
     selectedPlatforms?: AccountPlatform[]
     selectedTypes?: AccountType[]
+    selectedAuthModes?: string[]
   }
   proxies: ProxyConfig[]
   groups: AdminGroup[]
@@ -1585,6 +1588,9 @@ const targetMode = computed(() => props.target?.mode ?? 'selected')
 const targetPreviewCount = computed(() => props.target?.previewCount ?? props.accountIds.length)
 const targetSelectedPlatforms = computed(() => props.target?.selectedPlatforms ?? props.selectedPlatforms)
 const targetSelectedTypes = computed(() => props.target?.selectedTypes ?? props.selectedTypes)
+const targetSelectedAuthModes = computed(() =>
+  props.target?.selectedAuthModes ?? props.selectedAuthModes ?? []
+)
 // Grok 快捷端点仅在所选账号全部为 grok 平台时展示（其他平台不显示）
 const allTargetsGrok = computed(
   () =>
@@ -1622,7 +1628,9 @@ const allOpenAIOAuthOnly = computed(() => {
 })
 
 const canEditSplitPolicy = computed(() =>
-  targetMode.value === 'selected' && allOpenAIOAuthOnly.value
+  targetMode.value === 'selected' &&
+  allOpenAIOAuthOnly.value &&
+  targetSelectedAuthModes.value.every(isOpenAIAuthModeLiveConcurrencyEligible)
 )
 
 const allOpenAIAPIKey = computed(() => {

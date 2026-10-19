@@ -1495,4 +1495,19 @@ describe('EditAccountModal OpenAI 自动使用重置卡', () => {
     })
     resetWrapper.unmount()
   })
+
+  it.each(['personalAccessToken', 'agentIdentity'])('hides concurrency policy for unsupported OpenAI auth mode %s', async (authMode) => {
+    const account = {
+      ...buildOpenAIOAuthParentAccount(),
+      credentials: { auth_mode: authMode }
+    }
+    updateAccountMock.mockResolvedValue(account)
+    const wrapper = mountModal(account)
+
+    expect(wrapper.find('[data-test="concurrency-policy-fields"]').exists()).toBe(false)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock.mock.calls[0]?.[1]).not.toHaveProperty('concurrency_policy')
+    wrapper.unmount()
+  })
 })

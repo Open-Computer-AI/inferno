@@ -6261,8 +6261,6 @@ const handleOpenAIImportCodexSession = async (content: string) => {
   if (credentialExtras === null) {
     return
   }
-  const concurrencyPolicy = getCreateConcurrencyPolicy('openai', 'oauth')
-  if (concurrencyPolicy === null) return
 
   oauthClient.loading.value = true
   oauthClient.error.value = ''
@@ -6283,8 +6281,7 @@ const handleOpenAIImportCodexSession = async (content: string) => {
       auto_pause_on_expired: autoPauseOnExpired.value,
       credential_extras: Object.keys(credentialExtras).length > 0 ? credentialExtras : undefined,
       extra,
-      update_existing: true,
-      ...(concurrencyPolicy ? { concurrency_policy: concurrencyPolicy } : {})
+      update_existing: true
     })
 
     const successCount = result.created + result.updated
@@ -6342,8 +6339,6 @@ const handleOpenAIImportCodexPAT = async (accessToken: string) => {
   if (credentialExtras === null) {
     return
   }
-  const concurrencyPolicy = getCreateConcurrencyPolicy('openai', 'oauth')
-  if (concurrencyPolicy === null) return
 
   oauthClient.loading.value = true
   oauthClient.error.value = ''
@@ -6363,8 +6358,7 @@ const handleOpenAIImportCodexPAT = async (accessToken: string) => {
       expires_at: form.expires_at,
       auto_pause_on_expired: autoPauseOnExpired.value,
       credential_extras: Object.keys(credentialExtras).length > 0 ? credentialExtras : undefined,
-      extra,
-      ...(concurrencyPolicy ? { concurrency_policy: concurrencyPolicy } : {})
+      extra
     })
 
     appStore.showSuccess(t('admin.accounts.messages.accountCreated'))

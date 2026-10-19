@@ -3,10 +3,33 @@ import {
   buildConcurrencyPolicy,
   buildOptionalConcurrencyPolicy,
   getConcurrencyMode,
+  isOpenAIAuthModeLiveConcurrencyEligible,
+  isOpenAILiveConcurrencyEligible,
   MAX_CONCURRENCY
 } from '@/utils/concurrencyPolicy'
 
 describe('concurrency policy contract', () => {
+  it.each([
+    'personalAccessToken',
+    'personal_access_token',
+    'codexPAT',
+    'agentIdentity',
+    'agent_identity'
+  ])('rejects OpenAI auth modes without Live concurrency support: %s', (authMode) => {
+      expect(isOpenAIAuthModeLiveConcurrencyEligible(authMode)).toBe(false)
+    })
+
+  it('keeps ordinary and unknown OpenAI OAuth auth modes eligible', () => {
+    expect(isOpenAIAuthModeLiveConcurrencyEligible(undefined)).toBe(true)
+    expect(isOpenAIAuthModeLiveConcurrencyEligible('codexSession')).toBe(true)
+    expect(isOpenAILiveConcurrencyEligible({ platform: 'openai', type: 'oauth' })).toBe(true)
+    expect(isOpenAILiveConcurrencyEligible({
+      platform: 'openai',
+      type: 'oauth',
+      credentials: { auth_mode: 'agentIdentity' }
+    })).toBe(false)
+  })
+
   it('serializes one complete split pair and enforces the database integer bound', () => {
     expect(buildConcurrencyPolicy('split', '4', '2')).toEqual({
       mode: 'split',

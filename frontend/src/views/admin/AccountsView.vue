@@ -464,6 +464,7 @@
       :account-ids="selIds"
       :selected-platforms="selPlatforms"
       :selected-types="selTypes"
+      :selected-auth-modes="selAuthModes"
       :target="bulkEditTarget ?? undefined"
       :proxies="proxies"
       :groups="groups"
@@ -548,6 +549,7 @@ type AccountBulkEditTarget =
       accountIds: number[]
       selectedPlatforms: AccountPlatform[]
       selectedTypes: AccountType[]
+      selectedAuthModes: string[]
     }
   | {
       mode: 'filtered'
@@ -564,6 +566,7 @@ type AccountBulkEditTarget =
       previewCount: number
       selectedPlatforms: AccountPlatform[]
       selectedTypes: AccountType[]
+      selectedAuthModes: string[]
     }
 const selPlatforms = computed<AccountPlatform[]>(() => {
   const platforms = new Set(
@@ -580,6 +583,15 @@ const selTypes = computed<AccountType[]>(() => {
       .map(a => a.type)
   )
   return [...types]
+})
+const selAuthModes = computed<string[]>(() => {
+  const authModes = new Set(
+    accounts.value
+      .filter(a => isSelected(a.id))
+      .map(getOpenAIAuthMode)
+      .filter((authMode): authMode is string => Boolean(authMode))
+  )
+  return [...authModes]
 })
 const showCreate = ref(false)
 const showEdit = ref(false)
@@ -2116,7 +2128,12 @@ const handleSelectAllResults = async () => {
 const collectSelectionMetadata = (rows: Account[]) => {
   const selectedPlatforms = Array.from(new Set(rows.map(account => account.platform)))
   const selectedTypes = Array.from(new Set(rows.map(account => account.type)))
-  return { selectedPlatforms, selectedTypes }
+  const selectedAuthModes = Array.from(new Set(
+    rows
+      .map(getOpenAIAuthMode)
+      .filter((authMode): authMode is string => Boolean(authMode))
+  ))
+  return { selectedPlatforms, selectedTypes, selectedAuthModes }
 }
 
 const openBulkEditSelected = () => {
@@ -2124,7 +2141,8 @@ const openBulkEditSelected = () => {
     mode: 'selected',
     accountIds: [...selIds.value],
     selectedPlatforms: [...selPlatforms.value],
-    selectedTypes: [...selTypes.value]
+    selectedTypes: [...selTypes.value],
+    selectedAuthModes: [...selAuthModes.value]
   }
   showBulkEdit.value = true
 }
@@ -2132,13 +2150,14 @@ const openBulkEditSelected = () => {
 const openBulkEditFiltered = async () => {
   const filters = buildBulkEditFilterSnapshot()
   const preview = await adminAPI.accounts.list(1, 100, filters)
-  const { selectedPlatforms, selectedTypes } = collectSelectionMetadata(preview.items)
+  const { selectedPlatforms, selectedTypes, selectedAuthModes } = collectSelectionMetadata(preview.items)
   bulkEditTarget.value = {
     mode: 'filtered',
     filters,
     previewCount: preview.total,
     selectedPlatforms,
-    selectedTypes
+    selectedTypes,
+    selectedAuthModes
   }
   showBulkEdit.value = true
 }

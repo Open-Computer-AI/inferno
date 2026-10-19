@@ -1609,7 +1609,7 @@
         </div>
       </div>
       <ConcurrencyPolicyFields
-        v-if="account?.platform === 'openai' && account?.type === 'oauth'"
+        v-if="canEditConcurrencyPolicy"
         :mode="concurrencyMode"
         :live="liveConcurrency"
         :requests="requestConcurrency"
@@ -2960,6 +2960,7 @@ import {
   buildConcurrencyPolicy,
   concurrencyInputValue,
   getConcurrencyMode,
+  isOpenAILiveConcurrencyEligible,
   type ConcurrencyLimitInput
 } from '@/utils/concurrencyPolicy'
 
@@ -2980,6 +2981,9 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const browserTimeZone = getBrowserTimeZone()
+const canEditConcurrencyPolicy = computed(() =>
+  isOpenAILiveConcurrencyEligible(props.account)
+)
 
 // Spark 影子账号(parent_account_id 非空):代理恒继承母账号,不可独立编辑(外审 B/P1),
 // 故隐藏代理选择器。
@@ -4686,10 +4690,10 @@ const handleSubmit = async () => {
 	}
 
   const updatePayload: Record<string, unknown> = { ...form }
-  const concurrencyPolicy = concurrencyPolicyDirty.value
+  const concurrencyPolicy = concurrencyPolicyDirty.value && canEditConcurrencyPolicy.value
     ? buildConcurrencyPolicy(concurrencyMode.value, liveConcurrency.value, requestConcurrency.value)
     : undefined
-  if (concurrencyPolicyDirty.value && concurrencyPolicy === null) {
+  if (concurrencyPolicyDirty.value && canEditConcurrencyPolicy.value && concurrencyPolicy === null) {
     appStore.showError(t('admin.concurrencyPolicy.invalid'))
     return
   }

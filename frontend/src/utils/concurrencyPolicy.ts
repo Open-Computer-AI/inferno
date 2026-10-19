@@ -4,6 +4,27 @@ export const MAX_CONCURRENCY = 2_147_483_647
 
 export type ConcurrencyLimitInput = string | number | null | undefined
 
+const normalizeAuthMode = (value: unknown): string =>
+  typeof value === 'string' ? value.trim().toLowerCase().replace(/[\s_-]+/g, '') : ''
+
+export const isOpenAIAuthModeLiveConcurrencyEligible = (authMode: unknown): boolean => {
+  const normalized = normalizeAuthMode(authMode)
+  return normalized !== 'personalaccesstoken' &&
+    normalized !== 'codexpat' &&
+    normalized !== 'agentidentity'
+}
+
+export const isOpenAILiveConcurrencyEligible = (value: {
+  platform?: string | null
+  type?: string | null
+  credentials?: Record<string, unknown> | null
+} | null | undefined): boolean => {
+  if (value?.platform !== 'openai' || value.type !== 'oauth') {
+    return false
+  }
+  return isOpenAIAuthModeLiveConcurrencyEligible(value.credentials?.auth_mode)
+}
+
 export const isPositiveConcurrencyLimit = (value: ConcurrencyLimitInput): boolean => {
   if (typeof value === 'string' && value.trim() === '') {
     return false

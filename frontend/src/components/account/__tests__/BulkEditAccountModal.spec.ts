@@ -173,6 +173,16 @@ describe('BulkEditAccountModal', () => {
     expect(adminAPI.accounts.bulkUpdate).not.toHaveBeenCalled()
   })
 
+  it.each(['personalAccessToken', 'agentIdentity'])('unsupported OpenAI auth mode %s has no concurrency policy control', (authMode) => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['oauth'],
+      selectedAuthModes: [authMode]
+    })
+
+    expect(wrapper.find('[data-test="bulk-concurrency-policy-section"]').exists()).toBe(false)
+  })
+
   it('后端拒绝修改同步账号倍率时展示专用错误', async () => {
     vi.mocked(adminAPI.accounts.bulkUpdate).mockRejectedValueOnce({
       status: 409,
