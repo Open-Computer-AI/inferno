@@ -14,6 +14,7 @@ const (
 var ErrConcurrencyPolicyRuntimeNotApplied = errors.New("concurrency policy persisted but runtime publication failed")
 var ErrConcurrencyPolicyGenerationStale = errors.New("concurrency policy generation is stale")
 var ErrConcurrencyPolicyGenerationConflict = errors.New("concurrency policy generation conflicts with published policy")
+var ErrConcurrencyPolicyAdmissionUnavailable = errors.New("concurrency policy authority is unavailable")
 
 // ConcurrencyPolicyPublisher is the narrow DB-to-Redis acknowledgement fence
 // used by administrative writes. Implementations must update the authoritative
@@ -106,6 +107,69 @@ type ConcurrencyPolicy struct {
 	Shared  int
 	Live    *int
 	Request *int
+}
+
+// ConcurrencySnapshot is the authoritative Redis occupancy for one account or
+// user. Total is deliberately derived from the two class counts so callers do
+// not have to infer whether a legacy shared cap is currently in use.
+type ConcurrencySnapshot struct {
+	Request int
+	Live    int
+	Total   int
+}
+
+// ConcurrencyAdmissionRequest is the server-derived admission input. The
+// caller supplies the policy generation it read with the account/user record;
+// Redis validates those generations against the published authority in the
+// same Lua operation before it counts or writes a slot.
+type ConcurrencyAdmissionRequest struct {
+	AccountID         int64
+	AccountPolicy     ConcurrencyPolicy
+	AccountGeneration int64
+	UserID            int64
+	UserPolicy        ConcurrencyPolicy
+	UserGeneration    int64
+	APIKeyID          int64
+	Class             ConcurrencyClass
+	ReservationID     string
+}
+
+type ConcurrencyAdmissionResult struct {
+	Acquired    bool
+	DeniedScope string
+	Account     ConcurrencySnapshot
+	User        ConcurrencySnapshot
+}
+
+// ConcurrencyAdmissionCache is optional so legacy cache doubles and wrappers
+// remain valid for callers that have not migrated to policy-aware admission.
+// Implementations must make acquire/refresh/release atomic with Redis TIME.
+type ConcurrencyAdmissionCache interface {
+	AcquireConcurrency(context.Context, ConcurrencyAdmissionRequest) (ConcurrencyAdmissionResult, error)
+	RefreshConcurrency(context.Context, ConcurrencyAdmissionRequest) (bool, error)
+	ReleaseConcurrency(context.Context, ConcurrencyAdmissionRequest) error
+}
+
+func (r ConcurrencyAdmissionRequest) Validate() error {
+	if r.AccountID <= 0 || r.UserID <= 0 || r.APIKeyID <= 0 {
+		return fmt.Errorf("concurrency admission identifiers must be positive")
+	}
+	if r.ReservationID == "" {
+		return fmt.Errorf("concurrency admission reservation ID is required")
+	}
+	if r.Class != ConcurrencyClassRequest && r.Class != ConcurrencyClassLive {
+		return fmt.Errorf("unsupported concurrency admission class %q", r.Class)
+	}
+	if r.AccountGeneration < 0 || r.UserGeneration < 0 {
+		return fmt.Errorf("concurrency admission generations must be non-negative")
+	}
+	if err := ValidateConcurrencyPolicy(r.AccountPolicy); err != nil {
+		return fmt.Errorf("account policy: %w", err)
+	}
+	if err := ValidateConcurrencyPolicy(r.UserPolicy); err != nil {
+		return fmt.Errorf("user policy: %w", err)
+	}
+	return nil
 }
 
 func (p ConcurrencyPolicy) Mode() string {

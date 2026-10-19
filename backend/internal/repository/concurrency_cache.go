@@ -230,6 +230,214 @@ var (
 		return 1
 	`)
 
+	// acquireConcurrencyScript is the policy-aware admission fence. The policy
+	// hashes and all occupancy sets are read/written in one Redis operation so
+	// a stale DB snapshot cannot acquire against a newer published generation.
+	// KEYS[1:2] = account/user policy hashes
+	// KEYS[3:7] = account regular/live, user regular/live, API-key live sets
+	// ARGV[1] = class, ARGV[2:3] = expected account/user generation
+	// ARGV[4] = regular-slot TTL, ARGV[5] = reservation ID
+	// Return {status, denied_scope, account_request, account_live,
+	// user_request, user_live, redis_now}.
+	acquireConcurrencyScript = redis.NewScript(`
+		redis.replicate_commands()
+		local accountPolicy = KEYS[1]
+		local userPolicy = KEYS[2]
+		local accountRegular = KEYS[3]
+		local accountLive = KEYS[4]
+		local userRegular = KEYS[5]
+		local userLive = KEYS[6]
+		local apiLive = KEYS[7]
+		local class = ARGV[1]
+		local expectedAccountGeneration = tonumber(ARGV[2])
+		local expectedUserGeneration = tonumber(ARGV[3])
+		local regularTTL = tonumber(ARGV[4])
+		local reservationID = ARGV[5]
+		local liveTTL = 60
+		local now = tonumber(redis.call('TIME')[1])
+
+		local function readPolicy(key, expectedGeneration)
+			local rawGeneration = redis.call('HGET', key, 'generation')
+			local mode = redis.call('HGET', key, 'mode')
+			local shared = redis.call('HGET', key, 'shared')
+			local live = redis.call('HGET', key, 'live')
+			local request = redis.call('HGET', key, 'request')
+			if rawGeneration == false or mode == false or shared == false or live == false or request == false then
+				return nil, -10
+			end
+			local generation = tonumber(rawGeneration)
+			if generation == nil then
+				return nil, -10
+			end
+			if generation ~= expectedGeneration then
+				return nil, -11
+			end
+			if mode == 'shared' then
+				if live ~= '' or request ~= '' or tonumber(shared) == nil then
+					return nil, -10
+				end
+				return {tonumber(shared), 0, 1}, nil
+			end
+			if mode == 'split' then
+				local liveLimit = tonumber(live)
+				local requestLimit = tonumber(request)
+				if shared ~= '' or liveLimit == nil or requestLimit == nil or liveLimit <= 0 or requestLimit <= 0 then
+					return nil, -10
+				end
+				return {liveLimit, requestLimit, 0}, nil
+			end
+			return nil, -10
+		end
+
+		local accountPolicyValue, accountError = readPolicy(accountPolicy, expectedAccountGeneration)
+		if accountError ~= nil then return {accountError} end
+		local userPolicyValue, userError = readPolicy(userPolicy, expectedUserGeneration)
+		if userError ~= nil then return {userError} end
+
+		redis.call('ZREMRANGEBYSCORE', accountRegular, '-inf', now - regularTTL)
+		redis.call('ZREMRANGEBYSCORE', userRegular, '-inf', now - regularTTL)
+		redis.call('ZREMRANGEBYSCORE', accountLive, '-inf', now - liveTTL)
+		redis.call('ZREMRANGEBYSCORE', userLive, '-inf', now - liveTTL)
+		redis.call('ZREMRANGEBYSCORE', apiLive, '-inf', now - liveTTL)
+
+		local accountRequestCount = redis.call('ZCARD', accountRegular)
+		local accountLiveCount = redis.call('ZCARD', accountLive)
+		local userRequestCount = redis.call('ZCARD', userRegular)
+		local userLiveCount = redis.call('ZCARD', userLive)
+		local accountLimit
+		local accountShared
+		local userLimit
+		local userShared
+		if accountPolicyValue[3] == 1 then
+			accountLimit = accountPolicyValue[1]
+			accountShared = true
+		else
+			accountShared = false
+			if class == 'live' then accountLimit = accountPolicyValue[1] else accountLimit = accountPolicyValue[2] end
+		end
+		if userPolicyValue[3] == 1 then
+			userLimit = userPolicyValue[1]
+			userShared = true
+		else
+			userShared = false
+			if class == 'live' then userLimit = userPolicyValue[1] else userLimit = userPolicyValue[2] end
+		end
+
+		local accountCount = accountRequestCount + accountLiveCount
+		local userCount = userRequestCount + userLiveCount
+		if not accountShared and class == 'live' then accountCount = accountLiveCount end
+		if not accountShared and class == 'request' then accountCount = accountRequestCount end
+		if not userShared and class == 'live' then userCount = userLiveCount end
+		if not userShared and class == 'request' then userCount = userRequestCount end
+
+		if class ~= 'request' and class ~= 'live' then return {-10} end
+		if class == 'request' then
+			local accountOwner = redis.call('ZSCORE', accountRegular, reservationID)
+			local userOwner = redis.call('ZSCORE', userRegular, reservationID)
+			if accountOwner ~= false or userOwner ~= false then
+				if accountOwner == false or userOwner == false then return {-12} end
+				redis.call('ZADD', accountRegular, now, reservationID)
+				redis.call('ZADD', userRegular, now, reservationID)
+				redis.call('EXPIRE', accountRegular, regularTTL)
+				redis.call('EXPIRE', userRegular, regularTTL)
+				return {1, '', accountRequestCount, accountLiveCount, userRequestCount, userLiveCount, now}
+			end
+			if accountLimit > 0 and accountCount >= accountLimit then
+				return {0, 'account', accountRequestCount, accountLiveCount, userRequestCount, userLiveCount, now}
+			end
+			if userLimit > 0 and userCount >= userLimit then
+				return {0, 'user', accountRequestCount, accountLiveCount, userRequestCount, userLiveCount, now}
+			end
+			redis.call('ZADD', accountRegular, now, reservationID)
+			redis.call('ZADD', userRegular, now, reservationID)
+			redis.call('EXPIRE', accountRegular, regularTTL)
+			redis.call('EXPIRE', userRegular, regularTTL)
+			return {1, '', accountRequestCount + 1, accountLiveCount, userRequestCount + 1, userLiveCount, now}
+		end
+
+		local accountOwner = redis.call('ZSCORE', accountLive, reservationID)
+		local userOwner = redis.call('ZSCORE', userLive, reservationID)
+		local apiOwner = redis.call('ZSCORE', apiLive, reservationID)
+		if accountOwner ~= false or userOwner ~= false or apiOwner ~= false then
+			if accountOwner == false or userOwner == false or apiOwner == false then return {-12} end
+			redis.call('ZADD', accountLive, now, reservationID)
+			redis.call('ZADD', userLive, now, reservationID)
+			redis.call('ZADD', apiLive, now, reservationID)
+			redis.call('EXPIRE', accountLive, liveTTL)
+			redis.call('EXPIRE', userLive, liveTTL)
+			redis.call('EXPIRE', apiLive, liveTTL)
+			return {1, '', accountRequestCount, accountLiveCount, userRequestCount, userLiveCount, now}
+		end
+		if accountLimit > 0 and accountCount >= accountLimit then
+			return {0, 'account', accountRequestCount, accountLiveCount, userRequestCount, userLiveCount, now}
+		end
+		if userLimit > 0 and userCount >= userLimit then
+			return {0, 'user', accountRequestCount, accountLiveCount, userRequestCount, userLiveCount, now}
+		end
+		redis.call('ZADD', accountLive, now, reservationID)
+		redis.call('ZADD', userLive, now, reservationID)
+		redis.call('ZADD', apiLive, now, reservationID)
+		redis.call('EXPIRE', accountLive, liveTTL)
+		redis.call('EXPIRE', userLive, liveTTL)
+		redis.call('EXPIRE', apiLive, liveTTL)
+		return {1, '', accountRequestCount, accountLiveCount + 1, userRequestCount, userLiveCount + 1, now}
+	`)
+
+	refreshConcurrencyScript = redis.NewScript(`
+		redis.replicate_commands()
+		local accountPolicy = KEYS[1]
+		local userPolicy = KEYS[2]
+		local accountRegular = KEYS[3]
+		local accountLive = KEYS[4]
+		local userRegular = KEYS[5]
+		local userLive = KEYS[6]
+		local apiLive = KEYS[7]
+		local class = ARGV[1]
+		local expectedAccountGeneration = tonumber(ARGV[2])
+		local expectedUserGeneration = tonumber(ARGV[3])
+		local regularTTL = tonumber(ARGV[4])
+		local reservationID = ARGV[5]
+		local liveTTL = 60
+
+		local function authorityValid(key, expectedGeneration)
+			local generation = tonumber(redis.call('HGET', key, 'generation') or '')
+			local mode = redis.call('HGET', key, 'mode')
+			local shared = redis.call('HGET', key, 'shared')
+			local live = redis.call('HGET', key, 'live')
+			local request = redis.call('HGET', key, 'request')
+			if generation == nil or generation ~= expectedGeneration or mode == false or shared == false or live == false or request == false then return false end
+			if mode == 'shared' then return live == '' and request == '' and tonumber(shared) ~= nil end
+			if mode == 'split' then return shared == '' and tonumber(live) ~= nil and tonumber(request) ~= nil and tonumber(live) > 0 and tonumber(request) > 0 end
+			return false
+		end
+		if not authorityValid(accountPolicy, expectedAccountGeneration) or not authorityValid(userPolicy, expectedUserGeneration) then return {-10} end
+		local now = tonumber(redis.call('TIME')[1])
+		if class == 'request' then
+			redis.call('ZREMRANGEBYSCORE', accountRegular, '-inf', now - regularTTL)
+			redis.call('ZREMRANGEBYSCORE', userRegular, '-inf', now - regularTTL)
+			if redis.call('ZSCORE', accountRegular, reservationID) == false or redis.call('ZSCORE', userRegular, reservationID) == false then return {0} end
+			redis.call('ZADD', accountRegular, now, reservationID)
+			redis.call('ZADD', userRegular, now, reservationID)
+			redis.call('EXPIRE', accountRegular, regularTTL)
+			redis.call('EXPIRE', userRegular, regularTTL)
+			return {1}
+		end
+		if class == 'live' then
+			redis.call('ZREMRANGEBYSCORE', accountLive, '-inf', now - liveTTL)
+			redis.call('ZREMRANGEBYSCORE', userLive, '-inf', now - liveTTL)
+			redis.call('ZREMRANGEBYSCORE', apiLive, '-inf', now - liveTTL)
+			if redis.call('ZSCORE', accountLive, reservationID) == false or redis.call('ZSCORE', userLive, reservationID) == false or redis.call('ZSCORE', apiLive, reservationID) == false then return {0} end
+			redis.call('ZADD', accountLive, now, reservationID)
+			redis.call('ZADD', userLive, now, reservationID)
+			redis.call('ZADD', apiLive, now, reservationID)
+			redis.call('EXPIRE', accountLive, liveTTL)
+			redis.call('EXPIRE', userLive, liveTTL)
+			redis.call('EXPIRE', apiLive, liveTTL)
+			return {1}
+		end
+		return {-10}
+	`)
+
 	refreshLiveLeaseScript = redis.NewScript(`
 		redis.replicate_commands()
 		local ttl = tonumber(ARGV[1])
@@ -498,6 +706,184 @@ func (c *concurrencyCache) PublishUserConcurrencyPolicy(ctx context.Context, use
 		return fmt.Errorf("user ID must be positive")
 	}
 	return c.publishConcurrencyPolicy(ctx, userConcurrencyPolicyKey(userID), policy, generation)
+}
+
+func (c *concurrencyCache) AcquireConcurrency(ctx context.Context, request service.ConcurrencyAdmissionRequest) (service.ConcurrencyAdmissionResult, error) {
+	if err := request.Validate(); err != nil {
+		return service.ConcurrencyAdmissionResult{}, err
+	}
+	if c == nil || c.rdb == nil {
+		return service.ConcurrencyAdmissionResult{}, service.ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	regularTTL := c.slotTTLSeconds
+	if regularTTL <= 0 {
+		regularTTL = defaultSlotTTLMinutes * 60
+	}
+	raw, err := acquireConcurrencyScript.Run(ctx, c.rdb, []string{
+		accountConcurrencyPolicyKey(request.AccountID),
+		userConcurrencyPolicyKey(request.UserID),
+		accountSlotKey(request.AccountID),
+		liveAccountSlotKey(request.AccountID),
+		userSlotKey(request.UserID),
+		liveUserSlotKey(request.UserID),
+		liveAPIKeySlotKey(request.APIKeyID),
+	}, string(request.Class), request.AccountGeneration, request.UserGeneration, regularTTL, request.ReservationID).Result()
+	if err != nil {
+		return service.ConcurrencyAdmissionResult{}, err
+	}
+	result, now, err := parseConcurrencyAdmissionResult(raw)
+	if err != nil {
+		return service.ConcurrencyAdmissionResult{}, err
+	}
+	if result.Acquired && request.Class == service.ConcurrencyClassRequest {
+		c.touchActiveIndexAt(ctx, accountActiveIndexKey, request.AccountID, now+int64(regularTTL))
+		c.touchActiveIndexAt(ctx, userActiveIndexKey, request.UserID, now+int64(regularTTL))
+	}
+	return result, nil
+}
+
+func parseConcurrencyAdmissionResult(raw any) (service.ConcurrencyAdmissionResult, int64, error) {
+	status, err := redisScriptInt64At(raw, 0)
+	if err != nil {
+		return service.ConcurrencyAdmissionResult{}, 0, fmt.Errorf("parse concurrency admission status: %w", err)
+	}
+	if status < 0 {
+		return service.ConcurrencyAdmissionResult{}, 0, fmt.Errorf("%w: redis authority code %d", service.ErrConcurrencyPolicyAdmissionUnavailable, status)
+	}
+	if status > 1 {
+		return service.ConcurrencyAdmissionResult{}, 0, fmt.Errorf("unexpected concurrency admission status %d", status)
+	}
+	if status == 0 {
+		if scope, scopeErr := redisScriptStringAt(raw, 1); scopeErr == nil {
+			accountRequest, _ := redisScriptInt64At(raw, 2)
+			accountLive, _ := redisScriptInt64At(raw, 3)
+			userRequest, _ := redisScriptInt64At(raw, 4)
+			userLive, _ := redisScriptInt64At(raw, 5)
+			return service.ConcurrencyAdmissionResult{
+				DeniedScope: scope,
+				Account:     concurrencySnapshot(accountRequest, accountLive),
+				User:        concurrencySnapshot(userRequest, userLive),
+			}, redisScriptInt64Default(raw, 6), nil
+		}
+		_, scopeErr := redisScriptStringAt(raw, 1)
+		return service.ConcurrencyAdmissionResult{}, 0, fmt.Errorf("parse concurrency admission denied scope: %w", scopeErr)
+	}
+	if _, scopeErr := redisScriptStringAt(raw, 1); scopeErr != nil {
+		return service.ConcurrencyAdmissionResult{}, 0, fmt.Errorf("parse concurrency admission scope: %w", scopeErr)
+	}
+	accountRequest, err := redisScriptInt64At(raw, 2)
+	if err != nil {
+		return service.ConcurrencyAdmissionResult{}, 0, err
+	}
+	accountLive, err := redisScriptInt64At(raw, 3)
+	if err != nil {
+		return service.ConcurrencyAdmissionResult{}, 0, err
+	}
+	userRequest, err := redisScriptInt64At(raw, 4)
+	if err != nil {
+		return service.ConcurrencyAdmissionResult{}, 0, err
+	}
+	userLive, err := redisScriptInt64At(raw, 5)
+	if err != nil {
+		return service.ConcurrencyAdmissionResult{}, 0, err
+	}
+	now, err := redisScriptInt64At(raw, 6)
+	if err != nil {
+		return service.ConcurrencyAdmissionResult{}, 0, err
+	}
+	return service.ConcurrencyAdmissionResult{
+		Acquired: true,
+		Account:  concurrencySnapshot(accountRequest, accountLive),
+		User:     concurrencySnapshot(userRequest, userLive),
+	}, now, nil
+}
+
+func redisScriptStringAt(result any, index int) (string, error) {
+	values, ok := result.([]interface{})
+	if !ok {
+		return "", fmt.Errorf("expected script array, got %T", result)
+	}
+	if index < 0 || index >= len(values) {
+		return "", fmt.Errorf("script array index %d out of range", index)
+	}
+	switch value := values[index].(type) {
+	case string:
+		return value, nil
+	case []byte:
+		return string(value), nil
+	default:
+		return "", fmt.Errorf("expected script string at %d, got %T", index, value)
+	}
+}
+
+func redisScriptInt64Default(result any, index int) int64 {
+	value, err := redisScriptInt64At(result, index)
+	if err != nil {
+		return 0
+	}
+	return value
+}
+
+func concurrencySnapshot(request, live int64) service.ConcurrencySnapshot {
+	return service.ConcurrencySnapshot{
+		Request: int(request),
+		Live:    int(live),
+		Total:   int(request + live),
+	}
+}
+
+func (c *concurrencyCache) RefreshConcurrency(ctx context.Context, request service.ConcurrencyAdmissionRequest) (bool, error) {
+	if err := request.Validate(); err != nil {
+		return false, err
+	}
+	if c == nil || c.rdb == nil {
+		return false, service.ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	regularTTL := c.slotTTLSeconds
+	if regularTTL <= 0 {
+		regularTTL = defaultSlotTTLMinutes * 60
+	}
+	result, err := refreshConcurrencyScript.Run(ctx, c.rdb, []string{
+		accountConcurrencyPolicyKey(request.AccountID),
+		userConcurrencyPolicyKey(request.UserID),
+		accountSlotKey(request.AccountID),
+		liveAccountSlotKey(request.AccountID),
+		userSlotKey(request.UserID),
+		liveUserSlotKey(request.UserID),
+		liveAPIKeySlotKey(request.APIKeyID),
+	}, string(request.Class), request.AccountGeneration, request.UserGeneration, regularTTL, request.ReservationID).Int()
+	if err != nil {
+		return false, err
+	}
+	if result < 0 {
+		return false, fmt.Errorf("%w: refresh authority is invalid", service.ErrConcurrencyPolicyAdmissionUnavailable)
+	}
+	return result == 1, nil
+}
+
+func (c *concurrencyCache) ReleaseConcurrency(ctx context.Context, request service.ConcurrencyAdmissionRequest) error {
+	if request.AccountID <= 0 || request.UserID <= 0 || request.ReservationID == "" || c == nil || c.rdb == nil {
+		return nil
+	}
+	var err error
+	if request.Class == service.ConcurrencyClassLive {
+		pipe := c.rdb.TxPipeline()
+		pipe.ZRem(ctx, liveAccountSlotKey(request.AccountID), request.ReservationID)
+		pipe.ZRem(ctx, liveUserSlotKey(request.UserID), request.ReservationID)
+		pipe.ZRem(ctx, liveAPIKeySlotKey(request.APIKeyID), request.ReservationID)
+		_, err = pipe.Exec(ctx)
+		return err
+	}
+	pipe := c.rdb.TxPipeline()
+	pipe.ZRem(ctx, accountSlotKey(request.AccountID), request.ReservationID)
+	pipe.ZRem(ctx, userSlotKey(request.UserID), request.ReservationID)
+	_, err = pipe.Exec(ctx)
+	if err != nil {
+		return err
+	}
+	c.refreshAccountActiveIndex(ctx, request.AccountID)
+	c.refreshUserActiveIndex(ctx, request.UserID)
+	return nil
 }
 
 // Helper functions for key generation

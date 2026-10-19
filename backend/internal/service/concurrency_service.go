@@ -252,6 +252,50 @@ func NewConcurrencyService(cache ConcurrencyCache) *ConcurrencyService {
 	return svc
 }
 
+func (s *ConcurrencyService) policyAdmissionCache() (ConcurrencyAdmissionCache, error) {
+	if s == nil || s.cache == nil {
+		return nil, ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	cache, ok := s.cache.(ConcurrencyAdmissionCache)
+	if !ok || cache == nil {
+		return nil, ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	return cache, nil
+}
+
+// AcquireConcurrency delegates policy-aware admission to the optional cache
+// implementation. Legacy callers continue using the explicit shared wrappers;
+// policy-aware paths must never silently fall back to those wrappers.
+func (s *ConcurrencyService) AcquireConcurrency(ctx context.Context, request ConcurrencyAdmissionRequest) (ConcurrencyAdmissionResult, error) {
+	if err := request.Validate(); err != nil {
+		return ConcurrencyAdmissionResult{}, err
+	}
+	cache, err := s.policyAdmissionCache()
+	if err != nil {
+		return ConcurrencyAdmissionResult{}, err
+	}
+	return cache.AcquireConcurrency(ctx, request)
+}
+
+func (s *ConcurrencyService) RefreshConcurrency(ctx context.Context, request ConcurrencyAdmissionRequest) (bool, error) {
+	if err := request.Validate(); err != nil {
+		return false, err
+	}
+	cache, err := s.policyAdmissionCache()
+	if err != nil {
+		return false, err
+	}
+	return cache.RefreshConcurrency(ctx, request)
+}
+
+func (s *ConcurrencyService) ReleaseConcurrency(ctx context.Context, request ConcurrencyAdmissionRequest) error {
+	cache, err := s.policyAdmissionCache()
+	if err != nil {
+		return nil
+	}
+	return cache.ReleaseConcurrency(ctx, request)
+}
+
 // AcquireOpenAIWSIngressLease atomically reserves one live ingress connection
 // for an API key. A non-positive limit explicitly disables this protection.
 func (s *ConcurrencyService) AcquireOpenAIWSIngressLease(ctx context.Context, apiKeyID int64, maxConnections int) (*OpenAIWSIngressLease, bool, error) {
