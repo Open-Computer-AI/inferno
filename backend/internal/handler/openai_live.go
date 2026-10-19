@@ -97,23 +97,13 @@ func (h *OpenAIGatewayHandler) Live(c *gin.Context) {
 		return
 	}
 
-	userRelease, acquired, err := h.concurrencyHelper.TryAcquireUserSlot(
-		c.Request.Context(),
-		subject.UserID,
-		subject.Concurrency,
-	)
-	if err != nil {
-		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Live concurrency unavailable")
-		return
-	}
-	if !acquired {
-		h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "Live concurrency limit reached")
-		return
-	}
-	defer userRelease()
-
 	identity := liveCallIdentity(c, apiKey, subject.UserID, subscription)
-	created, err := h.gatewayService.CreateLiveCall(c.Request.Context(), request, identity, subject.Concurrency)
+	userPolicy := service.ConcurrencyPolicy{
+		Shared:  subject.Concurrency,
+		Live:    subject.LiveConcurrency,
+		Request: subject.RequestConcurrency,
+	}
+	created, err := h.gatewayService.CreateLiveCall(c.Request.Context(), request, identity, userPolicy, subject.ConcurrencyPolicyGeneration)
 	if err != nil {
 		h.writeLiveCreateError(c, err)
 		return

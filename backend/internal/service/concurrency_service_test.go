@@ -498,6 +498,26 @@ func TestGetAccountsLoadBatch_UsesShortTTLCache(t *testing.T) {
 	require.Equal(t, int64(1), cache.loadBatchCalls.Load())
 }
 
+func TestGetAccountsLoadBatchCacheSeparatesAdmissionClasses(t *testing.T) {
+	cache := &stubConcurrencyCacheForTest{
+		loadBatch: map[int64]*AccountLoadInfo{1: {AccountID: 1, CurrentConcurrency: 1}},
+	}
+	svc := NewConcurrencyService(cache)
+	svc.SetAccountLoadBatchCacheTTL(time.Minute)
+
+	request := []AccountWithConcurrency{{
+		ID: 1, MaxConcurrency: 2, AdmissionClass: ConcurrencyClassRequest, SplitPolicy: true,
+	}}
+	live := []AccountWithConcurrency{{
+		ID: 1, MaxConcurrency: 4, AdmissionClass: ConcurrencyClassLive, SplitPolicy: true,
+	}}
+	_, err := svc.GetAccountsLoadBatch(context.Background(), request)
+	require.NoError(t, err)
+	_, err = svc.GetAccountsLoadBatch(context.Background(), live)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), cache.loadBatchCalls.Load(), "request and Live snapshots must not share a cache key")
+}
+
 func TestGetAccountsLoadBatchFresh_BypassesShortTTLCache(t *testing.T) {
 	cache := &stubConcurrencyCacheForTest{
 		loadBatch: map[int64]*AccountLoadInfo{

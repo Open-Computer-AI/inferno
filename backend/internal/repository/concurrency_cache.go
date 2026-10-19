@@ -452,6 +452,103 @@ var (
 		return {-10}
 	`)
 
+	// acquireUserConcurrencyScript enforces the authenticated user's policy
+	// before account selection. It shares the regular-user sorted set with the
+	// legacy wrapper and counts Live members only for legacy shared policies.
+	acquireUserConcurrencyScript = redis.NewScript(`
+		redis.replicate_commands()
+		local policyKey = KEYS[1]
+		local userRegular = KEYS[2]
+		local userLive = KEYS[3]
+		local expectedGeneration = tonumber(ARGV[1])
+		local regularTTL = tonumber(ARGV[2])
+		local reservationID = ARGV[3]
+		local now = tonumber(redis.call('TIME')[1])
+
+		local rawGeneration = redis.call('HGET', policyKey, 'generation')
+		local mode = redis.call('HGET', policyKey, 'mode')
+		local shared = redis.call('HGET', policyKey, 'shared')
+		local live = redis.call('HGET', policyKey, 'live')
+		local request = redis.call('HGET', policyKey, 'request')
+		local generation = tonumber(rawGeneration or '')
+		if generation == nil or generation < 0 or math.floor(generation) ~= generation or generation ~= expectedGeneration
+			or mode == false or shared == false or live == false or request == false then
+			return {-10}
+		end
+		local limit
+		local sharedMode
+		if mode == 'shared' then
+			local sharedLimit = tonumber(shared)
+			if live ~= '' or request ~= '' or sharedLimit == nil or math.floor(sharedLimit) ~= sharedLimit then return {-10} end
+			limit = sharedLimit
+			sharedMode = true
+		elseif mode == 'split' then
+			local liveLimit = tonumber(live)
+			local requestLimit = tonumber(request)
+			if shared ~= '' or liveLimit == nil or requestLimit == nil
+				or math.floor(liveLimit) ~= liveLimit or math.floor(requestLimit) ~= requestLimit
+				or liveLimit <= 0 or requestLimit <= 0 then return {-10} end
+			limit = requestLimit
+			sharedMode = false
+		else
+			return {-10}
+		end
+
+		redis.call('ZREMRANGEBYSCORE', userRegular, '-inf', now - regularTTL)
+		redis.call('ZREMRANGEBYSCORE', userLive, '-inf', now - 60)
+		local requestCount = redis.call('ZCARD', userRegular)
+		local liveCount = redis.call('ZCARD', userLive)
+		local liveOwner = redis.call('ZSCORE', userLive, reservationID)
+		if liveOwner ~= false then return {-12} end
+		local requestOwner = redis.call('ZSCORE', userRegular, reservationID)
+		if requestOwner ~= false then
+			redis.call('ZADD', userRegular, now, reservationID)
+			redis.call('EXPIRE', userRegular, regularTTL)
+			return {1, '', requestCount, liveCount, now}
+		end
+		local count = requestCount
+		if sharedMode then count = count + liveCount end
+		if limit > 0 and count >= limit then return {0, 'user', requestCount, liveCount, now} end
+		redis.call('ZADD', userRegular, now, reservationID)
+		redis.call('EXPIRE', userRegular, regularTTL)
+		return {1, '', requestCount + 1, liveCount, now}
+	`)
+
+	refreshUserConcurrencyScript = redis.NewScript(`
+		redis.replicate_commands()
+		local policyKey = KEYS[1]
+		local userRegular = KEYS[2]
+		local expectedGeneration = tonumber(ARGV[1])
+		local regularTTL = tonumber(ARGV[2])
+		local reservationID = ARGV[3]
+		local rawGeneration = redis.call('HGET', policyKey, 'generation')
+		local mode = redis.call('HGET', policyKey, 'mode')
+		local shared = redis.call('HGET', policyKey, 'shared')
+		local live = redis.call('HGET', policyKey, 'live')
+		local request = redis.call('HGET', policyKey, 'request')
+		local generation = tonumber(rawGeneration or '')
+		if generation == nil or generation < 0 or math.floor(generation) ~= generation
+			or mode == false or shared == false or live == false or request == false then return {-10} end
+		if mode == 'shared' then
+			local sharedLimit = tonumber(shared)
+			if live ~= '' or request ~= '' or sharedLimit == nil or math.floor(sharedLimit) ~= sharedLimit then return {-10} end
+		elseif mode == 'split' then
+			local liveLimit = tonumber(live)
+			local requestLimit = tonumber(request)
+			if shared ~= '' or liveLimit == nil or requestLimit == nil
+				or math.floor(liveLimit) ~= liveLimit or math.floor(requestLimit) ~= requestLimit
+				or liveLimit <= 0 or requestLimit <= 0 then return {-10} end
+		else
+			return {-10}
+		end
+		local now = tonumber(redis.call('TIME')[1])
+		redis.call('ZREMRANGEBYSCORE', userRegular, '-inf', now - regularTTL)
+		if redis.call('ZSCORE', userRegular, reservationID) == false then return {0} end
+		redis.call('ZADD', userRegular, now, reservationID)
+		redis.call('EXPIRE', userRegular, regularTTL)
+		return {1}
+	`)
+
 	refreshLiveLeaseScript = redis.NewScript(`
 		redis.replicate_commands()
 		local ttl = tonumber(ARGV[1])
@@ -762,6 +859,9 @@ func parseConcurrencyAdmissionResult(raw any) (service.ConcurrencyAdmissionResul
 		return service.ConcurrencyAdmissionResult{}, 0, fmt.Errorf("parse concurrency admission status: %w", err)
 	}
 	if status < 0 {
+		if status == -11 {
+			return service.ConcurrencyAdmissionResult{}, 0, fmt.Errorf("%w: redis authority generation mismatch", service.ErrConcurrencyPolicyAdmissionStale)
+		}
 		return service.ConcurrencyAdmissionResult{}, 0, fmt.Errorf("%w: redis authority code %d", service.ErrConcurrencyPolicyAdmissionUnavailable, status)
 	}
 	if status > 1 {
@@ -880,8 +980,11 @@ func (c *concurrencyCache) RefreshConcurrency(ctx context.Context, request servi
 }
 
 func (c *concurrencyCache) ReleaseConcurrency(ctx context.Context, request service.ConcurrencyAdmissionRequest) error {
-	if request.AccountID <= 0 || request.UserID <= 0 || request.ReservationID == "" || c == nil || c.rdb == nil {
-		return nil
+	if err := request.Validate(); err != nil {
+		return err
+	}
+	if c == nil || c.rdb == nil {
+		return service.ErrConcurrencyPolicyAdmissionUnavailable
 	}
 	var err error
 	if request.Class == service.ConcurrencyClassLive {
@@ -900,6 +1003,122 @@ func (c *concurrencyCache) ReleaseConcurrency(ctx context.Context, request servi
 		return err
 	}
 	c.refreshAccountActiveIndex(ctx, request.AccountID)
+	c.refreshUserActiveIndex(ctx, request.UserID)
+	return nil
+}
+
+func (c *concurrencyCache) AcquireUserConcurrency(ctx context.Context, request service.UserConcurrencyAdmissionRequest) (service.ConcurrencyAdmissionResult, error) {
+	if err := request.Validate(); err != nil {
+		return service.ConcurrencyAdmissionResult{}, err
+	}
+	if c == nil || c.rdb == nil {
+		return service.ConcurrencyAdmissionResult{}, service.ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	regularTTL := c.slotTTLSeconds
+	if regularTTL <= 0 {
+		regularTTL = defaultSlotTTLMinutes * 60
+	}
+	raw, err := acquireUserConcurrencyScript.Run(ctx, c.rdb, []string{
+		userConcurrencyPolicyKey(request.UserID),
+		userSlotKey(request.UserID),
+		liveUserSlotKey(request.UserID),
+	}, request.UserGeneration, regularTTL, request.ReservationID).Result()
+	if err != nil {
+		return service.ConcurrencyAdmissionResult{}, err
+	}
+	result, now, err := parseUserConcurrencyAdmissionResult(raw)
+	if err != nil {
+		return service.ConcurrencyAdmissionResult{}, err
+	}
+	if result.Acquired {
+		c.touchActiveIndexAt(ctx, userActiveIndexKey, request.UserID, now+int64(regularTTL))
+	}
+	return result, nil
+}
+
+func parseUserConcurrencyAdmissionResult(raw any) (service.ConcurrencyAdmissionResult, int64, error) {
+	status, err := redisScriptInt64At(raw, 0)
+	if err != nil {
+		return service.ConcurrencyAdmissionResult{}, 0, fmt.Errorf("parse user concurrency admission status: %w", err)
+	}
+	if status < 0 {
+		if status == -11 {
+			return service.ConcurrencyAdmissionResult{}, 0, fmt.Errorf("%w: user Redis authority generation mismatch", service.ErrConcurrencyPolicyAdmissionStale)
+		}
+		return service.ConcurrencyAdmissionResult{}, 0, fmt.Errorf("%w: user Redis authority code %d", service.ErrConcurrencyPolicyAdmissionUnavailable, status)
+	}
+	if status > 1 {
+		return service.ConcurrencyAdmissionResult{}, 0, fmt.Errorf("unexpected user concurrency admission status %d", status)
+	}
+	if status == 0 {
+		scope, scopeErr := redisScriptStringAt(raw, 1)
+		if scopeErr != nil {
+			return service.ConcurrencyAdmissionResult{}, 0, fmt.Errorf("parse user concurrency denied scope: %w", scopeErr)
+		}
+		requestCount, _ := redisScriptInt64At(raw, 2)
+		liveCount, _ := redisScriptInt64At(raw, 3)
+		now := redisScriptInt64Default(raw, 4)
+		return service.ConcurrencyAdmissionResult{
+			DeniedScope: scope,
+			User:        concurrencySnapshot(requestCount, liveCount),
+		}, now, nil
+	}
+	requestCount, err := redisScriptInt64At(raw, 2)
+	if err != nil {
+		return service.ConcurrencyAdmissionResult{}, 0, err
+	}
+	liveCount, err := redisScriptInt64At(raw, 3)
+	if err != nil {
+		return service.ConcurrencyAdmissionResult{}, 0, err
+	}
+	now, err := redisScriptInt64At(raw, 4)
+	if err != nil {
+		return service.ConcurrencyAdmissionResult{}, 0, err
+	}
+	return service.ConcurrencyAdmissionResult{
+		Acquired: true,
+		User:     concurrencySnapshot(requestCount, liveCount),
+	}, now, nil
+}
+
+func (c *concurrencyCache) RefreshUserConcurrency(ctx context.Context, request service.UserConcurrencyAdmissionRequest) (bool, error) {
+	if err := request.Validate(); err != nil {
+		return false, err
+	}
+	if c == nil || c.rdb == nil {
+		return false, service.ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	regularTTL := c.slotTTLSeconds
+	if regularTTL <= 0 {
+		regularTTL = defaultSlotTTLMinutes * 60
+	}
+	raw, err := refreshUserConcurrencyScript.Run(ctx, c.rdb, []string{
+		userConcurrencyPolicyKey(request.UserID),
+		userSlotKey(request.UserID),
+	}, request.UserGeneration, regularTTL, request.ReservationID).Result()
+	if err != nil {
+		return false, err
+	}
+	result, err := redisScriptInt64At(raw, 0)
+	if err != nil {
+		return false, fmt.Errorf("parse user concurrency refresh result: %w", err)
+	}
+	if result < 0 {
+		return false, fmt.Errorf("%w: user refresh authority is invalid", service.ErrConcurrencyPolicyAdmissionUnavailable)
+	}
+	return result == 1, nil
+}
+
+func (c *concurrencyCache) ReleaseUserConcurrency(ctx context.Context, request service.UserConcurrencyAdmissionRequest) error {
+	if err := request.Validate(); err != nil {
+		return err
+	}
+	if c == nil || c.rdb == nil {
+		return service.ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	if err := c.rdb.ZRem(ctx, userSlotKey(request.UserID), request.ReservationID).Err(); err != nil {
+		return err
+	}
 	c.refreshUserActiveIndex(ctx, request.UserID)
 	return nil
 }
@@ -1499,6 +1718,8 @@ func (c *concurrencyCache) GetAccountsLoadBatch(ctx context.Context, accounts []
 	type accountCmds struct {
 		id             int64
 		maxConcurrency int
+		splitPolicy    bool
+		admissionClass service.ConcurrencyClass
 		zcardCmd       *redis.IntCmd
 		liveCmd        *redis.IntCmd
 		getCmd         *redis.StringCmd
@@ -1513,6 +1734,8 @@ func (c *concurrencyCache) GetAccountsLoadBatch(ctx context.Context, accounts []
 		ac := accountCmds{
 			id:             acc.ID,
 			maxConcurrency: acc.MaxConcurrency,
+			splitPolicy:    acc.SplitPolicy,
+			admissionClass: acc.AdmissionClass,
 			zcardCmd:       pipe.ZCard(ctx, slotKey),
 			liveCmd:        pipe.ZCard(ctx, liveKey),
 			getCmd:         pipe.Get(ctx, waitKey),
@@ -1526,7 +1749,17 @@ func (c *concurrencyCache) GetAccountsLoadBatch(ctx context.Context, accounts []
 
 	loadMap := make(map[int64]*service.AccountLoadInfo, len(accounts))
 	for _, ac := range cmds {
-		currentConcurrency := int(ac.zcardCmd.Val() + ac.liveCmd.Val())
+		regularCount := ac.zcardCmd.Val()
+		liveCount := ac.liveCmd.Val()
+		currentConcurrency := int(regularCount + liveCount)
+		if ac.splitPolicy {
+			switch ac.admissionClass {
+			case service.ConcurrencyClassRequest:
+				currentConcurrency = int(regularCount)
+			case service.ConcurrencyClassLive:
+				currentConcurrency = int(liveCount)
+			}
+		}
 		waitingCount := 0
 		if v, err := ac.getCmd.Int(); err == nil {
 			waitingCount = v

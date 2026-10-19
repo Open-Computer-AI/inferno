@@ -15,6 +15,7 @@ var ErrConcurrencyPolicyRuntimeNotApplied = errors.New("concurrency policy persi
 var ErrConcurrencyPolicyGenerationStale = errors.New("concurrency policy generation is stale")
 var ErrConcurrencyPolicyGenerationConflict = errors.New("concurrency policy generation conflicts with published policy")
 var ErrConcurrencyPolicyAdmissionUnavailable = errors.New("concurrency policy authority is unavailable")
+var ErrConcurrencyPolicyAdmissionStale = errors.New("concurrency policy admission snapshot is stale")
 
 // ConcurrencyPolicyPublisher is the narrow DB-to-Redis acknowledgement fence
 // used by administrative writes. Implementations must update the authoritative
@@ -141,6 +142,38 @@ type ConcurrencyAdmissionResult struct {
 	User        ConcurrencySnapshot
 }
 
+// UserConcurrencyAdmissionRequest is used before account selection, where the
+// authenticated user is known but the provider account is not. It enforces
+// the user policy on the existing regular-user slot namespace and deliberately
+// does not impose an account limit.
+type UserConcurrencyAdmissionRequest struct {
+	UserID         int64
+	UserPolicy     ConcurrencyPolicy
+	UserGeneration int64
+	APIKeyID       int64
+	Class          ConcurrencyClass
+	ReservationID  string
+}
+
+func (r UserConcurrencyAdmissionRequest) Validate() error {
+	if r.UserID <= 0 {
+		return fmt.Errorf("user concurrency admission identifier must be positive")
+	}
+	if r.ReservationID == "" {
+		return fmt.Errorf("user concurrency admission reservation ID is required")
+	}
+	if r.Class != ConcurrencyClassRequest {
+		return fmt.Errorf("user-only concurrency admission requires the request class")
+	}
+	if r.UserGeneration < 0 {
+		return fmt.Errorf("user concurrency admission generation must be non-negative")
+	}
+	if err := ValidateConcurrencyPolicy(r.UserPolicy); err != nil {
+		return fmt.Errorf("user policy: %w", err)
+	}
+	return nil
+}
+
 // ConcurrencyAdmissionCache is optional so legacy cache doubles and wrappers
 // remain valid for callers that have not migrated to policy-aware admission.
 // Implementations must make acquire/refresh/release atomic with Redis TIME.
@@ -148,6 +181,14 @@ type ConcurrencyAdmissionCache interface {
 	AcquireConcurrency(context.Context, ConcurrencyAdmissionRequest) (ConcurrencyAdmissionResult, error)
 	RefreshConcurrency(context.Context, ConcurrencyAdmissionRequest) (bool, error)
 	ReleaseConcurrency(context.Context, ConcurrencyAdmissionRequest) error
+}
+
+// UserConcurrencyAdmissionCache is the policy-aware pre-account gate used by
+// ordinary requests on every provider/auth path.
+type UserConcurrencyAdmissionCache interface {
+	AcquireUserConcurrency(context.Context, UserConcurrencyAdmissionRequest) (ConcurrencyAdmissionResult, error)
+	RefreshUserConcurrency(context.Context, UserConcurrencyAdmissionRequest) (bool, error)
+	ReleaseUserConcurrency(context.Context, UserConcurrencyAdmissionRequest) error
 }
 
 func (r ConcurrencyAdmissionRequest) Validate() error {
@@ -237,4 +278,39 @@ func EffectiveConcurrencyLimit(policy ConcurrencyPolicy, class ConcurrencyClass)
 	default:
 		return 0, false, fmt.Errorf("unsupported concurrency class %q", class)
 	}
+}
+
+// accountAdmissionLimit returns the actual Redis cap for a server-derived
+// scheduler class. Split policies use their independent class limit; legacy
+// policies retain the combined Concurrency cap for both classes.
+func accountAdmissionLimit(account *Account, class ConcurrencyClass) (int, bool) {
+	if account == nil {
+		return 0, false
+	}
+	if class == "" {
+		class = ConcurrencyClassRequest
+	}
+	limit, _, err := EffectiveConcurrencyLimit(concurrencyPolicyForAccount(account), class)
+	if err != nil {
+		return 0, false
+	}
+	return limit, true
+}
+
+// accountLoadLimit is the denominator used by scheduler load snapshots. A
+// legacy account keeps its existing load-factor behavior; a split account's
+// class cap is authoritative so request and Live occupancy do not share a
+// load bucket.
+func accountLoadLimit(account *Account, class ConcurrencyClass) (int, bool, bool) {
+	limit, valid := accountAdmissionLimit(account, class)
+	if !valid {
+		return 0, false, false
+	}
+	if account != nil && account.ConcurrencyMode() == ConcurrencyModeSplit {
+		return limit, true, true
+	}
+	if account == nil {
+		return 0, false, false
+	}
+	return account.EffectiveLoadFactor(), false, true
 }

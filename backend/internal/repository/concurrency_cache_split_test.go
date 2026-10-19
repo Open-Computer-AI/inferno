@@ -5,6 +5,7 @@ package repository
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/alicebob/miniredis/v2"
@@ -172,6 +173,83 @@ func TestSplitConcurrency_FailsClosedForAbsentOrMismatchedPolicyAuthority(t *tes
 	request.AccountGeneration = 2
 	_, err = cache.AcquireConcurrency(ctx, request)
 	require.Error(t, err, "malformed policy authority must fail closed")
+}
+
+func TestSplitConcurrency_StaleGenerationIsDistinctFromUnavailableAuthority(t *testing.T) {
+	mini := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mini.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	cache := &concurrencyCache{rdb: rdb, slotTTLSeconds: 900}
+	ctx := context.Background()
+	policy := splitConcurrencyPolicy(4, 2)
+	require.NoError(t, cache.PublishAccountConcurrencyPolicy(ctx, 1, policy, 2))
+	require.NoError(t, cache.PublishUserConcurrencyPolicy(ctx, 2, policy, 2))
+
+	_, err := cache.AcquireConcurrency(ctx, service.ConcurrencyAdmissionRequest{
+		AccountID:         1,
+		AccountPolicy:     policy,
+		AccountGeneration: 1,
+		UserID:            2,
+		UserPolicy:        policy,
+		UserGeneration:    2,
+		APIKeyID:          3,
+		Class:             service.ConcurrencyClassLive,
+		ReservationID:     "stale-generation",
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "stale", "generation mismatch must be recoverable as a stale snapshot")
+}
+
+func TestSplitConcurrency_ReleaseRejectsMalformedOwnershipRequest(t *testing.T) {
+	mini := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mini.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	cache := &concurrencyCache{rdb: rdb, slotTTLSeconds: 900}
+	policy := splitConcurrencyPolicy(4, 2)
+	require.NoError(t, cache.PublishAccountConcurrencyPolicy(context.Background(), 1, policy, 1))
+	require.NoError(t, cache.PublishUserConcurrencyPolicy(context.Background(), 2, policy, 1))
+
+	err := cache.ReleaseConcurrency(context.Background(), service.ConcurrencyAdmissionRequest{
+		AccountID:         1,
+		UserID:            2,
+		APIKeyID:          0,
+		Class:             service.ConcurrencyClassLive,
+		ReservationID:     "malformed-release",
+		AccountPolicy:     policy,
+		UserPolicy:        policy,
+		AccountGeneration: 1,
+		UserGeneration:    1,
+	})
+	require.Error(t, err, "release must not silently accept an invalid API-key ownership tuple")
+}
+
+func TestSplitConcurrency_LoadSnapshotsUseClassSpecificOccupancy(t *testing.T) {
+	mini := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mini.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	cache := &concurrencyCache{rdb: rdb, slotTTLSeconds: 900}
+	now := float64(time.Now().Unix())
+	for _, accountID := range []int64{701, 702, 703} {
+		for index := 0; index < 2; index++ {
+			require.NoError(t, rdb.ZAdd(context.Background(), accountSlotKey(accountID), redis.Z{Score: now, Member: "request-" + string(rune('a'+index))}).Err())
+		}
+		for index := 0; index < 4; index++ {
+			require.NoError(t, rdb.ZAdd(context.Background(), liveAccountSlotKey(accountID), redis.Z{Score: now, Member: "live-" + string(rune('a'+index))}).Err())
+		}
+	}
+
+	loadMap, err := cache.GetAccountsLoadBatch(context.Background(), []service.AccountWithConcurrency{
+		{ID: 701, MaxConcurrency: 2, AdmissionClass: service.ConcurrencyClassRequest, SplitPolicy: true},
+		{ID: 702, MaxConcurrency: 4, AdmissionClass: service.ConcurrencyClassLive, SplitPolicy: true},
+		{ID: 703, MaxConcurrency: 6},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, loadMap[701].CurrentConcurrency)
+	require.Equal(t, 100, loadMap[701].LoadRate)
+	require.Equal(t, 4, loadMap[702].CurrentConcurrency)
+	require.Equal(t, 100, loadMap[702].LoadRate)
+	require.Equal(t, 6, loadMap[703].CurrentConcurrency)
+	require.Equal(t, 100, loadMap[703].LoadRate)
 }
 
 func TestSplitConcurrency_RefreshPreservesOwnedLeaseAcrossPolicyGenerationEdit(t *testing.T) {

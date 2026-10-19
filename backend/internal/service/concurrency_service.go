@@ -291,9 +291,59 @@ func (s *ConcurrencyService) RefreshConcurrency(ctx context.Context, request Con
 func (s *ConcurrencyService) ReleaseConcurrency(ctx context.Context, request ConcurrencyAdmissionRequest) error {
 	cache, err := s.policyAdmissionCache()
 	if err != nil {
-		return nil
+		return err
 	}
 	return cache.ReleaseConcurrency(ctx, request)
+}
+
+func (s *ConcurrencyService) userPolicyAdmissionCache() (UserConcurrencyAdmissionCache, error) {
+	if s == nil || s.cache == nil {
+		return nil, ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	cache, ok := s.cache.(UserConcurrencyAdmissionCache)
+	if !ok || cache == nil {
+		return nil, ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	return cache, nil
+}
+
+// AcquireUserConcurrency enforces the authenticated user's policy before an
+// account/provider is selected. Legacy callers remain on AcquireUserSlot until
+// their auth path supplies the durable policy generation.
+func (s *ConcurrencyService) AcquireUserConcurrency(ctx context.Context, request UserConcurrencyAdmissionRequest) (*AcquireResult, error) {
+	if err := request.Validate(); err != nil {
+		return nil, err
+	}
+	cache, err := s.userPolicyAdmissionCache()
+	if err != nil {
+		return nil, err
+	}
+	result, err := cache.AcquireUserConcurrency(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	if !result.Acquired {
+		return &AcquireResult{Acquired: false}, nil
+	}
+	return &AcquireResult{
+		Acquired: true,
+		ReleaseFunc: func() {
+			_ = cache.ReleaseUserConcurrency(context.Background(), request)
+		},
+	}, nil
+}
+
+// AcquireUserPolicySlot builds a request-scoped user admission. Shared legacy
+// callers may continue using AcquireUserSlot; split callers must use this
+// method so the durable user generation reaches Redis.
+func (s *ConcurrencyService) AcquireUserPolicySlot(ctx context.Context, userID int64, policy ConcurrencyPolicy, generation int64) (*AcquireResult, error) {
+	return s.AcquireUserConcurrency(ctx, UserConcurrencyAdmissionRequest{
+		UserID:         userID,
+		UserPolicy:     cloneConcurrencyPolicy(policy),
+		UserGeneration: generation,
+		Class:          ConcurrencyClassRequest,
+		ReservationID:  generateRequestID(),
+	})
 }
 
 // AcquireOpenAIWSIngressLease atomically reserves one live ingress connection
@@ -359,6 +409,11 @@ type AcquireResult struct {
 type AccountWithConcurrency struct {
 	ID             int64
 	MaxConcurrency int
+	// AdmissionClass and SplitPolicy make load reads class-aware for the
+	// OpenAI scheduler. Zero AdmissionClass preserves the legacy combined
+	// occupancy behavior used by metrics and older callers.
+	AdmissionClass ConcurrencyClass
+	SplitPolicy    bool
 }
 
 type UserWithConcurrency struct {
@@ -727,6 +782,13 @@ func accountLoadBatchCacheKey(accounts []AccountWithConcurrency) string {
 		binary.LittleEndian.PutUint64(buf[:8], uint64(account.ID))
 		binary.LittleEndian.PutUint64(buf[8:], uint64(int64(account.MaxConcurrency)))
 		_, _ = hash.Write(buf[:])
+		_, _ = hash.Write([]byte{byte(len(account.AdmissionClass))})
+		_, _ = hash.Write([]byte(account.AdmissionClass))
+		if account.SplitPolicy {
+			_, _ = hash.Write([]byte{1})
+		} else {
+			_, _ = hash.Write([]byte{0})
+		}
 	}
 	sum := hash.Sum(nil)
 	return strconv.Itoa(len(accounts)) + ":" + hex.EncodeToString(sum)

@@ -131,6 +131,226 @@ func newOpenAICompactionSchedulerTestService(accounts []Account, advanced bool) 
 	return svc
 }
 
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForLiveNeverUsesOrdinarySlotOrWaitPlan(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		advanced  bool
+		loadBatch bool
+		sticky    bool
+		forceFull bool
+	}{
+		{name: "legacy_direct", loadBatch: false},
+		{name: "legacy_sticky", loadBatch: false, sticky: true},
+		{name: "legacy_load_batch", loadBatch: true, forceFull: true},
+		{name: "advanced_direct", advanced: true},
+		{name: "advanced_sticky", advanced: true, sticky: true},
+		{name: "advanced_load_batch", advanced: true, loadBatch: true, forceFull: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetOpenAIAdvancedSchedulerSettingCacheForTest()
+			defer resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+			const sessionHash = "live-scheduler-sticky"
+			groupID := int64(91099)
+			accountID := int64(71999)
+			backupID := int64(71998)
+			acquiredIDs := make([]int64, 0)
+			concurrencyCache := &schedulerTestConcurrencyCache{
+				acquiredIDs: &acquiredIDs,
+			}
+			if tc.forceFull {
+				concurrencyCache.loadMap = map[int64]*AccountLoadInfo{
+					accountID: {AccountID: accountID, LoadRate: 100, CurrentConcurrency: 1},
+					backupID:  {AccountID: backupID, LoadRate: 0, CurrentConcurrency: 0},
+				}
+				concurrencyCache.acquireResults = map[int64]bool{accountID: false}
+			}
+			gatewayCache := &schedulerTestGatewayCache{}
+			if tc.sticky {
+				gatewayCache.sessionBindings = map[string]int64{sessionHash: accountID}
+			}
+			cfg := &config.Config{}
+			cfg.Gateway.Scheduling.LoadBatchEnabled = tc.loadBatch
+			accounts := []Account{{
+				ID:          accountID,
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeOAuth,
+				Status:      StatusActive,
+				Schedulable: true,
+				Concurrency: 1,
+				Credentials: map[string]any{"access_token": "live-test-token"},
+			}}
+			expectedAccountID := accountID
+			if tc.forceFull {
+				accounts = append(accounts, Account{
+					ID:          backupID,
+					Platform:    PlatformOpenAI,
+					Type:        AccountTypeOAuth,
+					Status:      StatusActive,
+					Schedulable: true,
+					Concurrency: 1,
+					Credentials: map[string]any{"access_token": "live-backup-token"},
+				})
+				expectedAccountID = backupID
+			}
+			svc := &OpenAIGatewayService{
+				accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+				cache:              gatewayCache,
+				cfg:                cfg,
+				concurrencyService: NewConcurrencyService(concurrencyCache),
+			}
+			if tc.advanced {
+				svc.rateLimitService = newOpenAIAdvancedSchedulerRateLimitService("true")
+			}
+
+			selection, _, err := svc.SelectAccountWithSchedulerForLive(
+				context.Background(), &groupID, "", sessionHashIf(tc.sticky, sessionHash), "gpt-live", nil,
+				OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityLive, false, false, false,
+			)
+			require.NoError(t, err)
+			require.NotNil(t, selection)
+			require.True(t, selection.Acquired)
+			require.Nil(t, selection.WaitPlan, "Live selection must never return an ordinary wait plan")
+			require.Equal(t, expectedAccountID, selection.Account.ID)
+			require.Empty(t, acquiredIDs, "Live selection must not call ordinary account-slot admission")
+			if selection.ReleaseFunc != nil {
+				selection.ReleaseFunc()
+			}
+		})
+	}
+}
+
+func sessionHashIf(enabled bool, value string) string {
+	if enabled {
+		return value
+	}
+	return ""
+}
+
+type schedulerClassAwareConcurrencyCache struct {
+	schedulerTestConcurrencyCache
+	loadRequests *[]AccountWithConcurrency
+	acquireMaxes *[]int
+}
+
+func (c *schedulerClassAwareConcurrencyCache) GetAccountsLoadBatch(ctx context.Context, accounts []AccountWithConcurrency) (map[int64]*AccountLoadInfo, error) {
+	if c.loadRequests != nil {
+		*c.loadRequests = append(*c.loadRequests, accounts...)
+	}
+	return c.schedulerTestConcurrencyCache.GetAccountsLoadBatch(ctx, accounts)
+}
+
+func (c *schedulerClassAwareConcurrencyCache) AcquireAccountSlot(_ context.Context, _ int64, max int, _ string) (bool, error) {
+	if c.acquireMaxes != nil {
+		*c.acquireMaxes = append(*c.acquireMaxes, max)
+	}
+	return true, nil
+}
+
+func TestOpenAISchedulerOrdinarySplitUsesRequestLimitAcrossLegacyAndAdvanced(t *testing.T) {
+	for _, advanced := range []bool{false, true} {
+		t.Run(map[bool]string{false: "legacy", true: "advanced"}[advanced], func(t *testing.T) {
+			resetOpenAIAdvancedSchedulerSettingCacheForTest()
+			defer resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+			live, requests := 4, 2
+			loadRequests := make([]AccountWithConcurrency, 0)
+			acquireMaxes := make([]int, 0)
+			cache := &schedulerClassAwareConcurrencyCache{
+				schedulerTestConcurrencyCache: schedulerTestConcurrencyCache{},
+				loadRequests:                  &loadRequests,
+				acquireMaxes:                  &acquireMaxes,
+			}
+			cfg := &config.Config{}
+			cfg.Gateway.Scheduling.LoadBatchEnabled = false
+			svc := &OpenAIGatewayService{
+				accountRepo: schedulerTestOpenAIAccountRepo{accounts: []Account{{
+					ID:                 72001,
+					Platform:           PlatformOpenAI,
+					Type:               AccountTypeOAuth,
+					Status:             StatusActive,
+					Schedulable:        true,
+					Concurrency:        1,
+					LiveConcurrency:    &live,
+					RequestConcurrency: &requests,
+					Credentials:        map[string]any{"access_token": "request-test-token"},
+				}}},
+				cache:              &schedulerTestGatewayCache{},
+				cfg:                cfg,
+				concurrencyService: NewConcurrencyService(cache),
+			}
+			if advanced {
+				svc.rateLimitService = newOpenAIAdvancedSchedulerRateLimitService("true")
+			}
+
+			groupID := int64(91098)
+			selection, _, err := svc.SelectAccountWithScheduler(
+				context.Background(), &groupID, "", "", "gpt-request", nil, OpenAIUpstreamTransportAny, false,
+			)
+			require.NoError(t, err)
+			require.NotNil(t, selection)
+			require.True(t, selection.Acquired)
+			if advanced {
+				require.NotEmpty(t, loadRequests)
+				require.Equal(t, ConcurrencyClassRequest, loadRequests[0].AdmissionClass)
+				require.True(t, loadRequests[0].SplitPolicy)
+				require.Equal(t, requests, loadRequests[0].MaxConcurrency)
+			}
+			// The legacy path does not use a load batch, but both scheduler modes
+			// must pass the independent request cap to the ordinary slot acquire.
+			if !advanced {
+				require.Equal(t, []int{requests}, acquireMaxes)
+			}
+		})
+	}
+}
+
+func TestOpenAISchedulerLiveLoadRequestsUseLiveClassAcrossLegacyAndAdvanced(t *testing.T) {
+	for _, advanced := range []bool{false, true} {
+		t.Run(map[bool]string{false: "legacy", true: "advanced"}[advanced], func(t *testing.T) {
+			resetOpenAIAdvancedSchedulerSettingCacheForTest()
+			defer resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+			live, requests := 4, 2
+			loadRequests := make([]AccountWithConcurrency, 0)
+			cache := &schedulerClassAwareConcurrencyCache{
+				schedulerTestConcurrencyCache: schedulerTestConcurrencyCache{},
+				loadRequests:                  &loadRequests,
+			}
+			cfg := &config.Config{}
+			cfg.Gateway.Scheduling.LoadBatchEnabled = true
+			svc := &OpenAIGatewayService{
+				accountRepo: schedulerTestOpenAIAccountRepo{accounts: []Account{{
+					ID: 72002, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+					Status: StatusActive, Schedulable: true, Concurrency: 1,
+					LiveConcurrency: &live, RequestConcurrency: &requests,
+					Credentials: map[string]any{"access_token": "live-class-test-token"},
+				}}},
+				cache:              &schedulerTestGatewayCache{},
+				cfg:                cfg,
+				concurrencyService: NewConcurrencyService(cache),
+			}
+			if advanced {
+				svc.rateLimitService = newOpenAIAdvancedSchedulerRateLimitService("true")
+			}
+
+			groupID := int64(91097)
+			selection, _, err := svc.SelectAccountWithSchedulerForLive(
+				context.Background(), &groupID, "", "", "gpt-live", nil,
+				OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityLive, false, false, false,
+			)
+			require.NoError(t, err)
+			require.NotNil(t, selection)
+			require.True(t, selection.Acquired)
+			require.Nil(t, selection.WaitPlan)
+			require.NotEmpty(t, loadRequests)
+			require.Equal(t, ConcurrencyClassLive, loadRequests[0].AdmissionClass)
+			require.True(t, loadRequests[0].SplitPolicy)
+			require.Equal(t, live, loadRequests[0].MaxConcurrency)
+		})
+	}
+}
+
 func selectOpenAICompactionSchedulerTestAccount(t *testing.T, svc *OpenAIGatewayService, groupID int64, requireCompact bool) (*AccountSelectionResult, error) {
 	t.Helper()
 	selection, _, err := svc.SelectAccountWithSchedulerForCapability(
