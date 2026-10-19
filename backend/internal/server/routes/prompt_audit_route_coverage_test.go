@@ -99,10 +99,21 @@ func TestResponsesWebSocketHasFirstAndSubsequentTurnPromptGates(t *testing.T) {
 	wsStart := strings.Index(string(handlerSource), `func (h *OpenAIGatewayHandler) ResponsesWebSocket`)
 	require.NotEqual(t, -1, wsStart)
 	wsSource := string(handlerSource)[wsStart:]
+	firstTurnAudit := strings.Index(wsSource, `"first_turn"`)
+	userSlotAcquire := strings.Index(wsSource, `TryAcquireUserPolicySlotForAPIKey`)
+	accountSlotAcquire := strings.Index(wsSource, `TryAcquireAccountSlot`)
+	require.NotEqual(t, -1, firstTurnAudit, "Responses WebSocket must retain the first-turn prompt audit gate")
+	require.NotEqual(t, -1, userSlotAcquire, "Responses WebSocket must retain the user concurrency admission")
+	require.NotEqual(t, -1, accountSlotAcquire, "Responses WebSocket must retain the account concurrency admission")
 	require.Less(t,
-		strings.Index(wsSource, `"first_turn"`),
-		strings.Index(wsSource, `TryAcquireUserSlotForAPIKey`),
-		"the first response.create gate must precede per-request user/account slots",
+		firstTurnAudit,
+		userSlotAcquire,
+		"the first response.create gate must precede the per-request user slot",
+	)
+	require.Less(t,
+		firstTurnAudit,
+		accountSlotAcquire,
+		"the first response.create gate must precede the per-request account slot",
 	)
 }
 
