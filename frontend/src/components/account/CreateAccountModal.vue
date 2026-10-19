@@ -2952,6 +2952,15 @@
           <p class="input-hint">{{ t('admin.accounts.billingRateMultiplierHint') }}</p>
         </div>
       </div>
+      <ConcurrencyPolicyFields
+        v-if="isOpenAISplitEligible"
+        :mode="concurrencyMode"
+        :live="liveConcurrency"
+        :requests="requestConcurrency"
+        @update:mode="concurrencyMode = $event"
+        @update:live="liveConcurrency = $event"
+        @update:requests="requestConcurrency = $event"
+      />
       <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <label class="input-label">{{ t('admin.accounts.expiresAt') }}</label>
         <input v-model="expiresAtInput" type="datetime-local" class="input" />
@@ -3787,6 +3796,8 @@ import type {
   AdminGroup,
   AccountPlatform,
   AccountType,
+  ConcurrencyMode,
+  ConcurrencyPolicyPatch,
   CheckMixedChannelResponse,
   CreateAccountRequest,
   CodexSessionImportMessage,
@@ -3805,6 +3816,7 @@ import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
+import ConcurrencyPolicyFields from '@/components/admin/ConcurrencyPolicyFields.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
 import CnBaseUrlPresets from '@/components/account/CnBaseUrlPresets.vue'
@@ -3831,6 +3843,10 @@ import {
 } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
+import {
+  buildOptionalConcurrencyPolicy,
+  type ConcurrencyLimitInput
+} from '@/utils/concurrencyPolicy'
 import {
   OPENAI_WS_MODE_CTX_POOL,
   OPENAI_WS_MODE_OFF,
@@ -4528,6 +4544,31 @@ const form = reactive({
   expires_at: null as number | null
 })
 
+const concurrencyMode = ref<ConcurrencyMode>('shared')
+const liveConcurrency = ref<ConcurrencyLimitInput>('')
+const requestConcurrency = ref<ConcurrencyLimitInput>('')
+const isOpenAISplitEligible = computed(() =>
+  form.platform === 'openai' && form.type === 'oauth'
+)
+
+const getCreateConcurrencyPolicy = (
+  platform: AccountPlatform,
+  type: AccountType
+): ConcurrencyPolicyPatch | undefined | null => {
+  if (platform !== 'openai' || type !== 'oauth') {
+    return undefined
+  }
+  const policy = buildOptionalConcurrencyPolicy(
+    concurrencyMode.value,
+    liveConcurrency.value,
+    requestConcurrency.value
+  )
+  if (policy === null) {
+    appStore.showError(t('admin.concurrencyPolicy.invalid'))
+  }
+  return policy
+}
+
 // Helper to check if current type needs OAuth flow
 const isOAuthFlow = computed(() => {
   // Antigravity upstream 类型不需要 OAuth 流程
@@ -5093,6 +5134,9 @@ const resetForm = () => {
   form.credentials = {}
   form.proxy_id = null
   form.concurrency = 10
+  concurrencyMode.value = 'shared'
+  liveConcurrency.value = ''
+  requestConcurrency.value = ''
   form.load_factor = null
   form.priority = 1
   form.rate_multiplier = 1
@@ -5707,6 +5751,10 @@ const createAccountAndFinish = async (
   credentials: Record<string, unknown>,
   extra?: Record<string, unknown>
 ) => {
+  const concurrencyPolicy = getCreateConcurrencyPolicy(platform, type)
+  if (concurrencyPolicy === null) {
+    return
+  }
   if (!applyTempUnschedConfig(credentials)) {
     return
   }
@@ -5781,7 +5829,8 @@ const createAccountAndFinish = async (
     // 上游倍率探测对全部 API-key 平台开放（antigravity upstream 走本 helper）；
     // 非 apikey 类型（bedrock/oauth）不传，后端不动作。
     upstream_billing_probe_enabled: type === 'apikey' ? upstreamBillingAutoProbeEnabled.value : undefined,
-    auto_pause_on_expired: autoPauseOnExpired.value
+    auto_pause_on_expired: autoPauseOnExpired.value,
+    ...(concurrencyPolicy ? { concurrency_policy: concurrencyPolicy } : {})
   })
 }
 
@@ -6062,6 +6111,8 @@ const handleGrokAuthorizePassword = async (emailPasswordInput: string) => {
 const handleOpenAIExchange = async (authCode: string) => {
   const oauthClient = openaiOAuth
   if (!authCode.trim() || !oauthClient.sessionId.value) return
+  const concurrencyPolicy = getCreateConcurrencyPolicy('openai', 'oauth')
+  if (concurrencyPolicy === null) return
 
   oauthClient.loading.value = true
   oauthClient.error.value = ''
@@ -6121,7 +6172,8 @@ const handleOpenAIExchange = async (authCode: string) => {
         rate_multiplier: form.rate_multiplier,
         group_ids: form.group_ids,
         expires_at: form.expires_at,
-        auto_pause_on_expired: autoPauseOnExpired.value
+        auto_pause_on_expired: autoPauseOnExpired.value,
+        ...(concurrencyPolicy ? { concurrency_policy: concurrencyPolicy } : {})
       })
       appStore.showSuccess(t('admin.accounts.accountCreated'))
     }
@@ -6209,6 +6261,8 @@ const handleOpenAIImportCodexSession = async (content: string) => {
   if (credentialExtras === null) {
     return
   }
+  const concurrencyPolicy = getCreateConcurrencyPolicy('openai', 'oauth')
+  if (concurrencyPolicy === null) return
 
   oauthClient.loading.value = true
   oauthClient.error.value = ''
@@ -6229,7 +6283,8 @@ const handleOpenAIImportCodexSession = async (content: string) => {
       auto_pause_on_expired: autoPauseOnExpired.value,
       credential_extras: Object.keys(credentialExtras).length > 0 ? credentialExtras : undefined,
       extra,
-      update_existing: true
+      update_existing: true,
+      ...(concurrencyPolicy ? { concurrency_policy: concurrencyPolicy } : {})
     })
 
     const successCount = result.created + result.updated
@@ -6287,6 +6342,8 @@ const handleOpenAIImportCodexPAT = async (accessToken: string) => {
   if (credentialExtras === null) {
     return
   }
+  const concurrencyPolicy = getCreateConcurrencyPolicy('openai', 'oauth')
+  if (concurrencyPolicy === null) return
 
   oauthClient.loading.value = true
   oauthClient.error.value = ''
@@ -6306,7 +6363,8 @@ const handleOpenAIImportCodexPAT = async (accessToken: string) => {
       expires_at: form.expires_at,
       auto_pause_on_expired: autoPauseOnExpired.value,
       credential_extras: Object.keys(credentialExtras).length > 0 ? credentialExtras : undefined,
-      extra
+      extra,
+      ...(concurrencyPolicy ? { concurrency_policy: concurrencyPolicy } : {})
     })
 
     appStore.showSuccess(t('admin.accounts.messages.accountCreated'))
@@ -6346,6 +6404,8 @@ const handleOpenAIBatchRT = async (refreshTokenInput: string, clientId?: string)
   let failedCount = 0
   const errors: string[] = []
   const shouldCreateOpenAI = form.platform === 'openai'
+  const concurrencyPolicy = getCreateConcurrencyPolicy('openai', 'oauth')
+  if (concurrencyPolicy === null) return
 
   try {
     for (let i = 0; i < refreshTokens.length; i++) {
@@ -6402,7 +6462,8 @@ const handleOpenAIBatchRT = async (refreshTokenInput: string, clientId?: string)
             rate_multiplier: form.rate_multiplier,
             group_ids: form.group_ids,
             expires_at: form.expires_at,
-            auto_pause_on_expired: autoPauseOnExpired.value
+            auto_pause_on_expired: autoPauseOnExpired.value,
+            ...(concurrencyPolicy ? { concurrency_policy: concurrencyPolicy } : {})
           })
         }
 
@@ -6768,6 +6829,8 @@ const handleCookieAuth = async (sessionKey: string) => {
   oauth.error.value = ''
 
   try {
+    const concurrencyPolicy = getCreateConcurrencyPolicy(form.platform, addMethod.value as AccountType)
+    if (concurrencyPolicy === null) return
     const proxyConfig = form.proxy_id ? { proxy_id: form.proxy_id } : {}
     const keys = oauth.parseSessionKeys(sessionKey)
 
@@ -6882,7 +6945,8 @@ const handleCookieAuth = async (sessionKey: string) => {
           rate_multiplier: form.rate_multiplier,
           group_ids: form.group_ids,
           expires_at: form.expires_at,
-          auto_pause_on_expired: autoPauseOnExpired.value
+          auto_pause_on_expired: autoPauseOnExpired.value,
+          ...(concurrencyPolicy ? { concurrency_policy: concurrencyPolicy } : {})
         })
 
         successCount++

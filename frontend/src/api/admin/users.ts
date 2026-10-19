@@ -4,7 +4,13 @@
  */
 
 import { apiClient } from '../client'
-import type { AdminUser, UpdateUserRequest, PaginatedResponse, ApiKey } from '@/types'
+import type {
+  AdminUser,
+  CreateUserRequest,
+  UpdateUserRequest,
+  PaginatedResponse,
+  ApiKey
+} from '@/types'
 
 export interface AdminBindAuthIdentityChannelRequest {
   channel: string
@@ -127,17 +133,7 @@ export async function getById(id: number, includeDeleted = false): Promise<Admin
  * @param userData - User data (email, password, etc.)
  * @returns Created user
  */
-export async function create(userData: {
-  email: string
-  password: string
-  username?: string
-  notes?: string
-  role?: 'admin' | 'user'
-  balance?: number
-  concurrency?: number
-  rpm_limit?: number
-  allowed_groups?: number[] | null
-}): Promise<AdminUser> {
+export async function create(userData: CreateUserRequest): Promise<AdminUser> {
   const { data } = await apiClient.post<AdminUser>('/admin/users', userData)
   return data
 }

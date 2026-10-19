@@ -1384,9 +1384,14 @@ const inAutoRefreshSilentWindow = () => {
 }
 
 const shouldReplaceAutoRefreshRow = (current: Account, next: Account) => {
+  const runtimeFieldChanged = <T>(currentValue: T | null | undefined, nextValue: T | null | undefined) =>
+    nextValue !== undefined && currentValue !== nextValue
+
   return (
     current.updated_at !== next.updated_at ||
-    current.current_concurrency !== next.current_concurrency ||
+    runtimeFieldChanged(current.current_concurrency, next.current_concurrency) ||
+    runtimeFieldChanged(current.current_live_concurrency, next.current_live_concurrency) ||
+    runtimeFieldChanged(current.current_request_concurrency, next.current_request_concurrency) ||
     current.current_window_cost !== next.current_window_cost ||
     current.active_sessions !== next.active_sessions ||
     current.schedulable !== next.schedulable ||
@@ -2202,9 +2207,21 @@ const accountMatchesCurrentFilters = (account: Account) => {
 }
 const mergeRuntimeFields = (oldAccount: Account, updatedAccount: Account): Account => ({
   ...updatedAccount,
-  current_concurrency: updatedAccount.current_concurrency ?? oldAccount.current_concurrency,
-  current_window_cost: updatedAccount.current_window_cost ?? oldAccount.current_window_cost,
-  active_sessions: updatedAccount.active_sessions ?? oldAccount.active_sessions
+  current_concurrency: updatedAccount.current_concurrency === undefined
+    ? oldAccount.current_concurrency
+    : updatedAccount.current_concurrency,
+  current_live_concurrency: updatedAccount.current_live_concurrency === undefined
+    ? oldAccount.current_live_concurrency
+    : updatedAccount.current_live_concurrency,
+  current_request_concurrency: updatedAccount.current_request_concurrency === undefined
+    ? oldAccount.current_request_concurrency
+    : updatedAccount.current_request_concurrency,
+  current_window_cost: updatedAccount.current_window_cost === undefined
+    ? oldAccount.current_window_cost
+    : updatedAccount.current_window_cost,
+  active_sessions: updatedAccount.active_sessions === undefined
+    ? oldAccount.active_sessions
+    : updatedAccount.active_sessions
 })
 
 const syncPaginationAfterLocalRemoval = () => {

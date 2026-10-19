@@ -109,6 +109,70 @@ describe('BulkEditAccountModal', () => {
     )
   })
 
+  it('仅对选中的 OpenAI OAuth 账号提交 split concurrency policy', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['oauth']
+    })
+
+    await wrapper.get('#bulk-edit-concurrency-policy-enabled').setValue(true)
+    await wrapper.get('[data-test="concurrency-mode"]').setValue('split')
+    await wrapper.get('[data-test="live-concurrency-input"]').setValue('4')
+    await wrapper.get('[data-test="request-concurrency-input"]').setValue('2')
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      concurrency_policy: {
+        mode: 'split',
+        live: 4,
+        requests: 2
+      }
+    })
+  })
+
+  it('filtered target 不展示或提交 concurrency policy', async () => {
+    const wrapper = mountModal({
+      target: {
+        mode: 'filtered',
+        filters: { platform: 'openai' },
+        previewCount: 9,
+        selectedPlatforms: ['openai'],
+        selectedTypes: ['oauth']
+      },
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['oauth']
+    })
+
+    expect(wrapper.find('[data-test="bulk-concurrency-policy-section"]').exists()).toBe(false)
+
+    await wrapper.get('#bulk-edit-rate-multiplier-enabled').setValue(true)
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith({
+      filters: { platform: 'openai' },
+      rate_multiplier: 1
+    })
+  })
+
+  it('阻止提交不完整的 split concurrency policy', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['oauth']
+    })
+
+    await wrapper.get('#bulk-edit-concurrency-policy-enabled').setValue(true)
+    await wrapper.get('[data-test="concurrency-mode"]').setValue('split')
+    await wrapper.get('[data-test="live-concurrency-input"]').setValue('0')
+    await wrapper.get('[data-test="request-concurrency-input"]').setValue('2')
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(showError).toHaveBeenCalledWith('admin.concurrencyPolicy.invalid')
+    expect(adminAPI.accounts.bulkUpdate).not.toHaveBeenCalled()
+  })
+
   it('后端拒绝修改同步账号倍率时展示专用错误', async () => {
     vi.mocked(adminAPI.accounts.bulkUpdate).mockRejectedValueOnce({
       status: 409,

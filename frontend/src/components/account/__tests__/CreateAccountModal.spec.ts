@@ -502,6 +502,25 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
 
     expect(importCodexSessionMock).toHaveBeenCalledTimes(1)
     expect(importCodexSessionMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBeUndefined()
+    expect(importCodexSessionMock.mock.calls[0]?.[0]?.concurrency_policy).toBeUndefined()
+  })
+
+  it('submits a split concurrency policy with Codex session import', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await wrapper.get('[data-test="concurrency-mode"]').setValue('split')
+    await wrapper.get('[data-test="live-concurrency-input"]').setValue('4')
+    await wrapper.get('[data-test="request-concurrency-input"]').setValue('2')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Codex import')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await wrapper.get('[data-testid="import-codex-session"]').trigger('click')
+    await flushPromises()
+
+    expect(importCodexSessionMock.mock.calls[0]?.[0]?.concurrency_policy).toEqual({
+      mode: 'split',
+      live: 4,
+      requests: 2
+    })
   })
 
   it('leaves Codex PAT import billing ownership to the backend', async () => {

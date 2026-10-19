@@ -42,6 +42,14 @@
           <input v-model.number="form.concurrency" type="number" class="input" />
         </div>
       </div>
+      <ConcurrencyPolicyFields
+        :mode="concurrencyMode"
+        :live="liveConcurrency"
+        :requests="requestConcurrency"
+        @update:mode="concurrencyMode = $event"
+        @update:live="liveConcurrency = $event"
+        @update:requests="requestConcurrency = $event"
+      />
       <div>
         <label class="input-label">{{ t('admin.users.form.rpmLimit') }}</label>
         <input
@@ -73,8 +81,11 @@
 import { reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'; import { adminAPI } from '@/api/admin'
 import { useAppStore } from '@/stores/app'
+import type { ConcurrencyMode, CreateUserRequest } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
+import ConcurrencyPolicyFields from '@/components/admin/ConcurrencyPolicyFields.vue'
+import { buildOptionalConcurrencyPolicy, type ConcurrencyLimitInput } from '@/utils/concurrencyPolicy'
 import { useStepUp, isStepUpBlocked, isStepUpCancelled, stepUpBlockReason } from '@/composables/useStepUp'
 import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
 
@@ -83,19 +94,34 @@ const emit = defineEmits(['close', 'success']); const { t } = useI18n()
 const appStore = useAppStore()
 
 const form = reactive({ email: '', password: '', username: '', notes: '', role: 'user' as 'user' | 'admin', balance: '', concurrency: 1, rpm_limit: 0 })
+const concurrencyMode = ref<ConcurrencyMode>('shared')
+const liveConcurrency = ref<ConcurrencyLimitInput>('')
+const requestConcurrency = ref<ConcurrencyLimitInput>('')
 
 const stepUp = useStepUp()
 const loading = ref(false)
 
 const submit = async () => {
   if (loading.value) return
+  const concurrencyPolicy = buildOptionalConcurrencyPolicy(
+    concurrencyMode.value,
+    liveConcurrency.value,
+    requestConcurrency.value
+  )
+  if (concurrencyPolicy === null) {
+    appStore.showError(t('admin.concurrencyPolicy.invalid'))
+    return
+  }
   loading.value = true
   try {
     const { balance: rawBalance, ...rest } = { ...form }
     const balance = String(rawBalance).trim()
-    const payload: typeof rest & { balance?: number } = { ...rest }
+    const payload: CreateUserRequest = { ...rest }
     if (balance !== '') {
       payload.balance = Number(balance)
+    }
+    if (concurrencyPolicy) {
+      payload.concurrency_policy = concurrencyPolicy
     }
     // 创建管理员属敏感操作：后端返回 STEP_UP_REQUIRED 时弹 TOTP 验证并重试
     await stepUp.run(() => adminAPI.users.create(payload))
@@ -116,7 +142,14 @@ const submit = async () => {
   } finally { loading.value = false }
 }
 
-watch(() => props.show, (v) => { if(v) Object.assign(form, { email: '', password: '', username: '', notes: '', role: 'user', balance: '', concurrency: 1, rpm_limit: 0 }) })
+watch(() => props.show, (v) => {
+  if (v) {
+    Object.assign(form, { email: '', password: '', username: '', notes: '', role: 'user', balance: '', concurrency: 1, rpm_limit: 0 })
+    concurrencyMode.value = 'shared'
+    liveConcurrency.value = ''
+    requestConcurrency.value = ''
+  }
+})
 
 const generateRandomPassword = () => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%^&*'

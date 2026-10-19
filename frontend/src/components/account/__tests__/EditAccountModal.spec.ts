@@ -1455,4 +1455,44 @@ describe('EditAccountModal OpenAI 自动使用重置卡', () => {
     expect(updateAccountMock).not.toHaveBeenCalled()
     wrapper.unmount()
   })
+
+  it('submits a changed split policy while omitting an untouched policy', async () => {
+    const account = {
+      ...buildOpenAIOAuthParentAccount(),
+      concurrency_mode: 'shared',
+      live_concurrency: null,
+      request_concurrency: null
+    }
+    updateAccountMock.mockResolvedValue(account)
+    const wrapper = mountModal(account)
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    expect(updateAccountMock.mock.calls[0]?.[1]).not.toHaveProperty('concurrency_policy')
+
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    await wrapper.get('[data-test="concurrency-mode"]').setValue('split')
+    await wrapper.get('[data-test="live-concurrency-input"]').setValue('4')
+    await wrapper.get('[data-test="request-concurrency-input"]').setValue('2')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock.mock.calls[0]?.[1]).toMatchObject({
+      concurrency_policy: { mode: 'split', live: 4, requests: 2 }
+    })
+    wrapper.unmount()
+
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    const resetWrapper = mountModal({
+      ...account,
+      concurrency_mode: 'split',
+      live_concurrency: 4,
+      request_concurrency: 2
+    })
+    await resetWrapper.get('[data-test="concurrency-mode"]').setValue('shared')
+    await resetWrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock.mock.calls[0]?.[1]).toMatchObject({
+      concurrency_policy: { mode: 'shared' }
+    })
+    resetWrapper.unmount()
+  })
 })
