@@ -1159,7 +1159,7 @@ func parseConcurrencyAdmissionResult(raw any) (service.ConcurrencyAdmissionResul
 }
 
 func redisScriptStringAt(result any, index int) (string, error) {
-	values, ok := result.([]interface{})
+	values, ok := result.([]any)
 	if !ok {
 		return "", fmt.Errorf("expected script array, got %T", result)
 	}

@@ -180,6 +180,9 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 	if err := ValidateLiveCallRequest(request); err != nil {
 		return nil, err
 	}
+	if s == nil || s.concurrencyService == nil {
+		return nil, ErrConcurrencyPolicyAdmissionUnavailable
+	}
 	createStarted := time.Now()
 	store, err := s.liveStore()
 	if err != nil {

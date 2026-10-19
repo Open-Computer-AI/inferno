@@ -2250,7 +2250,7 @@ func TestGatewayService_SelectAccountWithLoadAwareness(t *testing.T) {
 			accountRepo:        repo,
 			cache:              cache,
 			cfg:                cfg,
-			concurrencyService: nil, // No concurrency service
+			concurrencyService: NewConcurrencyService(&mockConcurrencyCache{}),
 		}
 
 		result, err := svc.SelectAccountWithLoadAwareness(ctx, nil, "", "claude-3-5-sonnet-20241022", nil, "", int64(0))
@@ -2260,7 +2260,7 @@ func TestGatewayService_SelectAccountWithLoadAwareness(t *testing.T) {
 		require.Equal(t, int64(1), result.Account.ID, "应选择优先级最高的账号")
 	})
 
-	t.Run("模型路由-无ConcurrencyService也生效", func(t *testing.T) {
+	t.Run("模型路由-并发准入不影响路由", func(t *testing.T) {
 		groupID := int64(1)
 		sessionHash := "sticky"
 
@@ -2303,7 +2303,7 @@ func TestGatewayService_SelectAccountWithLoadAwareness(t *testing.T) {
 			groupRepo:          groupRepo,
 			cache:              cache,
 			cfg:                cfg,
-			concurrencyService: nil, // legacy path
+			concurrencyService: NewConcurrencyService(&mockConcurrencyCache{}),
 		}
 
 		result, err := svc.SelectAccountWithLoadAwareness(ctx, &groupID, sessionHash, "claude-b", nil, "", int64(0))
@@ -2314,7 +2314,7 @@ func TestGatewayService_SelectAccountWithLoadAwareness(t *testing.T) {
 		require.Equal(t, int64(2), cache.sessionBindings[sessionHash], "粘性绑定应更新为路由选择的账号")
 	})
 
-	t.Run("无ConcurrencyService-降级到传统选择", func(t *testing.T) {
+	t.Run("优先级选择-保持原有结果", func(t *testing.T) {
 		repo := &mockAccountRepoForPlatform{
 			accounts: []Account{
 				{ID: 1, Platform: PlatformAnthropic, Priority: 2, Status: StatusActive, Schedulable: true, Concurrency: 5},
@@ -2335,7 +2335,7 @@ func TestGatewayService_SelectAccountWithLoadAwareness(t *testing.T) {
 			accountRepo:        repo,
 			cache:              cache,
 			cfg:                cfg,
-			concurrencyService: nil,
+			concurrencyService: NewConcurrencyService(&mockConcurrencyCache{}),
 		}
 
 		result, err := svc.SelectAccountWithLoadAwareness(ctx, nil, "", "claude-3-5-sonnet-20241022", nil, "", int64(0))
@@ -2366,7 +2366,7 @@ func TestGatewayService_SelectAccountWithLoadAwareness(t *testing.T) {
 			accountRepo:        repo,
 			cache:              cache,
 			cfg:                cfg,
-			concurrencyService: nil,
+			concurrencyService: NewConcurrencyService(&mockConcurrencyCache{}),
 		}
 
 		excludedIDs := map[int64]struct{}{1: {}}
@@ -2538,7 +2538,7 @@ func TestGatewayService_SelectAccountWithLoadAwareness(t *testing.T) {
 			accountRepo:        repo,
 			cache:              cache,
 			cfg:                cfg,
-			concurrencyService: nil,
+			concurrencyService: NewConcurrencyService(&mockConcurrencyCache{}),
 		}
 
 		result, err := svc.SelectAccountWithLoadAwareness(ctx, nil, "", "claude-3-5-sonnet-20241022", nil, "", int64(0))
@@ -2571,7 +2571,7 @@ func TestGatewayService_SelectAccountWithLoadAwareness(t *testing.T) {
 			accountRepo:        repo,
 			cache:              cache,
 			cfg:                cfg,
-			concurrencyService: nil,
+			concurrencyService: NewConcurrencyService(&mockConcurrencyCache{}),
 		}
 
 		result, err := svc.SelectAccountWithLoadAwareness(ctx, nil, "", "claude-3-5-sonnet-20241022", nil, "", int64(0))
@@ -3207,7 +3207,7 @@ func TestGatewayService_SelectAccountWithLoadAwareness(t *testing.T) {
 			groupRepo:          groupRepo,
 			cache:              &mockGatewayCacheForPlatform{},
 			cfg:                cfg,
-			concurrencyService: nil,
+			concurrencyService: NewConcurrencyService(&mockConcurrencyCache{}),
 		}
 
 		result, err := svc.SelectAccountWithLoadAwareness(ctx, &groupID, "", "gemini-2.5-pro", nil, "", int64(0))

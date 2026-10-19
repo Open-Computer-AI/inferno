@@ -204,8 +204,9 @@ func TestOpenAIAccountSchedulerLoadBalanceAppliesGrokFreeQuotaGate(t *testing.T)
 		{ID: 2, Platform: PlatformGrok, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true, Concurrency: 1, Credentials: map[string]any{"subscription_tier": "pro"}},
 	}
 	svc := &OpenAIGatewayService{
-		cfg:         cfg,
-		accountRepo: &grokFreeQuotaAccountRepoStub{accounts: accounts},
+		cfg:                cfg,
+		accountRepo:        &grokFreeQuotaAccountRepoStub{accounts: accounts},
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
 		usageLogRepo: &grokFreeQuotaUsageRepoStub{stats: map[int64]*usagestats.AccountStats{
 			1: {Tokens: 480_000}, // over 95% of 500k
 		}},

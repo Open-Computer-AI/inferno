@@ -569,10 +569,11 @@ func TestOpenAIGatewayServiceLegacyLowRatePriorityUsesConfiguredOAuthReference(t
 	}}
 	cfg := &config.Config{}
 	svc := &OpenAIGatewayService{
-		accountRepo:      schedulerTestOpenAIAccountRepo{accounts: []Account{*cheap, *oauth, *expensive}},
-		cache:            &schedulerTestGatewayCache{},
-		cfg:              cfg,
-		rateLimitService: &RateLimitService{settingService: NewSettingService(settings, cfg)},
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: []Account{*cheap, *oauth, *expensive}},
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+		rateLimitService:   &RateLimitService{settingService: NewSettingService(settings, cfg)},
 	}
 	groupID := int64(1)
 

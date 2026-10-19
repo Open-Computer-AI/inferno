@@ -21,6 +21,17 @@ type liveRecoveryUserRepo struct {
 	user *User
 }
 
+func TestCreateLiveCallFailsClosedWithoutConcurrencyService(t *testing.T) {
+	request := &LiveCallRequest{
+		SDP:     "v=offer\r\n",
+		Session: json.RawMessage(`{"model":"gpt-live"}`),
+	}
+	for _, svc := range []*OpenAIGatewayService{nil, {}} {
+		_, err := svc.CreateLiveCall(context.Background(), request, LiveCallIdentity{}, ConcurrencyPolicy{}, 0)
+		require.ErrorIs(t, err, ErrConcurrencyPolicyAdmissionUnavailable)
+	}
+}
+
 func (r *liveRecoveryUserRepo) GetByID(context.Context, int64) (*User, error) {
 	return r.user, nil
 }

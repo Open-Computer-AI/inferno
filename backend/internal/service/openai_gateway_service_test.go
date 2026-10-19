@@ -762,7 +762,7 @@ func (c *stubGatewayCache) GetReasoningContent(_ context.Context, _ string) (str
 	return "", ErrReasoningContentNotFound
 }
 
-func TestOpenAISelectAccountWithLoadAwareness_FiltersUnschedulable(t *testing.T) {
+func TestOpenAISelectAccountWithLoadAwareness_FiltersUnschedulableViaLegacyCacheFixture(t *testing.T) {
 	now := time.Now()
 	resetAt := now.Add(10 * time.Minute)
 	groupID := int64(1)
@@ -858,7 +858,7 @@ func TestOpenAISelectAccountWithLoadAwareness_ImageRateLimitSkipsOnlyImageReques
 	}
 }
 
-func TestOpenAISelectAccountWithLoadAwareness_FiltersUnschedulableWhenNoConcurrencyService(t *testing.T) {
+func TestOpenAISelectAccountWithLoadAwareness_FiltersUnschedulable(t *testing.T) {
 	now := time.Now()
 	resetAt := now.Add(10 * time.Minute)
 	groupID := int64(1)
@@ -884,8 +884,8 @@ func TestOpenAISelectAccountWithLoadAwareness_FiltersUnschedulableWhenNoConcurre
 	}
 
 	svc := &OpenAIGatewayService{
-		accountRepo: stubOpenAIAccountRepo{accounts: []Account{rateLimited, available}},
-		// concurrencyService is nil, forcing the non-load-batch selection path.
+		accountRepo:        stubOpenAIAccountRepo{accounts: []Account{rateLimited, available}},
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
 	}
 
 	selection, err := svc.SelectAccountWithLoadAwareness(context.Background(), &groupID, "", "gpt-5.2", nil)
