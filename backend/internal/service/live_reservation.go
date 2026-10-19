@@ -43,7 +43,7 @@ func (s *ConcurrencyService) AcquireLiveReservation(
 	request ConcurrencyAdmissionRequest,
 ) (ConcurrencyAdmissionResult, *LiveReservation, error) {
 	if request.Class != ConcurrencyClassLive {
-		return ConcurrencyAdmissionResult{}, nil, errors.New("Live reservation requires the Live admission class")
+		return ConcurrencyAdmissionResult{}, nil, errors.New("live reservation requires the Live admission class")
 	}
 	if err := request.Validate(); err != nil {
 		return ConcurrencyAdmissionResult{}, nil, err
@@ -181,7 +181,7 @@ func (r *LiveReservation) TransferToCall(record *LiveCallRecord) error {
 		return ErrLiveReservationReleased
 	}
 	if record == nil {
-		return errors.New("Live call record is required")
+		return errors.New("live call record is required")
 	}
 	r.mu.Lock()
 	if r.released {
@@ -199,23 +199,22 @@ func (r *LiveReservation) TransferToCall(record *LiveCallRecord) error {
 	request := cloneConcurrencyAdmissionRequest(r.request)
 	if record.AccountID != 0 && record.AccountID != request.AccountID {
 		r.mu.Unlock()
-		return errors.New("Live record account does not match reservation")
+		return errors.New("live record account does not match reservation")
 	}
 	if record.UserID != 0 && record.UserID != request.UserID {
 		r.mu.Unlock()
-		return errors.New("Live record user does not match reservation")
+		return errors.New("live record user does not match reservation")
 	}
 	if record.APIKeyID != 0 && record.APIKeyID != request.APIKeyID {
 		r.mu.Unlock()
-		return errors.New("Live record API key does not match reservation")
+		return errors.New("live record API key does not match reservation")
 	}
 	if record.LeaseID != "" && record.LeaseID != request.ReservationID {
 		r.mu.Unlock()
-		return errors.New("Live record lease does not match reservation")
+		return errors.New("live record lease does not match reservation")
 	}
 	refreshCancel := r.refreshCancel
 	refreshDone := r.refreshDone
-	r.transferred = true
 	r.mu.Unlock()
 	if refreshCancel != nil {
 		refreshCancel(ErrLiveReservationTransferred)
@@ -224,6 +223,17 @@ func (r *LiveReservation) TransferToCall(record *LiveCallRecord) error {
 		}
 	}
 
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.released {
+		return ErrLiveReservationReleased
+	}
+	if r.lost {
+		return ErrLiveReservationLost
+	}
+	if r.transferred {
+		return ErrLiveReservationTransferred
+	}
 	record.AccountID = request.AccountID
 	record.UserID = request.UserID
 	record.APIKeyID = request.APIKeyID
@@ -238,6 +248,7 @@ func (r *LiveReservation) TransferToCall(record *LiveCallRecord) error {
 	record.UserConcurrencyPolicyGeneration = request.UserGeneration
 	record.ConcurrencyPolicySnapshotPresent = true
 	record.reservation = r
+	r.transferred = true
 	return nil
 }
 

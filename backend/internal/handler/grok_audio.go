@@ -45,6 +45,29 @@ func (h *OpenAIGatewayHandler) GrokRealtime(c *gin.Context) {
 	}
 
 	reqLog := requestLogger(c, "handler.openai_gateway.grok_realtime")
+	subject, subjectOK := middleware2.GetAuthSubjectFromContext(c)
+	if !subjectOK {
+		h.errorResponse(c, http.StatusInternalServerError, "api_error", "User context not found")
+		return
+	}
+	userReleaseFunc, userSlotErr := h.concurrencyHelper.AcquireUserPolicySlotWithWait(
+		c,
+		subject.UserID,
+		concurrencyPolicyFromAuthSubject(subject),
+		subject.ConcurrencyPolicyGeneration,
+		false,
+		nil,
+	)
+	if userSlotErr != nil {
+		reqLog.Warn("grok_realtime.user_slot_acquire_failed", zap.Error(userSlotErr))
+		h.handleConcurrencyError(c, userSlotErr, "user", false)
+		return
+	}
+	userReleaseFunc = wrapReleaseOnDone(c.Request.Context(), userReleaseFunc)
+	if userReleaseFunc != nil {
+		defer userReleaseFunc()
+	}
+
 	model := c.Query("model")
 	if strings.TrimSpace(model) == "" {
 		model = "grok-voice-latest"
@@ -189,14 +212,18 @@ func (h *OpenAIGatewayHandler) GrokVoice(c *gin.Context, endpoint string) {
 		return
 	}
 
+	subject, subjectOK := middleware2.GetAuthSubjectFromContext(c)
+	if !subjectOK {
+		h.errorResponse(c, http.StatusInternalServerError, "api_error", "User context not found")
+		return
+	}
+	reqLog := requestLogger(c, "handler.openai_gateway.grok_voice", zap.String("endpoint", endpoint))
 	body, err := readGrokVoiceGatewayBody(c)
 	if err != nil {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
 	if endpoint == "tts" {
-		subject, _ := middleware2.GetAuthSubjectFromContext(c)
-		reqLog := requestLogger(c, "handler.openai_gateway.grok_voice", zap.String("endpoint", endpoint))
 		// TTS bodies use {"input":"..."} (and variants). Normalize to chat messages so
 		// content moderation extractors see the spoken text.
 		auditBody := body
@@ -217,9 +244,26 @@ func (h *OpenAIGatewayHandler) GrokVoice(c *gin.Context, endpoint string) {
 		contentType = "application/json"
 	}
 
+	userReleaseFunc, userSlotErr := h.concurrencyHelper.AcquireUserPolicySlotWithWait(
+		c,
+		subject.UserID,
+		concurrencyPolicyFromAuthSubject(subject),
+		subject.ConcurrencyPolicyGeneration,
+		false,
+		nil,
+	)
+	if userSlotErr != nil {
+		reqLog.Warn("grok_voice.user_slot_acquire_failed", zap.Error(userSlotErr))
+		h.handleConcurrencyError(c, userSlotErr, "user", false)
+		return
+	}
+	userReleaseFunc = wrapReleaseOnDone(c.Request.Context(), userReleaseFunc)
+	if userReleaseFunc != nil {
+		defer userReleaseFunc()
+	}
+
 	failed := map[int64]struct{}{}
 	var last *service.UpstreamFailoverError
-	reqLog := requestLogger(c, "handler.openai_gateway.grok_voice", zap.String("endpoint", endpoint))
 	selectionModel := "grok-4.5"
 
 	for attempts := 0; attempts < 4; attempts++ {

@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -220,4 +221,84 @@ func TestLiveReservation_TransferStopsCreationRenewerButKeepsOwnership(t *testin
 	refreshed, err := reservation.Refresh(context.Background())
 	require.NoError(t, err)
 	require.True(t, refreshed, "record-owned reservation must remain refreshable after transfer")
+}
+
+type blockingLiveReservationRefreshCache struct {
+	liveReservationCacheForTest
+	refreshStarted chan struct{}
+	releaseRefresh chan struct{}
+}
+
+func (c *blockingLiveReservationRefreshCache) RefreshConcurrency(ctx context.Context, request ConcurrencyAdmissionRequest) (bool, error) {
+	c.refreshCalls.Add(1)
+	select {
+	case <-c.refreshStarted:
+	default:
+		close(c.refreshStarted)
+	}
+	select {
+	case <-c.releaseRefresh:
+		return false, errors.New("refresh lost ownership")
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
+}
+
+func TestLiveReservation_TransferRechecksRefreshLossBeforeMutatingRecord(t *testing.T) {
+	oldInterval := liveReservationRefreshInterval
+	liveReservationRefreshInterval = time.Millisecond
+	t.Cleanup(func() { liveReservationRefreshInterval = oldInterval })
+
+	live, requests := 4, 2
+	cache := &blockingLiveReservationRefreshCache{
+		liveReservationCacheForTest: liveReservationCacheForTest{
+			acquireResult: ConcurrencyAdmissionResult{Acquired: true},
+		},
+		refreshStarted: make(chan struct{}),
+		releaseRefresh: make(chan struct{}),
+	}
+	request := ConcurrencyAdmissionRequest{
+		AccountID: 11, AccountPolicy: ConcurrencyPolicy{Live: &live, Request: &requests}, AccountGeneration: 1,
+		UserID: 22, UserPolicy: ConcurrencyPolicy{Live: &live, Request: &requests}, UserGeneration: 1,
+		APIKeyID: 33, Class: ConcurrencyClassLive, ReservationID: "live-transfer-refresh-loss",
+	}
+	_, reservation, err := NewConcurrencyService(cache).AcquireLiveReservation(context.Background(), request)
+	require.NoError(t, err)
+	reservation.StartRefresh(context.Background())
+
+	select {
+	case <-cache.refreshStarted:
+	case <-time.After(time.Second):
+		t.Fatal("refresh did not enter the deterministic blocking point")
+	}
+
+	record := &LiveCallRecord{
+		CallID:    "preexisting-record",
+		AccountID: request.AccountID,
+		UserID:    request.UserID,
+		APIKeyID:  request.APIKeyID,
+		LeaseID:   request.ReservationID,
+		Model:     "preserved-marker",
+	}
+	transferDone := make(chan error, 1)
+	go func() { transferDone <- reservation.TransferToCall(record) }()
+
+	select {
+	case <-transferDone:
+		t.Fatal("transfer returned before the in-flight refresh completed")
+	case <-time.After(10 * time.Millisecond):
+	}
+	close(cache.releaseRefresh)
+
+	require.ErrorIs(t, <-transferDone, ErrLiveReservationLost)
+	require.Equal(t, "preexisting-record", record.CallID)
+	require.Equal(t, request.AccountID, record.AccountID)
+	require.Equal(t, request.UserID, record.UserID)
+	require.Equal(t, request.APIKeyID, record.APIKeyID)
+	require.Equal(t, request.ReservationID, record.LeaseID)
+	require.Equal(t, "preserved-marker", record.Model)
+	require.Nil(t, record.reservation)
+	require.False(t, reservation.transferred)
+	require.NoError(t, reservation.Release(context.Background()))
+	require.Equal(t, int64(1), cache.releaseCalls.Load(), "failed transfer must still be releasable exactly once")
 }
