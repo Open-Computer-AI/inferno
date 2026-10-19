@@ -3177,6 +3177,14 @@ func (h *OpenAIGatewayHandler) acquireImageGenerationSlot(c *gin.Context, stream
 
 // handleConcurrencyError handles concurrency-related acquire errors.
 func (h *OpenAIGatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotType string, streamStarted bool) {
+	if capacityErr := concurrencyCapacityErrorFrom(err); capacityErr != nil {
+		if streamStarted {
+			h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", capacityErr.Error(), true)
+		} else {
+			h.concurrencyCapacityErrorResponse(c, capacityErr)
+		}
+		return
+	}
 	status, errType, message := concurrencyErrorResponse(err, slotType)
 	h.handleStreamingAwareError(c, status, errType, message, streamStarted)
 }

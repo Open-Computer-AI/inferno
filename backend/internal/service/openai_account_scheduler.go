@@ -586,6 +586,9 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		}
 	}
 	result, acquireErr := s.service.tryAcquireAccountSlotForAdmission(ctx, accountID, admissionLimit, req.AdmissionClass == ConcurrencyClassLive)
+	if acquireErr != nil {
+		return nil, false, acquireErr
+	}
 	if acquireErr == nil && result != nil && result.Acquired {
 		if !req.PreserveStickyBinding {
 			_ = s.service.refreshStickySessionTTL(ctx, req.GroupID, sessionHash, s.service.openAIWSSessionStickyTTL())

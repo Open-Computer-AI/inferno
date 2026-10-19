@@ -1143,6 +1143,9 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			return nil, fmt.Errorf("%w: invalid account concurrency policy", ErrNoAvailableAccounts)
 		}
 		result, err := s.tryAcquireAccountSlotForAdmission(ctx, account.ID, admissionLimit, false)
+		if err != nil {
+			return nil, err
+		}
 		if err == nil && result != nil && result.Acquired {
 			return s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
 		}
@@ -1225,6 +1228,9 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 								stickySpillover = true
 							} else {
 								result, err := s.tryAcquireAccountSlotForAdmission(ctx, accountID, admissionLimit, liveAdmission)
+								if err != nil {
+									return nil, err
+								}
 								if err == nil && result != nil && result.Acquired {
 									selection, selectErr := s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
 									if selectErr != nil {
@@ -1416,6 +1422,9 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 				}
 			}
 			result, err := s.tryAcquireAccountSlotForAdmission(ctx, fresh.ID, admissionLimit, liveAdmission)
+			if err != nil {
+				return nil, true, err
+			}
 			if err == nil && result != nil && result.Acquired {
 				selection, selectErr := s.newAcquiredSelectionResult(ctx, fresh, result.ReleaseFunc)
 				if selectErr != nil {
@@ -1468,6 +1477,9 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 				}
 			}
 			result, err := s.tryAcquireAccountSlotForAdmission(ctx, fresh.ID, admissionLimit, liveAdmission)
+			if err != nil {
+				return nil, err
+			}
 			if err == nil && result != nil && result.Acquired {
 				selection, selectErr := s.newAcquiredSelectionResult(ctx, fresh, result.ReleaseFunc)
 				if selectErr != nil {
@@ -1578,10 +1590,10 @@ func (s *OpenAIGatewayService) listSchedulableAccounts(ctx context.Context, grou
 }
 
 func (s *OpenAIGatewayService) tryAcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int) (*AcquireResult, error) {
-	if s.concurrencyService == nil {
-		return &AcquireResult{Acquired: true, ReleaseFunc: func() {}}, nil
+	if s == nil || s.concurrencyService == nil {
+		return nil, ErrConcurrencyPolicyAdmissionUnavailable
 	}
-	return s.concurrencyService.AcquireAccountSlot(ctx, accountID, maxConcurrency)
+	return s.concurrencyService.AcquireAccountPolicySlot(ctx, accountID, ConcurrencyClassRequest, maxConcurrency)
 }
 
 func (s *OpenAIGatewayService) tryAcquireAccountSlotForAdmission(ctx context.Context, accountID int64, maxConcurrency int, liveAdmission bool) (*AcquireResult, error) {

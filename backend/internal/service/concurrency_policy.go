@@ -174,6 +174,32 @@ type UserConcurrencyAdmissionRequest struct {
 	ReservationID  string
 }
 
+// AccountConcurrencyAdmissionRequest is the account-only admission boundary
+// used after the authenticated user already owns its ordinary lease. The
+// account policy is intentionally not copied into this request: the Redis
+// script reads the currently published policy hash in the same atomic
+// operation as the occupancy check. This makes an old scheduler snapshot,
+// including an old shared/unlimited snapshot, unable to bypass a published
+// split policy.
+type AccountConcurrencyAdmissionRequest struct {
+	AccountID     int64
+	Class         ConcurrencyClass
+	ReservationID string
+}
+
+func (r AccountConcurrencyAdmissionRequest) Validate() error {
+	if r.AccountID <= 0 {
+		return fmt.Errorf("account concurrency admission identifier must be positive")
+	}
+	if r.ReservationID == "" {
+		return fmt.Errorf("account concurrency admission reservation ID is required")
+	}
+	if r.Class != ConcurrencyClassRequest {
+		return fmt.Errorf("account-only concurrency admission requires the request class")
+	}
+	return nil
+}
+
 func (r UserConcurrencyAdmissionRequest) Validate() error {
 	if r.UserID <= 0 {
 		return fmt.Errorf("user concurrency admission identifier must be positive")
@@ -208,6 +234,21 @@ type UserConcurrencyAdmissionCache interface {
 	AcquireUserConcurrency(context.Context, UserConcurrencyAdmissionRequest) (ConcurrencyAdmissionResult, error)
 	RefreshUserConcurrency(context.Context, UserConcurrencyAdmissionRequest) (bool, error)
 	ReleaseUserConcurrency(context.Context, UserConcurrencyAdmissionRequest) error
+}
+
+// AccountConcurrencyAdmissionCache is the class-aware account-only surface.
+// It must not acquire a user member: ordinary gateway callers have already
+// acquired the user lease before account selection.
+type AccountConcurrencyAdmissionCache interface {
+	AcquireAccountConcurrency(context.Context, AccountConcurrencyAdmissionRequest) (ConcurrencyAdmissionResult, error)
+	ReleaseAccountConcurrency(context.Context, AccountConcurrencyAdmissionRequest) error
+}
+
+// PublishedUserConcurrencyPolicyReader reads the Redis publication that is
+// also used as the atomic admission authority. It is used only to repair a
+// stale auth snapshot after the Lua acquire returns the distinct stale code.
+type PublishedUserConcurrencyPolicyReader interface {
+	GetPublishedUserConcurrencyPolicy(context.Context, int64) (ConcurrencyPolicy, int64, error)
 }
 
 func (r ConcurrencyAdmissionRequest) Validate() error {

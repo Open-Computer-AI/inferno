@@ -233,6 +233,41 @@ func TestAcquireAccountSlot_CacheError(t *testing.T) {
 	require.Nil(t, result)
 }
 
+func TestPolicySlotAdmission_FailsClosedWithoutCache(t *testing.T) {
+	ctx := context.Background()
+	var nilService *ConcurrencyService
+	for _, svc := range []*ConcurrencyService{nilService, &ConcurrencyService{}} {
+		result, err := svc.AcquireAccountPolicySlot(ctx, 1, ConcurrencyClassRequest, 0)
+		require.ErrorIs(t, err, ErrConcurrencyPolicyAdmissionUnavailable)
+		require.Nil(t, result)
+
+		result, err = svc.AcquireAccountSlot(ctx, 1, 0)
+		require.ErrorIs(t, err, ErrConcurrencyPolicyAdmissionUnavailable)
+		require.Nil(t, result)
+
+		result, err = svc.AcquireUserPolicySlot(ctx, 1, ConcurrencyPolicy{Shared: 3}, 1)
+		require.ErrorIs(t, err, ErrConcurrencyPolicyAdmissionUnavailable)
+		require.Nil(t, result)
+	}
+}
+
+func TestAcquireUserPolicySlot_ValidatesBeforeSharedCompatibilityFallback(t *testing.T) {
+	ctx := context.Background()
+	cache := &stubConcurrencyCacheForTest{acquireResult: true}
+	svc := NewConcurrencyService(cache)
+	live := 2
+
+	result, err := svc.AcquireUserPolicySlot(ctx, 1, ConcurrencyPolicy{Live: &live}, 1)
+	require.Error(t, err, "a partial split policy must not be interpreted as shared")
+	require.Nil(t, result)
+
+	result, err = svc.AcquireUserPolicySlot(ctx, 1, ConcurrencyPolicy{Shared: 3}, 1)
+	require.NoError(t, err, "valid shared policy keeps the legacy adapter fallback")
+	require.NotNil(t, result)
+	require.True(t, result.Acquired)
+	result.ReleaseFunc()
+}
+
 func TestAcquireAccountSlot_ReleaseDecrements(t *testing.T) {
 	cache := &stubConcurrencyCacheForTest{acquireResult: true}
 	svc := NewConcurrencyService(cache)

@@ -1853,8 +1853,34 @@ func (h *GatewayHandler) calculateSubscriptionRemaining(group *service.Group, su
 
 // handleConcurrencyError handles concurrency-related acquire errors.
 func (h *GatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotType string, streamStarted bool) {
+	if capacityErr := concurrencyCapacityErrorFrom(err); capacityErr != nil {
+		h.handleConcurrencyCapacityError(c, capacityErr, streamStarted)
+		return
+	}
 	status, errType, message := concurrencyErrorResponse(err, slotType)
 	h.handleStreamingAwareError(c, status, errType, message, streamStarted)
+}
+
+func (h *GatewayHandler) handleConcurrencyCapacityError(c *gin.Context, capacityErr *service.ConcurrencyCapacityError, streamStarted bool) {
+	message := "Concurrency capacity exhausted"
+	if capacityErr != nil {
+		message = capacityErr.Error()
+	}
+	if streamStarted {
+		h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", message, true)
+		return
+	}
+	errorBody := gin.H{
+		"type":    "rate_limit_error",
+		"code":    "concurrency_capacity",
+		"message": message,
+	}
+	if capacityErr != nil {
+		errorBody["concurrency_class"] = string(capacityErr.Class)
+		errorBody["concurrency_scope"] = capacityErr.Scope
+		errorBody["concurrency_reason"] = capacityErr.Reason
+	}
+	c.JSON(http.StatusTooManyRequests, gin.H{"error": errorBody})
 }
 
 func (h *GatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, platform string, streamStarted bool) {

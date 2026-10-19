@@ -93,6 +93,205 @@ func TestSplitConcurrency_IndependentBudgetsAcrossPolicyModes(t *testing.T) {
 	}
 }
 
+func TestOrdinaryAccountAdmission_UsesPublishedRequestBudgetWithLiveOccupancy(t *testing.T) {
+	mini := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mini.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	cache := &concurrencyCache{rdb: rdb, slotTTLSeconds: 900}
+	concurrency := service.NewConcurrencyService(cache)
+	ctx := context.Background()
+	live, requests := 4, 2
+	require.NoError(t, cache.PublishAccountConcurrencyPolicy(ctx, 701, service.ConcurrencyPolicy{
+		Live:    &live,
+		Request: &requests,
+	}, 1))
+
+	// This is the actual mixed Redis occupancy that exposed the production
+	// defect: two Live leases are present, but the ordinary request budget is
+	// still empty and must admit exactly two requests.
+	now := float64(time.Now().Unix())
+	for i := 0; i < 2; i++ {
+		require.NoError(t, rdb.ZAdd(ctx, liveAccountSlotKey(701), redis.Z{
+			Score:  now,
+			Member: "live-" + string(rune('a'+i)),
+		}).Err())
+	}
+
+	first, err := concurrency.AcquireAccountSlot(ctx, 701, requests)
+	require.NoError(t, err)
+	require.True(t, first.Acquired, "Live occupancy must not consume split request capacity")
+	second, err := concurrency.AcquireAccountSlot(ctx, 701, requests)
+	require.NoError(t, err)
+	require.True(t, second.Acquired)
+	third, err := concurrency.AcquireAccountSlot(ctx, 701, requests)
+	require.NoError(t, err)
+	require.False(t, third.Acquired, "the third ordinary request must hit the request cap")
+
+	first.ReleaseFunc()
+	second.ReleaseFunc()
+}
+
+func TestAccountOnlyAdmissionRejectsLiveClass(t *testing.T) {
+	ctx := context.Background()
+	mini := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mini.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	cache := &concurrencyCache{rdb: rdb, slotTTLSeconds: 900}
+	live, requests := 4, 2
+	require.NoError(t, cache.PublishAccountConcurrencyPolicy(ctx, 711, service.ConcurrencyPolicy{
+		Live: &live, Request: &requests,
+	}, 1))
+
+	invalid := service.AccountConcurrencyAdmissionRequest{
+		AccountID: 711, Class: service.ConcurrencyClassLive, ReservationID: "account-only-live",
+	}
+	require.Error(t, invalid.Validate(), "the account-only boundary is reserved for ordinary requests")
+	_, err := cache.AcquireAccountConcurrency(ctx, invalid)
+	require.Error(t, err)
+	require.Error(t, cache.ReleaseAccountConcurrency(ctx, invalid))
+
+	// Exercise the Lua boundary directly too, so a future Go caller cannot
+	// bypass the request-only class restriction.
+	raw, err := acquireAccountConcurrencyScript.Run(ctx, rdb, []string{
+		accountConcurrencyPolicyKey(711), accountSlotKey(711), liveAccountSlotKey(711),
+	}, string(service.ConcurrencyClassLive), 900, "lua-account-only-live").Result()
+	require.NoError(t, err)
+	status, err := redisScriptInt64At(raw, 0)
+	require.NoError(t, err)
+	require.EqualValues(t, -10, status)
+}
+
+func TestOrdinaryAccountAdmission_ReverseOrderAndSharedMode(t *testing.T) {
+	ctx := context.Background()
+	mini := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mini.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	cache := &concurrencyCache{rdb: rdb, slotTTLSeconds: 900}
+	concurrency := service.NewConcurrencyService(cache)
+
+	t.Run("split_request_occupancy_does_not_consume_live_budget", func(t *testing.T) {
+		live, requests := 4, 2
+		policy := service.ConcurrencyPolicy{Live: &live, Request: &requests}
+		require.NoError(t, cache.PublishAccountConcurrencyPolicy(ctx, 702, policy, 1))
+
+		requestLeases := make([]*service.AcquireResult, 0, requests)
+		for i := 0; i < requests; i++ {
+			lease, err := concurrency.AcquireAccountPolicySlot(ctx, 702, service.ConcurrencyClassRequest, 999)
+			require.NoError(t, err)
+			require.True(t, lease.Acquired)
+			requestLeases = append(requestLeases, lease)
+		}
+		for i := 0; i < live; i++ {
+			require.NoError(t, rdb.ZAdd(ctx, liveAccountSlotKey(702), redis.Z{
+				Score: float64(time.Now().Unix()), Member: "reverse-live-" + string(rune('a'+i)),
+			}).Err())
+		}
+
+		requestLease, err := concurrency.AcquireAccountPolicySlot(ctx, 702, service.ConcurrencyClassRequest, 999)
+		require.NoError(t, err)
+		require.False(t, requestLease.Acquired)
+		require.Equal(t, service.ConcurrencyClassRequest, requestLease.CapacityError.Class)
+		require.Equal(t, "account", requestLease.CapacityError.Scope)
+		for _, lease := range requestLeases {
+			lease.ReleaseFunc()
+		}
+		require.NoError(t, rdb.Del(ctx, liveAccountSlotKey(702)).Err())
+	})
+
+	t.Run("shared_mode_keeps_combined_cap", func(t *testing.T) {
+		require.NoError(t, cache.PublishAccountConcurrencyPolicy(ctx, 703, service.ConcurrencyPolicy{Shared: 4}, 1))
+		for i := 0; i < 2; i++ {
+			require.NoError(t, rdb.ZAdd(ctx, liveAccountSlotKey(703), redis.Z{
+				Score: float64(time.Now().Unix()), Member: "shared-live-" + string(rune('a'+i)),
+			}).Err())
+		}
+		requestLeases := make([]*service.AcquireResult, 0, 2)
+		for i := 0; i < 2; i++ {
+			lease, err := concurrency.AcquireAccountPolicySlot(ctx, 703, service.ConcurrencyClassRequest, 0)
+			require.NoError(t, err)
+			require.True(t, lease.Acquired)
+			requestLeases = append(requestLeases, lease)
+		}
+		denied, err := concurrency.AcquireAccountPolicySlot(ctx, 703, service.ConcurrencyClassRequest, 0)
+		require.NoError(t, err)
+		require.False(t, denied.Acquired, "shared mode must count request plus Live occupancy")
+
+		for _, lease := range requestLeases {
+			lease.ReleaseFunc()
+		}
+		require.NoError(t, rdb.Del(ctx, liveAccountSlotKey(703)).Err())
+	})
+}
+
+func TestOrdinaryAccountAdmission_CurrentAuthorityOverridesStaleUnlimitedAndSharedSnapshots(t *testing.T) {
+	ctx := context.Background()
+	mini := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mini.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	cache := &concurrencyCache{rdb: rdb, slotTTLSeconds: 900}
+	concurrency := service.NewConcurrencyService(cache)
+
+	// The caller still carries the old shared/unlimited snapshot and passes zero
+	// as its legacy max. The script must use the acknowledged split authority.
+	require.NoError(t, cache.PublishAccountConcurrencyPolicy(ctx, 704, service.ConcurrencyPolicy{Shared: -1}, 1))
+	first, err := concurrency.AcquireAccountPolicySlot(ctx, 704, service.ConcurrencyClassRequest, 0)
+	require.NoError(t, err)
+	require.True(t, first.Acquired)
+	live, requests := 4, 2
+	require.NoError(t, cache.PublishAccountConcurrencyPolicy(ctx, 704, service.ConcurrencyPolicy{Live: &live, Request: &requests}, 2))
+	second, err := concurrency.AcquireAccountPolicySlot(ctx, 704, service.ConcurrencyClassRequest, 0)
+	require.NoError(t, err)
+	require.True(t, second.Acquired)
+	third, err := concurrency.AcquireAccountPolicySlot(ctx, 704, service.ConcurrencyClassRequest, 0)
+	require.NoError(t, err)
+	require.False(t, third.Acquired, "stale unlimited caller must not bypass the published request cap")
+	first.ReleaseFunc()
+	second.ReleaseFunc()
+
+	// The reverse transition also uses the current mode and cap, rather than a
+	// stale split request limit supplied by the scheduler snapshot.
+	live, requests = 4, 2
+	require.NoError(t, cache.PublishAccountConcurrencyPolicy(ctx, 705, service.ConcurrencyPolicy{Live: &live, Request: &requests}, 1))
+	requestLeases := make([]*service.AcquireResult, 0, requests)
+	for i := 0; i < requests; i++ {
+		lease, err := concurrency.AcquireAccountPolicySlot(ctx, 705, service.ConcurrencyClassRequest, 2)
+		require.NoError(t, err)
+		require.True(t, lease.Acquired)
+		requestLeases = append(requestLeases, lease)
+	}
+	require.NoError(t, cache.PublishAccountConcurrencyPolicy(ctx, 705, service.ConcurrencyPolicy{Shared: 3}, 2))
+	thirdShared, err := concurrency.AcquireAccountPolicySlot(ctx, 705, service.ConcurrencyClassRequest, 0)
+	require.NoError(t, err)
+	require.True(t, thirdShared.Acquired, "current shared cap should replace the stale split request cap")
+	fourthShared, err := concurrency.AcquireAccountPolicySlot(ctx, 705, service.ConcurrencyClassRequest, 0)
+	require.NoError(t, err)
+	require.False(t, fourthShared.Acquired)
+	for _, lease := range requestLeases {
+		lease.ReleaseFunc()
+	}
+	thirdShared.ReleaseFunc()
+}
+
+func TestOrdinaryAccountAdmission_FailsClosedForMissingOrMalformedAuthority(t *testing.T) {
+	ctx := context.Background()
+	mini := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mini.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	cache := &concurrencyCache{rdb: rdb, slotTTLSeconds: 900}
+	concurrency := service.NewConcurrencyService(cache)
+
+	_, err := concurrency.AcquireAccountPolicySlot(ctx, 706, service.ConcurrencyClassRequest, 0)
+	require.ErrorIs(t, err, service.ErrConcurrencyPolicyAdmissionUnavailable)
+	require.Equal(t, int64(0), mustZCard(t, rdb, accountSlotKey(706)))
+
+	live, requests := 4, 2
+	require.NoError(t, cache.PublishAccountConcurrencyPolicy(ctx, 706, service.ConcurrencyPolicy{Live: &live, Request: &requests}, 1))
+	mini.HSet(accountConcurrencyPolicyKey(706), "mode", "split", "shared", "", "live", "4", "request", "not-an-integer")
+	_, err = concurrency.AcquireAccountPolicySlot(ctx, 706, service.ConcurrencyClassRequest, 0)
+	require.ErrorIs(t, err, service.ErrConcurrencyPolicyAdmissionUnavailable)
+	require.Equal(t, int64(0), mustZCard(t, rdb, accountSlotKey(706)))
+}
+
 func TestSplitConcurrency_UserBudgetSpansAccountsAndAPIKeys(t *testing.T) {
 	mini := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mini.Addr()})

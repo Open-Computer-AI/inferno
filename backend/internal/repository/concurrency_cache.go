@@ -108,6 +108,76 @@ var (
 		return {0, now}
 	`)
 
+	// acquireAccountConcurrencyScript is the ordinary account-only admission
+	// fence. It intentionally does not touch user or API-key lease sets because
+	// ordinary gateway callers already own the user lease. The policy hash is
+	// read inside the same Redis operation as cleanup, counting and ZADD, so an
+	// acknowledged publication linearizes before every later admission. The
+	// caller's cached max/generation is therefore not an authority and cannot
+	// make a published split request budget unlimited.
+	acquireAccountConcurrencyScript = redis.NewScript(`
+		redis.replicate_commands()
+		local policyKey = KEYS[1]
+		local regularKey = KEYS[2]
+		local liveKey = KEYS[3]
+		local class = ARGV[1]
+		local ttl = tonumber(ARGV[2])
+		local reservationID = ARGV[3]
+		local now = tonumber(redis.call('TIME')[1])
+		if class ~= 'request' then return {-10} end
+
+		local rawGeneration = redis.call('HGET', policyKey, 'generation')
+		local mode = redis.call('HGET', policyKey, 'mode')
+		local shared = redis.call('HGET', policyKey, 'shared')
+		local live = redis.call('HGET', policyKey, 'live')
+		local request = redis.call('HGET', policyKey, 'request')
+		local generation = tonumber(rawGeneration or '')
+		if rawGeneration == false or mode == false or shared == false or live == false or request == false
+			or generation == nil or generation < 0 or math.floor(generation) ~= generation then
+			return {-10}
+		end
+
+		local limit
+		local sharedMode = false
+		if mode == 'shared' then
+			limit = tonumber(shared)
+			if live ~= '' or request ~= '' or limit == nil or math.floor(limit) ~= limit then
+				return {-10}
+			end
+			sharedMode = true
+		elseif mode == 'split' then
+			local liveLimit = tonumber(live)
+			local requestLimit = tonumber(request)
+			if shared ~= '' or liveLimit == nil or requestLimit == nil
+				or math.floor(liveLimit) ~= liveLimit or math.floor(requestLimit) ~= requestLimit
+				or liveLimit <= 0 or requestLimit <= 0 then
+				return {-10}
+			end
+			limit = requestLimit
+		else
+			return {-10}
+		end
+
+		redis.call('ZREMRANGEBYSCORE', regularKey, '-inf', now - ttl)
+		redis.call('ZREMRANGEBYSCORE', liveKey, '-inf', now - 60)
+		local requestCount = redis.call('ZCARD', regularKey)
+		local liveCount = redis.call('ZCARD', liveKey)
+		local regularOwner = redis.call('ZSCORE', regularKey, reservationID)
+		if regularOwner ~= false then
+			redis.call('ZADD', regularKey, now, reservationID)
+			redis.call('EXPIRE', regularKey, ttl)
+			return {1, '', requestCount, liveCount, now}
+		end
+		local count = requestCount
+		if sharedMode then count = count + liveCount end
+		if limit > 0 and count >= limit then
+			return {0, 'account', requestCount, liveCount, now}
+		end
+		redis.call('ZADD', regularKey, now, reservationID)
+		redis.call('EXPIRE', regularKey, ttl)
+		return {1, '', requestCount + 1, liveCount, now}
+	`)
+
 	// publishConcurrencyPolicyScript stores one complete policy document only
 	// when its generation is newer than the authoritative Redis document. Equal
 	// generations are idempotent only when every value matches; this prevents a
@@ -471,10 +541,15 @@ var (
 		local live = redis.call('HGET', policyKey, 'live')
 		local request = redis.call('HGET', policyKey, 'request')
 		local generation = tonumber(rawGeneration or '')
-		if generation == nil or generation < 0 or math.floor(generation) ~= generation or generation ~= expectedGeneration
-			or mode == false or shared == false or live == false or request == false then
+		if rawGeneration == false or mode == false or shared == false or live == false or request == false
+			or generation == nil or generation < 0 or math.floor(generation) ~= generation then
 			return {-10}
 		end
+		-- -11 is reserved for a valid authority whose generation is newer than
+		-- the caller's snapshot. Keeping it distinct from malformed/missing
+		-- authority lets the gateway reload once instead of retrying the same
+		-- stale policy forever.
+		if generation ~= expectedGeneration then return {-11} end
 		local limit
 		local sharedMode
 		if mode == 'shared' then
@@ -817,6 +892,177 @@ func (c *concurrencyCache) PublishUserConcurrencyPolicy(ctx context.Context, use
 		return fmt.Errorf("user ID must be positive")
 	}
 	return c.publishConcurrencyPolicy(ctx, userConcurrencyPolicyKey(userID), policy, generation)
+}
+
+// GetPublishedUserConcurrencyPolicy reads one complete Redis hash. HGetAll is
+// a single Redis command, so a policy publication implemented by HSET in Lua
+// is observed as one complete document rather than a mix of generations.
+func (c *concurrencyCache) GetPublishedUserConcurrencyPolicy(ctx context.Context, userID int64) (service.ConcurrencyPolicy, int64, error) {
+	if userID <= 0 {
+		return service.ConcurrencyPolicy{}, 0, service.ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	if c == nil || c.rdb == nil {
+		return service.ConcurrencyPolicy{}, 0, service.ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	values, err := c.rdb.HGetAll(ctx, userConcurrencyPolicyKey(userID)).Result()
+	if err != nil {
+		return service.ConcurrencyPolicy{}, 0, fmt.Errorf("read published user concurrency policy: %w", err)
+	}
+	policy, generation, err := parsePublishedConcurrencyPolicy(values)
+	if err != nil {
+		return service.ConcurrencyPolicy{}, 0, fmt.Errorf("%w: %v", service.ErrConcurrencyPolicyAdmissionUnavailable, err)
+	}
+	return policy, generation, nil
+}
+
+func parsePublishedConcurrencyPolicy(values map[string]string) (service.ConcurrencyPolicy, int64, error) {
+	get := func(field string) (string, error) {
+		value, ok := values[field]
+		if !ok {
+			return "", fmt.Errorf("published policy field %q is missing", field)
+		}
+		return value, nil
+	}
+	parseInteger := func(field, value string) (int, error) {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return 0, fmt.Errorf("published policy field %q is not an integer", field)
+		}
+		return parsed, nil
+	}
+	generationValue, err := get("generation")
+	if err != nil {
+		return service.ConcurrencyPolicy{}, 0, err
+	}
+	generation, err := strconv.ParseInt(generationValue, 10, 64)
+	if err != nil || generation < 0 {
+		return service.ConcurrencyPolicy{}, 0, fmt.Errorf("published policy generation is invalid")
+	}
+	mode, err := get("mode")
+	if err != nil {
+		return service.ConcurrencyPolicy{}, 0, err
+	}
+	sharedValue, err := get("shared")
+	if err != nil {
+		return service.ConcurrencyPolicy{}, 0, err
+	}
+	liveValue, err := get("live")
+	if err != nil {
+		return service.ConcurrencyPolicy{}, 0, err
+	}
+	requestValue, err := get("request")
+	if err != nil {
+		return service.ConcurrencyPolicy{}, 0, err
+	}
+
+	switch mode {
+	case service.ConcurrencyModeShared:
+		if liveValue != "" || requestValue != "" {
+			return service.ConcurrencyPolicy{}, 0, fmt.Errorf("shared published policy contains split limits")
+		}
+		shared, err := parseInteger("shared", sharedValue)
+		if err != nil {
+			return service.ConcurrencyPolicy{}, 0, err
+		}
+		return service.ConcurrencyPolicy{Shared: shared}, generation, nil
+	case service.ConcurrencyModeSplit:
+		if sharedValue != "" {
+			return service.ConcurrencyPolicy{}, 0, fmt.Errorf("split published policy contains shared limit")
+		}
+		live, err := parseInteger("live", liveValue)
+		if err != nil || live <= 0 {
+			return service.ConcurrencyPolicy{}, 0, fmt.Errorf("published policy live limit is invalid")
+		}
+		requests, err := parseInteger("request", requestValue)
+		if err != nil || requests <= 0 {
+			return service.ConcurrencyPolicy{}, 0, fmt.Errorf("published policy request limit is invalid")
+		}
+		return service.ConcurrencyPolicy{Live: &live, Request: &requests}, generation, nil
+	default:
+		return service.ConcurrencyPolicy{}, 0, fmt.Errorf("published policy mode %q is invalid", mode)
+	}
+}
+
+func (c *concurrencyCache) AcquireAccountConcurrency(ctx context.Context, request service.AccountConcurrencyAdmissionRequest) (service.ConcurrencyAdmissionResult, error) {
+	if err := request.Validate(); err != nil {
+		return service.ConcurrencyAdmissionResult{}, err
+	}
+	if c == nil || c.rdb == nil {
+		return service.ConcurrencyAdmissionResult{}, service.ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	regularTTL := c.slotTTLSeconds
+	if regularTTL <= 0 {
+		regularTTL = defaultSlotTTLMinutes * 60
+	}
+	raw, err := acquireAccountConcurrencyScript.Run(ctx, c.rdb, []string{
+		accountConcurrencyPolicyKey(request.AccountID),
+		accountSlotKey(request.AccountID),
+		liveAccountSlotKey(request.AccountID),
+	}, string(request.Class), regularTTL, request.ReservationID).Result()
+	if err != nil {
+		return service.ConcurrencyAdmissionResult{}, err
+	}
+	result, now, err := parseAccountConcurrencyAdmissionResult(raw)
+	if err != nil {
+		return service.ConcurrencyAdmissionResult{}, err
+	}
+	if result.Acquired && request.Class == service.ConcurrencyClassRequest {
+		c.touchActiveIndexAt(ctx, accountActiveIndexKey, request.AccountID, now+int64(regularTTL))
+	}
+	return result, nil
+}
+
+func parseAccountConcurrencyAdmissionResult(raw any) (service.ConcurrencyAdmissionResult, int64, error) {
+	status, err := redisScriptInt64At(raw, 0)
+	if err != nil {
+		return service.ConcurrencyAdmissionResult{}, 0, fmt.Errorf("parse account concurrency admission status: %w", err)
+	}
+	if status < 0 {
+		switch status {
+		case -12:
+			return service.ConcurrencyAdmissionResult{}, 0, fmt.Errorf("account concurrency reservation ownership conflict")
+		default:
+			return service.ConcurrencyAdmissionResult{}, 0, fmt.Errorf("%w: account Redis authority code %d", service.ErrConcurrencyPolicyAdmissionUnavailable, status)
+		}
+	}
+	if status > 1 {
+		return service.ConcurrencyAdmissionResult{}, 0, fmt.Errorf("unexpected account concurrency admission status %d", status)
+	}
+	scope, scopeErr := redisScriptStringAt(raw, 1)
+	if scopeErr != nil {
+		return service.ConcurrencyAdmissionResult{}, 0, fmt.Errorf("parse account concurrency admission scope: %w", scopeErr)
+	}
+	requestCount, err := redisScriptInt64At(raw, 2)
+	if err != nil {
+		return service.ConcurrencyAdmissionResult{}, 0, err
+	}
+	liveCount, err := redisScriptInt64At(raw, 3)
+	if err != nil {
+		return service.ConcurrencyAdmissionResult{}, 0, err
+	}
+	now, err := redisScriptInt64At(raw, 4)
+	if err != nil {
+		return service.ConcurrencyAdmissionResult{}, 0, err
+	}
+	return service.ConcurrencyAdmissionResult{
+		Acquired:    status == 1,
+		DeniedScope: scope,
+		Account:     concurrencySnapshot(requestCount, liveCount),
+	}, now, nil
+}
+
+func (c *concurrencyCache) ReleaseAccountConcurrency(ctx context.Context, request service.AccountConcurrencyAdmissionRequest) error {
+	if err := request.Validate(); err != nil {
+		return err
+	}
+	if c == nil || c.rdb == nil {
+		return service.ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	if err := c.rdb.ZRem(ctx, accountSlotKey(request.AccountID), request.ReservationID).Err(); err != nil {
+		return err
+	}
+	c.refreshAccountActiveIndex(ctx, request.AccountID)
+	return nil
 }
 
 func (c *concurrencyCache) AcquireConcurrency(ctx context.Context, request service.ConcurrencyAdmissionRequest) (service.ConcurrencyAdmissionResult, error) {

@@ -147,6 +147,86 @@ func (s *splitConcurrencyRedisSuite) assertParallelCaps(
 	}, time.Second, 10*time.Millisecond)
 }
 
+func (s *splitConcurrencyRedisSuite) TestSplitConcurrencyRedis_OrdinaryAccountAdmissionRaceWithLiveOccupancy() {
+	accountID, userID := int64(7401), int64(7402)
+	policy := s.publishSplitPolicy(accountID, userID)
+
+	var liveAttempts []splitAdmissionAttempt
+	for i := 0; i < 4; i++ {
+		request := service.ConcurrencyAdmissionRequest{
+			AccountID: accountID, AccountPolicy: policy, AccountGeneration: 1,
+			UserID: userID, UserPolicy: policy, UserGeneration: 1,
+			APIKeyID: accountID*1000 + int64(i), Class: service.ConcurrencyClassLive,
+			ReservationID: "account-only-race-live-" + strconv.Itoa(i),
+		}
+		result, err := s.cache.AcquireConcurrency(s.ctx, request)
+		require.NoError(s.T(), err)
+		require.True(s.T(), result.Acquired)
+		liveAttempts = append(liveAttempts, splitAdmissionAttempt{request: request, result: result})
+	}
+
+	userRequests := make([]service.UserConcurrencyAdmissionRequest, 0, 2)
+	for i := 0; i < 2; i++ {
+		request := service.UserConcurrencyAdmissionRequest{
+			UserID: userID, UserPolicy: policy, UserGeneration: 1,
+			Class: service.ConcurrencyClassRequest, ReservationID: "account-only-race-user-" + strconv.Itoa(i),
+		}
+		result, err := s.cache.AcquireUserConcurrency(s.ctx, request)
+		require.NoError(s.T(), err)
+		require.True(s.T(), result.Acquired)
+		userRequests = append(userRequests, request)
+	}
+
+	type attempt struct {
+		request service.AccountConcurrencyAdmissionRequest
+		result  service.ConcurrencyAdmissionResult
+		err     error
+	}
+	const contenders = 32
+	attempts := make(chan attempt, contenders)
+	var wg sync.WaitGroup
+	for i := 0; i < contenders; i++ {
+		i := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			request := service.AccountConcurrencyAdmissionRequest{
+				AccountID: accountID, Class: service.ConcurrencyClassRequest,
+				ReservationID: "account-only-race-request-" + strconv.Itoa(i),
+			}
+			result, err := s.cache.AcquireAccountConcurrency(s.ctx, request)
+			attempts <- attempt{request: request, result: result, err: err}
+		}()
+	}
+	wg.Wait()
+	close(attempts)
+
+	results := make([]attempt, 0, contenders)
+	acquired := 0
+	for current := range attempts {
+		require.NoError(s.T(), current.err)
+		if current.result.Acquired {
+			acquired++
+		}
+		results = append(results, current)
+	}
+	require.Equal(s.T(), 2, acquired, "real Redis must atomically enforce the request class cap")
+	require.Equal(s.T(), int64(2), s.rdb.ZCard(s.ctx, accountSlotKey(accountID)).Val())
+	require.Equal(s.T(), int64(4), s.rdb.ZCard(s.ctx, liveAccountSlotKey(accountID)).Val())
+	require.Equal(s.T(), int64(2), s.rdb.ZCard(s.ctx, userSlotKey(userID)).Val())
+	require.Equal(s.T(), int64(4), s.rdb.ZCard(s.ctx, liveUserSlotKey(userID)).Val())
+
+	for _, current := range results {
+		if current.result.Acquired {
+			require.NoError(s.T(), s.cache.ReleaseAccountConcurrency(s.ctx, current.request))
+		}
+	}
+	for _, request := range userRequests {
+		require.NoError(s.T(), s.cache.ReleaseUserConcurrency(s.ctx, request))
+	}
+	s.releaseAttempts(liveAttempts)
+}
+
 func (s *splitConcurrencyRedisSuite) TestSplitConcurrencyRedis_ParallelCaps_RequestFirst() {
 	s.assertParallelCaps(7101, 7102, service.ConcurrencyClassRequest)
 }

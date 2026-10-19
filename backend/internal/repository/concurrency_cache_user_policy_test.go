@@ -4,6 +4,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -91,6 +92,28 @@ func TestUserPolicyAdmission_RefreshPreservesLeaseAcrossGenerationEdit(t *testin
 	require.NoError(t, err)
 	require.True(t, refreshed)
 	require.NoError(t, cache.ReleaseUserConcurrency(ctx, request))
+}
+
+func TestUserPolicyAdmission_StaleGenerationUsesDistinctSentinel(t *testing.T) {
+	mini := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mini.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	cache := &concurrencyCache{rdb: rdb, slotTTLSeconds: 900}
+	ctx := context.Background()
+	live, requests := 4, 2
+	policy := service.ConcurrencyPolicy{Live: &live, Request: &requests}
+	require.NoError(t, cache.PublishUserConcurrencyPolicy(ctx, 603, policy, 2))
+
+	_, err := cache.AcquireUserConcurrency(ctx, service.UserConcurrencyAdmissionRequest{
+		UserID:         603,
+		UserPolicy:     policy,
+		UserGeneration: 1,
+		Class:          service.ConcurrencyClassRequest,
+		ReservationID:  "stale-user-sentinel",
+	})
+	require.Error(t, err)
+	require.True(t, errors.Is(err, service.ErrConcurrencyPolicyAdmissionStale), "valid newer authority must be distinguishable from malformed authority")
+	require.False(t, errors.Is(err, service.ErrConcurrencyPolicyAdmissionUnavailable))
 }
 
 func intPtrForUserPolicyTest(value int) *int {
