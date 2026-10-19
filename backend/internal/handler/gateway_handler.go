@@ -227,7 +227,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 
 	// 1. 首先获取用户并发槽位
-	userReleaseFunc, err := h.concurrencyHelper.AcquireUserSlotWithWait(c, subject.UserID, subject.Concurrency, reqStream, &streamStarted)
+	userReleaseFunc, err := h.concurrencyHelper.AcquireUserPolicySlotWithWait(c, subject.UserID, concurrencyPolicyFromAuthSubject(subject), subject.ConcurrencyPolicyGeneration, reqStream, &streamStarted)
 	if err != nil {
 		reqLog.Warn("gateway.user_slot_acquire_failed", zap.Error(err))
 		h.handleConcurrencyError(c, err, "user", streamStarted)
@@ -1853,8 +1853,53 @@ func (h *GatewayHandler) calculateSubscriptionRemaining(group *service.Group, su
 
 // handleConcurrencyError handles concurrency-related acquire errors.
 func (h *GatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotType string, streamStarted bool) {
+	if capacityErr := concurrencyCapacityErrorFrom(err); capacityErr != nil {
+		h.handleConcurrencyCapacityError(c, capacityErr, streamStarted)
+		return
+	}
 	status, errType, message := concurrencyErrorResponse(err, slotType)
 	h.handleStreamingAwareError(c, status, errType, message, streamStarted)
+}
+
+func (h *GatewayHandler) handleConcurrencyCapacityError(c *gin.Context, capacityErr *service.ConcurrencyCapacityError, streamStarted bool) {
+	message := "Concurrency capacity exhausted"
+	if capacityErr != nil {
+		message = capacityErr.Error()
+	}
+	if streamStarted {
+		service.MarkOpsStreamError(c, "rate_limit_error", message, http.StatusTooManyRequests)
+		if inboundIsResponses(c) {
+			if writeResponsesFailedSSEWithCapacity(c, "rate_limit_error", message, capacityErr) {
+				return
+			}
+		}
+		flusher, ok := c.Writer.(http.Flusher)
+		if !ok {
+			return
+		}
+		errorBody := gin.H{"type": "rate_limit_error", "code": "concurrency_capacity", "message": message}
+		for key, value := range concurrencyCapacityMetadata(capacityErr) {
+			errorBody[key] = value
+		}
+		payload, err := json.Marshal(gin.H{"type": "error", "error": errorBody})
+		if err != nil {
+			payload = []byte(`{"type":"error","error":{"type":"rate_limit_error","message":"Concurrency capacity exhausted"}}`)
+		}
+		if _, err := fmt.Fprintf(c.Writer, "data: %s\n\n", payload); err != nil {
+			_ = c.Error(err)
+		}
+		flusher.Flush()
+		return
+	}
+	errorBody := gin.H{
+		"type":    "rate_limit_error",
+		"code":    "concurrency_capacity",
+		"message": message,
+	}
+	for key, value := range concurrencyCapacityMetadata(capacityErr) {
+		errorBody[key] = value
+	}
+	c.JSON(http.StatusTooManyRequests, gin.H{"error": errorBody})
 }
 
 func (h *GatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, platform string, streamStarted bool) {

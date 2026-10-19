@@ -88,7 +88,14 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 		return
 	}
 
-	subject, _ := middleware2.GetAuthSubjectFromContext(c)
+	subject, subjectOK := middleware2.GetAuthSubjectFromContext(c)
+	if !subjectOK {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{
+			"type":    "api_error",
+			"message": "User context not found",
+		}})
+		return
+	}
 	reqLog := requestLogger(c, "handler.gateway.web_search")
 	// Audit user search query before upstream Grok web_search traffic.
 	auditBody, _ := json.Marshal(map[string]any{
@@ -111,6 +118,23 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 		}
 		c.JSON(status, gin.H{"error": gin.H{"type": code, "message": msg}})
 		return
+	}
+
+	userReleaseFunc, userSlotErr := h.concurrencyHelper.AcquireUserPolicySlotWithWait(
+		c,
+		subject.UserID,
+		concurrencyPolicyFromAuthSubject(subject),
+		subject.ConcurrencyPolicyGeneration,
+		false,
+		nil,
+	)
+	if userSlotErr != nil {
+		reqLog.Warn("gateway.web_search.user_slot_acquire_failed", zap.Error(userSlotErr))
+		h.handleConcurrencyError(c, userSlotErr, "user", false)
+		return
+	}
+	if userReleaseFunc != nil {
+		defer userReleaseFunc()
 	}
 
 	// Use exactly the same scheduling as other requests (SelectAccountWithLoadAwareness handles load, rate limit, sticky, etc.)

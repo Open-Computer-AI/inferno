@@ -43,6 +43,12 @@ type Account struct {
 	ProxyFallbackOriginID *int64 `json:"proxy_fallback_origin_id,omitempty"`
 	// Concurrency holds the value of the "concurrency" field.
 	Concurrency int `json:"concurrency,omitempty"`
+	// LiveConcurrency holds the value of the "live_concurrency" field.
+	LiveConcurrency *int `json:"live_concurrency,omitempty"`
+	// RequestConcurrency holds the value of the "request_concurrency" field.
+	RequestConcurrency *int `json:"request_concurrency,omitempty"`
+	// ConcurrencyPolicyGeneration holds the value of the "concurrency_policy_generation" field.
+	ConcurrencyPolicyGeneration int64 `json:"concurrency_policy_generation,omitempty"`
 	// LoadFactor holds the value of the "load_factor" field.
 	LoadFactor *int `json:"load_factor,omitempty"`
 	// Priority holds the value of the "priority" field.
@@ -175,7 +181,7 @@ func (*Account) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case account.FieldRateMultiplier:
 			values[i] = new(sql.NullFloat64)
-		case account.FieldID, account.FieldProxyID, account.FieldProxyFallbackOriginID, account.FieldConcurrency, account.FieldLoadFactor, account.FieldPriority, account.FieldParentAccountID:
+		case account.FieldID, account.FieldProxyID, account.FieldProxyFallbackOriginID, account.FieldConcurrency, account.FieldLiveConcurrency, account.FieldRequestConcurrency, account.FieldConcurrencyPolicyGeneration, account.FieldLoadFactor, account.FieldPriority, account.FieldParentAccountID:
 			values[i] = new(sql.NullInt64)
 		case account.FieldName, account.FieldNotes, account.FieldPlatform, account.FieldType, account.FieldStatus, account.FieldErrorMessage, account.FieldTempUnschedulableReason, account.FieldSessionWindowStatus, account.FieldQuotaDimension:
 			values[i] = new(sql.NullString)
@@ -281,6 +287,26 @@ func (_m *Account) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field concurrency", values[i])
 			} else if value.Valid {
 				_m.Concurrency = int(value.Int64)
+			}
+		case account.FieldLiveConcurrency:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field live_concurrency", values[i])
+			} else if value.Valid {
+				_m.LiveConcurrency = new(int)
+				*_m.LiveConcurrency = int(value.Int64)
+			}
+		case account.FieldRequestConcurrency:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field request_concurrency", values[i])
+			} else if value.Valid {
+				_m.RequestConcurrency = new(int)
+				*_m.RequestConcurrency = int(value.Int64)
+			}
+		case account.FieldConcurrencyPolicyGeneration:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field concurrency_policy_generation", values[i])
+			} else if value.Valid {
+				_m.ConcurrencyPolicyGeneration = value.Int64
 			}
 		case account.FieldLoadFactor:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -518,6 +544,19 @@ func (_m *Account) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("concurrency=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Concurrency))
+	builder.WriteString(", ")
+	if v := _m.LiveConcurrency; v != nil {
+		builder.WriteString("live_concurrency=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.RequestConcurrency; v != nil {
+		builder.WriteString("request_concurrency=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("concurrency_policy_generation=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ConcurrencyPolicyGeneration))
 	builder.WriteString(", ")
 	if v := _m.LoadFactor; v != nil {
 		builder.WriteString("load_factor=")

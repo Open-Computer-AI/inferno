@@ -1608,6 +1608,15 @@
           </div>
         </div>
       </div>
+      <ConcurrencyPolicyFields
+        v-if="canEditConcurrencyPolicy"
+        :mode="concurrencyMode"
+        :live="liveConcurrency"
+        :requests="requestConcurrency"
+        @update:mode="updateConcurrencyMode"
+        @update:live="updateLiveConcurrency"
+        @update:requests="updateRequestConcurrency"
+      />
       <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <label class="input-label">{{ t('admin.accounts.expiresAt') }}</label>
         <input v-model="expiresAtInput" type="datetime-local" class="input" />
@@ -2881,7 +2890,8 @@ import type {
   OpenAICompactMode,
   OpenAIResponsesMode,
   OpenAIEndpointCapability,
-  OllamaCloudUsageState
+  OllamaCloudUsageState,
+  ConcurrencyMode
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -2894,6 +2904,7 @@ import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
+import ConcurrencyPolicyFields from '@/components/admin/ConcurrencyPolicyFields.vue'
 import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
 import CnBaseUrlPresets from '@/components/account/CnBaseUrlPresets.vue'
 import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
@@ -2945,6 +2956,13 @@ import {
   splitModelMappingObject,
   isValidWildcardPattern
 } from '@/composables/useModelWhitelist'
+import {
+  buildConcurrencyPolicy,
+  concurrencyInputValue,
+  getConcurrencyMode,
+  isOpenAILiveConcurrencyEligible,
+  type ConcurrencyLimitInput
+} from '@/utils/concurrencyPolicy'
 
 interface Props {
   show: boolean
@@ -2963,6 +2981,9 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const browserTimeZone = getBrowserTimeZone()
+const canEditConcurrencyPolicy = computed(() =>
+  isOpenAILiveConcurrencyEligible(props.account)
+)
 
 // Spark 影子账号(parent_account_id 非空):代理恒继承母账号,不可独立编辑(外审 B/P1),
 // 故隐藏代理选择器。
@@ -3599,6 +3620,24 @@ const form = reactive({
   expires_at: null as number | null
 })
 
+const concurrencyMode = ref<ConcurrencyMode>('shared')
+const liveConcurrency = ref<ConcurrencyLimitInput>('')
+const requestConcurrency = ref<ConcurrencyLimitInput>('')
+const concurrencyPolicyDirty = ref(false)
+
+const updateConcurrencyMode = (value: ConcurrencyMode) => {
+  concurrencyMode.value = value
+  concurrencyPolicyDirty.value = true
+}
+const updateLiveConcurrency = (value: string) => {
+  liveConcurrency.value = value
+  concurrencyPolicyDirty.value = true
+}
+const updateRequestConcurrency = (value: string) => {
+  requestConcurrency.value = value
+  concurrencyPolicyDirty.value = true
+}
+
 const handleUpstreamBillingRateSyncChange = (enabled: boolean) => {
   upstreamBillingRateSyncEnabled.value = enabled
   if (enabled) {
@@ -3699,6 +3738,10 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   form.notes = newAccount.notes || ''
   form.proxy_id = newAccount.proxy_id
   form.concurrency = newAccount.concurrency
+  concurrencyMode.value = getConcurrencyMode(newAccount)
+  liveConcurrency.value = concurrencyInputValue(newAccount.live_concurrency)
+  requestConcurrency.value = concurrencyInputValue(newAccount.request_concurrency)
+  concurrencyPolicyDirty.value = false
   form.load_factor = newAccount.load_factor ?? null
   form.priority = newAccount.priority
   form.rate_multiplier = newAccount.rate_multiplier ?? 1
@@ -4647,6 +4690,16 @@ const handleSubmit = async () => {
 	}
 
   const updatePayload: Record<string, unknown> = { ...form }
+  const concurrencyPolicy = concurrencyPolicyDirty.value && canEditConcurrencyPolicy.value
+    ? buildConcurrencyPolicy(concurrencyMode.value, liveConcurrency.value, requestConcurrency.value)
+    : undefined
+  if (concurrencyPolicyDirty.value && canEditConcurrencyPolicy.value && concurrencyPolicy === null) {
+    appStore.showError(t('admin.concurrencyPolicy.invalid'))
+    return
+  }
+  if (concurrencyPolicy) {
+    updatePayload.concurrency_policy = concurrencyPolicy
+  }
   try {
     // 后端期望 proxy_id: 0 表示清除代理，而不是 null
     if (updatePayload.proxy_id === null) {

@@ -3,12 +3,57 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGoogleConcurrencyCapacityErrorAddsMetadataWithoutChangingGoogleShape(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini-test:generateContent", nil)
+	capacityErr := &service.ConcurrencyCapacityError{
+		Class: service.ConcurrencyClassRequest, Scope: "user", Reason: "user_capacity",
+	}
+	err := &WaitQueueFullError{SlotType: "user", CapacityError: capacityErr}
+
+	googleErrorWithConcurrencyCapacity(c, http.StatusTooManyRequests, err.Error(), err)
+
+	var payload struct {
+		Error map[string]any `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.Equal(t, float64(http.StatusTooManyRequests), payload.Error["code"])
+	require.Equal(t, "RESOURCE_EXHAUSTED", payload.Error["status"])
+	require.Equal(t, "request", payload.Error["concurrency_class"])
+	require.Equal(t, "user", payload.Error["concurrency_scope"])
+	require.Equal(t, "user_capacity", payload.Error["concurrency_reason"])
+}
+
+func TestGoogleGenericErrorDoesNotAddConcurrencyMetadata(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini-test:generateContent", nil)
+
+	googleErrorWithConcurrencyCapacity(c, http.StatusTooManyRequests, "ordinary queue busy", nil)
+
+	var payload struct {
+		Error map[string]any `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.Equal(t, float64(http.StatusTooManyRequests), payload.Error["code"])
+	require.Equal(t, "RESOURCE_EXHAUSTED", payload.Error["status"])
+	require.NotContains(t, payload.Error, "concurrency_class")
+	require.NotContains(t, payload.Error, "concurrency_scope")
+	require.NotContains(t, payload.Error, "concurrency_reason")
+}
 
 // TestGeminiV1BetaHandler_PlatformRoutingInvariant 文档化并验证 Handler 层的平台路由逻辑不变量
 // 该测试确保 gemini 和 antigravity 平台的路由逻辑符合预期

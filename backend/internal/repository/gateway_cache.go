@@ -18,6 +18,18 @@ const stickySessionPrefix = "sticky_session:"
 const openAIResponsesSessionWindowPrefix = "openai_responses_session_window:"
 const liveCallPrefix = "live:call:"
 
+const (
+	liveCallConcurrencySnapshotPresentField = "concurrency_policy_snapshot_present"
+	liveCallAccountConcurrencyField         = "account_concurrency"
+	liveCallAccountLiveConcurrencyField     = "account_live_concurrency"
+	liveCallAccountRequestConcurrencyField  = "account_request_concurrency"
+	liveCallAccountPolicyGenerationField    = "account_concurrency_policy_generation"
+	liveCallUserConcurrencyField            = "user_concurrency"
+	liveCallUserLiveConcurrencyField        = "user_live_concurrency"
+	liveCallUserRequestConcurrencyField     = "user_request_concurrency"
+	liveCallUserPolicyGenerationField       = "user_concurrency_policy_generation"
+)
+
 type gatewayCache struct {
 	rdb *redis.Client
 }
@@ -400,29 +412,52 @@ func HashLiveCallID(callID string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func formatLiveCallSnapshotPresent(present bool) string {
+	if present {
+		return "1"
+	}
+	return "0"
+}
+
+func formatOptionalLiveConcurrencyLimit(limit *int) string {
+	if limit == nil {
+		return ""
+	}
+	return strconv.Itoa(*limit)
+}
+
 func (c *gatewayCache) SaveLiveCall(ctx context.Context, record *service.LiveCallRecord, ttl time.Duration) error {
 	if record == nil || record.CallHash == "" || record.CallID == "" {
 		return fmt.Errorf("invalid live call record")
 	}
 	values := map[string]any{
-		"call_id":             record.CallID,
-		"account_id":          record.AccountID,
-		"api_key_id":          record.APIKeyID,
-		"user_id":             record.UserID,
-		"group_id":            record.GroupID,
-		"subscription_id":     record.SubscriptionID,
-		"lease_id":            record.LeaseID,
-		"model":               record.Model,
-		"created_at":          record.CreatedAt.UnixMilli(),
-		"expires_at":          record.ExpiresAt.UnixMilli(),
-		"controller":          record.Controller,
-		"controller_owner":    record.ControllerOwner,
-		"user_agent":          record.UserAgent,
-		"ip_address":          record.IPAddress,
-		"inbound_endpoint":    record.InboundEndpoint,
-		"attestation":         record.AttestationCiphertext,
-		"upstream_session_id": record.UpstreamSessionID,
-		"upstream_thread_id":  record.UpstreamThreadID,
+		"call_id":                               record.CallID,
+		"account_id":                            record.AccountID,
+		"api_key_id":                            record.APIKeyID,
+		"user_id":                               record.UserID,
+		"group_id":                              record.GroupID,
+		"subscription_id":                       record.SubscriptionID,
+		"lease_id":                              record.LeaseID,
+		"model":                                 record.Model,
+		"created_at":                            record.CreatedAt.UnixMilli(),
+		"expires_at":                            record.ExpiresAt.UnixMilli(),
+		"controller":                            record.Controller,
+		"controller_owner":                      record.ControllerOwner,
+		"user_agent":                            record.UserAgent,
+		"ip_address":                            record.IPAddress,
+		"inbound_endpoint":                      record.InboundEndpoint,
+		"attestation":                           record.AttestationCiphertext,
+		"upstream_session_id":                   record.UpstreamSessionID,
+		"upstream_thread_id":                    record.UpstreamThreadID,
+		liveCallConcurrencySnapshotPresentField: formatLiveCallSnapshotPresent(record.ConcurrencyPolicySnapshotPresent),
+		liveCallAccountConcurrencyField:         record.AccountConcurrency,
+		liveCallAccountLiveConcurrencyField:     formatOptionalLiveConcurrencyLimit(record.AccountLiveConcurrency),
+		liveCallAccountRequestConcurrencyField:  formatOptionalLiveConcurrencyLimit(record.AccountRequestConcurrency),
+		liveCallAccountPolicyGenerationField:    record.AccountConcurrencyPolicyGeneration,
+		liveCallUserConcurrencyField:            record.UserConcurrency,
+		liveCallUserLiveConcurrencyField:        formatOptionalLiveConcurrencyLimit(record.UserLiveConcurrency),
+		liveCallUserRequestConcurrencyField:     formatOptionalLiveConcurrencyLimit(record.UserRequestConcurrency),
+		liveCallUserPolicyGenerationField:       record.UserConcurrencyPolicyGeneration,
 	}
 	key := liveCallKey(record.CallHash)
 	pipe := c.rdb.TxPipeline()
@@ -446,7 +481,7 @@ func (c *gatewayCache) GetLiveCall(ctx context.Context, callHash string) (*servi
 	}
 	createdAt := time.UnixMilli(parseInt("created_at"))
 	expiresAt := time.UnixMilli(parseInt("expires_at"))
-	return &service.LiveCallRecord{
+	record := &service.LiveCallRecord{
 		CallID:                values["call_id"],
 		CallHash:              callHash,
 		AccountID:             parseInt("account_id"),
@@ -466,7 +501,135 @@ func (c *gatewayCache) GetLiveCall(ctx context.Context, callHash string) (*servi
 		AttestationCiphertext: values["attestation"],
 		UpstreamSessionID:     values["upstream_session_id"],
 		UpstreamThreadID:      values["upstream_thread_id"],
-	}, nil
+	}
+
+	snapshotFields := []string{
+		liveCallAccountConcurrencyField,
+		liveCallAccountLiveConcurrencyField,
+		liveCallAccountRequestConcurrencyField,
+		liveCallAccountPolicyGenerationField,
+		liveCallUserConcurrencyField,
+		liveCallUserLiveConcurrencyField,
+		liveCallUserRequestConcurrencyField,
+		liveCallUserPolicyGenerationField,
+	}
+	snapshotFieldsPresent := false
+	for _, field := range snapshotFields {
+		if _, ok := values[field]; ok {
+			snapshotFieldsPresent = true
+			break
+		}
+	}
+	snapshotMarker, markerPresent := values[liveCallConcurrencySnapshotPresentField]
+	if !markerPresent {
+		if snapshotFieldsPresent {
+			return nil, fmt.Errorf("malformed live call concurrency snapshot: missing presence marker")
+		}
+		return record, nil
+	}
+	if snapshotMarker != "0" && snapshotMarker != "1" {
+		return nil, fmt.Errorf("malformed live call concurrency snapshot: invalid presence marker")
+	}
+	if !snapshotFieldsPresent {
+		if snapshotMarker == "1" {
+			return nil, fmt.Errorf("malformed live call concurrency snapshot: missing fields")
+		}
+		return record, nil
+	}
+
+	parseSnapshotInt := func(field string) (int, error) {
+		value, ok := values[field]
+		if !ok || value == "" {
+			return 0, fmt.Errorf("malformed live call concurrency snapshot: missing %s", field)
+		}
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return 0, fmt.Errorf("malformed live call concurrency snapshot: invalid %s", field)
+		}
+		return parsed, nil
+	}
+	parseSnapshotOptionalInt := func(field string) (*int, error) {
+		value, ok := values[field]
+		if !ok {
+			return nil, fmt.Errorf("malformed live call concurrency snapshot: missing %s", field)
+		}
+		if value == "" {
+			return nil, nil
+		}
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return nil, fmt.Errorf("malformed live call concurrency snapshot: invalid %s", field)
+		}
+		return &parsed, nil
+	}
+	parseSnapshotInt64 := func(field string) (int64, error) {
+		value, ok := values[field]
+		if !ok || value == "" {
+			return 0, fmt.Errorf("malformed live call concurrency snapshot: missing %s", field)
+		}
+		parsed, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("malformed live call concurrency snapshot: invalid %s", field)
+		}
+		return parsed, nil
+	}
+	accountConcurrency, err := parseSnapshotInt(liveCallAccountConcurrencyField)
+	if err != nil {
+		return nil, err
+	}
+	accountLiveConcurrency, err := parseSnapshotOptionalInt(liveCallAccountLiveConcurrencyField)
+	if err != nil {
+		return nil, err
+	}
+	accountRequestConcurrency, err := parseSnapshotOptionalInt(liveCallAccountRequestConcurrencyField)
+	if err != nil {
+		return nil, err
+	}
+	accountGeneration, err := parseSnapshotInt64(liveCallAccountPolicyGenerationField)
+	if err != nil {
+		return nil, err
+	}
+	userConcurrency, err := parseSnapshotInt(liveCallUserConcurrencyField)
+	if err != nil {
+		return nil, err
+	}
+	userLiveConcurrency, err := parseSnapshotOptionalInt(liveCallUserLiveConcurrencyField)
+	if err != nil {
+		return nil, err
+	}
+	userRequestConcurrency, err := parseSnapshotOptionalInt(liveCallUserRequestConcurrencyField)
+	if err != nil {
+		return nil, err
+	}
+	userGeneration, err := parseSnapshotInt64(liveCallUserPolicyGenerationField)
+	if err != nil {
+		return nil, err
+	}
+	if err := service.ValidateConcurrencyPolicy(service.ConcurrencyPolicy{
+		Shared: accountConcurrency, Live: accountLiveConcurrency, Request: accountRequestConcurrency,
+	}); err != nil {
+		return nil, fmt.Errorf("malformed live call concurrency snapshot: invalid account policy")
+	}
+	if err := service.ValidateConcurrencyPolicy(service.ConcurrencyPolicy{
+		Shared: userConcurrency, Live: userLiveConcurrency, Request: userRequestConcurrency,
+	}); err != nil {
+		return nil, fmt.Errorf("malformed live call concurrency snapshot: invalid user policy")
+	}
+	if accountGeneration < 0 || userGeneration < 0 {
+		return nil, fmt.Errorf("malformed live call concurrency snapshot: negative policy generation")
+	}
+	if snapshotMarker == "1" {
+		record.AccountConcurrency = accountConcurrency
+		record.AccountLiveConcurrency = accountLiveConcurrency
+		record.AccountRequestConcurrency = accountRequestConcurrency
+		record.AccountConcurrencyPolicyGeneration = accountGeneration
+		record.UserConcurrency = userConcurrency
+		record.UserLiveConcurrency = userLiveConcurrency
+		record.UserRequestConcurrency = userRequestConcurrency
+		record.UserConcurrencyPolicyGeneration = userGeneration
+		record.ConcurrencyPolicySnapshotPresent = true
+	}
+	return record, nil
 }
 
 func (c *gatewayCache) ClaimLiveController(ctx context.Context, callHash, controller, owner string) (bool, error) {

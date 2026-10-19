@@ -54,6 +54,17 @@ func (User) Fields() []ent.Field {
 			Default(0),
 		field.Int("concurrency").
 			Default(5),
+		// Optional independent admission budgets. Both NULL preserves the legacy
+		// shared concurrency cap; the database migration enforces an all-or-nothing
+		// positive pair.
+		field.Int("live_concurrency").
+			Optional().
+			Nillable(),
+		field.Int("request_concurrency").
+			Optional().
+			Nillable(),
+		field.Int64("concurrency_policy_generation").
+			Default(0),
 		field.String("status").
 			MaxLen(20).
 			Default(domain.StatusActive),

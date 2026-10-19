@@ -199,6 +199,81 @@ func (_u *AccountUpdate) AddConcurrency(v int) *AccountUpdate {
 	return _u
 }
 
+// SetLiveConcurrency sets the "live_concurrency" field.
+func (_u *AccountUpdate) SetLiveConcurrency(v int) *AccountUpdate {
+	_u.mutation.ResetLiveConcurrency()
+	_u.mutation.SetLiveConcurrency(v)
+	return _u
+}
+
+// SetNillableLiveConcurrency sets the "live_concurrency" field if the given value is not nil.
+func (_u *AccountUpdate) SetNillableLiveConcurrency(v *int) *AccountUpdate {
+	if v != nil {
+		_u.SetLiveConcurrency(*v)
+	}
+	return _u
+}
+
+// AddLiveConcurrency adds value to the "live_concurrency" field.
+func (_u *AccountUpdate) AddLiveConcurrency(v int) *AccountUpdate {
+	_u.mutation.AddLiveConcurrency(v)
+	return _u
+}
+
+// ClearLiveConcurrency clears the value of the "live_concurrency" field.
+func (_u *AccountUpdate) ClearLiveConcurrency() *AccountUpdate {
+	_u.mutation.ClearLiveConcurrency()
+	return _u
+}
+
+// SetRequestConcurrency sets the "request_concurrency" field.
+func (_u *AccountUpdate) SetRequestConcurrency(v int) *AccountUpdate {
+	_u.mutation.ResetRequestConcurrency()
+	_u.mutation.SetRequestConcurrency(v)
+	return _u
+}
+
+// SetNillableRequestConcurrency sets the "request_concurrency" field if the given value is not nil.
+func (_u *AccountUpdate) SetNillableRequestConcurrency(v *int) *AccountUpdate {
+	if v != nil {
+		_u.SetRequestConcurrency(*v)
+	}
+	return _u
+}
+
+// AddRequestConcurrency adds value to the "request_concurrency" field.
+func (_u *AccountUpdate) AddRequestConcurrency(v int) *AccountUpdate {
+	_u.mutation.AddRequestConcurrency(v)
+	return _u
+}
+
+// ClearRequestConcurrency clears the value of the "request_concurrency" field.
+func (_u *AccountUpdate) ClearRequestConcurrency() *AccountUpdate {
+	_u.mutation.ClearRequestConcurrency()
+	return _u
+}
+
+// SetConcurrencyPolicyGeneration sets the "concurrency_policy_generation" field.
+func (_u *AccountUpdate) SetConcurrencyPolicyGeneration(v int64) *AccountUpdate {
+	_u.mutation.ResetConcurrencyPolicyGeneration()
+	_u.mutation.SetConcurrencyPolicyGeneration(v)
+	return _u
+}
+
+// SetNillableConcurrencyPolicyGeneration sets the "concurrency_policy_generation" field if the given value is not nil.
+func (_u *AccountUpdate) SetNillableConcurrencyPolicyGeneration(v *int64) *AccountUpdate {
+	if v != nil {
+		_u.SetConcurrencyPolicyGeneration(*v)
+	}
+	return _u
+}
+
+// AddConcurrencyPolicyGeneration adds value to the "concurrency_policy_generation" field.
+func (_u *AccountUpdate) AddConcurrencyPolicyGeneration(v int64) *AccountUpdate {
+	_u.mutation.AddConcurrencyPolicyGeneration(v)
+	return _u
+}
+
 // SetLoadFactor sets the "load_factor" field.
 func (_u *AccountUpdate) SetLoadFactor(v int) *AccountUpdate {
 	_u.mutation.ResetLoadFactor()
@@ -847,6 +922,30 @@ func (_u *AccountUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedConcurrency(); ok {
 		_spec.AddField(account.FieldConcurrency, field.TypeInt, value)
 	}
+	if value, ok := _u.mutation.LiveConcurrency(); ok {
+		_spec.SetField(account.FieldLiveConcurrency, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedLiveConcurrency(); ok {
+		_spec.AddField(account.FieldLiveConcurrency, field.TypeInt, value)
+	}
+	if _u.mutation.LiveConcurrencyCleared() {
+		_spec.ClearField(account.FieldLiveConcurrency, field.TypeInt)
+	}
+	if value, ok := _u.mutation.RequestConcurrency(); ok {
+		_spec.SetField(account.FieldRequestConcurrency, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedRequestConcurrency(); ok {
+		_spec.AddField(account.FieldRequestConcurrency, field.TypeInt, value)
+	}
+	if _u.mutation.RequestConcurrencyCleared() {
+		_spec.ClearField(account.FieldRequestConcurrency, field.TypeInt)
+	}
+	if value, ok := _u.mutation.ConcurrencyPolicyGeneration(); ok {
+		_spec.SetField(account.FieldConcurrencyPolicyGeneration, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedConcurrencyPolicyGeneration(); ok {
+		_spec.AddField(account.FieldConcurrencyPolicyGeneration, field.TypeInt64, value)
+	}
 	if value, ok := _u.mutation.LoadFactor(); ok {
 		_spec.SetField(account.FieldLoadFactor, field.TypeInt, value)
 	}
@@ -1336,6 +1435,81 @@ func (_u *AccountUpdateOne) SetNillableConcurrency(v *int) *AccountUpdateOne {
 // AddConcurrency adds value to the "concurrency" field.
 func (_u *AccountUpdateOne) AddConcurrency(v int) *AccountUpdateOne {
 	_u.mutation.AddConcurrency(v)
+	return _u
+}
+
+// SetLiveConcurrency sets the "live_concurrency" field.
+func (_u *AccountUpdateOne) SetLiveConcurrency(v int) *AccountUpdateOne {
+	_u.mutation.ResetLiveConcurrency()
+	_u.mutation.SetLiveConcurrency(v)
+	return _u
+}
+
+// SetNillableLiveConcurrency sets the "live_concurrency" field if the given value is not nil.
+func (_u *AccountUpdateOne) SetNillableLiveConcurrency(v *int) *AccountUpdateOne {
+	if v != nil {
+		_u.SetLiveConcurrency(*v)
+	}
+	return _u
+}
+
+// AddLiveConcurrency adds value to the "live_concurrency" field.
+func (_u *AccountUpdateOne) AddLiveConcurrency(v int) *AccountUpdateOne {
+	_u.mutation.AddLiveConcurrency(v)
+	return _u
+}
+
+// ClearLiveConcurrency clears the value of the "live_concurrency" field.
+func (_u *AccountUpdateOne) ClearLiveConcurrency() *AccountUpdateOne {
+	_u.mutation.ClearLiveConcurrency()
+	return _u
+}
+
+// SetRequestConcurrency sets the "request_concurrency" field.
+func (_u *AccountUpdateOne) SetRequestConcurrency(v int) *AccountUpdateOne {
+	_u.mutation.ResetRequestConcurrency()
+	_u.mutation.SetRequestConcurrency(v)
+	return _u
+}
+
+// SetNillableRequestConcurrency sets the "request_concurrency" field if the given value is not nil.
+func (_u *AccountUpdateOne) SetNillableRequestConcurrency(v *int) *AccountUpdateOne {
+	if v != nil {
+		_u.SetRequestConcurrency(*v)
+	}
+	return _u
+}
+
+// AddRequestConcurrency adds value to the "request_concurrency" field.
+func (_u *AccountUpdateOne) AddRequestConcurrency(v int) *AccountUpdateOne {
+	_u.mutation.AddRequestConcurrency(v)
+	return _u
+}
+
+// ClearRequestConcurrency clears the value of the "request_concurrency" field.
+func (_u *AccountUpdateOne) ClearRequestConcurrency() *AccountUpdateOne {
+	_u.mutation.ClearRequestConcurrency()
+	return _u
+}
+
+// SetConcurrencyPolicyGeneration sets the "concurrency_policy_generation" field.
+func (_u *AccountUpdateOne) SetConcurrencyPolicyGeneration(v int64) *AccountUpdateOne {
+	_u.mutation.ResetConcurrencyPolicyGeneration()
+	_u.mutation.SetConcurrencyPolicyGeneration(v)
+	return _u
+}
+
+// SetNillableConcurrencyPolicyGeneration sets the "concurrency_policy_generation" field if the given value is not nil.
+func (_u *AccountUpdateOne) SetNillableConcurrencyPolicyGeneration(v *int64) *AccountUpdateOne {
+	if v != nil {
+		_u.SetConcurrencyPolicyGeneration(*v)
+	}
+	return _u
+}
+
+// AddConcurrencyPolicyGeneration adds value to the "concurrency_policy_generation" field.
+func (_u *AccountUpdateOne) AddConcurrencyPolicyGeneration(v int64) *AccountUpdateOne {
+	_u.mutation.AddConcurrencyPolicyGeneration(v)
 	return _u
 }
 
@@ -2016,6 +2190,30 @@ func (_u *AccountUpdateOne) sqlSave(ctx context.Context) (_node *Account, err er
 	}
 	if value, ok := _u.mutation.AddedConcurrency(); ok {
 		_spec.AddField(account.FieldConcurrency, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.LiveConcurrency(); ok {
+		_spec.SetField(account.FieldLiveConcurrency, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedLiveConcurrency(); ok {
+		_spec.AddField(account.FieldLiveConcurrency, field.TypeInt, value)
+	}
+	if _u.mutation.LiveConcurrencyCleared() {
+		_spec.ClearField(account.FieldLiveConcurrency, field.TypeInt)
+	}
+	if value, ok := _u.mutation.RequestConcurrency(); ok {
+		_spec.SetField(account.FieldRequestConcurrency, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedRequestConcurrency(); ok {
+		_spec.AddField(account.FieldRequestConcurrency, field.TypeInt, value)
+	}
+	if _u.mutation.RequestConcurrencyCleared() {
+		_spec.ClearField(account.FieldRequestConcurrency, field.TypeInt)
+	}
+	if value, ok := _u.mutation.ConcurrencyPolicyGeneration(); ok {
+		_spec.SetField(account.FieldConcurrencyPolicyGeneration, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedConcurrencyPolicyGeneration(); ok {
+		_spec.AddField(account.FieldConcurrencyPolicyGeneration, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.LoadFactor(); ok {
 		_spec.SetField(account.FieldLoadFactor, field.TypeInt, value)

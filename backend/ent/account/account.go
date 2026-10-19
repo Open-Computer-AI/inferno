@@ -40,6 +40,12 @@ const (
 	FieldProxyFallbackOriginID = "proxy_fallback_origin_id"
 	// FieldConcurrency holds the string denoting the concurrency field in the database.
 	FieldConcurrency = "concurrency"
+	// FieldLiveConcurrency holds the string denoting the live_concurrency field in the database.
+	FieldLiveConcurrency = "live_concurrency"
+	// FieldRequestConcurrency holds the string denoting the request_concurrency field in the database.
+	FieldRequestConcurrency = "request_concurrency"
+	// FieldConcurrencyPolicyGeneration holds the string denoting the concurrency_policy_generation field in the database.
+	FieldConcurrencyPolicyGeneration = "concurrency_policy_generation"
 	// FieldLoadFactor holds the string denoting the load_factor field in the database.
 	FieldLoadFactor = "load_factor"
 	// FieldPriority holds the string denoting the priority field in the database.
@@ -143,6 +149,9 @@ var Columns = []string{
 	FieldProxyID,
 	FieldProxyFallbackOriginID,
 	FieldConcurrency,
+	FieldLiveConcurrency,
+	FieldRequestConcurrency,
+	FieldConcurrencyPolicyGeneration,
 	FieldLoadFactor,
 	FieldPriority,
 	FieldRateMultiplier,
@@ -206,6 +215,8 @@ var (
 	DefaultExtra func() map[string]interface{}
 	// DefaultConcurrency holds the default value on creation for the "concurrency" field.
 	DefaultConcurrency int
+	// DefaultConcurrencyPolicyGeneration holds the default value on creation for the "concurrency_policy_generation" field.
+	DefaultConcurrencyPolicyGeneration int64
 	// DefaultPriority holds the default value on creation for the "priority" field.
 	DefaultPriority int
 	// DefaultRateMultiplier holds the default value on creation for the "rate_multiplier" field.
@@ -304,6 +315,21 @@ func ByProxyFallbackOriginID(opts ...sql.OrderTermOption) OrderOption {
 // ByConcurrency orders the results by the concurrency field.
 func ByConcurrency(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldConcurrency, opts...).ToFunc()
+}
+
+// ByLiveConcurrency orders the results by the live_concurrency field.
+func ByLiveConcurrency(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLiveConcurrency, opts...).ToFunc()
+}
+
+// ByRequestConcurrency orders the results by the request_concurrency field.
+func ByRequestConcurrency(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRequestConcurrency, opts...).ToFunc()
+}
+
+// ByConcurrencyPolicyGeneration orders the results by the concurrency_policy_generation field.
+func ByConcurrencyPolicyGeneration(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldConcurrencyPolicyGeneration, opts...).ToFunc()
 }
 
 // ByLoadFactor orders the results by the load_factor field.

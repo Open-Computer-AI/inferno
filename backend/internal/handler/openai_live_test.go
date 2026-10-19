@@ -105,6 +105,33 @@ func TestLiveAttestationErrorIsExplicit(t *testing.T) {
 	require.Contains(t, recorder.Body.String(), "Sub2API runs on macOS")
 }
 
+func TestLiveCapacityErrorPreservesClassAndDeniedScope(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+
+	(&OpenAIGatewayHandler{}).writeLiveCreateError(context, &service.ConcurrencyCapacityError{
+		Class:  service.ConcurrencyClassLive,
+		Scope:  "user",
+		Reason: "capacity_exhausted",
+	})
+
+	require.Equal(t, http.StatusTooManyRequests, recorder.Code)
+	var payload struct {
+		Error struct {
+			Code              string `json:"code"`
+			ConcurrencyClass  string `json:"concurrency_class"`
+			ConcurrencyScope  string `json:"concurrency_scope"`
+			ConcurrencyReason string `json:"concurrency_reason"`
+		} `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.Equal(t, "concurrency_capacity", payload.Error.Code)
+	require.Equal(t, "live", payload.Error.ConcurrencyClass)
+	require.Equal(t, "user", payload.Error.ConcurrencyScope)
+	require.Equal(t, "capacity_exhausted", payload.Error.ConcurrencyReason)
+}
+
 func jsonPathString(t *testing.T, raw json.RawMessage, keys ...string) string {
 	t.Helper()
 	var value any

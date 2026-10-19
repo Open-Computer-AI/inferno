@@ -55,6 +55,23 @@ type ConcurrencyCache interface {
 	CleanupStaleProcessSlots(ctx context.Context, activeRequestPrefix string) error
 }
 
+// ConcurrencySnapshotCache is the strict class-aware read surface used by
+// diagnostics. It is optional so existing cache doubles and legacy wrappers
+// can continue to implement ConcurrencyCache without inventing split counts.
+// Implementations must return an error when Redis cannot provide an
+// authoritative snapshot; callers must not turn that error into zero.
+type ConcurrencySnapshotCache interface {
+	GetAccountConcurrencySnapshotBatch(ctx context.Context, accountIDs []int64) (map[int64]ConcurrencySnapshot, error)
+	GetUserConcurrencySnapshotBatch(ctx context.Context, userIDs []int64) (map[int64]ConcurrencySnapshot, error)
+}
+
+// APIKeyConcurrencySnapshotCache is the API-key counterpart of
+// ConcurrencySnapshotCache. API-key counts are occupancy statistics only; they
+// do not represent an API-key quota.
+type APIKeyConcurrencySnapshotCache interface {
+	GetAPIKeyConcurrencySnapshotBatch(ctx context.Context, apiKeyIDs []int64) (map[int64]ConcurrencySnapshot, error)
+}
+
 type APIKeyConcurrencyCache interface {
 	TrackAPIKeySlot(ctx context.Context, apiKeyID int64, requestID string) error
 	ReleaseAPIKeySlot(ctx context.Context, apiKeyID int64, requestID string) error
@@ -252,6 +269,225 @@ func NewConcurrencyService(cache ConcurrencyCache) *ConcurrencyService {
 	return svc
 }
 
+func (s *ConcurrencyService) policyAdmissionCache() (ConcurrencyAdmissionCache, error) {
+	if s == nil || s.cache == nil {
+		return nil, ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	cache, ok := s.cache.(ConcurrencyAdmissionCache)
+	if !ok || cache == nil {
+		return nil, ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	return cache, nil
+}
+
+func (s *ConcurrencyService) accountPolicyAdmissionCache() (AccountConcurrencyAdmissionCache, error) {
+	if s == nil || s.cache == nil {
+		return nil, ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	cache, ok := s.cache.(AccountConcurrencyAdmissionCache)
+	if !ok || cache == nil {
+		return nil, ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	return cache, nil
+}
+
+// AcquireConcurrency delegates policy-aware admission to the optional cache
+// implementation. Legacy callers continue using the explicit shared wrappers;
+// policy-aware paths must never silently fall back to those wrappers.
+func (s *ConcurrencyService) AcquireConcurrency(ctx context.Context, request ConcurrencyAdmissionRequest) (ConcurrencyAdmissionResult, error) {
+	if err := request.Validate(); err != nil {
+		return ConcurrencyAdmissionResult{}, err
+	}
+	cache, err := s.policyAdmissionCache()
+	if err != nil {
+		return ConcurrencyAdmissionResult{}, err
+	}
+	return cache.AcquireConcurrency(ctx, request)
+}
+
+func (s *ConcurrencyService) RefreshConcurrency(ctx context.Context, request ConcurrencyAdmissionRequest) (bool, error) {
+	if err := request.Validate(); err != nil {
+		return false, err
+	}
+	cache, err := s.policyAdmissionCache()
+	if err != nil {
+		return false, err
+	}
+	return cache.RefreshConcurrency(ctx, request)
+}
+
+func (s *ConcurrencyService) ReleaseConcurrency(ctx context.Context, request ConcurrencyAdmissionRequest) error {
+	cache, err := s.policyAdmissionCache()
+	if err != nil {
+		return err
+	}
+	return cache.ReleaseConcurrency(ctx, request)
+}
+
+func (s *ConcurrencyService) userPolicyAdmissionCache() (UserConcurrencyAdmissionCache, error) {
+	if s == nil || s.cache == nil {
+		return nil, ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	cache, ok := s.cache.(UserConcurrencyAdmissionCache)
+	if !ok || cache == nil {
+		return nil, ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	return cache, nil
+}
+
+// AcquireUserConcurrency enforces the authenticated user's policy before an
+// account/provider is selected. Legacy callers remain on AcquireUserSlot until
+// their auth path supplies the durable policy generation.
+func (s *ConcurrencyService) AcquireUserConcurrency(ctx context.Context, request UserConcurrencyAdmissionRequest) (*AcquireResult, error) {
+	if err := request.Validate(); err != nil {
+		return nil, err
+	}
+	cache, err := s.userPolicyAdmissionCache()
+	if err != nil {
+		return nil, err
+	}
+	result, err := cache.AcquireUserConcurrency(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	if !result.Acquired {
+		return &AcquireResult{
+			Acquired: result.Acquired,
+			CapacityError: &ConcurrencyCapacityError{
+				Class:  request.Class,
+				Scope:  result.DeniedScope,
+				Reason: "user_capacity",
+			},
+		}, nil
+	}
+	return &AcquireResult{
+		Acquired: true,
+		ReleaseFunc: func() {
+			_ = cache.ReleaseUserConcurrency(context.Background(), request)
+		},
+	}, nil
+}
+
+// AcquireAccountPolicySlot atomically admits one account member against the
+// currently published Redis policy. The maxConcurrency argument is retained
+// only for compatibility with older cache doubles; a policy-aware cache never
+// uses it as an authority. This is important for split->request enforcement:
+// a stale caller passing zero or a legacy shared cap cannot turn a published
+// request limit into an unlimited admission.
+func (s *ConcurrencyService) AcquireAccountPolicySlot(ctx context.Context, accountID int64, class ConcurrencyClass, maxConcurrency int) (*AcquireResult, error) {
+	if s == nil || s.cache == nil {
+		return nil, ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	request := AccountConcurrencyAdmissionRequest{
+		AccountID:     accountID,
+		Class:         class,
+		ReservationID: generateRequestID(),
+	}
+	if err := request.Validate(); err != nil {
+		return nil, err
+	}
+	cache, err := s.accountPolicyAdmissionCache()
+	if err != nil {
+		// A cache implementation without the new optional surface is an
+		// explicit compatibility adapter for older providers/tests. The real
+		// Redis cache implements AccountConcurrencyAdmissionCache and therefore
+		// never reaches this legacy branch.
+		return s.acquireLegacyAccountSlot(ctx, accountID, maxConcurrency)
+	}
+	result, err := cache.AcquireAccountConcurrency(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	if !result.Acquired {
+		return &AcquireResult{
+			Acquired: result.Acquired,
+			CapacityError: &ConcurrencyCapacityError{
+				Class:  class,
+				Scope:  result.DeniedScope,
+				Reason: "account_capacity",
+			},
+		}, nil
+	}
+	return &AcquireResult{
+		Acquired: true,
+		ReleaseFunc: func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := cache.ReleaseAccountConcurrency(bgCtx, request); err != nil {
+				logger.LegacyPrintf("service.concurrency", "Warning: failed to release policy account slot for %d (req=%s): %v", accountID, request.ReservationID, err)
+			}
+		},
+	}, nil
+}
+
+func (s *ConcurrencyService) acquireLegacyAccountSlot(ctx context.Context, accountID int64, maxConcurrency int) (*AcquireResult, error) {
+	if maxConcurrency <= 0 {
+		return &AcquireResult{Acquired: true, ReleaseFunc: func() {}}, nil
+	}
+	requestID := generateRequestID()
+	acquired, err := s.cache.AcquireAccountSlot(ctx, accountID, maxConcurrency, requestID)
+	if err != nil {
+		return nil, err
+	}
+	if !acquired {
+		return &AcquireResult{Acquired: false}, nil
+	}
+	return &AcquireResult{
+		Acquired: true,
+		ReleaseFunc: func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := s.cache.ReleaseAccountSlot(bgCtx, accountID, requestID); err != nil {
+				logger.LegacyPrintf("service.concurrency", "Warning: failed to release account slot for %d (req=%s): %v", accountID, requestID, err)
+			}
+		},
+	}, nil
+}
+
+// GetPublishedUserConcurrencyPolicy returns the latest acknowledged policy
+// and generation from Redis. It is deliberately a separate read surface: a
+// stale auth snapshot may be retried once, but it must never be treated as a
+// valid authority after the Lua generation fence rejects it.
+func (s *ConcurrencyService) GetPublishedUserConcurrencyPolicy(ctx context.Context, userID int64) (ConcurrencyPolicy, int64, error) {
+	if s == nil || s.cache == nil {
+		return ConcurrencyPolicy{}, 0, ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	reader, ok := s.cache.(PublishedUserConcurrencyPolicyReader)
+	if !ok || reader == nil {
+		return ConcurrencyPolicy{}, 0, ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	return reader.GetPublishedUserConcurrencyPolicy(ctx, userID)
+}
+
+// AcquireUserPolicySlot builds a request-scoped user admission. Shared legacy
+// callers may continue using AcquireUserSlot; split callers must use this
+// method so the durable user generation reaches Redis.
+func (s *ConcurrencyService) AcquireUserPolicySlot(ctx context.Context, userID int64, policy ConcurrencyPolicy, generation int64) (*AcquireResult, error) {
+	request := UserConcurrencyAdmissionRequest{
+		UserID:         userID,
+		UserPolicy:     cloneConcurrencyPolicy(policy),
+		UserGeneration: generation,
+		Class:          ConcurrencyClassRequest,
+		ReservationID:  generateRequestID(),
+	}
+	if err := request.Validate(); err != nil {
+		return nil, err
+	}
+	if s == nil || s.cache == nil {
+		return nil, ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	if _, cacheErr := s.userPolicyAdmissionCache(); cacheErr != nil {
+		if policy.IsSplit() {
+			return nil, cacheErr
+		}
+		// Shared-only test doubles and older non-Redis providers do not expose
+		// the policy cache yet. The real Redis cache does, so a missing or
+		// malformed published authority there never reaches this branch.
+		return s.AcquireUserSlot(ctx, userID, policy.Shared)
+	}
+	return s.AcquireUserConcurrency(ctx, request)
+}
+
 // AcquireOpenAIWSIngressLease atomically reserves one live ingress connection
 // for an API key. A non-positive limit explicitly disables this protection.
 func (s *ConcurrencyService) AcquireOpenAIWSIngressLease(ctx context.Context, apiKeyID int64, maxConnections int) (*OpenAIWSIngressLease, bool, error) {
@@ -308,13 +544,19 @@ func (s *ConcurrencyService) SetAccountLoadBatchCacheTTL(ttl time.Duration) {
 
 // AcquireResult represents the result of acquiring a concurrency slot
 type AcquireResult struct {
-	Acquired    bool
-	ReleaseFunc func() // Must be called when done (typically via defer)
+	Acquired      bool
+	ReleaseFunc   func() // Must be called when done (typically via defer)
+	CapacityError *ConcurrencyCapacityError
 }
 
 type AccountWithConcurrency struct {
 	ID             int64
 	MaxConcurrency int
+	// AdmissionClass and SplitPolicy make load reads class-aware for the
+	// OpenAI scheduler. Zero AdmissionClass preserves the legacy combined
+	// occupancy behavior used by metrics and older callers.
+	AdmissionClass ConcurrencyClass
+	SplitPolicy    bool
 }
 
 type UserWithConcurrency struct {
@@ -340,6 +582,16 @@ type UserLoadInfo struct {
 // If the account is at max concurrency, it waits until a slot is available or timeout.
 // Returns a release function that MUST be called when the request completes.
 func (s *ConcurrencyService) AcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int) (*AcquireResult, error) {
+	if s == nil || s.cache == nil {
+		return nil, ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	// The concrete Redis cache exposes the authoritative account-only surface.
+	// Keep this legacy-shaped entry point policy-aware as a final defense for
+	// ordinary callers that have not migrated their wrapper signature yet; the
+	// max argument is ignored by the policy-aware implementation.
+	if _, ok := s.cache.(AccountConcurrencyAdmissionCache); ok {
+		return s.AcquireAccountPolicySlot(ctx, accountID, ConcurrencyClassRequest, maxConcurrency)
+	}
 	// If maxConcurrency is 0 or negative, no limit
 	if maxConcurrency <= 0 {
 		return &AcquireResult{
@@ -477,12 +729,53 @@ func (s *ConcurrencyService) GetAPIKeyConcurrencyBatch(ctx context.Context, apiK
 	return result, nil
 }
 
+// GetAPIKeyConcurrencySnapshotBatch returns class-separated API-key
+// occupancy. Unlike the legacy aggregate method, this method propagates a
+// Redis read failure so diagnostics can render an unknown value.
+func (s *ConcurrencyService) GetAPIKeyConcurrencySnapshotBatch(ctx context.Context, apiKeyIDs []int64) (map[int64]ConcurrencySnapshot, error) {
+	if len(apiKeyIDs) == 0 {
+		return map[int64]ConcurrencySnapshot{}, nil
+	}
+	if s == nil || s.cache == nil {
+		return nil, errors.New("concurrency cache unavailable")
+	}
+
+	redisCtx, cancel := concurrencySnapshotContext(ctx)
+	defer cancel()
+	if cache, ok := s.cache.(APIKeyConcurrencySnapshotCache); ok {
+		return cache.GetAPIKeyConcurrencySnapshotBatch(redisCtx, apiKeyIDs)
+	}
+
+	cache, ok := s.cache.(APIKeyConcurrencyCache)
+	if !ok {
+		return nil, errors.New("api key concurrency snapshot unavailable")
+	}
+	counts, err := cache.GetAPIKeyConcurrencyBatch(redisCtx, apiKeyIDs)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[int64]ConcurrencySnapshot, len(apiKeyIDs))
+	for _, apiKeyID := range apiKeyIDs {
+		count := counts[apiKeyID]
+		result[apiKeyID] = ConcurrencySnapshot{Request: count, Total: count}
+	}
+	return result, nil
+}
+
 func zeroAPIKeyConcurrencyMap(apiKeyIDs []int64) map[int64]int {
 	result := make(map[int64]int, len(apiKeyIDs))
 	for _, apiKeyID := range apiKeyIDs {
 		result[apiKeyID] = 0
 	}
 	return result
+}
+
+func concurrencySnapshotContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	baseCtx := context.Background()
+	if ctx != nil {
+		baseCtx = context.WithoutCancel(ctx)
+	}
+	return context.WithTimeout(baseCtx, apiKeyConcurrencyFetchTimeout)
 }
 
 // ============================================
@@ -683,6 +976,13 @@ func accountLoadBatchCacheKey(accounts []AccountWithConcurrency) string {
 		binary.LittleEndian.PutUint64(buf[:8], uint64(account.ID))
 		binary.LittleEndian.PutUint64(buf[8:], uint64(int64(account.MaxConcurrency)))
 		_, _ = hash.Write(buf[:])
+		_, _ = hash.Write([]byte{byte(len(account.AdmissionClass))})
+		_, _ = hash.Write([]byte(account.AdmissionClass))
+		if account.SplitPolicy {
+			_, _ = hash.Write([]byte{1})
+		} else {
+			_, _ = hash.Write([]byte{0})
+		}
 	}
 	sum := hash.Sum(nil)
 	return strconv.Itoa(len(accounts)) + ":" + hex.EncodeToString(sum)
@@ -768,4 +1068,58 @@ func (s *ConcurrencyService) GetAccountConcurrencyBatch(ctx context.Context, acc
 	defer cancel()
 
 	return s.cache.GetAccountConcurrencyBatch(redisCtx, accountIDs)
+}
+
+// GetAccountConcurrencySnapshotBatch returns class-separated account
+// occupancy, propagating read failures instead of fabricating zeroes.
+func (s *ConcurrencyService) GetAccountConcurrencySnapshotBatch(ctx context.Context, accountIDs []int64) (map[int64]ConcurrencySnapshot, error) {
+	if len(accountIDs) == 0 {
+		return map[int64]ConcurrencySnapshot{}, nil
+	}
+	if s == nil || s.cache == nil {
+		return nil, errors.New("concurrency cache unavailable")
+	}
+
+	redisCtx, cancel := concurrencySnapshotContext(ctx)
+	defer cancel()
+	if cache, ok := s.cache.(ConcurrencySnapshotCache); ok {
+		return cache.GetAccountConcurrencySnapshotBatch(redisCtx, accountIDs)
+	}
+	counts, err := s.cache.GetAccountConcurrencyBatch(redisCtx, accountIDs)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[int64]ConcurrencySnapshot, len(accountIDs))
+	for _, accountID := range accountIDs {
+		count := counts[accountID]
+		result[accountID] = ConcurrencySnapshot{Request: count, Total: count}
+	}
+	return result, nil
+}
+
+// GetUserConcurrencySnapshotBatch returns class-separated user occupancy. A
+// legacy cache is adapted one user at a time with the shared count represented
+// as request occupancy; the concrete Redis cache supplies both classes.
+func (s *ConcurrencyService) GetUserConcurrencySnapshotBatch(ctx context.Context, userIDs []int64) (map[int64]ConcurrencySnapshot, error) {
+	if len(userIDs) == 0 {
+		return map[int64]ConcurrencySnapshot{}, nil
+	}
+	if s == nil || s.cache == nil {
+		return nil, errors.New("concurrency cache unavailable")
+	}
+
+	redisCtx, cancel := concurrencySnapshotContext(ctx)
+	defer cancel()
+	if cache, ok := s.cache.(ConcurrencySnapshotCache); ok {
+		return cache.GetUserConcurrencySnapshotBatch(redisCtx, userIDs)
+	}
+	result := make(map[int64]ConcurrencySnapshot, len(userIDs))
+	for _, userID := range userIDs {
+		count, err := s.cache.GetUserConcurrency(redisCtx, userID)
+		if err != nil {
+			return nil, err
+		}
+		result[userID] = ConcurrencySnapshot{Request: count, Total: count}
+	}
+	return result, nil
 }

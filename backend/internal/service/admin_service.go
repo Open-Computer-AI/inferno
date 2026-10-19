@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -146,6 +147,7 @@ type CreateUserInput struct {
 	Role                 string // 空字符串表示使用默认角色(user);合法值 admin/user
 	Balance              *float64
 	Concurrency          int
+	ConcurrencyPolicy    *ConcurrencyPolicyPatch
 	RPMLimit             int
 	AllowedGroups        []int64
 	RestrictPublicGroups bool
@@ -154,16 +156,17 @@ type CreateUserInput struct {
 }
 
 type UpdateUserInput struct {
-	Email         string
-	Password      string
-	Username      *string
-	Notes         *string
-	Role          string   // 空字符串表示"未提供"(不修改);合法值 admin/user
-	Balance       *float64 // 使用指针区分"未提供"和"设置为0"
-	Concurrency   *int     // 使用指针区分"未提供"和"设置为0"
-	RPMLimit      *int     // 使用指针区分"未提供"和"设置为0"
-	Status        string
-	AllowedGroups *[]int64 // 使用指针区分"未提供"和"设置为空数组"
+	Email             string
+	Password          string
+	Username          *string
+	Notes             *string
+	Role              string   // 空字符串表示"未提供"(不修改);合法值 admin/user
+	Balance           *float64 // 使用指针区分"未提供"和"设置为0"
+	Concurrency       *int     // 使用指针区分"未提供"和"设置为0"
+	ConcurrencyPolicy *ConcurrencyPolicyPatch
+	RPMLimit          *int // 使用指针区分"未提供"和"设置为0"
+	Status            string
+	AllowedGroups     *[]int64 // 使用指针区分"未提供"和"设置为空数组"
 	// RestrictPublicGroups 指针区分"未提供"和"显式开关"。
 	RestrictPublicGroups *bool
 	// GroupRates 用户专属分组倍率配置
@@ -377,6 +380,7 @@ type CreateAccountInput struct {
 	Extra              map[string]any
 	ProxyID            *int64
 	Concurrency        int
+	ConcurrencyPolicy  *ConcurrencyPolicyPatch
 	Priority           int
 	RateMultiplier     *float64 // 账号计费倍率（>=0，允许 0）
 	LoadFactor         *int
@@ -407,7 +411,8 @@ type UpdateAccountInput struct {
 	Credentials           map[string]any
 	Extra                 map[string]any
 	ProxyID               *int64
-	Concurrency           *int     // 使用指针区分"未提供"和"设置为0"
+	Concurrency           *int // 使用指针区分"未提供"和"设置为0"
+	ConcurrencyPolicy     *ConcurrencyPolicyPatch
 	Priority              *int     // 使用指针区分"未提供"和"设置为0"
 	RateMultiplier        *float64 // 账号计费倍率（>=0，允许 0）
 	LoadFactor            *int
@@ -422,20 +427,21 @@ type UpdateAccountInput struct {
 
 // BulkUpdateAccountsInput describes the payload for bulk updating accounts.
 type BulkUpdateAccountsInput struct {
-	AccountIDs     []int64
-	Filters        *BulkUpdateAccountFilters
-	Name           string
-	ProxyID        *int64
-	Concurrency    *int
-	Priority       *int
-	RateMultiplier *float64 // 账号计费倍率（>=0，允许 0）
-	LoadFactor     *int
-	Status         string
-	Schedulable    *bool
-	GroupIDs       *[]int64
-	Credentials    map[string]any
-	Extra          map[string]any
-	ProbeEnabled   *bool
+	AccountIDs        []int64
+	Filters           *BulkUpdateAccountFilters
+	Name              string
+	ProxyID           *int64
+	Concurrency       *int
+	ConcurrencyPolicy *ConcurrencyPolicyPatch
+	Priority          *int
+	RateMultiplier    *float64 // 账号计费倍率（>=0，允许 0）
+	LoadFactor        *int
+	Status            string
+	Schedulable       *bool
+	GroupIDs          *[]int64
+	Credentials       map[string]any
+	Extra             map[string]any
+	ProbeEnabled      *bool
 	// SkipMixedChannelCheck skips the mixed channel risk check when binding groups.
 	// This should only be set when the caller has explicitly confirmed the risk.
 	SkipMixedChannelCheck bool
@@ -654,30 +660,31 @@ var ErrRPMStatusUnavailable = infraerrors.New(http.StatusNotImplemented, "RPM_ST
 
 // adminServiceImpl implements AdminService
 type adminServiceImpl struct {
-	userRepo             UserRepository
-	groupRepo            GroupRepository
-	groupDuplicateRepo   GroupDuplicateRepository
-	accountRepo          AccountRepository
-	accountDuplicateRepo AccountDuplicateRepository
-	accountBillingRepo   AccountBillingSettingsRepository
-	proxyRepo            ProxyRepository
-	apiKeyRepo           APIKeyRepository
-	redeemCodeRepo       RedeemCodeRepository
-	userGroupRateRepo    UserGroupRateRepository
-	userRPMCache         UserRPMCache
-	billingCacheService  *BillingCacheService
-	proxyProber          ProxyExitInfoProber
-	proxyLatencyCache    ProxyLatencyCache
-	authCacheInvalidator APIKeyAuthCacheInvalidator
-	entClient            *dbent.Client // 用于开启数据库事务
-	settingService       *SettingService
-	defaultSubAssigner   DefaultSubscriptionAssigner
-	userSubRepo          UserSubscriptionRepository
-	privacyClientFactory PrivacyClientFactory
-	runtimeBlocker       AccountRuntimeBlocker
-	affiliateService     adminRechargeAffiliateAccruer
-	compositeRouteRepo   CompositeModelRouteRepository
-	compositeResolver    *CompositeRouteResolver
+	userRepo                   UserRepository
+	groupRepo                  GroupRepository
+	groupDuplicateRepo         GroupDuplicateRepository
+	accountRepo                AccountRepository
+	accountDuplicateRepo       AccountDuplicateRepository
+	accountBillingRepo         AccountBillingSettingsRepository
+	proxyRepo                  ProxyRepository
+	apiKeyRepo                 APIKeyRepository
+	redeemCodeRepo             RedeemCodeRepository
+	userGroupRateRepo          UserGroupRateRepository
+	userRPMCache               UserRPMCache
+	billingCacheService        *BillingCacheService
+	proxyProber                ProxyExitInfoProber
+	proxyLatencyCache          ProxyLatencyCache
+	authCacheInvalidator       APIKeyAuthCacheInvalidator
+	concurrencyPolicyPublisher ConcurrencyPolicyPublisher
+	entClient                  *dbent.Client // 用于开启数据库事务
+	settingService             *SettingService
+	defaultSubAssigner         DefaultSubscriptionAssigner
+	userSubRepo                UserSubscriptionRepository
+	privacyClientFactory       PrivacyClientFactory
+	runtimeBlocker             AccountRuntimeBlocker
+	affiliateService           adminRechargeAffiliateAccruer
+	compositeRouteRepo         CompositeModelRouteRepository
+	compositeResolver          *CompositeRouteResolver
 	// 分组平台变更后用来失效渠道缓存；可为 nil（缓存会在 TTL 到期后自然重建）
 	channelCacheInvalidator ChannelCacheInvalidator
 }
@@ -696,6 +703,48 @@ type userGroupRateBatchReader interface {
 	GetByUserIDs(ctx context.Context, userIDs []int64) (map[int64]map[int64]float64, error)
 }
 
+func concurrencyPolicyForAccount(account *Account) ConcurrencyPolicy {
+	if account == nil {
+		return ConcurrencyPolicy{}
+	}
+	return ConcurrencyPolicy{
+		Shared:  account.Concurrency,
+		Live:    account.LiveConcurrency,
+		Request: account.RequestConcurrency,
+	}
+}
+
+func concurrencyPolicyForUser(user *User) ConcurrencyPolicy {
+	if user == nil {
+		return ConcurrencyPolicy{}
+	}
+	return ConcurrencyPolicy{
+		Shared:  user.Concurrency,
+		Live:    user.LiveConcurrency,
+		Request: user.RequestConcurrency,
+	}
+}
+
+func (s *adminServiceImpl) publishAccountConcurrencyPolicy(ctx context.Context, account *Account) error {
+	if account == nil || s == nil || s.concurrencyPolicyPublisher == nil {
+		return fmt.Errorf("%w: account policy publisher unavailable", ErrConcurrencyPolicyRuntimeNotApplied)
+	}
+	if err := s.concurrencyPolicyPublisher.PublishAccountConcurrencyPolicy(ctx, account.ID, concurrencyPolicyForAccount(account), account.ConcurrencyPolicyGeneration); err != nil {
+		return fmt.Errorf("%w: account_id=%d: %v", ErrConcurrencyPolicyRuntimeNotApplied, account.ID, err)
+	}
+	return nil
+}
+
+func (s *adminServiceImpl) publishUserConcurrencyPolicy(ctx context.Context, user *User) error {
+	if user == nil || s == nil || s.concurrencyPolicyPublisher == nil {
+		return fmt.Errorf("%w: user policy publisher unavailable", ErrConcurrencyPolicyRuntimeNotApplied)
+	}
+	if err := s.concurrencyPolicyPublisher.PublishUserConcurrencyPolicy(ctx, user.ID, concurrencyPolicyForUser(user), user.ConcurrencyPolicyGeneration); err != nil {
+		return fmt.Errorf("%w: user_id=%d: %v", ErrConcurrencyPolicyRuntimeNotApplied, user.ID, err)
+	}
+	return nil
+}
+
 // NewAdminService creates a new AdminService
 func NewAdminService(
 	userRepo UserRepository,
@@ -710,6 +759,7 @@ func NewAdminService(
 	proxyProber ProxyExitInfoProber,
 	proxyLatencyCache ProxyLatencyCache,
 	authCacheInvalidator APIKeyAuthCacheInvalidator,
+	concurrencyPolicyPublisher ConcurrencyPolicyPublisher,
 	entClient *dbent.Client,
 	settingService *SettingService,
 	defaultSubAssigner DefaultSubscriptionAssigner,
@@ -722,30 +772,31 @@ func NewAdminService(
 	channelCacheInvalidator ChannelCacheInvalidator,
 ) AdminService {
 	return &adminServiceImpl{
-		userRepo:             userRepo,
-		groupRepo:            groupRepo,
-		groupDuplicateRepo:   groupRepo,
-		accountRepo:          accountRepo,
-		accountDuplicateRepo: accountRepo,
-		accountBillingRepo:   accountRepo,
-		proxyRepo:            proxyRepo,
-		apiKeyRepo:           apiKeyRepo,
-		redeemCodeRepo:       redeemCodeRepo,
-		userGroupRateRepo:    userGroupRateRepo,
-		userRPMCache:         userRPMCache,
-		billingCacheService:  billingCacheService,
-		proxyProber:          proxyProber,
-		proxyLatencyCache:    proxyLatencyCache,
-		authCacheInvalidator: authCacheInvalidator,
-		entClient:            entClient,
-		settingService:       settingService,
-		defaultSubAssigner:   defaultSubAssigner,
-		userSubRepo:          userSubRepo,
-		privacyClientFactory: privacyClientFactory,
-		runtimeBlocker:       runtimeBlocker,
-		affiliateService:     affiliateService,
-		compositeRouteRepo:   compositeRouteRepo,
-		compositeResolver:    compositeResolver,
+		userRepo:                   userRepo,
+		groupRepo:                  groupRepo,
+		groupDuplicateRepo:         groupRepo,
+		accountRepo:                accountRepo,
+		accountDuplicateRepo:       accountRepo,
+		accountBillingRepo:         accountRepo,
+		proxyRepo:                  proxyRepo,
+		apiKeyRepo:                 apiKeyRepo,
+		redeemCodeRepo:             redeemCodeRepo,
+		userGroupRateRepo:          userGroupRateRepo,
+		userRPMCache:               userRPMCache,
+		billingCacheService:        billingCacheService,
+		proxyProber:                proxyProber,
+		proxyLatencyCache:          proxyLatencyCache,
+		authCacheInvalidator:       authCacheInvalidator,
+		concurrencyPolicyPublisher: concurrencyPolicyPublisher,
+		entClient:                  entClient,
+		settingService:             settingService,
+		defaultSubAssigner:         defaultSubAssigner,
+		userSubRepo:                userSubRepo,
+		privacyClientFactory:       privacyClientFactory,
+		runtimeBlocker:             runtimeBlocker,
+		affiliateService:           affiliateService,
+		compositeRouteRepo:         compositeRouteRepo,
+		compositeResolver:          compositeResolver,
 
 		channelCacheInvalidator: channelCacheInvalidator,
 	}

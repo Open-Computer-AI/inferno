@@ -2365,60 +2365,66 @@ func (m *APIKeyMutation) ResetEdge(name string) error {
 // AccountMutation represents an operation that mutates the Account nodes in the graph.
 type AccountMutation struct {
 	config
-	op                          Op
-	typ                         string
-	id                          *int64
-	created_at                  *time.Time
-	updated_at                  *time.Time
-	deleted_at                  *time.Time
-	name                        *string
-	notes                       *string
-	platform                    *string
-	_type                       *string
-	credentials                 *map[string]interface{}
-	extra                       *map[string]interface{}
-	proxy_fallback_origin_id    *int64
-	addproxy_fallback_origin_id *int64
-	concurrency                 *int
-	addconcurrency              *int
-	load_factor                 *int
-	addload_factor              *int
-	priority                    *int
-	addpriority                 *int
-	rate_multiplier             *float64
-	addrate_multiplier          *float64
-	status                      *string
-	error_message               *string
-	last_used_at                *time.Time
-	expires_at                  *time.Time
-	auto_pause_on_expired       *bool
-	schedulable                 *bool
-	rate_limited_at             *time.Time
-	rate_limit_reset_at         *time.Time
-	overload_until              *time.Time
-	temp_unschedulable_until    *time.Time
-	temp_unschedulable_reason   *string
-	session_window_start        *time.Time
-	session_window_end          *time.Time
-	session_window_status       *string
-	quota_dimension             *account.QuotaDimension
-	clearedFields               map[string]struct{}
-	groups                      map[int64]struct{}
-	removedgroups               map[int64]struct{}
-	clearedgroups               bool
-	proxy                       *int64
-	clearedproxy                bool
-	parent                      *int64
-	clearedparent               bool
-	children                    map[int64]struct{}
-	removedchildren             map[int64]struct{}
-	clearedchildren             bool
-	usage_logs                  map[int64]struct{}
-	removedusage_logs           map[int64]struct{}
-	clearedusage_logs           bool
-	done                        bool
-	oldValue                    func(context.Context) (*Account, error)
-	predicates                  []predicate.Account
+	op                               Op
+	typ                              string
+	id                               *int64
+	created_at                       *time.Time
+	updated_at                       *time.Time
+	deleted_at                       *time.Time
+	name                             *string
+	notes                            *string
+	platform                         *string
+	_type                            *string
+	credentials                      *map[string]interface{}
+	extra                            *map[string]interface{}
+	proxy_fallback_origin_id         *int64
+	addproxy_fallback_origin_id      *int64
+	concurrency                      *int
+	addconcurrency                   *int
+	live_concurrency                 *int
+	addlive_concurrency              *int
+	request_concurrency              *int
+	addrequest_concurrency           *int
+	concurrency_policy_generation    *int64
+	addconcurrency_policy_generation *int64
+	load_factor                      *int
+	addload_factor                   *int
+	priority                         *int
+	addpriority                      *int
+	rate_multiplier                  *float64
+	addrate_multiplier               *float64
+	status                           *string
+	error_message                    *string
+	last_used_at                     *time.Time
+	expires_at                       *time.Time
+	auto_pause_on_expired            *bool
+	schedulable                      *bool
+	rate_limited_at                  *time.Time
+	rate_limit_reset_at              *time.Time
+	overload_until                   *time.Time
+	temp_unschedulable_until         *time.Time
+	temp_unschedulable_reason        *string
+	session_window_start             *time.Time
+	session_window_end               *time.Time
+	session_window_status            *string
+	quota_dimension                  *account.QuotaDimension
+	clearedFields                    map[string]struct{}
+	groups                           map[int64]struct{}
+	removedgroups                    map[int64]struct{}
+	clearedgroups                    bool
+	proxy                            *int64
+	clearedproxy                     bool
+	parent                           *int64
+	clearedparent                    bool
+	children                         map[int64]struct{}
+	removedchildren                  map[int64]struct{}
+	clearedchildren                  bool
+	usage_logs                       map[int64]struct{}
+	removedusage_logs                map[int64]struct{}
+	clearedusage_logs                bool
+	done                             bool
+	oldValue                         func(context.Context) (*Account, error)
+	predicates                       []predicate.Account
 }
 
 var _ ent.Mutation = (*AccountMutation)(nil)
@@ -3042,6 +3048,202 @@ func (m *AccountMutation) AddedConcurrency() (r int, exists bool) {
 func (m *AccountMutation) ResetConcurrency() {
 	m.concurrency = nil
 	m.addconcurrency = nil
+}
+
+// SetLiveConcurrency sets the "live_concurrency" field.
+func (m *AccountMutation) SetLiveConcurrency(i int) {
+	m.live_concurrency = &i
+	m.addlive_concurrency = nil
+}
+
+// LiveConcurrency returns the value of the "live_concurrency" field in the mutation.
+func (m *AccountMutation) LiveConcurrency() (r int, exists bool) {
+	v := m.live_concurrency
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLiveConcurrency returns the old "live_concurrency" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldLiveConcurrency(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLiveConcurrency is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLiveConcurrency requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLiveConcurrency: %w", err)
+	}
+	return oldValue.LiveConcurrency, nil
+}
+
+// AddLiveConcurrency adds i to the "live_concurrency" field.
+func (m *AccountMutation) AddLiveConcurrency(i int) {
+	if m.addlive_concurrency != nil {
+		*m.addlive_concurrency += i
+	} else {
+		m.addlive_concurrency = &i
+	}
+}
+
+// AddedLiveConcurrency returns the value that was added to the "live_concurrency" field in this mutation.
+func (m *AccountMutation) AddedLiveConcurrency() (r int, exists bool) {
+	v := m.addlive_concurrency
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearLiveConcurrency clears the value of the "live_concurrency" field.
+func (m *AccountMutation) ClearLiveConcurrency() {
+	m.live_concurrency = nil
+	m.addlive_concurrency = nil
+	m.clearedFields[account.FieldLiveConcurrency] = struct{}{}
+}
+
+// LiveConcurrencyCleared returns if the "live_concurrency" field was cleared in this mutation.
+func (m *AccountMutation) LiveConcurrencyCleared() bool {
+	_, ok := m.clearedFields[account.FieldLiveConcurrency]
+	return ok
+}
+
+// ResetLiveConcurrency resets all changes to the "live_concurrency" field.
+func (m *AccountMutation) ResetLiveConcurrency() {
+	m.live_concurrency = nil
+	m.addlive_concurrency = nil
+	delete(m.clearedFields, account.FieldLiveConcurrency)
+}
+
+// SetRequestConcurrency sets the "request_concurrency" field.
+func (m *AccountMutation) SetRequestConcurrency(i int) {
+	m.request_concurrency = &i
+	m.addrequest_concurrency = nil
+}
+
+// RequestConcurrency returns the value of the "request_concurrency" field in the mutation.
+func (m *AccountMutation) RequestConcurrency() (r int, exists bool) {
+	v := m.request_concurrency
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestConcurrency returns the old "request_concurrency" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldRequestConcurrency(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestConcurrency is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestConcurrency requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestConcurrency: %w", err)
+	}
+	return oldValue.RequestConcurrency, nil
+}
+
+// AddRequestConcurrency adds i to the "request_concurrency" field.
+func (m *AccountMutation) AddRequestConcurrency(i int) {
+	if m.addrequest_concurrency != nil {
+		*m.addrequest_concurrency += i
+	} else {
+		m.addrequest_concurrency = &i
+	}
+}
+
+// AddedRequestConcurrency returns the value that was added to the "request_concurrency" field in this mutation.
+func (m *AccountMutation) AddedRequestConcurrency() (r int, exists bool) {
+	v := m.addrequest_concurrency
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearRequestConcurrency clears the value of the "request_concurrency" field.
+func (m *AccountMutation) ClearRequestConcurrency() {
+	m.request_concurrency = nil
+	m.addrequest_concurrency = nil
+	m.clearedFields[account.FieldRequestConcurrency] = struct{}{}
+}
+
+// RequestConcurrencyCleared returns if the "request_concurrency" field was cleared in this mutation.
+func (m *AccountMutation) RequestConcurrencyCleared() bool {
+	_, ok := m.clearedFields[account.FieldRequestConcurrency]
+	return ok
+}
+
+// ResetRequestConcurrency resets all changes to the "request_concurrency" field.
+func (m *AccountMutation) ResetRequestConcurrency() {
+	m.request_concurrency = nil
+	m.addrequest_concurrency = nil
+	delete(m.clearedFields, account.FieldRequestConcurrency)
+}
+
+// SetConcurrencyPolicyGeneration sets the "concurrency_policy_generation" field.
+func (m *AccountMutation) SetConcurrencyPolicyGeneration(i int64) {
+	m.concurrency_policy_generation = &i
+	m.addconcurrency_policy_generation = nil
+}
+
+// ConcurrencyPolicyGeneration returns the value of the "concurrency_policy_generation" field in the mutation.
+func (m *AccountMutation) ConcurrencyPolicyGeneration() (r int64, exists bool) {
+	v := m.concurrency_policy_generation
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldConcurrencyPolicyGeneration returns the old "concurrency_policy_generation" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldConcurrencyPolicyGeneration(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldConcurrencyPolicyGeneration is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldConcurrencyPolicyGeneration requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldConcurrencyPolicyGeneration: %w", err)
+	}
+	return oldValue.ConcurrencyPolicyGeneration, nil
+}
+
+// AddConcurrencyPolicyGeneration adds i to the "concurrency_policy_generation" field.
+func (m *AccountMutation) AddConcurrencyPolicyGeneration(i int64) {
+	if m.addconcurrency_policy_generation != nil {
+		*m.addconcurrency_policy_generation += i
+	} else {
+		m.addconcurrency_policy_generation = &i
+	}
+}
+
+// AddedConcurrencyPolicyGeneration returns the value that was added to the "concurrency_policy_generation" field in this mutation.
+func (m *AccountMutation) AddedConcurrencyPolicyGeneration() (r int64, exists bool) {
+	v := m.addconcurrency_policy_generation
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetConcurrencyPolicyGeneration resets all changes to the "concurrency_policy_generation" field.
+func (m *AccountMutation) ResetConcurrencyPolicyGeneration() {
+	m.concurrency_policy_generation = nil
+	m.addconcurrency_policy_generation = nil
 }
 
 // SetLoadFactor sets the "load_factor" field.
@@ -4221,7 +4423,7 @@ func (m *AccountMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AccountMutation) Fields() []string {
-	fields := make([]string, 0, 31)
+	fields := make([]string, 0, 34)
 	if m.created_at != nil {
 		fields = append(fields, account.FieldCreatedAt)
 	}
@@ -4257,6 +4459,15 @@ func (m *AccountMutation) Fields() []string {
 	}
 	if m.concurrency != nil {
 		fields = append(fields, account.FieldConcurrency)
+	}
+	if m.live_concurrency != nil {
+		fields = append(fields, account.FieldLiveConcurrency)
+	}
+	if m.request_concurrency != nil {
+		fields = append(fields, account.FieldRequestConcurrency)
+	}
+	if m.concurrency_policy_generation != nil {
+		fields = append(fields, account.FieldConcurrencyPolicyGeneration)
 	}
 	if m.load_factor != nil {
 		fields = append(fields, account.FieldLoadFactor)
@@ -4347,6 +4558,12 @@ func (m *AccountMutation) Field(name string) (ent.Value, bool) {
 		return m.ProxyFallbackOriginID()
 	case account.FieldConcurrency:
 		return m.Concurrency()
+	case account.FieldLiveConcurrency:
+		return m.LiveConcurrency()
+	case account.FieldRequestConcurrency:
+		return m.RequestConcurrency()
+	case account.FieldConcurrencyPolicyGeneration:
+		return m.ConcurrencyPolicyGeneration()
 	case account.FieldLoadFactor:
 		return m.LoadFactor()
 	case account.FieldPriority:
@@ -4418,6 +4635,12 @@ func (m *AccountMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldProxyFallbackOriginID(ctx)
 	case account.FieldConcurrency:
 		return m.OldConcurrency(ctx)
+	case account.FieldLiveConcurrency:
+		return m.OldLiveConcurrency(ctx)
+	case account.FieldRequestConcurrency:
+		return m.OldRequestConcurrency(ctx)
+	case account.FieldConcurrencyPolicyGeneration:
+		return m.OldConcurrencyPolicyGeneration(ctx)
 	case account.FieldLoadFactor:
 		return m.OldLoadFactor(ctx)
 	case account.FieldPriority:
@@ -4548,6 +4771,27 @@ func (m *AccountMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetConcurrency(v)
+		return nil
+	case account.FieldLiveConcurrency:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLiveConcurrency(v)
+		return nil
+	case account.FieldRequestConcurrency:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestConcurrency(v)
+		return nil
+	case account.FieldConcurrencyPolicyGeneration:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetConcurrencyPolicyGeneration(v)
 		return nil
 	case account.FieldLoadFactor:
 		v, ok := value.(int)
@@ -4696,6 +4940,15 @@ func (m *AccountMutation) AddedFields() []string {
 	if m.addconcurrency != nil {
 		fields = append(fields, account.FieldConcurrency)
 	}
+	if m.addlive_concurrency != nil {
+		fields = append(fields, account.FieldLiveConcurrency)
+	}
+	if m.addrequest_concurrency != nil {
+		fields = append(fields, account.FieldRequestConcurrency)
+	}
+	if m.addconcurrency_policy_generation != nil {
+		fields = append(fields, account.FieldConcurrencyPolicyGeneration)
+	}
 	if m.addload_factor != nil {
 		fields = append(fields, account.FieldLoadFactor)
 	}
@@ -4717,6 +4970,12 @@ func (m *AccountMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedProxyFallbackOriginID()
 	case account.FieldConcurrency:
 		return m.AddedConcurrency()
+	case account.FieldLiveConcurrency:
+		return m.AddedLiveConcurrency()
+	case account.FieldRequestConcurrency:
+		return m.AddedRequestConcurrency()
+	case account.FieldConcurrencyPolicyGeneration:
+		return m.AddedConcurrencyPolicyGeneration()
 	case account.FieldLoadFactor:
 		return m.AddedLoadFactor()
 	case account.FieldPriority:
@@ -4745,6 +5004,27 @@ func (m *AccountMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddConcurrency(v)
+		return nil
+	case account.FieldLiveConcurrency:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLiveConcurrency(v)
+		return nil
+	case account.FieldRequestConcurrency:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRequestConcurrency(v)
+		return nil
+	case account.FieldConcurrencyPolicyGeneration:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddConcurrencyPolicyGeneration(v)
 		return nil
 	case account.FieldLoadFactor:
 		v, ok := value.(int)
@@ -4786,6 +5066,12 @@ func (m *AccountMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(account.FieldProxyFallbackOriginID) {
 		fields = append(fields, account.FieldProxyFallbackOriginID)
+	}
+	if m.FieldCleared(account.FieldLiveConcurrency) {
+		fields = append(fields, account.FieldLiveConcurrency)
+	}
+	if m.FieldCleared(account.FieldRequestConcurrency) {
+		fields = append(fields, account.FieldRequestConcurrency)
 	}
 	if m.FieldCleared(account.FieldLoadFactor) {
 		fields = append(fields, account.FieldLoadFactor)
@@ -4851,6 +5137,12 @@ func (m *AccountMutation) ClearField(name string) error {
 		return nil
 	case account.FieldProxyFallbackOriginID:
 		m.ClearProxyFallbackOriginID()
+		return nil
+	case account.FieldLiveConcurrency:
+		m.ClearLiveConcurrency()
+		return nil
+	case account.FieldRequestConcurrency:
+		m.ClearRequestConcurrency()
 		return nil
 	case account.FieldLoadFactor:
 		m.ClearLoadFactor()
@@ -4934,6 +5226,15 @@ func (m *AccountMutation) ResetField(name string) error {
 		return nil
 	case account.FieldConcurrency:
 		m.ResetConcurrency()
+		return nil
+	case account.FieldLiveConcurrency:
+		m.ResetLiveConcurrency()
+		return nil
+	case account.FieldRequestConcurrency:
+		m.ResetRequestConcurrency()
+		return nil
+	case account.FieldConcurrencyPolicyGeneration:
+		m.ResetConcurrencyPolicyGeneration()
 		return nil
 	case account.FieldLoadFactor:
 		m.ResetLoadFactor()
@@ -52753,84 +53054,90 @@ func (m *UsageLogMutation) ResetEdge(name string) error {
 // UserMutation represents an operation that mutates the User nodes in the graph.
 type UserMutation struct {
 	config
-	op                            Op
-	typ                           string
-	id                            *int64
-	created_at                    *time.Time
-	updated_at                    *time.Time
-	deleted_at                    *time.Time
-	email                         *string
-	password_hash                 *string
-	role                          *string
-	balance                       *float64
-	addbalance                    *float64
-	frozen_balance                *float64
-	addfrozen_balance             *float64
-	concurrency                   *int
-	addconcurrency                *int
-	status                        *string
-	username                      *string
-	notes                         *string
-	avatar_seed                   *string
-	totp_secret_encrypted         *string
-	totp_enabled                  *bool
-	totp_enabled_at               *time.Time
-	signup_source                 *string
-	last_login_at                 *time.Time
-	last_active_at                *time.Time
-	restrict_public_groups        *bool
-	balance_notify_enabled        *bool
-	balance_notify_threshold_type *string
-	balance_notify_threshold      *float64
-	addbalance_notify_threshold   *float64
-	balance_notify_extra_emails   *string
-	total_recharged               *float64
-	addtotal_recharged            *float64
-	rpm_limit                     *int
-	addrpm_limit                  *int
-	clearedFields                 map[string]struct{}
-	api_keys                      map[int64]struct{}
-	removedapi_keys               map[int64]struct{}
-	clearedapi_keys               bool
-	redeem_codes                  map[int64]struct{}
-	removedredeem_codes           map[int64]struct{}
-	clearedredeem_codes           bool
-	subscriptions                 map[int64]struct{}
-	removedsubscriptions          map[int64]struct{}
-	clearedsubscriptions          bool
-	assigned_subscriptions        map[int64]struct{}
-	removedassigned_subscriptions map[int64]struct{}
-	clearedassigned_subscriptions bool
-	announcement_reads            map[int64]struct{}
-	removedannouncement_reads     map[int64]struct{}
-	clearedannouncement_reads     bool
-	allowed_groups                map[int64]struct{}
-	removedallowed_groups         map[int64]struct{}
-	clearedallowed_groups         bool
-	usage_logs                    map[int64]struct{}
-	removedusage_logs             map[int64]struct{}
-	clearedusage_logs             bool
-	attribute_values              map[int64]struct{}
-	removedattribute_values       map[int64]struct{}
-	clearedattribute_values       bool
-	promo_code_usages             map[int64]struct{}
-	removedpromo_code_usages      map[int64]struct{}
-	clearedpromo_code_usages      bool
-	payment_orders                map[int64]struct{}
-	removedpayment_orders         map[int64]struct{}
-	clearedpayment_orders         bool
-	auth_identities               map[int64]struct{}
-	removedauth_identities        map[int64]struct{}
-	clearedauth_identities        bool
-	pending_auth_sessions         map[int64]struct{}
-	removedpending_auth_sessions  map[int64]struct{}
-	clearedpending_auth_sessions  bool
-	platform_quotas               map[int64]struct{}
-	removedplatform_quotas        map[int64]struct{}
-	clearedplatform_quotas        bool
-	done                          bool
-	oldValue                      func(context.Context) (*User, error)
-	predicates                    []predicate.User
+	op                               Op
+	typ                              string
+	id                               *int64
+	created_at                       *time.Time
+	updated_at                       *time.Time
+	deleted_at                       *time.Time
+	email                            *string
+	password_hash                    *string
+	role                             *string
+	balance                          *float64
+	addbalance                       *float64
+	frozen_balance                   *float64
+	addfrozen_balance                *float64
+	concurrency                      *int
+	addconcurrency                   *int
+	live_concurrency                 *int
+	addlive_concurrency              *int
+	request_concurrency              *int
+	addrequest_concurrency           *int
+	concurrency_policy_generation    *int64
+	addconcurrency_policy_generation *int64
+	status                           *string
+	username                         *string
+	notes                            *string
+	avatar_seed                      *string
+	totp_secret_encrypted            *string
+	totp_enabled                     *bool
+	totp_enabled_at                  *time.Time
+	signup_source                    *string
+	last_login_at                    *time.Time
+	last_active_at                   *time.Time
+	restrict_public_groups           *bool
+	balance_notify_enabled           *bool
+	balance_notify_threshold_type    *string
+	balance_notify_threshold         *float64
+	addbalance_notify_threshold      *float64
+	balance_notify_extra_emails      *string
+	total_recharged                  *float64
+	addtotal_recharged               *float64
+	rpm_limit                        *int
+	addrpm_limit                     *int
+	clearedFields                    map[string]struct{}
+	api_keys                         map[int64]struct{}
+	removedapi_keys                  map[int64]struct{}
+	clearedapi_keys                  bool
+	redeem_codes                     map[int64]struct{}
+	removedredeem_codes              map[int64]struct{}
+	clearedredeem_codes              bool
+	subscriptions                    map[int64]struct{}
+	removedsubscriptions             map[int64]struct{}
+	clearedsubscriptions             bool
+	assigned_subscriptions           map[int64]struct{}
+	removedassigned_subscriptions    map[int64]struct{}
+	clearedassigned_subscriptions    bool
+	announcement_reads               map[int64]struct{}
+	removedannouncement_reads        map[int64]struct{}
+	clearedannouncement_reads        bool
+	allowed_groups                   map[int64]struct{}
+	removedallowed_groups            map[int64]struct{}
+	clearedallowed_groups            bool
+	usage_logs                       map[int64]struct{}
+	removedusage_logs                map[int64]struct{}
+	clearedusage_logs                bool
+	attribute_values                 map[int64]struct{}
+	removedattribute_values          map[int64]struct{}
+	clearedattribute_values          bool
+	promo_code_usages                map[int64]struct{}
+	removedpromo_code_usages         map[int64]struct{}
+	clearedpromo_code_usages         bool
+	payment_orders                   map[int64]struct{}
+	removedpayment_orders            map[int64]struct{}
+	clearedpayment_orders            bool
+	auth_identities                  map[int64]struct{}
+	removedauth_identities           map[int64]struct{}
+	clearedauth_identities           bool
+	pending_auth_sessions            map[int64]struct{}
+	removedpending_auth_sessions     map[int64]struct{}
+	clearedpending_auth_sessions     bool
+	platform_quotas                  map[int64]struct{}
+	removedplatform_quotas           map[int64]struct{}
+	clearedplatform_quotas           bool
+	done                             bool
+	oldValue                         func(context.Context) (*User, error)
+	predicates                       []predicate.User
 }
 
 var _ ent.Mutation = (*UserMutation)(nil)
@@ -53326,6 +53633,202 @@ func (m *UserMutation) AddedConcurrency() (r int, exists bool) {
 func (m *UserMutation) ResetConcurrency() {
 	m.concurrency = nil
 	m.addconcurrency = nil
+}
+
+// SetLiveConcurrency sets the "live_concurrency" field.
+func (m *UserMutation) SetLiveConcurrency(i int) {
+	m.live_concurrency = &i
+	m.addlive_concurrency = nil
+}
+
+// LiveConcurrency returns the value of the "live_concurrency" field in the mutation.
+func (m *UserMutation) LiveConcurrency() (r int, exists bool) {
+	v := m.live_concurrency
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLiveConcurrency returns the old "live_concurrency" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldLiveConcurrency(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLiveConcurrency is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLiveConcurrency requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLiveConcurrency: %w", err)
+	}
+	return oldValue.LiveConcurrency, nil
+}
+
+// AddLiveConcurrency adds i to the "live_concurrency" field.
+func (m *UserMutation) AddLiveConcurrency(i int) {
+	if m.addlive_concurrency != nil {
+		*m.addlive_concurrency += i
+	} else {
+		m.addlive_concurrency = &i
+	}
+}
+
+// AddedLiveConcurrency returns the value that was added to the "live_concurrency" field in this mutation.
+func (m *UserMutation) AddedLiveConcurrency() (r int, exists bool) {
+	v := m.addlive_concurrency
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearLiveConcurrency clears the value of the "live_concurrency" field.
+func (m *UserMutation) ClearLiveConcurrency() {
+	m.live_concurrency = nil
+	m.addlive_concurrency = nil
+	m.clearedFields[user.FieldLiveConcurrency] = struct{}{}
+}
+
+// LiveConcurrencyCleared returns if the "live_concurrency" field was cleared in this mutation.
+func (m *UserMutation) LiveConcurrencyCleared() bool {
+	_, ok := m.clearedFields[user.FieldLiveConcurrency]
+	return ok
+}
+
+// ResetLiveConcurrency resets all changes to the "live_concurrency" field.
+func (m *UserMutation) ResetLiveConcurrency() {
+	m.live_concurrency = nil
+	m.addlive_concurrency = nil
+	delete(m.clearedFields, user.FieldLiveConcurrency)
+}
+
+// SetRequestConcurrency sets the "request_concurrency" field.
+func (m *UserMutation) SetRequestConcurrency(i int) {
+	m.request_concurrency = &i
+	m.addrequest_concurrency = nil
+}
+
+// RequestConcurrency returns the value of the "request_concurrency" field in the mutation.
+func (m *UserMutation) RequestConcurrency() (r int, exists bool) {
+	v := m.request_concurrency
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestConcurrency returns the old "request_concurrency" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldRequestConcurrency(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestConcurrency is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestConcurrency requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestConcurrency: %w", err)
+	}
+	return oldValue.RequestConcurrency, nil
+}
+
+// AddRequestConcurrency adds i to the "request_concurrency" field.
+func (m *UserMutation) AddRequestConcurrency(i int) {
+	if m.addrequest_concurrency != nil {
+		*m.addrequest_concurrency += i
+	} else {
+		m.addrequest_concurrency = &i
+	}
+}
+
+// AddedRequestConcurrency returns the value that was added to the "request_concurrency" field in this mutation.
+func (m *UserMutation) AddedRequestConcurrency() (r int, exists bool) {
+	v := m.addrequest_concurrency
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearRequestConcurrency clears the value of the "request_concurrency" field.
+func (m *UserMutation) ClearRequestConcurrency() {
+	m.request_concurrency = nil
+	m.addrequest_concurrency = nil
+	m.clearedFields[user.FieldRequestConcurrency] = struct{}{}
+}
+
+// RequestConcurrencyCleared returns if the "request_concurrency" field was cleared in this mutation.
+func (m *UserMutation) RequestConcurrencyCleared() bool {
+	_, ok := m.clearedFields[user.FieldRequestConcurrency]
+	return ok
+}
+
+// ResetRequestConcurrency resets all changes to the "request_concurrency" field.
+func (m *UserMutation) ResetRequestConcurrency() {
+	m.request_concurrency = nil
+	m.addrequest_concurrency = nil
+	delete(m.clearedFields, user.FieldRequestConcurrency)
+}
+
+// SetConcurrencyPolicyGeneration sets the "concurrency_policy_generation" field.
+func (m *UserMutation) SetConcurrencyPolicyGeneration(i int64) {
+	m.concurrency_policy_generation = &i
+	m.addconcurrency_policy_generation = nil
+}
+
+// ConcurrencyPolicyGeneration returns the value of the "concurrency_policy_generation" field in the mutation.
+func (m *UserMutation) ConcurrencyPolicyGeneration() (r int64, exists bool) {
+	v := m.concurrency_policy_generation
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldConcurrencyPolicyGeneration returns the old "concurrency_policy_generation" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldConcurrencyPolicyGeneration(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldConcurrencyPolicyGeneration is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldConcurrencyPolicyGeneration requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldConcurrencyPolicyGeneration: %w", err)
+	}
+	return oldValue.ConcurrencyPolicyGeneration, nil
+}
+
+// AddConcurrencyPolicyGeneration adds i to the "concurrency_policy_generation" field.
+func (m *UserMutation) AddConcurrencyPolicyGeneration(i int64) {
+	if m.addconcurrency_policy_generation != nil {
+		*m.addconcurrency_policy_generation += i
+	} else {
+		m.addconcurrency_policy_generation = &i
+	}
+}
+
+// AddedConcurrencyPolicyGeneration returns the value that was added to the "concurrency_policy_generation" field in this mutation.
+func (m *UserMutation) AddedConcurrencyPolicyGeneration() (r int64, exists bool) {
+	v := m.addconcurrency_policy_generation
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetConcurrencyPolicyGeneration resets all changes to the "concurrency_policy_generation" field.
+func (m *UserMutation) ResetConcurrencyPolicyGeneration() {
+	m.concurrency_policy_generation = nil
+	m.addconcurrency_policy_generation = nil
 }
 
 // SetStatus sets the "status" field.
@@ -54802,7 +55305,7 @@ func (m *UserMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserMutation) Fields() []string {
-	fields := make([]string, 0, 26)
+	fields := make([]string, 0, 29)
 	if m.created_at != nil {
 		fields = append(fields, user.FieldCreatedAt)
 	}
@@ -54829,6 +55332,15 @@ func (m *UserMutation) Fields() []string {
 	}
 	if m.concurrency != nil {
 		fields = append(fields, user.FieldConcurrency)
+	}
+	if m.live_concurrency != nil {
+		fields = append(fields, user.FieldLiveConcurrency)
+	}
+	if m.request_concurrency != nil {
+		fields = append(fields, user.FieldRequestConcurrency)
+	}
+	if m.concurrency_policy_generation != nil {
+		fields = append(fields, user.FieldConcurrencyPolicyGeneration)
 	}
 	if m.status != nil {
 		fields = append(fields, user.FieldStatus)
@@ -54907,6 +55419,12 @@ func (m *UserMutation) Field(name string) (ent.Value, bool) {
 		return m.FrozenBalance()
 	case user.FieldConcurrency:
 		return m.Concurrency()
+	case user.FieldLiveConcurrency:
+		return m.LiveConcurrency()
+	case user.FieldRequestConcurrency:
+		return m.RequestConcurrency()
+	case user.FieldConcurrencyPolicyGeneration:
+		return m.ConcurrencyPolicyGeneration()
 	case user.FieldStatus:
 		return m.Status()
 	case user.FieldUsername:
@@ -54968,6 +55486,12 @@ func (m *UserMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldFrozenBalance(ctx)
 	case user.FieldConcurrency:
 		return m.OldConcurrency(ctx)
+	case user.FieldLiveConcurrency:
+		return m.OldLiveConcurrency(ctx)
+	case user.FieldRequestConcurrency:
+		return m.OldRequestConcurrency(ctx)
+	case user.FieldConcurrencyPolicyGeneration:
+		return m.OldConcurrencyPolicyGeneration(ctx)
 	case user.FieldStatus:
 		return m.OldStatus(ctx)
 	case user.FieldUsername:
@@ -55073,6 +55597,27 @@ func (m *UserMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetConcurrency(v)
+		return nil
+	case user.FieldLiveConcurrency:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLiveConcurrency(v)
+		return nil
+	case user.FieldRequestConcurrency:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestConcurrency(v)
+		return nil
+	case user.FieldConcurrencyPolicyGeneration:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetConcurrencyPolicyGeneration(v)
 		return nil
 	case user.FieldStatus:
 		v, ok := value.(string)
@@ -55210,6 +55755,15 @@ func (m *UserMutation) AddedFields() []string {
 	if m.addconcurrency != nil {
 		fields = append(fields, user.FieldConcurrency)
 	}
+	if m.addlive_concurrency != nil {
+		fields = append(fields, user.FieldLiveConcurrency)
+	}
+	if m.addrequest_concurrency != nil {
+		fields = append(fields, user.FieldRequestConcurrency)
+	}
+	if m.addconcurrency_policy_generation != nil {
+		fields = append(fields, user.FieldConcurrencyPolicyGeneration)
+	}
 	if m.addbalance_notify_threshold != nil {
 		fields = append(fields, user.FieldBalanceNotifyThreshold)
 	}
@@ -55233,6 +55787,12 @@ func (m *UserMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedFrozenBalance()
 	case user.FieldConcurrency:
 		return m.AddedConcurrency()
+	case user.FieldLiveConcurrency:
+		return m.AddedLiveConcurrency()
+	case user.FieldRequestConcurrency:
+		return m.AddedRequestConcurrency()
+	case user.FieldConcurrencyPolicyGeneration:
+		return m.AddedConcurrencyPolicyGeneration()
 	case user.FieldBalanceNotifyThreshold:
 		return m.AddedBalanceNotifyThreshold()
 	case user.FieldTotalRecharged:
@@ -55269,6 +55829,27 @@ func (m *UserMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddConcurrency(v)
 		return nil
+	case user.FieldLiveConcurrency:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLiveConcurrency(v)
+		return nil
+	case user.FieldRequestConcurrency:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRequestConcurrency(v)
+		return nil
+	case user.FieldConcurrencyPolicyGeneration:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddConcurrencyPolicyGeneration(v)
+		return nil
 	case user.FieldBalanceNotifyThreshold:
 		v, ok := value.(float64)
 		if !ok {
@@ -55301,6 +55882,12 @@ func (m *UserMutation) ClearedFields() []string {
 	if m.FieldCleared(user.FieldDeletedAt) {
 		fields = append(fields, user.FieldDeletedAt)
 	}
+	if m.FieldCleared(user.FieldLiveConcurrency) {
+		fields = append(fields, user.FieldLiveConcurrency)
+	}
+	if m.FieldCleared(user.FieldRequestConcurrency) {
+		fields = append(fields, user.FieldRequestConcurrency)
+	}
 	if m.FieldCleared(user.FieldTotpSecretEncrypted) {
 		fields = append(fields, user.FieldTotpSecretEncrypted)
 	}
@@ -55332,6 +55919,12 @@ func (m *UserMutation) ClearField(name string) error {
 	switch name {
 	case user.FieldDeletedAt:
 		m.ClearDeletedAt()
+		return nil
+	case user.FieldLiveConcurrency:
+		m.ClearLiveConcurrency()
+		return nil
+	case user.FieldRequestConcurrency:
+		m.ClearRequestConcurrency()
 		return nil
 	case user.FieldTotpSecretEncrypted:
 		m.ClearTotpSecretEncrypted()
@@ -55382,6 +55975,15 @@ func (m *UserMutation) ResetField(name string) error {
 		return nil
 	case user.FieldConcurrency:
 		m.ResetConcurrency()
+		return nil
+	case user.FieldLiveConcurrency:
+		m.ResetLiveConcurrency()
+		return nil
+	case user.FieldRequestConcurrency:
+		m.ResetRequestConcurrency()
+		return nil
+	case user.FieldConcurrencyPolicyGeneration:
+		m.ResetConcurrencyPolicyGeneration()
 		return nil
 	case user.FieldStatus:
 		m.ResetStatus()

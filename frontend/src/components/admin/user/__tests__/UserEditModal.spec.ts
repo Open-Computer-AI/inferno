@@ -34,10 +34,19 @@ vi.mock('vue-i18n', async (importOriginal) => ({
   })
 }))
 
-const mountModal = (concurrency: number) => mount(UserEditModal, {
+const mountModal = (concurrency: number, userOverrides: Record<string, unknown> = {}) => mount(UserEditModal, {
   props: {
     show: true,
-    user: { id: 7, email: 'user@example.test', username: 'user', notes: '', role: 'user', concurrency, rpm_limit: 0 } as never
+    user: {
+      id: 7,
+      email: 'user@example.test',
+      username: 'user',
+      notes: '',
+      role: 'user',
+      concurrency,
+      rpm_limit: 0,
+      ...userOverrides
+    } as never
   },
   global: {
     stubs: {
@@ -85,6 +94,60 @@ describe('UserEditModal concurrency', () => {
     await flushPromises()
 
     expect(showError).toHaveBeenCalledWith('admin.users.concurrencyNonNegative')
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('preserves an untouched split policy by omitting concurrency_policy', async () => {
+    const wrapper = mountModal(3, {
+      concurrency_mode: 'split',
+      live_concurrency: 4,
+      request_concurrency: 2
+    })
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(update.mock.calls[0]?.[1]).not.toHaveProperty('concurrency_policy')
+  })
+
+  it('submits a changed split policy and an explicit shared reset', async () => {
+    const wrapper = mountModal(3)
+
+    await wrapper.get('[data-test="concurrency-mode"]').setValue('split')
+    await wrapper.get('[data-test="live-concurrency-input"]').setValue('4')
+    await wrapper.get('[data-test="request-concurrency-input"]').setValue('2')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(update).toHaveBeenCalledWith(7, expect.objectContaining({
+      concurrency_policy: { mode: 'split', live: 4, requests: 2 }
+    }))
+
+    update.mockReset().mockResolvedValue({})
+    const resetWrapper = mountModal(3, {
+      concurrency_mode: 'split',
+      live_concurrency: 4,
+      request_concurrency: 2
+    })
+    await resetWrapper.get('[data-test="concurrency-mode"]').setValue('shared')
+    await resetWrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(update).toHaveBeenCalledWith(7, expect.objectContaining({
+      concurrency_policy: { mode: 'shared' }
+    }))
+  })
+
+  it('blocks invalid split limits before update', async () => {
+    const wrapper = mountModal(3)
+
+    await wrapper.get('[data-test="concurrency-mode"]').setValue('split')
+    await wrapper.get('[data-test="live-concurrency-input"]').setValue('0')
+    await wrapper.get('[data-test="request-concurrency-input"]').setValue('2')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(showError).toHaveBeenCalledWith('admin.concurrencyPolicy.invalid')
     expect(update).not.toHaveBeenCalled()
   })
 })

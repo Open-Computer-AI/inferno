@@ -153,6 +153,48 @@ func (_c *AccountCreate) SetNillableConcurrency(v *int) *AccountCreate {
 	return _c
 }
 
+// SetLiveConcurrency sets the "live_concurrency" field.
+func (_c *AccountCreate) SetLiveConcurrency(v int) *AccountCreate {
+	_c.mutation.SetLiveConcurrency(v)
+	return _c
+}
+
+// SetNillableLiveConcurrency sets the "live_concurrency" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableLiveConcurrency(v *int) *AccountCreate {
+	if v != nil {
+		_c.SetLiveConcurrency(*v)
+	}
+	return _c
+}
+
+// SetRequestConcurrency sets the "request_concurrency" field.
+func (_c *AccountCreate) SetRequestConcurrency(v int) *AccountCreate {
+	_c.mutation.SetRequestConcurrency(v)
+	return _c
+}
+
+// SetNillableRequestConcurrency sets the "request_concurrency" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableRequestConcurrency(v *int) *AccountCreate {
+	if v != nil {
+		_c.SetRequestConcurrency(*v)
+	}
+	return _c
+}
+
+// SetConcurrencyPolicyGeneration sets the "concurrency_policy_generation" field.
+func (_c *AccountCreate) SetConcurrencyPolicyGeneration(v int64) *AccountCreate {
+	_c.mutation.SetConcurrencyPolicyGeneration(v)
+	return _c
+}
+
+// SetNillableConcurrencyPolicyGeneration sets the "concurrency_policy_generation" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableConcurrencyPolicyGeneration(v *int64) *AccountCreate {
+	if v != nil {
+		_c.SetConcurrencyPolicyGeneration(*v)
+	}
+	return _c
+}
+
 // SetLoadFactor sets the "load_factor" field.
 func (_c *AccountCreate) SetLoadFactor(v int) *AccountCreate {
 	_c.mutation.SetLoadFactor(v)
@@ -557,6 +599,10 @@ func (_c *AccountCreate) defaults() error {
 		v := account.DefaultConcurrency
 		_c.mutation.SetConcurrency(v)
 	}
+	if _, ok := _c.mutation.ConcurrencyPolicyGeneration(); !ok {
+		v := account.DefaultConcurrencyPolicyGeneration
+		_c.mutation.SetConcurrencyPolicyGeneration(v)
+	}
 	if _, ok := _c.mutation.Priority(); !ok {
 		v := account.DefaultPriority
 		_c.mutation.SetPriority(v)
@@ -624,6 +670,9 @@ func (_c *AccountCreate) check() error {
 	}
 	if _, ok := _c.mutation.Concurrency(); !ok {
 		return &ValidationError{Name: "concurrency", err: errors.New(`ent: missing required field "Account.concurrency"`)}
+	}
+	if _, ok := _c.mutation.ConcurrencyPolicyGeneration(); !ok {
+		return &ValidationError{Name: "concurrency_policy_generation", err: errors.New(`ent: missing required field "Account.concurrency_policy_generation"`)}
 	}
 	if _, ok := _c.mutation.Priority(); !ok {
 		return &ValidationError{Name: "priority", err: errors.New(`ent: missing required field "Account.priority"`)}
@@ -728,6 +777,18 @@ func (_c *AccountCreate) createSpec() (*Account, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Concurrency(); ok {
 		_spec.SetField(account.FieldConcurrency, field.TypeInt, value)
 		_node.Concurrency = value
+	}
+	if value, ok := _c.mutation.LiveConcurrency(); ok {
+		_spec.SetField(account.FieldLiveConcurrency, field.TypeInt, value)
+		_node.LiveConcurrency = &value
+	}
+	if value, ok := _c.mutation.RequestConcurrency(); ok {
+		_spec.SetField(account.FieldRequestConcurrency, field.TypeInt, value)
+		_node.RequestConcurrency = &value
+	}
+	if value, ok := _c.mutation.ConcurrencyPolicyGeneration(); ok {
+		_spec.SetField(account.FieldConcurrencyPolicyGeneration, field.TypeInt64, value)
+		_node.ConcurrencyPolicyGeneration = value
 	}
 	if value, ok := _c.mutation.LoadFactor(); ok {
 		_spec.SetField(account.FieldLoadFactor, field.TypeInt, value)
@@ -1104,6 +1165,72 @@ func (u *AccountUpsert) UpdateConcurrency() *AccountUpsert {
 // AddConcurrency adds v to the "concurrency" field.
 func (u *AccountUpsert) AddConcurrency(v int) *AccountUpsert {
 	u.Add(account.FieldConcurrency, v)
+	return u
+}
+
+// SetLiveConcurrency sets the "live_concurrency" field.
+func (u *AccountUpsert) SetLiveConcurrency(v int) *AccountUpsert {
+	u.Set(account.FieldLiveConcurrency, v)
+	return u
+}
+
+// UpdateLiveConcurrency sets the "live_concurrency" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateLiveConcurrency() *AccountUpsert {
+	u.SetExcluded(account.FieldLiveConcurrency)
+	return u
+}
+
+// AddLiveConcurrency adds v to the "live_concurrency" field.
+func (u *AccountUpsert) AddLiveConcurrency(v int) *AccountUpsert {
+	u.Add(account.FieldLiveConcurrency, v)
+	return u
+}
+
+// ClearLiveConcurrency clears the value of the "live_concurrency" field.
+func (u *AccountUpsert) ClearLiveConcurrency() *AccountUpsert {
+	u.SetNull(account.FieldLiveConcurrency)
+	return u
+}
+
+// SetRequestConcurrency sets the "request_concurrency" field.
+func (u *AccountUpsert) SetRequestConcurrency(v int) *AccountUpsert {
+	u.Set(account.FieldRequestConcurrency, v)
+	return u
+}
+
+// UpdateRequestConcurrency sets the "request_concurrency" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateRequestConcurrency() *AccountUpsert {
+	u.SetExcluded(account.FieldRequestConcurrency)
+	return u
+}
+
+// AddRequestConcurrency adds v to the "request_concurrency" field.
+func (u *AccountUpsert) AddRequestConcurrency(v int) *AccountUpsert {
+	u.Add(account.FieldRequestConcurrency, v)
+	return u
+}
+
+// ClearRequestConcurrency clears the value of the "request_concurrency" field.
+func (u *AccountUpsert) ClearRequestConcurrency() *AccountUpsert {
+	u.SetNull(account.FieldRequestConcurrency)
+	return u
+}
+
+// SetConcurrencyPolicyGeneration sets the "concurrency_policy_generation" field.
+func (u *AccountUpsert) SetConcurrencyPolicyGeneration(v int64) *AccountUpsert {
+	u.Set(account.FieldConcurrencyPolicyGeneration, v)
+	return u
+}
+
+// UpdateConcurrencyPolicyGeneration sets the "concurrency_policy_generation" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateConcurrencyPolicyGeneration() *AccountUpsert {
+	u.SetExcluded(account.FieldConcurrencyPolicyGeneration)
+	return u
+}
+
+// AddConcurrencyPolicyGeneration adds v to the "concurrency_policy_generation" field.
+func (u *AccountUpsert) AddConcurrencyPolicyGeneration(v int64) *AccountUpsert {
+	u.Add(account.FieldConcurrencyPolicyGeneration, v)
 	return u
 }
 
@@ -1669,6 +1796,83 @@ func (u *AccountUpsertOne) AddConcurrency(v int) *AccountUpsertOne {
 func (u *AccountUpsertOne) UpdateConcurrency() *AccountUpsertOne {
 	return u.Update(func(s *AccountUpsert) {
 		s.UpdateConcurrency()
+	})
+}
+
+// SetLiveConcurrency sets the "live_concurrency" field.
+func (u *AccountUpsertOne) SetLiveConcurrency(v int) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetLiveConcurrency(v)
+	})
+}
+
+// AddLiveConcurrency adds v to the "live_concurrency" field.
+func (u *AccountUpsertOne) AddLiveConcurrency(v int) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddLiveConcurrency(v)
+	})
+}
+
+// UpdateLiveConcurrency sets the "live_concurrency" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateLiveConcurrency() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateLiveConcurrency()
+	})
+}
+
+// ClearLiveConcurrency clears the value of the "live_concurrency" field.
+func (u *AccountUpsertOne) ClearLiveConcurrency() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearLiveConcurrency()
+	})
+}
+
+// SetRequestConcurrency sets the "request_concurrency" field.
+func (u *AccountUpsertOne) SetRequestConcurrency(v int) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetRequestConcurrency(v)
+	})
+}
+
+// AddRequestConcurrency adds v to the "request_concurrency" field.
+func (u *AccountUpsertOne) AddRequestConcurrency(v int) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddRequestConcurrency(v)
+	})
+}
+
+// UpdateRequestConcurrency sets the "request_concurrency" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateRequestConcurrency() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateRequestConcurrency()
+	})
+}
+
+// ClearRequestConcurrency clears the value of the "request_concurrency" field.
+func (u *AccountUpsertOne) ClearRequestConcurrency() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearRequestConcurrency()
+	})
+}
+
+// SetConcurrencyPolicyGeneration sets the "concurrency_policy_generation" field.
+func (u *AccountUpsertOne) SetConcurrencyPolicyGeneration(v int64) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetConcurrencyPolicyGeneration(v)
+	})
+}
+
+// AddConcurrencyPolicyGeneration adds v to the "concurrency_policy_generation" field.
+func (u *AccountUpsertOne) AddConcurrencyPolicyGeneration(v int64) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddConcurrencyPolicyGeneration(v)
+	})
+}
+
+// UpdateConcurrencyPolicyGeneration sets the "concurrency_policy_generation" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateConcurrencyPolicyGeneration() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateConcurrencyPolicyGeneration()
 	})
 }
 
@@ -2454,6 +2658,83 @@ func (u *AccountUpsertBulk) AddConcurrency(v int) *AccountUpsertBulk {
 func (u *AccountUpsertBulk) UpdateConcurrency() *AccountUpsertBulk {
 	return u.Update(func(s *AccountUpsert) {
 		s.UpdateConcurrency()
+	})
+}
+
+// SetLiveConcurrency sets the "live_concurrency" field.
+func (u *AccountUpsertBulk) SetLiveConcurrency(v int) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetLiveConcurrency(v)
+	})
+}
+
+// AddLiveConcurrency adds v to the "live_concurrency" field.
+func (u *AccountUpsertBulk) AddLiveConcurrency(v int) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddLiveConcurrency(v)
+	})
+}
+
+// UpdateLiveConcurrency sets the "live_concurrency" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateLiveConcurrency() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateLiveConcurrency()
+	})
+}
+
+// ClearLiveConcurrency clears the value of the "live_concurrency" field.
+func (u *AccountUpsertBulk) ClearLiveConcurrency() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearLiveConcurrency()
+	})
+}
+
+// SetRequestConcurrency sets the "request_concurrency" field.
+func (u *AccountUpsertBulk) SetRequestConcurrency(v int) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetRequestConcurrency(v)
+	})
+}
+
+// AddRequestConcurrency adds v to the "request_concurrency" field.
+func (u *AccountUpsertBulk) AddRequestConcurrency(v int) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddRequestConcurrency(v)
+	})
+}
+
+// UpdateRequestConcurrency sets the "request_concurrency" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateRequestConcurrency() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateRequestConcurrency()
+	})
+}
+
+// ClearRequestConcurrency clears the value of the "request_concurrency" field.
+func (u *AccountUpsertBulk) ClearRequestConcurrency() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearRequestConcurrency()
+	})
+}
+
+// SetConcurrencyPolicyGeneration sets the "concurrency_policy_generation" field.
+func (u *AccountUpsertBulk) SetConcurrencyPolicyGeneration(v int64) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetConcurrencyPolicyGeneration(v)
+	})
+}
+
+// AddConcurrencyPolicyGeneration adds v to the "concurrency_policy_generation" field.
+func (u *AccountUpsertBulk) AddConcurrencyPolicyGeneration(v int64) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddConcurrencyPolicyGeneration(v)
+	})
+}
+
+// UpdateConcurrencyPolicyGeneration sets the "concurrency_policy_generation" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateConcurrencyPolicyGeneration() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateConcurrencyPolicyGeneration()
 	})
 }
 

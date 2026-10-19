@@ -7,11 +7,14 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
 
 // Regression for the production incident on 2026-05-24 around 9:13 CST:
@@ -29,6 +32,105 @@ func newGinContextForEndpoint(t *testing.T, endpoint string) (*gin.Context, *htt
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, endpoint, nil)
 	return c, w
+}
+
+func TestOpenAIConcurrencyCapacityStreamErrorKeepsClassMetadata(t *testing.T) {
+	c, w := newGinContextForEndpoint(t, "/v1/chat/completions")
+	capacityErr := &service.ConcurrencyCapacityError{
+		Class: service.ConcurrencyClassRequest, Scope: "account", Reason: "account_capacity",
+	}
+	err := &ConcurrencyError{SlotType: "account", IsTimeout: true, CapacityError: capacityErr}
+
+	(&OpenAIGatewayHandler{}).handleConcurrencyError(c, err, "account", true)
+
+	body := strings.TrimPrefix(w.Body.String(), "event: error\ndata: ")
+	body = strings.TrimSuffix(body, "\n\n")
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(body), &payload))
+	errorObject := payload["error"].(map[string]any)
+	require.Equal(t, "concurrency_capacity", errorObject["code"])
+	require.Equal(t, "request", errorObject["concurrency_class"])
+	require.Equal(t, "account", errorObject["concurrency_scope"])
+	require.Equal(t, "account_capacity", errorObject["concurrency_reason"])
+}
+
+func TestOpenAIResponsesCapacityFailureStreamPreservesTerminalSchemaAndAddsMetadata(t *testing.T) {
+	c, w := newGinContextForEndpoint(t, EndpointResponses)
+	capacityErr := &service.ConcurrencyCapacityError{
+		Class: service.ConcurrencyClassRequest, Scope: "user", Reason: "user_capacity",
+	}
+	err := &WaitQueueFullError{SlotType: "user", CapacityError: capacityErr}
+
+	(&OpenAIGatewayHandler{}).handleConcurrencyError(c, err, "user", true)
+
+	_, errorObject := parseResponsesFailedSSE(t, w.Body.String())
+	require.Equal(t, "rate_limit_exceeded", errorObject["code"])
+	require.Equal(t, "request", errorObject["concurrency_class"])
+	require.Equal(t, "user", errorObject["concurrency_scope"])
+	require.Equal(t, "user_capacity", errorObject["concurrency_reason"])
+}
+
+func TestCommonGatewayConcurrencyCapacityStreamErrorAddsMetadata(t *testing.T) {
+	c, w := newGinContextForEndpoint(t, "/v1/messages")
+	capacityErr := &service.ConcurrencyCapacityError{
+		Class: service.ConcurrencyClassRequest, Scope: "user", Reason: "user_capacity",
+	}
+	err := &WaitQueueFullError{SlotType: "user", CapacityError: capacityErr}
+
+	(&GatewayHandler{}).handleConcurrencyError(c, err, "user", true)
+
+	body := strings.TrimPrefix(w.Body.String(), "data: ")
+	body = strings.TrimSuffix(body, "\n\n")
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(body), &payload))
+	errorObject := payload["error"].(map[string]any)
+	require.Equal(t, "error", payload["type"])
+	require.Equal(t, "concurrency_capacity", errorObject["code"])
+	require.Equal(t, "request", errorObject["concurrency_class"])
+	require.Equal(t, "user", errorObject["concurrency_scope"])
+	require.Equal(t, "user_capacity", errorObject["concurrency_reason"])
+}
+
+type deniedAccountCapacityCache struct {
+	helperConcurrencyCacheStub
+}
+
+func (c *deniedAccountCapacityCache) AcquireAccountConcurrency(context.Context, service.AccountConcurrencyAdmissionRequest) (service.ConcurrencyAdmissionResult, error) {
+	return service.ConcurrencyAdmissionResult{DeniedScope: "account"}, nil
+}
+
+func (*deniedAccountCapacityCache) ReleaseAccountConcurrency(context.Context, service.AccountConcurrencyAdmissionRequest) error {
+	return nil
+}
+
+func (*deniedAccountCapacityCache) IncrementAccountWaitCount(context.Context, int64, int) (bool, error) {
+	return false, nil
+}
+
+func TestOpenAIAccountQueueFullPreservesTypedCapacityMetadata(t *testing.T) {
+	c, w := newGinContextForEndpoint(t, "/v1/images/generations")
+	cache := &deniedAccountCapacityCache{}
+	h := &OpenAIGatewayHandler{
+		concurrencyHelper: NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, time.Millisecond),
+	}
+	selection := &service.AccountSelectionResult{
+		Account:  &service.Account{ID: 701},
+		WaitPlan: &service.AccountWaitPlan{AccountID: 701, MaxConcurrency: 1, MaxWaiting: 1},
+	}
+	streamStarted := false
+
+	_, result := h.acquireOpenAIAccountSlot(c, nil, "", selection, false, &streamStarted, zap.NewNop(), nil)
+
+	require.Equal(t, openAISlotAcquireFailed, result)
+	require.Equal(t, http.StatusTooManyRequests, w.Code)
+	var payload struct {
+		Error map[string]any `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &payload))
+	require.Equal(t, "concurrency_capacity", payload.Error["code"])
+	require.Equal(t, "request", payload.Error["concurrency_class"])
+	require.Equal(t, "account", payload.Error["concurrency_scope"])
+	require.Equal(t, "account_capacity", payload.Error["concurrency_reason"])
 }
 
 // parseResponsesFailedSSE 抽出 SSE 中 data 行的 JSON，返回 (response 对象, error 对象)。

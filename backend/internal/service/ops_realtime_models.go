@@ -4,48 +4,64 @@ import "time"
 
 // PlatformConcurrencyInfo aggregates concurrency usage by platform.
 type PlatformConcurrencyInfo struct {
-	Platform       string  `json:"platform"`
-	CurrentInUse   int64   `json:"current_in_use"`
-	MaxCapacity    int64   `json:"max_capacity"`
-	LoadPercentage float64 `json:"load_percentage"`
-	WaitingInQueue int64   `json:"waiting_in_queue"`
+	Platform                  string  `json:"platform"`
+	CurrentInUse              int64   `json:"current_in_use"`
+	CurrentConcurrency        *int64  `json:"current_concurrency"`
+	CurrentLiveConcurrency    *int64  `json:"current_live_concurrency"`
+	CurrentRequestConcurrency *int64  `json:"current_request_concurrency"`
+	ConcurrencyReadError      string  `json:"concurrency_read_error,omitempty"`
+	MaxCapacity               int64   `json:"max_capacity"`
+	LoadPercentage            float64 `json:"load_percentage"`
+	WaitingInQueue            int64   `json:"waiting_in_queue"`
 }
 
 // GroupConcurrencyInfo aggregates concurrency usage by group.
 //
 // Note: one account can belong to multiple groups; group totals are therefore not additive across groups.
 type GroupConcurrencyInfo struct {
-	GroupID        int64   `json:"group_id"`
-	GroupName      string  `json:"group_name"`
-	Platform       string  `json:"platform"`
-	CurrentInUse   int64   `json:"current_in_use"`
-	MaxCapacity    int64   `json:"max_capacity"`
-	LoadPercentage float64 `json:"load_percentage"`
-	WaitingInQueue int64   `json:"waiting_in_queue"`
+	GroupID                   int64   `json:"group_id"`
+	GroupName                 string  `json:"group_name"`
+	Platform                  string  `json:"platform"`
+	CurrentInUse              int64   `json:"current_in_use"`
+	CurrentConcurrency        *int64  `json:"current_concurrency"`
+	CurrentLiveConcurrency    *int64  `json:"current_live_concurrency"`
+	CurrentRequestConcurrency *int64  `json:"current_request_concurrency"`
+	ConcurrencyReadError      string  `json:"concurrency_read_error,omitempty"`
+	MaxCapacity               int64   `json:"max_capacity"`
+	LoadPercentage            float64 `json:"load_percentage"`
+	WaitingInQueue            int64   `json:"waiting_in_queue"`
 }
 
 // AccountConcurrencyInfo represents real-time concurrency usage for a single account.
 type AccountConcurrencyInfo struct {
-	AccountID      int64   `json:"account_id"`
-	AccountName    string  `json:"account_name"`
-	Platform       string  `json:"platform"`
-	GroupID        int64   `json:"group_id"`
-	GroupName      string  `json:"group_name"`
-	CurrentInUse   int64   `json:"current_in_use"`
-	MaxCapacity    int64   `json:"max_capacity"`
-	LoadPercentage float64 `json:"load_percentage"`
-	WaitingInQueue int64   `json:"waiting_in_queue"`
+	AccountID                 int64   `json:"account_id"`
+	AccountName               string  `json:"account_name"`
+	Platform                  string  `json:"platform"`
+	GroupID                   int64   `json:"group_id"`
+	GroupName                 string  `json:"group_name"`
+	CurrentInUse              int64   `json:"current_in_use"`
+	CurrentConcurrency        *int64  `json:"current_concurrency"`
+	CurrentLiveConcurrency    *int64  `json:"current_live_concurrency"`
+	CurrentRequestConcurrency *int64  `json:"current_request_concurrency"`
+	ConcurrencyReadError      string  `json:"concurrency_read_error,omitempty"`
+	MaxCapacity               int64   `json:"max_capacity"`
+	LoadPercentage            float64 `json:"load_percentage"`
+	WaitingInQueue            int64   `json:"waiting_in_queue"`
 }
 
 // UserConcurrencyInfo represents real-time concurrency usage for a single user.
 type UserConcurrencyInfo struct {
-	UserID         int64   `json:"user_id"`
-	UserEmail      string  `json:"user_email"`
-	Username       string  `json:"username"`
-	CurrentInUse   int64   `json:"current_in_use"`
-	MaxCapacity    int64   `json:"max_capacity"`
-	LoadPercentage float64 `json:"load_percentage"`
-	WaitingInQueue int64   `json:"waiting_in_queue"`
+	UserID                    int64   `json:"user_id"`
+	UserEmail                 string  `json:"user_email"`
+	Username                  string  `json:"username"`
+	CurrentInUse              int64   `json:"current_in_use"`
+	CurrentConcurrency        *int64  `json:"current_concurrency"`
+	CurrentLiveConcurrency    *int64  `json:"current_live_concurrency"`
+	CurrentRequestConcurrency *int64  `json:"current_request_concurrency"`
+	ConcurrencyReadError      string  `json:"concurrency_read_error,omitempty"`
+	MaxCapacity               int64   `json:"max_capacity"`
+	LoadPercentage            float64 `json:"load_percentage"`
+	WaitingInQueue            int64   `json:"waiting_in_queue"`
 }
 
 // PlatformAvailability aggregates account availability by platform.

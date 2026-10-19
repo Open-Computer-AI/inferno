@@ -1108,10 +1108,10 @@ func (s *OpenAIGatewayService) SelectAccountWithLoadAwareness(ctx context.Contex
 	// 分组利润控制：legacy 公共入口同样装门，保证不经
 	// selectAccountWithScheduler 的调用方也无法绕过利润准入。
 	ctx = s.withOpenAIProfitControlGate(ctx, groupID)
-	return s.selectAccountWithLoadAwareness(ctx, groupID, PlatformOpenAI, sessionHash, requestedModel, excludedIDs, false, "", true)
+	return s.selectAccountWithLoadAwareness(ctx, groupID, PlatformOpenAI, sessionHash, requestedModel, excludedIDs, false, "", true, false)
 }
 
-func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Context, groupID *int64, platform string, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, requiredCapability OpenAIEndpointCapability, useUpstreamTokenCost bool) (*AccountSelectionResult, error) {
+func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Context, groupID *int64, platform string, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, requiredCapability OpenAIEndpointCapability, useUpstreamTokenCost bool, liveAdmission bool) (*AccountSelectionResult, error) {
 	platform = NormalizeOpenAICompatiblePlatform(platform)
 	if s.checkChannelPricingRestriction(ctx, groupID, requestedModel) {
 		slog.Warn("channel pricing restriction blocked request",
@@ -1121,6 +1121,10 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	}
 
 	cfg := s.schedulingConfig()
+	admissionClass := ConcurrencyClassRequest
+	if liveAdmission {
+		admissionClass = ConcurrencyClassLive
+	}
 	preferLowUpstreamRate := useUpstreamTokenCost && s.isOpenAILowUpstreamRatePriorityEnabled(ctx)
 	needsUpstreamCheck := s.needsUpstreamChannelRestrictionCheck(ctx, groupID)
 	var stickyAccountID int64
@@ -1129,12 +1133,19 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			stickyAccountID = accountID
 		}
 	}
-	if s.concurrencyService == nil || !cfg.LoadBatchEnabled {
+	if s.concurrencyService == nil || (!cfg.LoadBatchEnabled && !liveAdmission) {
 		account, err := s.selectAccountForModelWithExclusions(ctx, groupID, platform, sessionHash, requestedModel, excludedIDs, requireCompact, stickyAccountID, requiredCapability, preferLowUpstreamRate)
 		if err != nil {
 			return nil, err
 		}
-		result, err := s.tryAcquireAccountSlot(ctx, account.ID, account.Concurrency)
+		admissionLimit, validPolicy := accountAdmissionLimit(account, ConcurrencyClassRequest)
+		if !validPolicy {
+			return nil, fmt.Errorf("%w: invalid account concurrency policy", ErrNoAvailableAccounts)
+		}
+		result, err := s.tryAcquireAccountSlotForAdmission(ctx, account.ID, admissionLimit, false)
+		if err != nil {
+			return nil, err
+		}
 		if err == nil && result != nil && result.Acquired {
 			return s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
 		}
@@ -1143,7 +1154,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			if waitingCount < cfg.StickySessionMaxWaiting {
 				return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
 					AccountID:      account.ID,
-					MaxConcurrency: account.Concurrency,
+					MaxConcurrency: admissionLimit,
 					Timeout:        cfg.StickySessionWaitTimeout,
 					MaxWaiting:     cfg.StickySessionMaxWaiting,
 				})
@@ -1151,7 +1162,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		}
 		return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
 			AccountID:      account.ID,
-			MaxConcurrency: account.Concurrency,
+			MaxConcurrency: admissionLimit,
 			Timeout:        cfg.FallbackWaitTimeout,
 			MaxWaiting:     cfg.FallbackMaxWaiting,
 		})
@@ -1201,26 +1212,49 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 					} else if !parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 					} else {
-						result, err := s.tryAcquireAccountSlot(ctx, accountID, account.Concurrency)
-						if err == nil && result != nil && result.Acquired {
-							selection, selectErr := s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
-							if selectErr != nil {
-								return nil, selectErr
+						admissionLimit, validPolicy := accountAdmissionLimit(account, admissionClass)
+						if !validPolicy {
+							stickySpillover = true
+						} else {
+							available := true
+							if liveAdmission {
+								var availabilityErr error
+								available, availabilityErr = s.accountAdmissionAvailable(ctx, account, admissionClass)
+								if availabilityErr != nil {
+									return nil, availabilityErr
+								}
 							}
-							_ = s.refreshStickySessionTTL(ctx, groupID, sessionHash, openaiStickySessionTTL)
-							return selection, nil
+							if !available {
+								stickySpillover = true
+							} else {
+								result, err := s.tryAcquireAccountSlotForAdmission(ctx, accountID, admissionLimit, liveAdmission)
+								if err != nil {
+									return nil, err
+								}
+								if err == nil && result != nil && result.Acquired {
+									selection, selectErr := s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
+									if selectErr != nil {
+										return nil, selectErr
+									}
+									_ = s.refreshStickySessionTTL(ctx, groupID, sessionHash, openaiStickySessionTTL)
+									return selection, nil
+								}
+								if liveAdmission {
+									stickySpillover = true
+								} else {
+									waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, accountID)
+									if waitingCount < cfg.StickySessionMaxWaiting {
+										return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
+											AccountID:      accountID,
+											MaxConcurrency: admissionLimit,
+											Timeout:        cfg.StickySessionWaitTimeout,
+											MaxWaiting:     cfg.StickySessionMaxWaiting,
+										})
+									}
+									stickySpillover = true
+								}
+							}
 						}
-
-						waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, accountID)
-						if waitingCount < cfg.StickySessionMaxWaiting {
-							return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
-								AccountID:      accountID,
-								MaxConcurrency: account.Concurrency,
-								Timeout:        cfg.StickySessionWaitTimeout,
-								MaxWaiting:     cfg.StickySessionMaxWaiting,
-							})
-						}
-						stickySpillover = true
 					}
 				}
 			}
@@ -1245,6 +1279,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	baseCandidateCount := 0
 	filterStats := openAISelectionFilterStats{pool: len(accounts)}
 	candidates := make([]*Account, 0, len(accounts))
+	accountLoads := make([]AccountWithConcurrency, 0, len(accounts))
 	for i := range accounts {
 		acc := &accounts[i]
 		if isExcluded(acc.ID) {
@@ -1270,8 +1305,19 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			filterStats.exclude("channel_upstream_restricted")
 			continue
 		}
+		maxConcurrency, splitPolicy, validPolicy := accountLoadLimit(acc, admissionClass)
+		if !validPolicy {
+			filterStats.exclude("invalid_concurrency_policy")
+			continue
+		}
 		baseCandidateCount++
 		candidates = append(candidates, acc)
+		accountLoads = append(accountLoads, AccountWithConcurrency{
+			ID:             acc.ID,
+			MaxConcurrency: maxConcurrency,
+			AdmissionClass: admissionClass,
+			SplitPolicy:    splitPolicy,
+		})
 	}
 
 	if len(candidates) == 0 {
@@ -1280,14 +1326,6 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	rateOrder := openAILegacyUpstreamRateOrder{}
 	if preferLowUpstreamRate {
 		rateOrder = newOpenAILegacyUpstreamRateOrder(candidates, time.Now(), s.openAIOAuthSchedulingRateMultiplier(ctx))
-	}
-
-	accountLoads := make([]AccountWithConcurrency, 0, len(candidates))
-	for _, acc := range candidates {
-		accountLoads = append(accountLoads, AccountWithConcurrency{
-			ID:             acc.ID,
-			MaxConcurrency: acc.EffectiveLoadFactor(),
-		})
 	}
 
 	tryAcquireFromLoadMap := func(loadMap map[int64]*AccountLoadInfo) (*AccountSelectionResult, bool, error) {
@@ -1366,7 +1404,27 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel, requireCompact) {
 				continue
 			}
-			result, err := s.tryAcquireAccountSlot(ctx, fresh.ID, fresh.Concurrency)
+			admissionClass := ConcurrencyClassRequest
+			if liveAdmission {
+				admissionClass = ConcurrencyClassLive
+			}
+			admissionLimit, validPolicy := accountAdmissionLimit(fresh, admissionClass)
+			if !validPolicy {
+				continue
+			}
+			if liveAdmission {
+				available, availabilityErr := s.accountAdmissionAvailable(ctx, fresh, admissionClass)
+				if availabilityErr != nil {
+					return nil, true, availabilityErr
+				}
+				if !available {
+					continue
+				}
+			}
+			result, err := s.tryAcquireAccountSlotForAdmission(ctx, fresh.ID, admissionLimit, liveAdmission)
+			if err != nil {
+				return nil, true, err
+			}
 			if err == nil && result != nil && result.Acquired {
 				selection, selectErr := s.newAcquiredSelectionResult(ctx, fresh, result.ReleaseFunc)
 				if selectErr != nil {
@@ -1405,7 +1463,23 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel, requireCompact) {
 				continue
 			}
-			result, err := s.tryAcquireAccountSlot(ctx, fresh.ID, fresh.Concurrency)
+			admissionLimit, validPolicy := accountAdmissionLimit(fresh, admissionClass)
+			if !validPolicy {
+				continue
+			}
+			if liveAdmission {
+				available, availabilityErr := s.accountAdmissionAvailable(ctx, fresh, admissionClass)
+				if availabilityErr != nil {
+					return nil, availabilityErr
+				}
+				if !available {
+					continue
+				}
+			}
+			result, err := s.tryAcquireAccountSlotForAdmission(ctx, fresh.ID, admissionLimit, liveAdmission)
+			if err != nil {
+				return nil, err
+			}
 			if err == nil && result != nil && result.Acquired {
 				selection, selectErr := s.newAcquiredSelectionResult(ctx, fresh, result.ReleaseFunc)
 				if selectErr != nil {
@@ -1455,9 +1529,23 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel, requireCompact) {
 			continue
 		}
+		if liveAdmission {
+			available, availabilityErr := s.accountAdmissionAvailable(ctx, fresh, admissionClass)
+			if availabilityErr != nil {
+				return nil, availabilityErr
+			}
+			if !available {
+				continue
+			}
+			return s.newAcquiredSelectionResult(ctx, fresh, func() {})
+		}
+		requestLimit, validPolicy := accountAdmissionLimit(fresh, ConcurrencyClassRequest)
+		if !validPolicy {
+			continue
+		}
 		return s.newSelectionResult(ctx, fresh, false, nil, &AccountWaitPlan{
 			AccountID:      fresh.ID,
-			MaxConcurrency: fresh.Concurrency,
+			MaxConcurrency: requestLimit,
 			Timeout:        cfg.FallbackWaitTimeout,
 			MaxWaiting:     cfg.FallbackMaxWaiting,
 		})
@@ -1465,6 +1553,11 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 
 	if requireCompact && baseCandidateCount > 0 {
 		return nil, ErrNoAvailableCompactAccounts
+	}
+	if err == nil {
+		if capacityErr := liveAccountCapacityError(candidates, loadMap, admissionClass); capacityErr != nil {
+			return nil, capacityErr
+		}
 	}
 	return nil, ErrNoAvailableAccounts
 }
@@ -1502,10 +1595,46 @@ func (s *OpenAIGatewayService) listSchedulableAccounts(ctx context.Context, grou
 }
 
 func (s *OpenAIGatewayService) tryAcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int) (*AcquireResult, error) {
-	if s.concurrencyService == nil {
+	if s == nil || s.concurrencyService == nil {
+		return nil, ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	return s.concurrencyService.AcquireAccountPolicySlot(ctx, accountID, ConcurrencyClassRequest, maxConcurrency)
+}
+
+func (s *OpenAIGatewayService) tryAcquireAccountSlotForAdmission(ctx context.Context, accountID int64, maxConcurrency int, liveAdmission bool) (*AcquireResult, error) {
+	if liveAdmission {
 		return &AcquireResult{Acquired: true, ReleaseFunc: func() {}}, nil
 	}
-	return s.concurrencyService.AcquireAccountSlot(ctx, accountID, maxConcurrency)
+	return s.tryAcquireAccountSlot(ctx, accountID, maxConcurrency)
+}
+
+// accountAdmissionAvailable is a read-only class-aware capacity check used by
+// Live selectors, which intentionally do not acquire the ordinary slot. The
+// atomic policy reservation remains the final authority; an unavailable load
+// snapshot therefore falls through to that fence instead of creating a wait
+// plan or treating a stale ordinary load as a Live cap.
+func (s *OpenAIGatewayService) accountAdmissionAvailable(ctx context.Context, account *Account, class ConcurrencyClass) (bool, error) {
+	limit, splitPolicy, validPolicy := accountLoadLimit(account, class)
+	if !validPolicy {
+		return false, nil
+	}
+	if limit <= 0 || s == nil || s.concurrencyService == nil {
+		return true, nil
+	}
+	loadMap, err := s.concurrencyService.GetAccountsLoadBatch(ctx, []AccountWithConcurrency{{
+		ID:             account.ID,
+		MaxConcurrency: limit,
+		AdmissionClass: class,
+		SplitPolicy:    splitPolicy,
+	}})
+	if err != nil {
+		return true, nil
+	}
+	loadInfo, ok := loadMap[account.ID]
+	if !ok || loadInfo == nil {
+		return true, nil
+	}
+	return loadInfo.CurrentConcurrency < limit, nil
 }
 
 func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccount(ctx context.Context, account *Account, platform string, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability) *Account {

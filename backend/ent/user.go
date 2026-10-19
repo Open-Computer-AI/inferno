@@ -35,6 +35,12 @@ type User struct {
 	FrozenBalance float64 `json:"frozen_balance,omitempty"`
 	// Concurrency holds the value of the "concurrency" field.
 	Concurrency int `json:"concurrency,omitempty"`
+	// LiveConcurrency holds the value of the "live_concurrency" field.
+	LiveConcurrency *int `json:"live_concurrency,omitempty"`
+	// RequestConcurrency holds the value of the "request_concurrency" field.
+	RequestConcurrency *int `json:"request_concurrency,omitempty"`
+	// ConcurrencyPolicyGeneration holds the value of the "concurrency_policy_generation" field.
+	ConcurrencyPolicyGeneration int64 `json:"concurrency_policy_generation,omitempty"`
 	// Status holds the value of the "status" field.
 	Status string `json:"status,omitempty"`
 	// Username holds the value of the "username" field.
@@ -245,7 +251,7 @@ func (*User) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case user.FieldBalance, user.FieldFrozenBalance, user.FieldBalanceNotifyThreshold, user.FieldTotalRecharged:
 			values[i] = new(sql.NullFloat64)
-		case user.FieldID, user.FieldConcurrency, user.FieldRpmLimit:
+		case user.FieldID, user.FieldConcurrency, user.FieldLiveConcurrency, user.FieldRequestConcurrency, user.FieldConcurrencyPolicyGeneration, user.FieldRpmLimit:
 			values[i] = new(sql.NullInt64)
 		case user.FieldEmail, user.FieldPasswordHash, user.FieldRole, user.FieldStatus, user.FieldUsername, user.FieldNotes, user.FieldAvatarSeed, user.FieldTotpSecretEncrypted, user.FieldSignupSource, user.FieldBalanceNotifyThresholdType, user.FieldBalanceNotifyExtraEmails:
 			values[i] = new(sql.NullString)
@@ -326,6 +332,26 @@ func (_m *User) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field concurrency", values[i])
 			} else if value.Valid {
 				_m.Concurrency = int(value.Int64)
+			}
+		case user.FieldLiveConcurrency:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field live_concurrency", values[i])
+			} else if value.Valid {
+				_m.LiveConcurrency = new(int)
+				*_m.LiveConcurrency = int(value.Int64)
+			}
+		case user.FieldRequestConcurrency:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field request_concurrency", values[i])
+			} else if value.Valid {
+				_m.RequestConcurrency = new(int)
+				*_m.RequestConcurrency = int(value.Int64)
+			}
+		case user.FieldConcurrencyPolicyGeneration:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field concurrency_policy_generation", values[i])
+			} else if value.Valid {
+				_m.ConcurrencyPolicyGeneration = value.Int64
 			}
 		case user.FieldStatus:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -568,6 +594,19 @@ func (_m *User) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("concurrency=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Concurrency))
+	builder.WriteString(", ")
+	if v := _m.LiveConcurrency; v != nil {
+		builder.WriteString("live_concurrency=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.RequestConcurrency; v != nil {
+		builder.WriteString("request_concurrency=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("concurrency_policy_generation=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ConcurrencyPolicyGeneration))
 	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(_m.Status)

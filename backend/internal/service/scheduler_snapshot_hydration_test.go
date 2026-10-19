@@ -120,8 +120,9 @@ func TestOpenAISelectAccountWithLoadAwareness_HydratesSelectedAccountFromSchedul
 	schedulerSnapshot := NewSchedulerSnapshotService(cache, nil, nil, nil, nil)
 	groupID := int64(2)
 	svc := &OpenAIGatewayService{
-		schedulerSnapshot: schedulerSnapshot,
-		cache:             &stubGatewayCache{},
+		schedulerSnapshot:  schedulerSnapshot,
+		cache:              &stubGatewayCache{},
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
 	}
 
 	selection, err := svc.SelectAccountWithLoadAwareness(context.Background(), &groupID, "", "gpt-4", nil)
@@ -192,9 +193,10 @@ func TestGatewaySelectAccountWithLoadAwareness_HydratesSelectedAccountFromSchedu
 
 	schedulerSnapshot := NewSchedulerSnapshotService(cache, nil, nil, nil, nil)
 	svc := &GatewayService{
-		schedulerSnapshot: schedulerSnapshot,
-		cache:             &mockGatewayCacheForPlatform{},
-		cfg:               testConfig(),
+		schedulerSnapshot:  schedulerSnapshot,
+		cache:              &mockGatewayCacheForPlatform{},
+		cfg:                testConfig(),
+		concurrencyService: NewConcurrencyService(&mockConcurrencyCache{}),
 	}
 
 	result, err := svc.SelectAccountWithLoadAwareness(context.Background(), nil, "", "claude-3-5-sonnet-20241022", nil, "", 0)

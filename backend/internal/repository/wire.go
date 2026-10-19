@@ -26,6 +26,13 @@ func ProvideConcurrencyCache(rdb *redis.Client, cfg *config.Config) service.Conc
 	return NewConcurrencyCache(rdb, cfg.Gateway.ConcurrencySlotTTLMinutes, waitTTLSeconds)
 }
 
+// ProvideConcurrencyPolicyPublisher shares the concurrency Redis namespace
+// with slot admission while exposing only the monotonic DB-to-Redis fence to
+// administrative services.
+func ProvideConcurrencyPolicyPublisher(rdb *redis.Client) service.ConcurrencyPolicyPublisher {
+	return &concurrencyCache{rdb: rdb}
+}
+
 // ProvideGitHubReleaseClient 创建 GitHub Release 客户端
 // 从配置中读取代理设置，支持国内服务器通过代理访问 GitHub
 func ProvideGitHubReleaseClient(cfg *config.Config) service.GitHubReleaseClient {
@@ -65,13 +72,13 @@ func ProvideSchedulerCache(rdb *redis.Client, cfg *config.Config) service.Schedu
 
 // ProviderSet is the Wire provider set for all repositories
 var ProviderSet = wire.NewSet(
-	NewUserRepository,
+	NewUserRepositoryWithConcurrencyPolicyPublisher,
 	NewAPIKeyRepository,
 	NewGroupRepository,
 	NewAdminGroupRepository,
 	NewCompositeModelRouteRepository,
-	NewAccountRepository,
-	NewAdminAccountRepository,
+	NewAccountRepositoryWithConcurrencyPolicyPublisher,
+	NewAdminAccountRepositoryWithConcurrencyPolicyPublisher,
 	NewScheduledTestPlanRepository,   // 定时测试计划仓储
 	NewScheduledTestResultRepository, // 定时测试结果仓储
 	NewProxyRepository,
@@ -115,6 +122,7 @@ var ProviderSet = wire.NewSet(
 	NewOpenAI403CounterCache,
 	NewInternal500CounterCache,
 	ProvideConcurrencyCache,
+	ProvideConcurrencyPolicyPublisher,
 	ProvideSessionLimitCache,
 	NewRPMCache,
 	NewUserRPMCache,
@@ -131,6 +139,7 @@ var ProviderSet = wire.NewSet(
 	NewLeaderLockCache,
 	ProvideSchedulerCache,
 	NewSchedulerOutboxRepository,
+	NewConcurrencyPolicyOutboxRepository,
 	NewAuthCacheInvalidationOutboxRepository,
 	NewProxyLatencyCache,
 	NewTotpCache,

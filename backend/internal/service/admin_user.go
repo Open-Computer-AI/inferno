@@ -144,11 +144,24 @@ func (s *adminServiceImpl) CreateUser(ctx context.Context, input *CreateUserInpu
 
 		RestrictPublicGroups: input.RestrictPublicGroups,
 	}
+	if input.ConcurrencyPolicy != nil {
+		live, requests, err := applyConcurrencyPolicyPatch(input.ConcurrencyPolicy)
+		if err != nil {
+			return nil, err
+		}
+		user.LiveConcurrency = live
+		user.RequestConcurrency = requests
+	}
 	if err := user.SetPassword(input.Password); err != nil {
 		return nil, err
 	}
 	if err := s.userRepo.Create(ctx, user); err != nil {
 		return nil, err
+	}
+	if input.ConcurrencyPolicy != nil {
+		if err := s.publishUserConcurrencyPolicy(ctx, user); err != nil {
+			return nil, err
+		}
 	}
 	// 创建管理员属权限敏感操作，落审计日志（含操作者），便于事后追溯。
 	if user.Role == RoleAdmin {
@@ -215,6 +228,8 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 	}
 
 	oldConcurrency := user.Concurrency
+	oldLiveConcurrency := user.LiveConcurrency
+	oldRequestConcurrency := user.RequestConcurrency
 	oldStatus := user.Status
 	oldRole := user.Role
 	oldRPMLimit := user.RPMLimit
@@ -271,6 +286,16 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 		fields.Concurrency = true
 	}
 
+	if input.ConcurrencyPolicy != nil {
+		live, requests, err := applyConcurrencyPolicyPatch(input.ConcurrencyPolicy)
+		if err != nil {
+			return nil, err
+		}
+		user.LiveConcurrency = live
+		user.RequestConcurrency = requests
+		fields.ConcurrencyPolicy = true
+	}
+
 	if input.RPMLimit != nil {
 		user.RPMLimit = *input.RPMLimit
 		fields.RPMLimit = true
@@ -290,6 +315,11 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 	if err := s.userRepo.Update(ctx, user, fields); err != nil {
 		return nil, err
 	}
+	if input.ConcurrencyPolicy != nil {
+		if err := s.publishUserConcurrencyPolicy(ctx, user); err != nil {
+			return nil, err
+		}
+	}
 
 	// 角色变更属权限敏感操作，落审计日志（含操作者），便于事后追溯。
 	if user.Role != oldRole {
@@ -307,7 +337,7 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 	if s.authCacheInvalidator != nil {
 		// RPMLimit 直接参与 billing_cache_service.checkRPM 的三级级联，
 		// allowed_groups 参与 API Key 专属分组授权判断；不失效缓存会让修改在一个 L2 TTL 内失去效果。
-		if user.Concurrency != oldConcurrency || user.Status != oldStatus || user.Role != oldRole || user.RPMLimit != oldRPMLimit || user.RestrictPublicGroups != oldRestrictPublicGroups || !sameInt64Set(user.AllowedGroups, oldAllowedGroups) {
+		if user.Concurrency != oldConcurrency || !sameOptionalInt(user.LiveConcurrency, oldLiveConcurrency) || !sameOptionalInt(user.RequestConcurrency, oldRequestConcurrency) || user.Status != oldStatus || user.Role != oldRole || user.RPMLimit != oldRPMLimit || user.RestrictPublicGroups != oldRestrictPublicGroups || !sameInt64Set(user.AllowedGroups, oldAllowedGroups) {
 			s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, user.ID)
 		}
 	}
@@ -334,6 +364,13 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 	}
 
 	return user, nil
+}
+
+func sameOptionalInt(a, b *int) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
 }
 
 func sameInt64Set(a, b []int64) bool {
@@ -479,6 +516,20 @@ func (s *adminServiceImpl) BatchUpdateConcurrency(ctx context.Context, userIDs [
 	if err != nil {
 		return 0, err
 	}
+	if s.concurrencyPolicyPublisher != nil && affected > 0 {
+		for _, uid := range cleaned {
+			user, getErr := s.userRepo.GetByID(ctx, uid)
+			if getErr != nil {
+				if errors.Is(getErr, ErrUserNotFound) {
+					continue
+				}
+				return affected, getErr
+			}
+			if publishErr := s.publishUserConcurrencyPolicy(ctx, user); publishErr != nil {
+				return affected, publishErr
+			}
+		}
+	}
 
 	if s.authCacheInvalidator != nil {
 		for _, uid := range cleaned {
@@ -512,6 +563,20 @@ func (s *adminServiceImpl) BatchUpdateLimits(ctx context.Context, userIDs []int6
 	affected, err := s.userRepo.BatchUpdateLimits(ctx, cleaned, concurrency, rpmLimit)
 	if err != nil {
 		return 0, err
+	}
+	if s.concurrencyPolicyPublisher != nil && affected > 0 && concurrency != nil {
+		for _, userID := range cleaned {
+			user, getErr := s.userRepo.GetByID(ctx, userID)
+			if getErr != nil {
+				if errors.Is(getErr, ErrUserNotFound) {
+					continue
+				}
+				return affected, getErr
+			}
+			if publishErr := s.publishUserConcurrencyPolicy(ctx, user); publishErr != nil {
+				return affected, publishErr
+			}
+		}
 	}
 	if s.authCacheInvalidator != nil {
 		for _, userID := range cleaned {

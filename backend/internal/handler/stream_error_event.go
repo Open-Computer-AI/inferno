@@ -8,14 +8,18 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
 // responsesFailedError 对齐 OpenAI Responses 协议 error 子对象。
 type responsesFailedError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code              string `json:"code"`
+	Message           string `json:"message"`
+	ConcurrencyClass  string `json:"concurrency_class,omitempty"`
+	ConcurrencyScope  string `json:"concurrency_scope,omitempty"`
+	ConcurrencyReason string `json:"concurrency_reason,omitempty"`
 }
 
 // responsesFailedBody 对齐 apicompat.makeResponsesCompletedEvent 输出的 response 子对象字段集。
@@ -57,10 +61,15 @@ type responsesFailedEvent struct {
 // 此时 caller 也无法回退到 JSON（HTTP 200 已固化），通常意味着连接已经损坏，
 // 应当让请求处理函数 return，由上层关闭连接。
 func writeResponsesFailedSSE(c *gin.Context, errType, message string) bool {
+	return writeResponsesFailedSSEWithCapacity(c, errType, message, nil)
+}
+
+func writeResponsesFailedSSEWithCapacity(c *gin.Context, errType, message string, capacityErr *service.ConcurrencyCapacityError) bool {
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
 		return false
 	}
+	metadata := concurrencyCapacityMetadata(capacityErr)
 
 	payload, err := json.Marshal(responsesFailedEvent{
 		Type: "response.failed",
@@ -72,8 +81,11 @@ func writeResponsesFailedSSE(c *gin.Context, errType, message string) bool {
 			Status:    "failed",
 			Output:    []any{},
 			Error: responsesFailedError{
-				Code:    mapResponsesErrorCode(errType),
-				Message: message,
+				Code:              mapResponsesErrorCode(errType),
+				Message:           message,
+				ConcurrencyClass:  metadata["concurrency_class"],
+				ConcurrencyScope:  metadata["concurrency_scope"],
+				ConcurrencyReason: metadata["concurrency_reason"],
 			},
 		},
 	})

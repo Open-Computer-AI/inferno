@@ -28,8 +28,9 @@ import (
 )
 
 type userRepository struct {
-	client *dbent.Client
-	sql    sqlExecutor
+	client                     *dbent.Client
+	sql                        sqlExecutor
+	concurrencyPolicyPublisher service.ConcurrencyPolicyPublisher
 }
 
 var _ service.RedeemUserAdjustmentRepository = (*userRepository)(nil)
@@ -38,8 +39,75 @@ func NewUserRepository(client *dbent.Client, sqlDB *sql.DB) service.UserReposito
 	return newUserRepositoryWithSQL(client, sqlDB)
 }
 
-func newUserRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor) *userRepository {
-	return &userRepository{client: client, sql: sqlq}
+func NewUserRepositoryWithConcurrencyPolicyPublisher(
+	client *dbent.Client,
+	sqlDB *sql.DB,
+	publisher service.ConcurrencyPolicyPublisher,
+) service.UserRepository {
+	return newUserRepositoryWithSQL(client, sqlDB, publisher)
+}
+
+func newUserRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor, publishers ...service.ConcurrencyPolicyPublisher) *userRepository {
+	var publisher service.ConcurrencyPolicyPublisher
+	if len(publishers) > 0 {
+		publisher = publishers[0]
+	}
+	return &userRepository{client: client, sql: sqlq, concurrencyPolicyPublisher: publisher}
+}
+
+func (r *userRepository) publishCurrentConcurrencyPolicy(ctx context.Context, userID int64) error {
+	if r == nil || r.concurrencyPolicyPublisher == nil {
+		return nil
+	}
+	user, err := r.GetByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	policy := service.ConcurrencyPolicy{
+		Shared:  user.Concurrency,
+		Live:    user.LiveConcurrency,
+		Request: user.RequestConcurrency,
+	}
+	if err := service.ValidateConcurrencyPolicy(policy); err != nil {
+		return err
+	}
+	return r.concurrencyPolicyPublisher.PublishUserConcurrencyPolicy(
+		ctx,
+		user.ID,
+		policy,
+		user.ConcurrencyPolicyGeneration,
+	)
+}
+
+// PublishCurrentConcurrencyPolicy lets transaction-owning services publish
+// after their commit boundary. Normal repository writers call the same helper
+// internally; redeem uses this exported narrow capability after committing its
+// code-consumption transaction.
+func (r *userRepository) PublishCurrentConcurrencyPolicy(ctx context.Context, userID int64) error {
+	return r.publishCurrentConcurrencyPolicy(ctx, userID)
+}
+
+func (r *userRepository) publishCurrentConcurrencyPolicies(ctx context.Context, userIDs []int64) error {
+	if r == nil || r.concurrencyPolicyPublisher == nil {
+		return nil
+	}
+	seen := make(map[int64]struct{}, len(userIDs))
+	for _, userID := range userIDs {
+		if userID <= 0 {
+			continue
+		}
+		if _, ok := seen[userID]; ok {
+			continue
+		}
+		seen[userID] = struct{}{}
+		if err := r.publishCurrentConcurrencyPolicy(ctx, userID); err != nil {
+			if errors.Is(err, service.ErrUserNotFound) {
+				continue
+			}
+			return fmt.Errorf("publish user concurrency policy user_id=%d: %w", userID, err)
+		}
+	}
+	return nil
 }
 
 func (r *userRepository) Create(ctx context.Context, userIn *service.User) error {
@@ -140,7 +208,7 @@ func (r *userRepository) create(ctx context.Context, userIn *service.User, guard
 		}
 	}
 
-	created, err := txClient.User.Create().
+	createOp := txClient.User.Create().
 		SetEmail(userIn.Email).
 		SetUsername(userIn.Username).
 		SetNotes(userIn.Notes).
@@ -153,8 +221,14 @@ func (r *userRepository) create(ctx context.Context, userIn *service.User, guard
 		SetNillableLastLoginAt(userIn.LastLoginAt).
 		SetNillableLastActiveAt(userIn.LastActiveAt).
 		SetRpmLimit(userIn.RPMLimit).
-		SetRestrictPublicGroups(userIn.RestrictPublicGroups).
-		Save(txCtx)
+		SetRestrictPublicGroups(userIn.RestrictPublicGroups)
+	if userIn.LiveConcurrency != nil {
+		createOp.SetLiveConcurrency(*userIn.LiveConcurrency)
+	}
+	if userIn.RequestConcurrency != nil {
+		createOp.SetRequestConcurrency(*userIn.RequestConcurrency)
+	}
+	created, err := createOp.Save(txCtx)
 	if err != nil {
 		return translatePersistenceError(err, nil, service.ErrEmailExists)
 	}
@@ -173,6 +247,11 @@ func (r *userRepository) create(ctx context.Context, userIn *service.User, guard
 	}
 
 	applyUserEntityToService(userIn, created)
+	if ownedTx != nil && r.concurrencyPolicyPublisher != nil {
+		if err := r.publishCurrentConcurrencyPolicy(ctx, userIn.ID); err != nil {
+			return fmt.Errorf("publish user concurrency policy: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -314,6 +393,18 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User, field
 	if fields.Concurrency {
 		updateOp = updateOp.SetConcurrency(userIn.Concurrency)
 	}
+	if fields.ConcurrencyPolicy {
+		if userIn.LiveConcurrency != nil {
+			updateOp = updateOp.SetLiveConcurrency(*userIn.LiveConcurrency)
+		} else {
+			updateOp = updateOp.ClearLiveConcurrency()
+		}
+		if userIn.RequestConcurrency != nil {
+			updateOp = updateOp.SetRequestConcurrency(*userIn.RequestConcurrency)
+		} else {
+			updateOp = updateOp.ClearRequestConcurrency()
+		}
+	}
 	if fields.RPMLimit {
 		updateOp = updateOp.SetRpmLimit(userIn.RPMLimit)
 	}
@@ -367,6 +458,12 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User, field
 	}
 
 	userIn.UpdatedAt = updated.UpdatedAt
+	userIn.ConcurrencyPolicyGeneration = updated.ConcurrencyPolicyGeneration
+	if tx != nil && r.concurrencyPolicyPublisher != nil && (fields.Concurrency || fields.ConcurrencyPolicy) {
+		if err := r.publishCurrentConcurrencyPolicy(ctx, userIn.ID); err != nil {
+			return fmt.Errorf("publish user concurrency policy: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -1049,6 +1146,11 @@ func (r *userRepository) UpdateConcurrency(ctx context.Context, id int64, amount
 	if n == 0 {
 		return service.ErrUserNotFound
 	}
+	if dbent.TxFromContext(ctx) == nil {
+		if err := r.publishCurrentConcurrencyPolicy(ctx, id); err != nil {
+			return fmt.Errorf("publish user concurrency policy: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -1070,6 +1172,11 @@ func (r *userRepository) ApplyRedeemConcurrencyAdjustment(ctx context.Context, i
 	if affected == 0 {
 		return service.ErrUserNotFound
 	}
+	if dbent.TxFromContext(ctx) == nil {
+		if err := r.publishCurrentConcurrencyPolicy(ctx, id); err != nil {
+			return fmt.Errorf("publish user concurrency policy: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -1087,6 +1194,11 @@ func (r *userRepository) BatchSetConcurrency(ctx context.Context, userIDs []int6
 		return 0, fmt.Errorf("batch set concurrency: %w", err)
 	}
 	affected, _ := res.RowsAffected()
+	if affected > 0 && dbent.TxFromContext(ctx) == nil {
+		if err := r.publishCurrentConcurrencyPolicies(ctx, userIDs); err != nil {
+			return int(affected), err
+		}
+	}
 	return int(affected), nil
 }
 
@@ -1101,6 +1213,11 @@ func (r *userRepository) BatchAddConcurrency(ctx context.Context, userIDs []int6
 		return 0, fmt.Errorf("batch add concurrency: %w", err)
 	}
 	affected, _ := res.RowsAffected()
+	if affected > 0 && dbent.TxFromContext(ctx) == nil {
+		if err := r.publishCurrentConcurrencyPolicies(ctx, userIDs); err != nil {
+			return int(affected), err
+		}
+	}
 	return int(affected), nil
 }
 
@@ -1134,6 +1251,11 @@ func (r *userRepository) BatchUpdateLimits(ctx context.Context, userIDs []int64,
 		return 0, fmt.Errorf("batch update user limits: %w", err)
 	}
 	affected, _ := res.RowsAffected()
+	if affected > 0 && concurrency != nil && dbent.TxFromContext(ctx) == nil {
+		if err := r.publishCurrentConcurrencyPolicies(ctx, userIDs); err != nil {
+			return int(affected), err
+		}
+	}
 	return int(affected), nil
 }
 
@@ -1535,6 +1657,9 @@ func applyUserEntityToService(dst *service.User, src *dbent.User) {
 		return
 	}
 	dst.ID = src.ID
+	dst.LiveConcurrency = src.LiveConcurrency
+	dst.RequestConcurrency = src.RequestConcurrency
+	dst.ConcurrencyPolicyGeneration = src.ConcurrencyPolicyGeneration
 	dst.SignupSource = src.SignupSource
 	dst.LastLoginAt = src.LastLoginAt
 	dst.LastActiveAt = src.LastActiveAt

@@ -464,6 +464,8 @@
       :account-ids="selIds"
       :selected-platforms="selPlatforms"
       :selected-types="selTypes"
+      :selected-auth-modes="selAuthModes"
+      :selected-auth-modes-complete="selectedAuthModesComplete"
       :target="bulkEditTarget ?? undefined"
       :proxies="proxies"
       :groups="groups"
@@ -548,6 +550,8 @@ type AccountBulkEditTarget =
       accountIds: number[]
       selectedPlatforms: AccountPlatform[]
       selectedTypes: AccountType[]
+      selectedAuthModes: string[]
+      selectedAuthModesComplete: boolean
     }
   | {
       mode: 'filtered'
@@ -564,6 +568,8 @@ type AccountBulkEditTarget =
       previewCount: number
       selectedPlatforms: AccountPlatform[]
       selectedTypes: AccountType[]
+      selectedAuthModes: string[]
+      selectedAuthModesComplete: boolean
     }
 const selPlatforms = computed<AccountPlatform[]>(() => {
   const platforms = new Set(
@@ -580,6 +586,15 @@ const selTypes = computed<AccountType[]>(() => {
       .map(a => a.type)
   )
   return [...types]
+})
+const selAuthModes = computed<string[]>(() => {
+  const authModes = new Set(
+    accounts.value
+      .filter(a => isSelected(a.id))
+      .map(getOpenAIAuthMode)
+      .filter((authMode): authMode is string => Boolean(authMode))
+  )
+  return [...authModes]
 })
 const showCreate = ref(false)
 const showEdit = ref(false)
@@ -1112,6 +1127,10 @@ const allResultsSelected = computed(() => {
   if (!snapshot || snapshot.size === 0 || snapshot.size !== selectedSet.value.size) return false
   return Array.from(snapshot).every(id => selectedSet.value.has(id))
 })
+const selectedAuthModesComplete = computed(() =>
+  selectedAllResultIDs.value === null &&
+  selIds.value.every((id) => accounts.value.some((account) => account.id === id))
+)
 
 const clearSelection = () => {
   selectionRequestVersion.value++
@@ -1384,9 +1403,14 @@ const inAutoRefreshSilentWindow = () => {
 }
 
 const shouldReplaceAutoRefreshRow = (current: Account, next: Account) => {
+  const runtimeFieldChanged = <T>(currentValue: T | null | undefined, nextValue: T | null | undefined) =>
+    nextValue !== undefined && currentValue !== nextValue
+
   return (
     current.updated_at !== next.updated_at ||
-    current.current_concurrency !== next.current_concurrency ||
+    runtimeFieldChanged(current.current_concurrency, next.current_concurrency) ||
+    runtimeFieldChanged(current.current_live_concurrency, next.current_live_concurrency) ||
+    runtimeFieldChanged(current.current_request_concurrency, next.current_request_concurrency) ||
     current.current_window_cost !== next.current_window_cost ||
     current.active_sessions !== next.active_sessions ||
     current.schedulable !== next.schedulable ||
@@ -2111,7 +2135,12 @@ const handleSelectAllResults = async () => {
 const collectSelectionMetadata = (rows: Account[]) => {
   const selectedPlatforms = Array.from(new Set(rows.map(account => account.platform)))
   const selectedTypes = Array.from(new Set(rows.map(account => account.type)))
-  return { selectedPlatforms, selectedTypes }
+  const selectedAuthModes = Array.from(new Set(
+    rows
+      .map(getOpenAIAuthMode)
+      .filter((authMode): authMode is string => Boolean(authMode))
+  ))
+  return { selectedPlatforms, selectedTypes, selectedAuthModes }
 }
 
 const openBulkEditSelected = () => {
@@ -2119,7 +2148,9 @@ const openBulkEditSelected = () => {
     mode: 'selected',
     accountIds: [...selIds.value],
     selectedPlatforms: [...selPlatforms.value],
-    selectedTypes: [...selTypes.value]
+    selectedTypes: [...selTypes.value],
+    selectedAuthModes: [...selAuthModes.value],
+    selectedAuthModesComplete: selectedAuthModesComplete.value
   }
   showBulkEdit.value = true
 }
@@ -2127,13 +2158,15 @@ const openBulkEditSelected = () => {
 const openBulkEditFiltered = async () => {
   const filters = buildBulkEditFilterSnapshot()
   const preview = await adminAPI.accounts.list(1, 100, filters)
-  const { selectedPlatforms, selectedTypes } = collectSelectionMetadata(preview.items)
+  const { selectedPlatforms, selectedTypes, selectedAuthModes } = collectSelectionMetadata(preview.items)
   bulkEditTarget.value = {
     mode: 'filtered',
     filters,
     previewCount: preview.total,
     selectedPlatforms,
-    selectedTypes
+    selectedTypes,
+    selectedAuthModes,
+    selectedAuthModesComplete: false
   }
   showBulkEdit.value = true
 }
@@ -2202,9 +2235,21 @@ const accountMatchesCurrentFilters = (account: Account) => {
 }
 const mergeRuntimeFields = (oldAccount: Account, updatedAccount: Account): Account => ({
   ...updatedAccount,
-  current_concurrency: updatedAccount.current_concurrency ?? oldAccount.current_concurrency,
-  current_window_cost: updatedAccount.current_window_cost ?? oldAccount.current_window_cost,
-  active_sessions: updatedAccount.active_sessions ?? oldAccount.active_sessions
+  current_concurrency: updatedAccount.current_concurrency === undefined
+    ? oldAccount.current_concurrency
+    : updatedAccount.current_concurrency,
+  current_live_concurrency: updatedAccount.current_live_concurrency === undefined
+    ? oldAccount.current_live_concurrency
+    : updatedAccount.current_live_concurrency,
+  current_request_concurrency: updatedAccount.current_request_concurrency === undefined
+    ? oldAccount.current_request_concurrency
+    : updatedAccount.current_request_concurrency,
+  current_window_cost: updatedAccount.current_window_cost === undefined
+    ? oldAccount.current_window_cost
+    : updatedAccount.current_window_cost,
+  active_sessions: updatedAccount.active_sessions === undefined
+    ? oldAccount.active_sessions
+    : updatedAccount.active_sessions
 })
 
 const syncPaginationAfterLocalRemoval = () => {

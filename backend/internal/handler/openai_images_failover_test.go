@@ -127,7 +127,7 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 		nil,
 		cfg,
 		nil,
-		nil,
+		newTestConcurrencyService(),
 		nil,
 		nil,
 		nil,
@@ -143,7 +143,7 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 	)
 	billingService := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
 	t.Cleanup(billingService.Stop)
-	concurrencyService := service.NewConcurrencyService(nil)
+	concurrencyService := newTestConcurrencyService()
 	handler := NewOpenAIGatewayHandler(
 		gatewayService,
 		concurrencyService,

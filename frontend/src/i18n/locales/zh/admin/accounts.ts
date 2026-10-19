@@ -1,4 +1,20 @@
 export default {
+  concurrencyPolicy: {
+    mode: '并发模式',
+    shared: '共享限制',
+    split: 'Live 与请求分开限制',
+    live: 'Live 当前数 / 限制',
+    requests: '请求当前数 / 限制',
+    liveLimit: 'Live 限制',
+    requestsLimit: '请求限制',
+    aggregate: '聚合当前数',
+    aggregateValue: '{value} 个活跃请求',
+    hint: '分开模式必须为两类任务分别填写正整数限制。',
+    positiveInteger: '请输入不超过 {max} 的正整数。',
+    unknown: '未知',
+    invalid: '请输入有效的 Live 与请求正整数限制。',
+    unsupportedImportHint: '此导入方式不支持并发策略，已重置所选策略。'
+  },
     accounts: {
       title: '账号管理',
       description: '管理 AI 平台账号和 Cookie',
@@ -573,6 +589,8 @@ export default {
         failed: '批量更新失败',
         noSelection: '请选择要编辑的账号',
         noFieldsSelected: '请至少选择一个要更新的字段',
+        concurrencyPolicyHint: '只有选中的 OpenAI OAuth 账号可以设置并发策略。',
+        concurrencyPolicySelectedOnly: '并发策略只能应用于选中的账号。',
         rateSyncWarning: '已开启上游倍率同步的账号不能批量手工修改倍率，请先在账号编辑页关闭同步。',
         rateSyncConflict: '无法修改账号倍率：{count} 个目标账号已开启上游倍率同步。',
         longContextShadowHint: '长上下文计费归母账号所有。选中的影子账号仍跟随母账号，筛选全量目标时同样如此。',

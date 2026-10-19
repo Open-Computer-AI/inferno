@@ -24,6 +24,7 @@ type GroupHandler struct {
 	adminService         service.AdminService
 	dashboardService     *service.DashboardService
 	groupCapacityService *service.GroupCapacityService
+	concurrencyService   *service.ConcurrencyService
 }
 
 // GetLiveCapability 返回当前服务端是否具备生成 Live attestation 的运行环境。
@@ -86,11 +87,17 @@ func (f optionalLimitField) ToServiceInput() *float64 {
 }
 
 // NewGroupHandler creates a new admin group handler
-func NewGroupHandler(adminService service.AdminService, dashboardService *service.DashboardService, groupCapacityService *service.GroupCapacityService) *GroupHandler {
+func NewGroupHandler(
+	adminService service.AdminService,
+	dashboardService *service.DashboardService,
+	groupCapacityService *service.GroupCapacityService,
+	concurrencyService *service.ConcurrencyService,
+) *GroupHandler {
 	return &GroupHandler{
 		adminService:         adminService,
 		dashboardService:     dashboardService,
 		groupCapacityService: groupCapacityService,
+		concurrencyService:   concurrencyService,
 	}
 }
 
@@ -790,10 +797,7 @@ func (h *GroupHandler) GetGroupAPIKeys(c *gin.Context) {
 		return
 	}
 
-	outKeys := make([]dto.APIKey, 0, len(keys))
-	for i := range keys {
-		outKeys = append(outKeys, *dto.APIKeyFromService(&keys[i]))
-	}
+	outKeys := apiKeyDTOsWithConcurrency(c.Request.Context(), keys, h.concurrencyService)
 	response.Paginated(c, outKeys, total, page, pageSize)
 }
 

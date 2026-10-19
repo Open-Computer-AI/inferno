@@ -53,6 +53,21 @@ func TestMigrationsRunner_IsIdempotent_AndSchemaIsUpToDate(t *testing.T) {
 	requireColumn(t, tx, "accounts", "rate_limit_reset_at", "timestamp with time zone", 0, true)
 	requireColumn(t, tx, "accounts", "overload_until", "timestamp with time zone", 0, true)
 	requireColumn(t, tx, "accounts", "session_window_status", "character varying", 20, true)
+	requireColumn(t, tx, "accounts", "live_concurrency", "integer", 0, true)
+	requireColumn(t, tx, "accounts", "request_concurrency", "integer", 0, true)
+	requireColumn(t, tx, "accounts", "concurrency_policy_generation", "bigint", 0, false)
+	requireColumn(t, tx, "users", "live_concurrency", "integer", 0, true)
+	requireColumn(t, tx, "users", "request_concurrency", "integer", 0, true)
+	requireColumn(t, tx, "users", "concurrency_policy_generation", "bigint", 0, false)
+	requireConstraintDefinitionContains(t, tx, "accounts", "accounts_split_concurrency_pair_check", "live_concurrency IS NULL", "request_concurrency IS NULL", "live_concurrency > 0", "request_concurrency > 0")
+	requireConstraintDefinitionContains(t, tx, "users", "users_split_concurrency_pair_check", "live_concurrency IS NULL", "request_concurrency IS NULL", "live_concurrency > 0", "request_concurrency > 0")
+	var policyOutboxRegclass sql.NullString
+	require.NoError(t, tx.QueryRowContext(context.Background(), "SELECT to_regclass('public.concurrency_policy_outbox')").Scan(&policyOutboxRegclass))
+	require.True(t, policyOutboxRegclass.Valid, "expected concurrency_policy_outbox table to exist")
+	requireColumn(t, tx, "concurrency_policy_outbox", "entity_type", "text", 0, false)
+	requireColumn(t, tx, "concurrency_policy_outbox", "generation", "bigint", 0, false)
+	requireColumn(t, tx, "concurrency_policy_outbox", "published_at", "timestamp with time zone", 0, true)
+	requireIndex(t, tx, "concurrency_policy_outbox", "idx_concurrency_policy_outbox_pending")
 	requireIndex(t, tx, "accounts", "idx_accounts_autopause_expiry_due")
 
 	// groups: OpenAI Live 与 Fast 强制策略都默认关闭，管理员显式开启后才生效。

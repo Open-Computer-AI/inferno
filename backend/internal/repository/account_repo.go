@@ -15,6 +15,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -49,6 +50,10 @@ type accountRepository struct {
 	// Used to proactively sync account snapshot to cache when status changes,
 	// ensuring sticky sessions can promptly detect unavailable accounts.
 	schedulerCache service.SchedulerCache
+	// concurrencyPolicyPublisher is optional for narrow test repositories, but
+	// production wiring supplies it so legacy account writers publish the
+	// trigger-assigned generation before returning.
+	concurrencyPolicyPublisher service.ConcurrencyPolicyPublisher
 }
 
 var schedulerNeutralExtraKeyPrefixes = []string{
@@ -110,16 +115,75 @@ func NewAccountRepository(client *dbent.Client, sqlDB *sql.DB, schedulerCache se
 	return newAccountRepositoryWithSQL(client, sqlDB, schedulerCache)
 }
 
+func NewAccountRepositoryWithConcurrencyPolicyPublisher(
+	client *dbent.Client,
+	sqlDB *sql.DB,
+	schedulerCache service.SchedulerCache,
+	publisher service.ConcurrencyPolicyPublisher,
+) service.AccountRepository {
+	return newAccountRepositoryWithSQL(client, sqlDB, schedulerCache, publisher)
+}
+
 // NewAdminAccountRepository exposes the account repository's atomic duplication capability
 // as an explicit dependency of the admin service.
 func NewAdminAccountRepository(client *dbent.Client, sqlDB *sql.DB, schedulerCache service.SchedulerCache) service.AdminAccountRepository {
 	return newAccountRepositoryWithSQL(client, sqlDB, schedulerCache)
 }
 
+func NewAdminAccountRepositoryWithConcurrencyPolicyPublisher(
+	client *dbent.Client,
+	sqlDB *sql.DB,
+	schedulerCache service.SchedulerCache,
+	publisher service.ConcurrencyPolicyPublisher,
+) service.AdminAccountRepository {
+	return newAccountRepositoryWithSQL(client, sqlDB, schedulerCache, publisher)
+}
+
 // newAccountRepositoryWithSQL 是内部构造函数，支持依赖注入 SQL 执行器。
 // 这种设计便于单元测试时注入 mock 对象。
-func newAccountRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor, schedulerCache service.SchedulerCache) *accountRepository {
-	return &accountRepository{client: client, sql: sqlq, schedulerCache: schedulerCache}
+func newAccountRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor, schedulerCache service.SchedulerCache, publishers ...service.ConcurrencyPolicyPublisher) *accountRepository {
+	var publisher service.ConcurrencyPolicyPublisher
+	if len(publishers) > 0 {
+		publisher = publishers[0]
+	}
+	return &accountRepository{
+		client:                     client,
+		sql:                        sqlq,
+		schedulerCache:             schedulerCache,
+		concurrencyPolicyPublisher: publisher,
+	}
+}
+
+func (r *accountRepository) publishCurrentConcurrencyPolicy(ctx context.Context, accountID int64) error {
+	if r == nil || r.concurrencyPolicyPublisher == nil {
+		return nil
+	}
+	account, err := r.GetByID(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	policy := service.ConcurrencyPolicy{
+		Shared:  account.Concurrency,
+		Live:    account.LiveConcurrency,
+		Request: account.RequestConcurrency,
+	}
+	if err := service.ValidateConcurrencyPolicy(policy); err != nil {
+		return err
+	}
+	return r.concurrencyPolicyPublisher.PublishAccountConcurrencyPolicy(
+		ctx,
+		account.ID,
+		policy,
+		account.ConcurrencyPolicyGeneration,
+	)
+}
+
+// PublishCurrentConcurrencyPolicy lets transaction-owning services publish the
+// authoritative row after commit. Normal repository writers use the same
+// helper internally; callers that supplied the transaction must invoke this
+// hook after committing it.
+func (r *accountRepository) PublishCurrentConcurrencyPolicy(ctx context.Context, accountID int64) error {
+	return r.publishCurrentConcurrencyPolicy(ctx, accountID)
 }
 
 func (r *accountRepository) Create(ctx context.Context, account *service.Account) error {
@@ -128,6 +192,9 @@ func (r *accountRepository) Create(ctx context.Context, account *service.Account
 	}
 	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &account.ID, nil, buildSchedulerGroupPayload(account.GroupIDs)); err != nil {
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue account create failed: account=%d err=%v", account.ID, err)
+	}
+	if err := r.publishCurrentConcurrencyPolicy(ctx, account.ID); err != nil {
+		return fmt.Errorf("publish account concurrency policy: %w", err)
 	}
 	return nil
 }
@@ -150,7 +217,12 @@ func createAccountRecord(ctx context.Context, client *dbent.Client, account *ser
 		SetErrorMessage(account.ErrorMessage).
 		SetSchedulable(account.Schedulable).
 		SetAutoPauseOnExpired(account.AutoPauseOnExpired)
-
+	if account.LiveConcurrency != nil {
+		builder.SetLiveConcurrency(*account.LiveConcurrency)
+	}
+	if account.RequestConcurrency != nil {
+		builder.SetRequestConcurrency(*account.RequestConcurrency)
+	}
 	if account.RateMultiplier != nil {
 		builder.SetRateMultiplier(*account.RateMultiplier)
 	}
@@ -197,6 +269,9 @@ func createAccountRecord(ctx context.Context, client *dbent.Client, account *ser
 	}
 
 	account.ID = created.ID
+	account.LiveConcurrency = created.LiveConcurrency
+	account.RequestConcurrency = created.RequestConcurrency
+	account.ConcurrencyPolicyGeneration = created.ConcurrencyPolicyGeneration
 	account.CreatedAt = created.CreatedAt
 	account.UpdatedAt = created.UpdatedAt
 	return nil
@@ -250,6 +325,11 @@ func (r *accountRepository) CreateWithAccountGroups(ctx context.Context, account
 	if tx != nil {
 		if err := tx.Commit(); err != nil {
 			return err
+		}
+	}
+	if tx != nil && r.concurrencyPolicyPublisher != nil {
+		if err := r.publishCurrentConcurrencyPolicy(ctx, account.ID); err != nil {
+			return fmt.Errorf("publish account concurrency policy: %w", err)
 		}
 	}
 	return nil
@@ -499,6 +579,12 @@ func (r *accountRepository) updateAccount(
 	}
 
 	account.UpdatedAt = updated.UpdatedAt
+	account.ConcurrencyPolicyGeneration = updated.ConcurrencyPolicyGeneration
+	if contextTx == nil && r.concurrencyPolicyPublisher != nil {
+		if err := r.publishCurrentConcurrencyPolicy(baseCtx, account.ID); err != nil {
+			return fmt.Errorf("publish account concurrency policy: %w", err)
+		}
+	}
 	// 普通账号编辑（如 model_mapping / credentials）也需要立即刷新单账号快照，
 	// 否则网关在 outbox worker 延迟或异常时仍可能读到旧配置。
 	if contextTx == nil {
@@ -539,6 +625,18 @@ func (r *accountRepository) updateLockedAccount(
 		SetErrorMessage(account.ErrorMessage).
 		SetSchedulable(schedulable).
 		SetAutoPauseOnExpired(account.AutoPauseOnExpired)
+	if account.ConcurrencyPolicyChanged {
+		if account.LiveConcurrency != nil {
+			builder.SetLiveConcurrency(*account.LiveConcurrency)
+		} else {
+			builder.ClearLiveConcurrency()
+		}
+		if account.RequestConcurrency != nil {
+			builder.SetRequestConcurrency(*account.RequestConcurrency)
+		} else {
+			builder.ClearRequestConcurrency()
+		}
+	}
 
 	if explicitRateMultiplier != nil {
 		builder.SetRateMultiplier(*explicitRateMultiplier)
@@ -2860,6 +2958,26 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 		args = append(args, *updates.Concurrency)
 		idx++
 	}
+	if updates.ConcurrencyPolicy != nil {
+		live, requests, err := updates.ConcurrencyPolicy.Resolve()
+		if err != nil {
+			return 0, err
+		}
+		if live == nil {
+			setClauses = append(setClauses, "live_concurrency = NULL")
+		} else {
+			setClauses = append(setClauses, "live_concurrency = $"+itoa(idx))
+			args = append(args, *live)
+			idx++
+		}
+		if requests == nil {
+			setClauses = append(setClauses, "request_concurrency = NULL")
+		} else {
+			setClauses = append(setClauses, "request_concurrency = $"+itoa(idx))
+			args = append(args, *requests)
+			idx++
+		}
+	}
 	if updates.Priority != nil {
 		setClauses = append(setClauses, "priority = $"+itoa(idx))
 		args = append(args, *updates.Priority)
@@ -3030,8 +3148,24 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 			return 0, err
 		}
 	}
+	if rows > 0 && contextTx == nil && r.concurrencyPolicyPublisher != nil &&
+		(updates.Concurrency != nil || updates.ConcurrencyPolicy != nil) {
+		seen := make(map[int64]struct{}, len(ids))
+		for _, id := range ids {
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			if err := r.publishCurrentConcurrencyPolicy(baseCtx, id); err != nil {
+				return rows, fmt.Errorf("publish account concurrency policy account_id=%d: %w", id, err)
+			}
+		}
+	}
 	if rows > 0 && contextTx == nil {
 		shouldSync := false
+		if updates.ConcurrencyPolicy != nil {
+			shouldSync = true
+		}
 		if updates.Status != nil && (*updates.Status == service.StatusError || *updates.Status == service.StatusDisabled) {
 			shouldSync = true
 		}
@@ -3369,37 +3503,40 @@ func accountEntityToService(m *dbent.Account) *service.Account {
 	rateMultiplier := m.RateMultiplier
 
 	return &service.Account{
-		ID:                      m.ID,
-		Name:                    m.Name,
-		Notes:                   m.Notes,
-		Platform:                m.Platform,
-		Type:                    m.Type,
-		Credentials:             copyJSONMap(m.Credentials),
-		Extra:                   copyJSONMap(m.Extra),
-		ProxyID:                 m.ProxyID,
-		ProxyFallbackOriginID:   m.ProxyFallbackOriginID,
-		Concurrency:             m.Concurrency,
-		Priority:                m.Priority,
-		RateMultiplier:          &rateMultiplier,
-		LoadFactor:              m.LoadFactor,
-		Status:                  m.Status,
-		ErrorMessage:            derefString(m.ErrorMessage),
-		LastUsedAt:              m.LastUsedAt,
-		ExpiresAt:               m.ExpiresAt,
-		AutoPauseOnExpired:      m.AutoPauseOnExpired,
-		CreatedAt:               m.CreatedAt,
-		UpdatedAt:               m.UpdatedAt,
-		Schedulable:             m.Schedulable,
-		RateLimitedAt:           m.RateLimitedAt,
-		RateLimitResetAt:        m.RateLimitResetAt,
-		OverloadUntil:           m.OverloadUntil,
-		TempUnschedulableUntil:  m.TempUnschedulableUntil,
-		TempUnschedulableReason: derefString(m.TempUnschedulableReason),
-		SessionWindowStart:      m.SessionWindowStart,
-		SessionWindowEnd:        m.SessionWindowEnd,
-		SessionWindowStatus:     derefString(m.SessionWindowStatus),
-		ParentAccountID:         m.ParentAccountID,
-		QuotaDimension:          string(m.QuotaDimension),
+		ID:                          m.ID,
+		Name:                        m.Name,
+		Notes:                       m.Notes,
+		Platform:                    m.Platform,
+		Type:                        m.Type,
+		Credentials:                 copyJSONMap(m.Credentials),
+		Extra:                       copyJSONMap(m.Extra),
+		ProxyID:                     m.ProxyID,
+		ProxyFallbackOriginID:       m.ProxyFallbackOriginID,
+		Concurrency:                 m.Concurrency,
+		LiveConcurrency:             m.LiveConcurrency,
+		RequestConcurrency:          m.RequestConcurrency,
+		ConcurrencyPolicyGeneration: m.ConcurrencyPolicyGeneration,
+		Priority:                    m.Priority,
+		RateMultiplier:              &rateMultiplier,
+		LoadFactor:                  m.LoadFactor,
+		Status:                      m.Status,
+		ErrorMessage:                derefString(m.ErrorMessage),
+		LastUsedAt:                  m.LastUsedAt,
+		ExpiresAt:                   m.ExpiresAt,
+		AutoPauseOnExpired:          m.AutoPauseOnExpired,
+		CreatedAt:                   m.CreatedAt,
+		UpdatedAt:                   m.UpdatedAt,
+		Schedulable:                 m.Schedulable,
+		RateLimitedAt:               m.RateLimitedAt,
+		RateLimitResetAt:            m.RateLimitResetAt,
+		OverloadUntil:               m.OverloadUntil,
+		TempUnschedulableUntil:      m.TempUnschedulableUntil,
+		TempUnschedulableReason:     derefString(m.TempUnschedulableReason),
+		SessionWindowStart:          m.SessionWindowStart,
+		SessionWindowEnd:            m.SessionWindowEnd,
+		SessionWindowStatus:         derefString(m.SessionWindowStatus),
+		ParentAccountID:             m.ParentAccountID,
+		QuotaDimension:              string(m.QuotaDimension),
 	}
 }
 

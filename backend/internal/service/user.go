@@ -22,8 +22,14 @@ type User struct {
 	Balance        float64
 	FrozenBalance  float64
 	Concurrency    int
-	Status         string
-	AllowedGroups  []int64
+	// LiveConcurrency and RequestConcurrency form one optional split policy.
+	// Both nil preserves the legacy shared Concurrency limit.
+	LiveConcurrency    *int
+	RequestConcurrency *int
+	// ConcurrencyPolicyGeneration monotonically orders policy publications.
+	ConcurrencyPolicyGeneration int64
+	Status                      string
+	AllowedGroups               []int64
 	// RestrictPublicGroups narrows the public groups this user may bind to the
 	// ones listed in AllowedGroups. False keeps the default, where every public
 	// group is bindable.

@@ -132,6 +132,14 @@ type AccountDuplicateRepository interface {
 	CreateWithAccountGroups(ctx context.Context, account *Account, groups []AccountGroup) error
 }
 
+// AccountConcurrencyPolicyPostCommitPublisher is implemented by the concrete
+// account repository so transaction-owning callers can publish the DB row only
+// after their commit boundary. It stays optional to avoid widening every
+// account repository test double and read-only consumer.
+type AccountConcurrencyPolicyPostCommitPublisher interface {
+	PublishCurrentConcurrencyPolicy(ctx context.Context, accountID int64) error
+}
+
 // AccountBillingSettingsRepository applies an admin edit without overwriting a
 // rate_multiplier that a successful upstream probe synchronized after the edit
 // form was loaded. A nil rateMultiplier means the request did not edit it.
@@ -156,17 +164,19 @@ type AdminAccountRepository interface {
 // AccountBulkUpdate describes the fields that can be updated in a bulk operation.
 // Nil pointers mean "do not change".
 type AccountBulkUpdate struct {
-	Name           *string
-	ProxyID        *int64
-	Concurrency    *int
-	Priority       *int
-	RateMultiplier *float64
-	LoadFactor     *int
-	Status         *string
-	Schedulable    *bool
-	Credentials    map[string]any
-	Extra          map[string]any
-	ProbeEnabled   *bool
+	Name        *string
+	ProxyID     *int64
+	Concurrency *int
+	// ConcurrencyPolicy is applied to every selected account when non-nil.
+	ConcurrencyPolicy *ConcurrencyPolicyPatch
+	Priority          *int
+	RateMultiplier    *float64
+	LoadFactor        *int
+	Status            *string
+	Schedulable       *bool
+	Credentials       map[string]any
+	Extra             map[string]any
+	ProbeEnabled      *bool
 	// EnsureCodexFingerprintSeed asks the repository to atomically preserve an
 	// existing valid Codex fingerprint seed or create one for eligible rows.
 	EnsureCodexFingerprintSeed bool

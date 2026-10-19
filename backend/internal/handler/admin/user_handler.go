@@ -22,7 +22,22 @@ import (
 // UserWithConcurrency wraps AdminUser with current concurrency info
 type UserWithConcurrency struct {
 	dto.AdminUser
-	CurrentConcurrency int `json:"current_concurrency"`
+	CurrentConcurrency        *int   `json:"current_concurrency"`
+	CurrentLiveConcurrency    *int   `json:"current_live_concurrency"`
+	CurrentRequestConcurrency *int   `json:"current_request_concurrency"`
+	ConcurrencyReadError      string `json:"concurrency_read_error,omitempty"`
+}
+
+func setUserConcurrencySnapshot(item *UserWithConcurrency, snapshot service.ConcurrencySnapshot) {
+	if item == nil {
+		return
+	}
+	request := snapshot.Request
+	live := snapshot.Live
+	total := request + live
+	item.CurrentRequestConcurrency = &request
+	item.CurrentLiveConcurrency = &live
+	item.CurrentConcurrency = &total
 }
 
 // UserHandler handles admin user management
@@ -59,32 +74,34 @@ func NewUserHandler(
 
 // CreateUserRequest represents admin create user request
 type CreateUserRequest struct {
-	Email                string   `json:"email" binding:"required,email"`
-	Password             string   `json:"password" binding:"required,min=6"`
-	Username             string   `json:"username"`
-	Notes                string   `json:"notes"`
-	Role                 string   `json:"role" binding:"omitempty,oneof=admin user"`
-	Balance              *float64 `json:"balance"`
-	Concurrency          int      `json:"concurrency"`
-	RPMLimit             int      `json:"rpm_limit"`
-	AllowedGroups        []int64  `json:"allowed_groups"`
-	RestrictPublicGroups bool     `json:"restrict_public_groups"`
+	Email                string                          `json:"email" binding:"required,email"`
+	Password             string                          `json:"password" binding:"required,min=6"`
+	Username             string                          `json:"username"`
+	Notes                string                          `json:"notes"`
+	Role                 string                          `json:"role" binding:"omitempty,oneof=admin user"`
+	Balance              *float64                        `json:"balance"`
+	Concurrency          int                             `json:"concurrency"`
+	ConcurrencyPolicy    *service.ConcurrencyPolicyPatch `json:"concurrency_policy"`
+	RPMLimit             int                             `json:"rpm_limit"`
+	AllowedGroups        []int64                         `json:"allowed_groups"`
+	RestrictPublicGroups bool                            `json:"restrict_public_groups"`
 }
 
 // UpdateUserRequest represents admin update user request
 // 使用指针类型来区分"未提供"和"设置为0"
 type UpdateUserRequest struct {
-	Email                string   `json:"email" binding:"omitempty,email"`
-	Password             string   `json:"password" binding:"omitempty,min=6"`
-	Username             *string  `json:"username"`
-	Notes                *string  `json:"notes"`
-	Role                 string   `json:"role" binding:"omitempty,oneof=admin user"`
-	Balance              *float64 `json:"balance"`
-	Concurrency          *int     `json:"concurrency"`
-	RPMLimit             *int     `json:"rpm_limit"`
-	Status               string   `json:"status" binding:"omitempty,oneof=active disabled"`
-	AllowedGroups        *[]int64 `json:"allowed_groups"`
-	RestrictPublicGroups *bool    `json:"restrict_public_groups"`
+	Email                string                          `json:"email" binding:"omitempty,email"`
+	Password             string                          `json:"password" binding:"omitempty,min=6"`
+	Username             *string                         `json:"username"`
+	Notes                *string                         `json:"notes"`
+	Role                 string                          `json:"role" binding:"omitempty,oneof=admin user"`
+	Balance              *float64                        `json:"balance"`
+	Concurrency          *int                            `json:"concurrency"`
+	ConcurrencyPolicy    *service.ConcurrencyPolicyPatch `json:"concurrency_policy"`
+	RPMLimit             *int                            `json:"rpm_limit"`
+	Status               string                          `json:"status" binding:"omitempty,oneof=active disabled"`
+	AllowedGroups        *[]int64                        `json:"allowed_groups"`
+	RestrictPublicGroups *bool                           `json:"restrict_public_groups"`
 	// GroupRates 用户专属分组倍率配置
 	// map[groupID]*rate，nil 表示删除该分组的专属倍率
 	GroupRates map[int64]*float64 `json:"group_rates"`
@@ -157,17 +174,20 @@ func (h *UserHandler) List(c *gin.Context) {
 		return
 	}
 
-	// Batch get current concurrency (nil map if unavailable)
-	var loadInfo map[int64]*service.UserLoadInfo
+	// Batch get class-separated current concurrency. A failed read stays
+	// unknown; it must not be rendered as an occupied count of zero.
+	concurrencySnapshots := make(map[int64]service.ConcurrencySnapshot)
+	concurrencyReadError := false
 	if len(users) > 0 && h.concurrencyService != nil {
-		usersConcurrency := make([]service.UserWithConcurrency, len(users))
+		userIDs := make([]int64, len(users))
 		for i := range users {
-			usersConcurrency[i] = service.UserWithConcurrency{
-				ID:             users[i].ID,
-				MaxConcurrency: users[i].Concurrency,
-			}
+			userIDs[i] = users[i].ID
 		}
-		loadInfo, _ = h.concurrencyService.GetUsersLoadBatch(c.Request.Context(), usersConcurrency)
+		if snapshots, snapshotErr := h.concurrencyService.GetUserConcurrencySnapshotBatch(c.Request.Context(), userIDs); snapshotErr == nil && snapshots != nil {
+			concurrencySnapshots = snapshots
+		} else {
+			concurrencyReadError = true
+		}
 	}
 
 	// Build response with concurrency info
@@ -176,8 +196,10 @@ func (h *UserHandler) List(c *gin.Context) {
 		out[i] = UserWithConcurrency{
 			AdminUser: *dto.UserFromServiceAdmin(&users[i]),
 		}
-		if info := loadInfo[users[i].ID]; info != nil {
-			out[i].CurrentConcurrency = info.CurrentConcurrency
+		if snapshot, ok := concurrencySnapshots[users[i].ID]; ok {
+			setUserConcurrencySnapshot(&out[i], snapshot)
+		} else if concurrencyReadError || h.concurrencyService != nil {
+			out[i].ConcurrencyReadError = "unavailable"
 		}
 	}
 
@@ -293,6 +315,7 @@ func (h *UserHandler) Create(c *gin.Context) {
 		Role:                 req.Role,
 		Balance:              req.Balance,
 		Concurrency:          req.Concurrency,
+		ConcurrencyPolicy:    req.ConcurrencyPolicy,
 		RPMLimit:             req.RPMLimit,
 		AllowedGroups:        req.AllowedGroups,
 		RestrictPublicGroups: req.RestrictPublicGroups,
@@ -352,6 +375,7 @@ func (h *UserHandler) Update(c *gin.Context) {
 		Role:                 req.Role,
 		Balance:              req.Balance,
 		Concurrency:          req.Concurrency,
+		ConcurrencyPolicy:    req.ConcurrencyPolicy,
 		RPMLimit:             req.RPMLimit,
 		Status:               req.Status,
 		AllowedGroups:        req.AllowedGroups,
@@ -435,10 +459,7 @@ func (h *UserHandler) GetUserAPIKeys(c *gin.Context) {
 		return
 	}
 
-	out := make([]dto.APIKey, 0, len(keys))
-	for i := range keys {
-		out = append(out, *dto.APIKeyFromService(&keys[i]))
-	}
+	out := apiKeyDTOsWithConcurrency(c.Request.Context(), keys, h.concurrencyService)
 	response.Paginated(c, out, total, page, pageSize)
 }
 

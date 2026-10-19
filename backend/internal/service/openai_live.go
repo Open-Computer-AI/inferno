@@ -35,6 +35,8 @@ const (
 // liveObserverStoreRetryInterval 是 var 以便测试缩短 store 报错的重试等待。
 var liveObserverStoreRetryInterval = time.Second
 
+var liveReservationRefreshInterval = 20 * time.Second
+
 var (
 	chatGPTLiveCallsURL = "https://chatgpt.com/backend-api/codex/realtime/calls?intent=quicksilver&architecture=avas"
 	// The Live SDP offer is created through ChatGPT's Codex endpoint, but the
@@ -43,6 +45,8 @@ var (
 	// creation POST, while the latter owns the WebSocket for {call_id}.
 	openAILiveSidebandBaseURL = "wss://api.openai.com/v1/live"
 )
+
+const liveAdmissionRecoveryAttempts = 1
 
 type liveFrameConn interface {
 	ReadFrame(ctx context.Context) (coderws.MessageType, []byte, error)
@@ -123,23 +127,64 @@ func ValidateLiveCallRequest(request *LiveCallRequest) error {
 	return nil
 }
 
-// CreateLiveCall 创建 Frameless 会话。调用方须在调用期间持有普通用户槽位；
-// 调度器持有的普通账号槽位会被同一个 Live 租约原子接替。
+// reloadLiveAdmissionState rereads both policy owners after Redis reports a
+// stale or missing authority. The publication is deliberately part of the
+// recovery attempt: admission cannot proceed on a DB snapshot that has not
+// been acknowledged by the Redis fence.
+func (s *OpenAIGatewayService) reloadLiveAdmissionState(
+	ctx context.Context,
+	accountID int64,
+	userID int64,
+) (*Account, ConcurrencyPolicy, int64, error) {
+	if s == nil || s.accountRepo == nil || s.userRepo == nil || s.concurrencyService == nil {
+		return nil, ConcurrencyPolicy{}, 0, ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	account, err := s.accountRepo.GetByID(ctx, accountID)
+	if err != nil {
+		return nil, ConcurrencyPolicy{}, 0, fmt.Errorf("reload Live account policy: %w", err)
+	}
+	if account == nil || account.ID != accountID {
+		return nil, ConcurrencyPolicy{}, 0, fmt.Errorf("reload Live account policy: account %d not found", accountID)
+	}
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, ConcurrencyPolicy{}, 0, fmt.Errorf("reload Live user policy: %w", err)
+	}
+	if user == nil || user.ID != userID {
+		return nil, ConcurrencyPolicy{}, 0, fmt.Errorf("reload Live user policy: user %d not found", userID)
+	}
+	publisher, ok := s.concurrencyService.cache.(ConcurrencyPolicyPublisher)
+	if !ok || publisher == nil {
+		return nil, ConcurrencyPolicy{}, 0, ErrConcurrencyPolicyAdmissionUnavailable
+	}
+	accountPolicy := concurrencyPolicyForAccount(account)
+	userPolicy := concurrencyPolicyForUser(user)
+	if err := publisher.PublishAccountConcurrencyPolicy(ctx, account.ID, accountPolicy, account.ConcurrencyPolicyGeneration); err != nil {
+		return nil, ConcurrencyPolicy{}, 0, fmt.Errorf("republish Live account policy: %w", err)
+	}
+	if err := publisher.PublishUserConcurrencyPolicy(ctx, user.ID, userPolicy, user.ConcurrencyPolicyGeneration); err != nil {
+		return nil, ConcurrencyPolicy{}, 0, fmt.Errorf("republish Live user policy: %w", err)
+	}
+	return account, userPolicy, user.ConcurrencyPolicyGeneration, nil
+}
+
+// CreateLiveCall creates a Frameless session under one typed account+user Live
+// reservation. Ordinary request slots are not acquired on this path.
 func (s *OpenAIGatewayService) CreateLiveCall(
 	ctx context.Context,
 	request *LiveCallRequest,
 	identity LiveCallIdentity,
-	userMaxConcurrency int,
+	userPolicy ConcurrencyPolicy,
+	userPolicyGeneration int64,
 ) (*LiveCallCreated, error) {
 	if err := ValidateLiveCallRequest(request); err != nil {
 		return nil, err
 	}
+	if s == nil || s.concurrencyService == nil {
+		return nil, ErrConcurrencyPolicyAdmissionUnavailable
+	}
 	createStarted := time.Now()
 	store, err := s.liveStore()
-	if err != nil {
-		return nil, err
-	}
-	liveCache, err := s.liveConcurrencyCache()
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +206,7 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 	var lastErr error
 	for attempt := 0; attempt <= 3; attempt++ {
 		selectStarted := time.Now()
-		selection, _, selectErr := s.SelectAccountWithSchedulerForCapability(
+		selection, _, selectErr := s.SelectAccountWithSchedulerForLive(
 			ctx,
 			identity.GroupID,
 			"",
@@ -184,36 +229,98 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 			if selection != nil && selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()
 			}
-			return nil, ErrLiveConcurrencyFull
-		}
-
-		account := selection.Account
-		leaseID := generateRequestID()
-		acquired, acquireErr := liveCache.AcquireLiveLease(
-			ctx,
-			account.ID,
-			account.Concurrency,
-			identity.UserID,
-			userMaxConcurrency,
-			identity.APIKeyID,
-			leaseID,
-			true,
-		)
-		if acquireErr != nil || !acquired {
-			selection.ReleaseFunc()
-			if acquireErr != nil {
-				return nil, acquireErr
+			if lastErr != nil {
+				return nil, lastErr
 			}
 			return nil, ErrLiveConcurrencyFull
 		}
 
+		account := selection.Account
+		selectionRelease := selection.ReleaseFunc
+		if selectionRelease == nil {
+			selectionRelease = func() {}
+		}
+		var (
+			leaseID     string
+			admission   ConcurrencyAdmissionResult
+			reservation *LiveReservation
+			acquireErr  error
+		)
+		for admissionAttempt := 0; admissionAttempt <= liveAdmissionRecoveryAttempts; admissionAttempt++ {
+			leaseID = generateRequestID()
+			admissionRequest := ConcurrencyAdmissionRequest{
+				AccountID:         account.ID,
+				AccountPolicy:     concurrencyPolicyForAccount(account),
+				AccountGeneration: account.ConcurrencyPolicyGeneration,
+				UserID:            identity.UserID,
+				UserPolicy:        userPolicy,
+				UserGeneration:    userPolicyGeneration,
+				APIKeyID:          identity.APIKeyID,
+				Class:             ConcurrencyClassLive,
+				ReservationID:     leaseID,
+			}
+			admission, reservation, acquireErr = s.concurrencyService.AcquireLiveReservation(ctx, admissionRequest)
+			if acquireErr == nil && admission.Acquired {
+				break
+			}
+			if admissionAttempt == liveAdmissionRecoveryAttempts ||
+				(!errors.Is(acquireErr, ErrConcurrencyPolicyAdmissionStale) && !errors.Is(acquireErr, ErrConcurrencyPolicyAdmissionUnavailable)) {
+				break
+			}
+			refreshedAccount, refreshedUserPolicy, refreshedUserGeneration, reloadErr := s.reloadLiveAdmissionState(ctx, account.ID, identity.UserID)
+			if reloadErr != nil {
+				selectionRelease()
+				return nil, reloadErr
+			}
+			account = refreshedAccount
+			userPolicy = refreshedUserPolicy
+			userPolicyGeneration = refreshedUserGeneration
+		}
+		if acquireErr != nil || !admission.Acquired {
+			selectionRelease()
+			if acquireErr != nil {
+				return nil, acquireErr
+			}
+			if admission.DeniedScope == "account" {
+				excluded[account.ID] = struct{}{}
+				lastErr = &ConcurrencyCapacityError{
+					Class:  ConcurrencyClassLive,
+					Scope:  admission.DeniedScope,
+					Reason: "capacity_exhausted",
+				}
+				continue
+			}
+			return nil, &ConcurrencyCapacityError{
+				Class:  ConcurrencyClassLive,
+				Scope:  admission.DeniedScope,
+				Reason: "capacity_exhausted",
+			}
+		}
+		reservation.StartRefresh(ctx)
+
 		selectMs := time.Since(selectStarted).Milliseconds()
 		upstreamStarted := time.Now()
-		created, createErr := s.createUpstreamLiveCall(ctx, account, request, attestation)
+		created, createErr := s.createUpstreamLiveCall(reservation.Context(), account, request, attestation)
 		upstreamMs := time.Since(upstreamStarted).Milliseconds()
-		selection.ReleaseFunc()
+		selectionRelease()
+		if reservation.Lost() {
+			if created != nil {
+				s.cleanupCreatedLiveCall(account, created)
+			}
+			_ = reservation.Release(context.Background())
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return nil, ErrLiveUnavailable
+		}
 		if createErr != nil {
-			s.releaseLiveLease(account.ID, identity.UserID, identity.APIKeyID, leaseID)
+			if created != nil {
+				s.cleanupCreatedLiveCall(account, created)
+			}
+			_ = reservation.Release(context.Background())
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			// Live creation uses the same account scheduler as the other OpenAI
 			// paths, so apply the established health/rate-limit policy here too.
 			// Without this call a Live 429/403 only entered the request-local
@@ -255,6 +362,11 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 			lastErr = createErr
 			continue
 		}
+		if err := ctx.Err(); err != nil {
+			s.cleanupCreatedLiveCall(account, created)
+			_ = reservation.Release(context.Background())
+			return nil, err
+		}
 
 		now := time.Now()
 		record := &LiveCallRecord{
@@ -277,9 +389,15 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 			UpstreamSessionID:     created.UpstreamSessionID,
 			UpstreamThreadID:      created.UpstreamThreadID,
 		}
+		if transferErr := reservation.TransferToCall(record); transferErr != nil {
+			s.cleanupCreatedLiveCall(account, created)
+			_ = reservation.Release(context.Background())
+			return nil, fmt.Errorf("transfer live reservation: %w", transferErr)
+		}
 		mappingTTL := s.liveMaxSessionDuration() + 5*time.Minute
 		if saveErr := store.SaveLiveCall(ctx, record, mappingTTL); saveErr != nil {
-			s.releaseLiveLease(account.ID, identity.UserID, identity.APIKeyID, leaseID)
+			s.cleanupCreatedLiveCall(account, created)
+			_ = reservation.Release(context.Background())
 			return nil, fmt.Errorf("save live call mapping: %w", saveErr)
 		}
 		created.Account = account
@@ -301,6 +419,60 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 		return nil, lastErr
 	}
 	return nil, ErrLiveUnavailable
+}
+
+// cleanupCreatedLiveCall is best-effort compensation for a successful
+// upstream POST whose local Live record could not be persisted. It uses a
+// fresh bounded context because the inbound request may already be canceled;
+// only upstream Locations on the known ChatGPT origin are accepted.
+func (s *OpenAIGatewayService) cleanupCreatedLiveCall(account *Account, created *LiveCallCreated) {
+	if s == nil || account == nil || created == nil || strings.TrimSpace(created.Location) == "" || s.httpUpstream == nil {
+		return
+	}
+	base, err := url.Parse(chatGPTLiveCallsURL)
+	if err != nil {
+		return
+	}
+	target, err := url.Parse(strings.TrimSpace(created.Location))
+	if err != nil {
+		return
+	}
+	if !target.IsAbs() {
+		target = base.ResolveReference(target)
+	}
+	if target.Scheme != base.Scheme || target.Host != base.Host {
+		return
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), liveRedisOperationTimeout)
+	defer cancel()
+	token, _, err := s.GetAccessToken(cleanupCtx, account)
+	if err != nil {
+		return
+	}
+	request, err := http.NewRequestWithContext(cleanupCtx, http.MethodDelete, target.String(), nil)
+	if err != nil {
+		return
+	}
+	authHeaders, err := s.buildOpenAIAuthenticationHeaders(cleanupCtx, account, token)
+	if err != nil {
+		return
+	}
+	for key, values := range authHeaders {
+		for _, value := range values {
+			request.Header.Add(key, value)
+		}
+	}
+	request.Host = base.Host
+	if err := resolveAndSetOpenAIChatGPTAccountHeaders(cleanupCtx, s.accountRepo, request.Header, account); err != nil {
+		return
+	}
+	response, err := s.doOpenAIUpstream(request, resolveAccountProxyURL(account), account)
+	if err == nil && response != nil && response.Body != nil {
+		_ = response.Body.Close()
+	}
+	if err != nil {
+		logger.FromContext(cleanupCtx).Warn("OpenAI Live upstream cleanup failed", zap.Int64("account_id", account.ID), zap.String("call_id", created.CallID), zap.Error(err))
+	}
 }
 
 func (s *OpenAIGatewayService) shouldFailoverLiveCreateError(err error) bool {
@@ -914,6 +1086,23 @@ func (s *OpenAIGatewayService) finalizeLiveCallAfterExpiry(record *LiveCallRecor
 }
 
 func (s *OpenAIGatewayService) refreshLiveLease(record *LiveCallRecord) bool {
+	if record == nil {
+		return false
+	}
+	if record.reservation != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), liveRedisOperationTimeout)
+		defer cancel()
+		refreshed, err := record.reservation.Refresh(ctx)
+		return err == nil && refreshed
+	}
+	if record.ConcurrencyPolicySnapshotPresent {
+		if cache, ok := s.policyAdmissionCacheForLiveRecord(); ok {
+			ctx, cancel := context.WithTimeout(context.Background(), liveRedisOperationTimeout)
+			defer cancel()
+			refreshed, err := cache.RefreshConcurrency(ctx, liveAdmissionRequestForRecord(record))
+			return err == nil && refreshed
+		}
+	}
 	cache, err := s.liveConcurrencyCache()
 	if err != nil {
 		return false
@@ -934,6 +1123,55 @@ func (s *OpenAIGatewayService) releaseLiveLease(accountID, userID, apiKeyID int6
 	_ = cache.ReleaseLiveLease(ctx, accountID, userID, apiKeyID, leaseID)
 }
 
+func (s *OpenAIGatewayService) releaseLiveLeaseForRecord(record *LiveCallRecord) {
+	if record == nil {
+		return
+	}
+	if record.reservation != nil {
+		_ = record.reservation.Release(context.Background())
+		return
+	}
+	if record.ConcurrencyPolicySnapshotPresent {
+		if cache, ok := s.policyAdmissionCacheForLiveRecord(); ok {
+			ctx, cancel := context.WithTimeout(context.Background(), liveRedisOperationTimeout)
+			defer cancel()
+			_ = cache.ReleaseConcurrency(ctx, liveAdmissionRequestForRecord(record))
+			return
+		}
+	}
+	s.releaseLiveLease(record.AccountID, record.UserID, record.APIKeyID, record.LeaseID)
+}
+
+func (s *OpenAIGatewayService) policyAdmissionCacheForLiveRecord() (ConcurrencyAdmissionCache, bool) {
+	if s == nil || s.concurrencyService == nil || s.concurrencyService.cache == nil {
+		return nil, false
+	}
+	cache, ok := s.concurrencyService.cache.(ConcurrencyAdmissionCache)
+	return cache, ok && cache != nil
+}
+
+func liveAdmissionRequestForRecord(record *LiveCallRecord) ConcurrencyAdmissionRequest {
+	return ConcurrencyAdmissionRequest{
+		AccountID: record.AccountID,
+		AccountPolicy: ConcurrencyPolicy{
+			Shared:  record.AccountConcurrency,
+			Live:    cloneOptionalInt(record.AccountLiveConcurrency),
+			Request: cloneOptionalInt(record.AccountRequestConcurrency),
+		},
+		AccountGeneration: record.AccountConcurrencyPolicyGeneration,
+		UserID:            record.UserID,
+		UserPolicy: ConcurrencyPolicy{
+			Shared:  record.UserConcurrency,
+			Live:    cloneOptionalInt(record.UserLiveConcurrency),
+			Request: cloneOptionalInt(record.UserRequestConcurrency),
+		},
+		UserGeneration: record.UserConcurrencyPolicyGeneration,
+		APIKeyID:       record.APIKeyID,
+		Class:          ConcurrencyClassLive,
+		ReservationID:  record.LeaseID,
+	}
+}
+
 func (s *OpenAIGatewayService) finalizeLiveCall(record *LiveCallRecord) {
 	if record == nil {
 		return
@@ -948,7 +1186,7 @@ func (s *OpenAIGatewayService) finalizeLiveCall(record *LiveCallRecord) {
 	if err != nil || !first {
 		return
 	}
-	s.releaseLiveLease(record.AccountID, record.UserID, record.APIKeyID, record.LeaseID)
+	s.releaseLiveLeaseForRecord(record)
 	if s.usageLogRepo == nil {
 		return
 	}

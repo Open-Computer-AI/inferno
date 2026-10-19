@@ -560,7 +560,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 	routingStart := time.Now()
 
-	userReleaseFunc, acquired := h.acquireResponsesUserSlot(c, subject.UserID, subject.Concurrency, reqStream, &streamStarted, reqLog)
+	userReleaseFunc, acquired := h.acquireResponsesUserSlot(c, subject, reqStream, &streamStarted, reqLog)
 	if !acquired {
 		return
 	}
@@ -1182,7 +1182,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 	routingStart := time.Now()
 
-	userReleaseFunc, acquired := h.acquireResponsesUserSlot(c, subject.UserID, subject.Concurrency, reqStream, &streamStarted, reqLog)
+	userReleaseFunc, acquired := h.acquireResponsesUserSlot(c, subject, reqStream, &streamStarted, reqLog)
 	if !acquired {
 		return
 	}
@@ -1907,14 +1907,13 @@ func validCodexDelegationEnvelope(value string) bool {
 
 func (h *OpenAIGatewayHandler) acquireResponsesUserSlot(
 	c *gin.Context,
-	userID int64,
-	userConcurrency int,
+	subject middleware2.AuthSubject,
 	reqStream bool,
 	streamStarted *bool,
 	reqLog *zap.Logger,
 ) (func(), bool) {
 	ctx := c.Request.Context()
-	userReleaseFunc, err := h.concurrencyHelper.AcquireUserSlotWithWait(c, userID, userConcurrency, reqStream, streamStarted)
+	userReleaseFunc, err := h.concurrencyHelper.AcquireUserPolicySlotWithWait(c, subject.UserID, concurrencyPolicyFromAuthSubject(subject), subject.ConcurrencyPolicyGeneration, reqStream, streamStarted)
 	if err != nil {
 		reqLog.Warn("openai.user_slot_acquire_failed", zap.Error(err))
 		h.handleConcurrencyError(c, err, "user", *streamStarted)
@@ -2019,10 +2018,20 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 	reqLog *zap.Logger,
 	writeError openAISlotErrorWriter,
 ) (func(), openAISlotAcquireResult) {
+	hasCustomErrorWriter := writeError != nil
 	if writeError == nil {
 		writeError = func(status int, errType, message string) {
 			h.handleStreamingAwareError(c, status, errType, message, *streamStarted)
 		}
+	}
+	writeAcquireError := func(err error, status int, errType, message string) {
+		if !hasCustomErrorWriter {
+			if capacityErr := concurrencyCapacityErrorFrom(err); capacityErr != nil {
+				h.handleConcurrencyCapacityError(c, capacityErr, *streamStarted)
+				return
+			}
+		}
+		writeError(status, errType, message)
 	}
 	if selection == nil || selection.Account == nil {
 		markOpsRoutingCapacityLimited(c)
@@ -2060,7 +2069,7 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 		return nil, openAISlotAcquireFailed
 	}
 
-	fastReleaseFunc, fastAcquired, err := h.concurrencyHelper.TryAcquireAccountSlot(
+	fastReleaseFunc, fastAcquired, initialCapacityError, err := h.concurrencyHelper.TryAcquireAccountSlotWithCapacity(
 		ctx,
 		account.ID,
 		selection.WaitPlan.MaxConcurrency,
@@ -2068,7 +2077,7 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 	if err != nil {
 		reqLog.Warn("openai.account_slot_quick_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		status, errType, message := concurrencyErrorResponse(err, "account")
-		writeError(status, errType, message)
+		writeAcquireError(err, status, errType, message)
 		return nil, openAISlotAcquireFailed
 	}
 	if fastAcquired {
@@ -2098,7 +2107,11 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 			zap.Int64("account_id", account.ID),
 			zap.Int("max_waiting", selection.WaitPlan.MaxWaiting),
 		)
-		writeError(http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later")
+		if !hasCustomErrorWriter && initialCapacityError != nil {
+			h.handleConcurrencyCapacityError(c, initialCapacityError, *streamStarted)
+		} else {
+			writeError(http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later")
+		}
 		return nil, openAISlotAcquireFailed
 	}
 
@@ -2122,7 +2135,7 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 	if err != nil {
 		reqLog.Warn("openai.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		status, errType, message := concurrencyErrorResponse(err, "account")
-		writeError(status, errType, message)
+		writeAcquireError(err, status, errType, message)
 		return nil, openAISlotAcquireFailed
 	}
 
@@ -2350,7 +2363,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	// 必须尽早注册，确保任何 early return 都能释放已获取的并发槽位。
 	defer releaseTurnSlots()
 
-	userReleaseFunc, userAcquired, err := h.concurrencyHelper.TryAcquireUserSlotForAPIKey(ctx, subject.UserID, subject.Concurrency, apiKey.ID)
+	userReleaseFunc, userAcquired, err := h.concurrencyHelper.TryAcquireUserPolicySlotForAPIKey(ctx, subject.UserID, concurrencyPolicyFromAuthSubject(subject), subject.ConcurrencyPolicyGeneration, apiKey.ID)
 	if err != nil {
 		reqLog.Warn("openai.websocket_user_slot_acquire_failed", zap.Error(err))
 		closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to acquire user concurrency slot")
@@ -2365,7 +2378,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		if currentUserRelease != nil {
 			return true
 		}
-		userReleaseFunc, userAcquired, err := h.concurrencyHelper.TryAcquireUserSlotForAPIKey(ctx, subject.UserID, subject.Concurrency, apiKey.ID)
+		userReleaseFunc, userAcquired, err := h.concurrencyHelper.TryAcquireUserPolicySlotForAPIKey(ctx, subject.UserID, concurrencyPolicyFromAuthSubject(subject), subject.ConcurrencyPolicyGeneration, apiKey.ID)
 		if err != nil {
 			reqLog.Warn("openai.websocket_user_slot_reacquire_failed", zap.Error(err))
 			closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to acquire user concurrency slot")
@@ -2524,7 +2537,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		}
 
 		account := selection.Account
-		accountMaxConcurrency := account.Concurrency
+		accountMaxConcurrency := requestConcurrencyForAccount(account)
 		if selection.WaitPlan != nil && selection.WaitPlan.MaxConcurrency > 0 {
 			accountMaxConcurrency = selection.WaitPlan.MaxConcurrency
 		}
@@ -2726,7 +2739,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				// 防御式清理：避免异常路径下旧槽位覆盖导致泄漏。
 				releaseTurnSlots()
 				// 非首轮 turn 需要重新抢占并发槽位，避免长连接空闲占槽。
-				userReleaseFunc, userAcquired, err := h.concurrencyHelper.TryAcquireUserSlotForAPIKey(ctx, subject.UserID, subject.Concurrency, apiKey.ID)
+				userReleaseFunc, userAcquired, err := h.concurrencyHelper.TryAcquireUserPolicySlotForAPIKey(ctx, subject.UserID, concurrencyPolicyFromAuthSubject(subject), subject.ConcurrencyPolicyGeneration, apiKey.ID)
 				if err != nil {
 					return service.NewOpenAIWSClientCloseError(coderws.StatusInternalError, "failed to acquire user concurrency slot", err)
 				}
@@ -3178,8 +3191,52 @@ func (h *OpenAIGatewayHandler) acquireImageGenerationSlot(c *gin.Context, stream
 
 // handleConcurrencyError handles concurrency-related acquire errors.
 func (h *OpenAIGatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotType string, streamStarted bool) {
+	if capacityErr := concurrencyCapacityErrorFrom(err); capacityErr != nil {
+		h.handleConcurrencyCapacityError(c, capacityErr, streamStarted)
+		return
+	}
 	status, errType, message := concurrencyErrorResponse(err, slotType)
 	h.handleStreamingAwareError(c, status, errType, message, streamStarted)
+}
+
+func (h *OpenAIGatewayHandler) handleConcurrencyCapacityError(c *gin.Context, capacityErr *service.ConcurrencyCapacityError, streamStarted bool) {
+	if service.StopOpenAICompactSSEKeepaliveCommitted(c) {
+		streamStarted = true
+	}
+	if !streamStarted {
+		h.concurrencyCapacityErrorResponse(c, capacityErr)
+		return
+	}
+	h.writeConcurrencyCapacitySSE(c, capacityErr)
+}
+
+func (h *OpenAIGatewayHandler) writeConcurrencyCapacitySSE(c *gin.Context, capacityErr *service.ConcurrencyCapacityError) {
+	message := "Concurrency capacity exhausted"
+	if capacityErr != nil {
+		message = capacityErr.Error()
+	}
+	service.MarkOpsStreamError(c, "rate_limit_error", message, http.StatusTooManyRequests)
+	if inboundIsResponses(c) {
+		if writeResponsesFailedSSEWithCapacity(c, "rate_limit_error", message, capacityErr) {
+			return
+		}
+	}
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		return
+	}
+	errorObject := gin.H{"type": "rate_limit_error", "code": "concurrency_capacity", "message": message}
+	for key, value := range concurrencyCapacityMetadata(capacityErr) {
+		errorObject[key] = value
+	}
+	payload, err := json.Marshal(gin.H{"error": errorObject})
+	if err != nil {
+		payload = []byte(`{"error":{"type":"rate_limit_error","message":"Concurrency capacity exhausted"}}`)
+	}
+	if _, err := fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", payload); err != nil {
+		_ = c.Error(err)
+	}
+	flusher.Flush()
 }
 
 func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, streamStarted bool) {
@@ -3536,6 +3593,28 @@ func (h *OpenAIGatewayHandler) errorResponse(c *gin.Context, status int, errType
 			"message": message,
 		},
 	})
+}
+
+// concurrencyCapacityErrorResponse preserves the standard OpenAI 429 shape
+// while exposing only the class/scope/reason needed by diagnostics.
+func (h *OpenAIGatewayHandler) concurrencyCapacityErrorResponse(c *gin.Context, capacityErr *service.ConcurrencyCapacityError) {
+	message := "Concurrency capacity exhausted"
+	if capacityErr != nil {
+		message = capacityErr.Error()
+	}
+	if service.StopOpenAICompactSSEKeepaliveCommitted(c) {
+		h.writeConcurrencyCapacitySSE(c, capacityErr)
+		return
+	}
+	errorBody := gin.H{
+		"type":    "rate_limit_error",
+		"code":    "concurrency_capacity",
+		"message": message,
+	}
+	for key, value := range concurrencyCapacityMetadata(capacityErr) {
+		errorBody[key] = value
+	}
+	c.JSON(http.StatusTooManyRequests, gin.H{"error": errorBody})
 }
 
 // openAICompactKeepaliveInterval 复用流式 keepalive 配置作为 compact 下游

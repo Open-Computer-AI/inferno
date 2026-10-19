@@ -115,10 +115,11 @@ func TestSelectAccountWithLoadAwareness_UsesFallbackGroupForChannelRestriction(t
 	}
 
 	svc := &GatewayService{
-		accountRepo:    accountRepo,
-		groupRepo:      groupRepo,
-		channelService: channelSvc,
-		cfg:            testConfig(),
+		accountRepo:        accountRepo,
+		groupRepo:          groupRepo,
+		channelService:     channelSvc,
+		cfg:                testConfig(),
+		concurrencyService: NewConcurrencyService(&mockConcurrencyCache{}),
 	}
 
 	ctx := context.WithValue(context.Background(), ctxkey.Group, groupRepo.groups[groupID])

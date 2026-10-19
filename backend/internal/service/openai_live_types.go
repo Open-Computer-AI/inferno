@@ -71,8 +71,18 @@ type LiveCallRecord struct {
 	// UpstreamSessionID 和 UpstreamThreadID identify the creation leg. They are
 	// retained for diagnostics; the direct Live sideband generates its own
 	// connection identity headers.
-	UpstreamSessionID string
-	UpstreamThreadID  string
+	UpstreamSessionID                  string
+	UpstreamThreadID                   string
+	AccountConcurrency                 int   `json:"account_concurrency"`
+	AccountLiveConcurrency             *int  `json:"account_live_concurrency,omitempty"`
+	AccountRequestConcurrency          *int  `json:"account_request_concurrency,omitempty"`
+	AccountConcurrencyPolicyGeneration int64 `json:"account_concurrency_policy_generation"`
+	UserConcurrency                    int   `json:"user_concurrency"`
+	UserLiveConcurrency                *int  `json:"user_live_concurrency,omitempty"`
+	UserRequestConcurrency             *int  `json:"user_request_concurrency,omitempty"`
+	UserConcurrencyPolicyGeneration    int64 `json:"user_concurrency_policy_generation"`
+	ConcurrencyPolicySnapshotPresent   bool  `json:"concurrency_policy_snapshot_present,omitempty"`
+	reservation                        *LiveReservation
 }
 
 type LiveCallCreated struct {

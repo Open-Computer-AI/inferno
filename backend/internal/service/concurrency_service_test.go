@@ -233,6 +233,41 @@ func TestAcquireAccountSlot_CacheError(t *testing.T) {
 	require.Nil(t, result)
 }
 
+func TestPolicySlotAdmission_FailsClosedWithoutCache(t *testing.T) {
+	ctx := context.Background()
+	var nilService *ConcurrencyService
+	for _, svc := range []*ConcurrencyService{nilService, &ConcurrencyService{}} {
+		result, err := svc.AcquireAccountPolicySlot(ctx, 1, ConcurrencyClassRequest, 0)
+		require.ErrorIs(t, err, ErrConcurrencyPolicyAdmissionUnavailable)
+		require.Nil(t, result)
+
+		result, err = svc.AcquireAccountSlot(ctx, 1, 0)
+		require.ErrorIs(t, err, ErrConcurrencyPolicyAdmissionUnavailable)
+		require.Nil(t, result)
+
+		result, err = svc.AcquireUserPolicySlot(ctx, 1, ConcurrencyPolicy{Shared: 3}, 1)
+		require.ErrorIs(t, err, ErrConcurrencyPolicyAdmissionUnavailable)
+		require.Nil(t, result)
+	}
+}
+
+func TestAcquireUserPolicySlot_ValidatesBeforeSharedCompatibilityFallback(t *testing.T) {
+	ctx := context.Background()
+	cache := &stubConcurrencyCacheForTest{acquireResult: true}
+	svc := NewConcurrencyService(cache)
+	live := 2
+
+	result, err := svc.AcquireUserPolicySlot(ctx, 1, ConcurrencyPolicy{Live: &live}, 1)
+	require.Error(t, err, "a partial split policy must not be interpreted as shared")
+	require.Nil(t, result)
+
+	result, err = svc.AcquireUserPolicySlot(ctx, 1, ConcurrencyPolicy{Shared: 3}, 1)
+	require.NoError(t, err, "valid shared policy keeps the legacy adapter fallback")
+	require.NotNil(t, result)
+	require.True(t, result.Acquired)
+	result.ReleaseFunc()
+}
+
 func TestAcquireAccountSlot_ReleaseDecrements(t *testing.T) {
 	cache := &stubConcurrencyCacheForTest{acquireResult: true}
 	svc := NewConcurrencyService(cache)
@@ -496,6 +531,26 @@ func TestGetAccountsLoadBatch_UsesShortTTLCache(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, second[int64(1)].CurrentConcurrency)
 	require.Equal(t, int64(1), cache.loadBatchCalls.Load())
+}
+
+func TestGetAccountsLoadBatchCacheSeparatesAdmissionClasses(t *testing.T) {
+	cache := &stubConcurrencyCacheForTest{
+		loadBatch: map[int64]*AccountLoadInfo{1: {AccountID: 1, CurrentConcurrency: 1}},
+	}
+	svc := NewConcurrencyService(cache)
+	svc.SetAccountLoadBatchCacheTTL(time.Minute)
+
+	request := []AccountWithConcurrency{{
+		ID: 1, MaxConcurrency: 2, AdmissionClass: ConcurrencyClassRequest, SplitPolicy: true,
+	}}
+	live := []AccountWithConcurrency{{
+		ID: 1, MaxConcurrency: 4, AdmissionClass: ConcurrencyClassLive, SplitPolicy: true,
+	}}
+	_, err := svc.GetAccountsLoadBatch(context.Background(), request)
+	require.NoError(t, err)
+	_, err = svc.GetAccountsLoadBatch(context.Background(), live)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), cache.loadBatchCalls.Load(), "request and Live snapshots must not share a cache key")
 }
 
 func TestGetAccountsLoadBatchFresh_BypassesShortTTLCache(t *testing.T) {

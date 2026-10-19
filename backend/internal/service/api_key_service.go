@@ -671,24 +671,41 @@ func (s *APIKeyService) fillCurrentConcurrency(ctx context.Context, keys []APIKe
 			ids = append(ids, keys[i].ID)
 		}
 	}
-	counts, err := s.concurrencyService.GetAPIKeyConcurrencyBatch(ctx, ids)
+	snapshots, err := s.concurrencyService.GetAPIKeyConcurrencySnapshotBatch(ctx, ids)
 	if err != nil {
+		for i := range keys {
+			keys[i].ConcurrencyReadError = "unavailable"
+		}
 		return
 	}
 	for i := range keys {
-		keys[i].CurrentConcurrency = counts[keys[i].ID]
+		snapshot, ok := snapshots[keys[i].ID]
+		if !ok {
+			keys[i].ConcurrencyReadError = "unavailable"
+			continue
+		}
+		request := snapshot.Request
+		live := snapshot.Live
+		total := request + live
+		keys[i].CurrentConcurrency = total
+		keys[i].CurrentRequestConcurrency = &request
+		keys[i].CurrentLiveConcurrency = &live
 	}
 }
 
-func (s *APIKeyService) currentConcurrencyForAPIKey(ctx context.Context, apiKeyID int64) int {
+func (s *APIKeyService) currentConcurrencyForAPIKey(ctx context.Context, apiKeyID int64) (ConcurrencySnapshot, error) {
 	if s == nil || s.concurrencyService == nil || apiKeyID <= 0 {
-		return 0
+		return ConcurrencySnapshot{}, nil
 	}
-	counts, err := s.concurrencyService.GetAPIKeyConcurrencyBatch(ctx, []int64{apiKeyID})
+	snapshots, err := s.concurrencyService.GetAPIKeyConcurrencySnapshotBatch(ctx, []int64{apiKeyID})
 	if err != nil {
-		return 0
+		return ConcurrencySnapshot{}, err
 	}
-	return counts[apiKeyID]
+	snapshot, ok := snapshots[apiKeyID]
+	if !ok {
+		return ConcurrencySnapshot{}, fmt.Errorf("api key concurrency snapshot missing")
+	}
+	return snapshot, nil
 }
 
 func (s *APIKeyService) VerifyOwnership(ctx context.Context, userID int64, apiKeyIDs []int64) ([]int64, error) {
@@ -767,7 +784,15 @@ func (s *APIKeyService) GetByID(ctx context.Context, id int64) (*APIKey, error) 
 		return nil, err
 	}
 	s.compileAPIKeyIPRules(apiKey)
-	apiKey.CurrentConcurrency = s.currentConcurrencyForAPIKey(ctx, apiKey.ID)
+	if snapshot, snapshotErr := s.currentConcurrencyForAPIKey(ctx, apiKey.ID); snapshotErr != nil {
+		apiKey.ConcurrencyReadError = "unavailable"
+	} else {
+		request := snapshot.Request
+		live := snapshot.Live
+		apiKey.CurrentConcurrency = request + live
+		apiKey.CurrentRequestConcurrency = &request
+		apiKey.CurrentLiveConcurrency = &live
+	}
 	return apiKey, nil
 }
 

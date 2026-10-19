@@ -105,6 +105,21 @@ func Concurrency(v int) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldConcurrency, v))
 }
 
+// LiveConcurrency applies equality check predicate on the "live_concurrency" field. It's identical to LiveConcurrencyEQ.
+func LiveConcurrency(v int) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldLiveConcurrency, v))
+}
+
+// RequestConcurrency applies equality check predicate on the "request_concurrency" field. It's identical to RequestConcurrencyEQ.
+func RequestConcurrency(v int) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldRequestConcurrency, v))
+}
+
+// ConcurrencyPolicyGeneration applies equality check predicate on the "concurrency_policy_generation" field. It's identical to ConcurrencyPolicyGenerationEQ.
+func ConcurrencyPolicyGeneration(v int64) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldConcurrencyPolicyGeneration, v))
+}
+
 // LoadFactor applies equality check predicate on the "load_factor" field. It's identical to LoadFactorEQ.
 func LoadFactor(v int) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldLoadFactor, v))
@@ -713,6 +728,146 @@ func ConcurrencyLT(v int) predicate.Account {
 // ConcurrencyLTE applies the LTE predicate on the "concurrency" field.
 func ConcurrencyLTE(v int) predicate.Account {
 	return predicate.Account(sql.FieldLTE(FieldConcurrency, v))
+}
+
+// LiveConcurrencyEQ applies the EQ predicate on the "live_concurrency" field.
+func LiveConcurrencyEQ(v int) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldLiveConcurrency, v))
+}
+
+// LiveConcurrencyNEQ applies the NEQ predicate on the "live_concurrency" field.
+func LiveConcurrencyNEQ(v int) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldLiveConcurrency, v))
+}
+
+// LiveConcurrencyIn applies the In predicate on the "live_concurrency" field.
+func LiveConcurrencyIn(vs ...int) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldLiveConcurrency, vs...))
+}
+
+// LiveConcurrencyNotIn applies the NotIn predicate on the "live_concurrency" field.
+func LiveConcurrencyNotIn(vs ...int) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldLiveConcurrency, vs...))
+}
+
+// LiveConcurrencyGT applies the GT predicate on the "live_concurrency" field.
+func LiveConcurrencyGT(v int) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldLiveConcurrency, v))
+}
+
+// LiveConcurrencyGTE applies the GTE predicate on the "live_concurrency" field.
+func LiveConcurrencyGTE(v int) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldLiveConcurrency, v))
+}
+
+// LiveConcurrencyLT applies the LT predicate on the "live_concurrency" field.
+func LiveConcurrencyLT(v int) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldLiveConcurrency, v))
+}
+
+// LiveConcurrencyLTE applies the LTE predicate on the "live_concurrency" field.
+func LiveConcurrencyLTE(v int) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldLiveConcurrency, v))
+}
+
+// LiveConcurrencyIsNil applies the IsNil predicate on the "live_concurrency" field.
+func LiveConcurrencyIsNil() predicate.Account {
+	return predicate.Account(sql.FieldIsNull(FieldLiveConcurrency))
+}
+
+// LiveConcurrencyNotNil applies the NotNil predicate on the "live_concurrency" field.
+func LiveConcurrencyNotNil() predicate.Account {
+	return predicate.Account(sql.FieldNotNull(FieldLiveConcurrency))
+}
+
+// RequestConcurrencyEQ applies the EQ predicate on the "request_concurrency" field.
+func RequestConcurrencyEQ(v int) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldRequestConcurrency, v))
+}
+
+// RequestConcurrencyNEQ applies the NEQ predicate on the "request_concurrency" field.
+func RequestConcurrencyNEQ(v int) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldRequestConcurrency, v))
+}
+
+// RequestConcurrencyIn applies the In predicate on the "request_concurrency" field.
+func RequestConcurrencyIn(vs ...int) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldRequestConcurrency, vs...))
+}
+
+// RequestConcurrencyNotIn applies the NotIn predicate on the "request_concurrency" field.
+func RequestConcurrencyNotIn(vs ...int) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldRequestConcurrency, vs...))
+}
+
+// RequestConcurrencyGT applies the GT predicate on the "request_concurrency" field.
+func RequestConcurrencyGT(v int) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldRequestConcurrency, v))
+}
+
+// RequestConcurrencyGTE applies the GTE predicate on the "request_concurrency" field.
+func RequestConcurrencyGTE(v int) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldRequestConcurrency, v))
+}
+
+// RequestConcurrencyLT applies the LT predicate on the "request_concurrency" field.
+func RequestConcurrencyLT(v int) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldRequestConcurrency, v))
+}
+
+// RequestConcurrencyLTE applies the LTE predicate on the "request_concurrency" field.
+func RequestConcurrencyLTE(v int) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldRequestConcurrency, v))
+}
+
+// RequestConcurrencyIsNil applies the IsNil predicate on the "request_concurrency" field.
+func RequestConcurrencyIsNil() predicate.Account {
+	return predicate.Account(sql.FieldIsNull(FieldRequestConcurrency))
+}
+
+// RequestConcurrencyNotNil applies the NotNil predicate on the "request_concurrency" field.
+func RequestConcurrencyNotNil() predicate.Account {
+	return predicate.Account(sql.FieldNotNull(FieldRequestConcurrency))
+}
+
+// ConcurrencyPolicyGenerationEQ applies the EQ predicate on the "concurrency_policy_generation" field.
+func ConcurrencyPolicyGenerationEQ(v int64) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldConcurrencyPolicyGeneration, v))
+}
+
+// ConcurrencyPolicyGenerationNEQ applies the NEQ predicate on the "concurrency_policy_generation" field.
+func ConcurrencyPolicyGenerationNEQ(v int64) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldConcurrencyPolicyGeneration, v))
+}
+
+// ConcurrencyPolicyGenerationIn applies the In predicate on the "concurrency_policy_generation" field.
+func ConcurrencyPolicyGenerationIn(vs ...int64) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldConcurrencyPolicyGeneration, vs...))
+}
+
+// ConcurrencyPolicyGenerationNotIn applies the NotIn predicate on the "concurrency_policy_generation" field.
+func ConcurrencyPolicyGenerationNotIn(vs ...int64) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldConcurrencyPolicyGeneration, vs...))
+}
+
+// ConcurrencyPolicyGenerationGT applies the GT predicate on the "concurrency_policy_generation" field.
+func ConcurrencyPolicyGenerationGT(v int64) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldConcurrencyPolicyGeneration, v))
+}
+
+// ConcurrencyPolicyGenerationGTE applies the GTE predicate on the "concurrency_policy_generation" field.
+func ConcurrencyPolicyGenerationGTE(v int64) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldConcurrencyPolicyGeneration, v))
+}
+
+// ConcurrencyPolicyGenerationLT applies the LT predicate on the "concurrency_policy_generation" field.
+func ConcurrencyPolicyGenerationLT(v int64) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldConcurrencyPolicyGeneration, v))
+}
+
+// ConcurrencyPolicyGenerationLTE applies the LTE predicate on the "concurrency_policy_generation" field.
+func ConcurrencyPolicyGenerationLTE(v int64) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldConcurrencyPolicyGeneration, v))
 }
 
 // LoadFactorEQ applies the EQ predicate on the "load_factor" field.
