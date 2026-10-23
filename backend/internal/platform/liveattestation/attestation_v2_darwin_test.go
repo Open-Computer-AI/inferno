@@ -4,8 +4,10 @@ package liveattestation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -420,6 +422,32 @@ func TestHelperHandlerWithLimitServesNInParallel(t *testing.T) {
 	_ = response.Body.Close()
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("bad token: HTTP %d", response.StatusCode)
+	}
+}
+
+// A real proof is ~4 KB; the answer must carry a Content-Length (not chunked)
+// and the same body bytes json.Encoder produced before.
+func TestHelperAnswersWithFixedLength(t *testing.T) {
+	long := `{"v":1,"s":0,"t":"v1.` + strings.Repeat("A", 5000) + `"}`
+	handler, err := NewHelperHandlerWithLimit(helperStub{generate: func(context.Context) (string, error) { return long, nil }}, testHelperToken, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	request, _ := http.NewRequest(http.MethodPost, server.URL+"/v1/attestation", nil)
+	request.Header.Set("Authorization", "Bearer "+testHelperToken)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	body, _ := io.ReadAll(response.Body)
+	var want strings.Builder
+	_ = json.NewEncoder(&want).Encode(remoteHelperResponse{Attestation: long})
+	if len(response.TransferEncoding) != 0 || response.ContentLength != int64(len(body)) || string(body) != want.String() {
+		t.Fatalf("transfer-encoding %v, content-length %d, body %d bytes (want %d, same bytes as json.Encoder)",
+			response.TransferEncoding, response.ContentLength, len(body), want.Len())
 	}
 }
 

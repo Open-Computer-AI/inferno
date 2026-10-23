@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -71,7 +72,7 @@ func NewHelperHandlerWithLimit(provider Provider, token string, maxConcurrent in
 				http.Error(w, `{"error":"local runtime unavailable"}`, http.StatusServiceUnavailable)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(remoteHelperResponse{Supported: true})
+			writeHelperJSON(w, remoteHelperResponse{Supported: true})
 			return
 		}
 		select {
@@ -86,6 +87,21 @@ func NewHelperHandlerWithLimit(provider Provider, token string, maxConcurrent in
 			http.Error(w, `{"error":"local attestation generation unavailable"}`, http.StatusServiceUnavailable)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(remoteHelperResponse{Attestation: header})
+		writeHelperJSON(w, remoteHelperResponse{Attestation: header})
 	}), nil
+}
+
+// writeHelperJSON writes the same bytes json.Encoder did (JSON plus a newline)
+// with an explicit Content-Length: a proof (~4 KB) is past net/http's buffer,
+// which would otherwise send it chunked; a fixed length lets a keep-alive
+// client (the AWS queue) know exactly where the answer ends.
+func writeHelperJSON(w http.ResponseWriter, value remoteHelperResponse) {
+	body, err := json.Marshal(value)
+	if err != nil {
+		http.Error(w, `{"error":"local attestation generation unavailable"}`, http.StatusServiceUnavailable)
+		return
+	}
+	body = append(body, '\n')
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	_, _ = w.Write(body)
 }
