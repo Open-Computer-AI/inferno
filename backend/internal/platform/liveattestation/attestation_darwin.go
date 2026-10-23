@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -39,6 +40,12 @@ const (
 	// A slow answer is dropped by its request ID, so one timeout doesn't cost a
 	// helper restart; this many in a row means it is stuck and is restarted.
 	helperMaxFailures = 3
+	// At most this many one-shot Node processes run at once when the helper
+	// fails, so a burst cannot start a process per request on an 8 GB Mac.
+	maxOneShotFallbacks = 2
+	// A failed background refresh keeps serving the last good signals for this
+	// long (they are locale, time zone and screen, not per request).
+	signalsStaleLimit = 24 * time.Hour
 )
 
 type darwinProvider struct {
@@ -51,8 +58,12 @@ type darwinProvider struct {
 	signalsAt time.Time
 	bundle    bundleEntry
 
-	helper   *deviceCheckHelper
-	warmOnce sync.Once
+	helper    *deviceCheckHelper
+	warmOnce  sync.Once
+	fallbacks chan struct{}
+	// warming is set once Warm runs: the background loop then refreshes the
+	// signals, so a request never waits on osascript while it has good ones.
+	warming atomic.Bool
 }
 
 type bundleEntry struct {
@@ -90,6 +101,7 @@ func newLocalProvider() Provider {
 		appSessionID: uuid.NewString(),
 		appPaths:     paths,
 		helper:       newDeviceCheckHelper(),
+		fallbacks:    make(chan struct{}, maxOneShotFallbacks),
 	}
 	provider.signalReader = provider.readSignals
 	return provider
@@ -107,7 +119,10 @@ func (p *darwinProvider) Check(ctx context.Context) error {
 // signals every few minutes and health-checks the helper. Failures are left
 // to Generate, which reports them on the call that needs attestation.
 func (p *darwinProvider) Warm() {
-	p.warmOnce.Do(func() { go p.keepWarm() })
+	p.warmOnce.Do(func() {
+		p.warming.Store(true)
+		go p.keepWarm()
+	})
 }
 
 func (p *darwinProvider) keepWarm() {
@@ -210,6 +225,14 @@ func (p *darwinProvider) Generate(ctx context.Context) (string, error) {
 	slog.Warn("live attestation helper failed; using a one-shot process", "error", helperErr.Error())
 	onceCtx, onceCancel := context.WithTimeout(ctx, attestationTimeout)
 	defer onceCancel()
+	if p.fallbacks != nil {
+		select {
+		case p.fallbacks <- struct{}{}:
+			defer func() { <-p.fallbacks }()
+		case <-onceCtx.Done():
+			return "", errors.New("ChatGPT DeviceCheck token generation timed out")
+		}
+	}
 	return generateOnce(onceCtx, nodePath, modulePath, bundleID, signalsJSON)
 }
 
@@ -307,7 +330,8 @@ func readBundleIdentifier(ctx context.Context, appPath string) (string, error) {
 
 func (p *darwinProvider) cachedSignals(ctx context.Context) (deviceSignals, error) {
 	p.mu.Lock()
-	if !p.signalsAt.IsZero() && time.Since(p.signalsAt) < signalsMaxAge {
+	age := time.Since(p.signalsAt)
+	if !p.signalsAt.IsZero() && (age < signalsMaxAge || (p.warming.Load() && age < signalsStaleLimit)) {
 		signals := p.signals
 		p.mu.Unlock()
 		return signals, nil
@@ -319,6 +343,13 @@ func (p *darwinProvider) cachedSignals(ctx context.Context) (deviceSignals, erro
 func (p *darwinProvider) refreshSignals(ctx context.Context) (deviceSignals, error) {
 	signals, err := p.signalReader(ctx)
 	if err != nil {
+		p.mu.Lock()
+		cached, at := p.signals, p.signalsAt
+		p.mu.Unlock()
+		if !at.IsZero() && time.Since(at) < signalsStaleLimit {
+			slog.Warn("live attestation signals refresh failed; keeping the last good ones", "age", time.Since(at).Round(time.Second).String())
+			return cached, nil
+		}
 		return deviceSignals{}, err
 	}
 	p.mu.Lock()
@@ -386,23 +417,29 @@ func truncateSignal(value string, limit int, fallback string) string {
 
 // deviceCheckHelper keeps one ChatGPT-bundled Node process with the DeviceCheck
 // module loaded, so a Live call does not start a process (slow after idle on a
-// memory-pressed Mac). Requests are serialized and every one still asks
-// DeviceCheck for a fresh token.
+// memory-pressed Mac). Concurrent callers are pipelined to that one process:
+// each request carries an ID and its answer is routed back by ID, so a caller
+// waits only for DeviceCheck itself, never for another caller's round trip.
+// Every request still asks DeviceCheck for a fresh token.
 type deviceCheckHelper struct {
-	// lock is a one-slot semaphore instead of a mutex so a caller gives up
-	// when its deadline passes rather than queueing behind a stuck request.
-	lock     chan struct{}
-	cmd      *exec.Cmd
-	stdin    io.WriteCloser
-	lines    <-chan string
-	done     chan struct{}
+	mu       sync.Mutex
+	proc     *helperProcess
 	identity string
 	seq      uint64
 	failures int
 }
 
+// helperProcess is one running Node helper. pending is guarded by the owning
+// deviceCheckHelper's mu.
+type helperProcess struct {
+	cmd     *exec.Cmd
+	stdin   io.WriteCloser
+	pending map[uint64]chan helperResponse
+	exited  chan struct{}
+}
+
 func newDeviceCheckHelper() *deviceCheckHelper {
-	return &deviceCheckHelper{lock: make(chan struct{}, 1)}
+	return &deviceCheckHelper{}
 }
 
 type helperRequest struct {
@@ -439,55 +476,65 @@ func (h *deviceCheckHelper) ping(ctx context.Context, identity, nodePath, module
 }
 
 func (h *deviceCheckHelper) call(ctx context.Context, identity, nodePath, modulePath string, request helperRequest) (helperResponse, error) {
-	select {
-	case h.lock <- struct{}{}:
-		defer func() { <-h.lock }()
-	case <-ctx.Done():
-		return helperResponse{}, ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return helperResponse{}, err
 	}
-	if h.cmd == nil || h.identity != identity {
+	h.mu.Lock()
+	if h.proc == nil || h.identity != identity {
 		h.stopLocked()
 		if err := h.startLocked(identity, nodePath, modulePath); err != nil {
+			h.mu.Unlock()
 			return helperResponse{}, err
 		}
 	}
+	proc := h.proc
 	h.seq++
 	request.ID = h.seq
 	payload, err := json.Marshal(request)
 	if err != nil {
+		h.mu.Unlock()
 		return helperResponse{}, err
 	}
-	if _, err := h.stdin.Write(append(payload, '\n')); err != nil {
+	answer := make(chan helperResponse, 1)
+	proc.pending[request.ID] = answer
+	// One small line per request; the helper reads stdin continuously, so the
+	// write does not wait on DeviceCheck.
+	if _, err := proc.stdin.Write(append(payload, '\n')); err != nil {
+		delete(proc.pending, request.ID)
 		h.stopLocked()
+		h.mu.Unlock()
 		return helperResponse{}, fmt.Errorf("attestation helper write: %w", err)
 	}
-	for {
+	h.mu.Unlock()
+
+	select {
+	case response := <-answer:
+		h.mu.Lock()
+		h.failures = 0
+		h.mu.Unlock()
+		return response, nil
+	case <-proc.exited:
+		// The answer may have landed just before the exit.
 		select {
-		case <-ctx.Done():
-			// A late answer is skipped by its ID; only a helper that keeps
-			// failing is restarted (a restart is the slow path we avoid).
+		case response := <-answer:
+			return response, nil
+		default:
+		}
+		return helperResponse{}, errors.New("attestation helper exited")
+	case <-ctx.Done():
+		// A late answer is dropped by its ID; only a helper that keeps
+		// failing is restarted (a restart is the slow path we avoid).
+		h.mu.Lock()
+		delete(proc.pending, request.ID)
+		if h.proc == proc {
 			h.failures++
 			if h.failures >= helperMaxFailures {
 				slog.Warn("live attestation helper unresponsive; restarting it", "failures", h.failures)
 				h.stopLocked()
 			}
-			return helperResponse{}, ctx.Err()
-		case line, ok := <-h.lines:
-			if !ok {
-				h.stopLocked()
-				return helperResponse{}, errors.New("attestation helper exited")
-			}
-			var response helperResponse
-			if err := json.Unmarshal([]byte(line), &response); err != nil {
-				h.stopLocked()
-				return helperResponse{}, errors.New("attestation helper sent a malformed answer")
-			}
-			if response.ID != request.ID {
-				continue
-			}
-			h.failures = 0
-			return response, nil
 		}
+		h.mu.Unlock()
+		return helperResponse{}, ctx.Err()
 	}
 }
 
@@ -509,42 +556,81 @@ func (h *deviceCheckHelper) startLocked(identity, nodePath, modulePath string) e
 	if err := command.Start(); err != nil {
 		return fmt.Errorf("start attestation helper: %w", err)
 	}
-	lines := make(chan string, 4)
-	done := make(chan struct{})
-	go func() {
-		scanner := bufio.NewScanner(stdout)
-		scanner.Buffer(make([]byte, 0, 64*1024), 256*1024)
-		for scanner.Scan() {
-			select {
-			case lines <- scanner.Text():
-			case <-done:
-			}
-		}
-		close(lines)
-		_ = command.Wait()
-	}()
-	h.cmd, h.stdin, h.lines, h.done = command, stdin, lines, done
-	h.identity, h.failures = identity, 0
+	proc := &helperProcess{cmd: command, stdin: stdin, pending: map[uint64]chan helperResponse{}, exited: make(chan struct{})}
+	go h.readAnswers(proc, stdout)
+	h.proc, h.identity, h.failures = proc, identity, 0
 	return nil
+}
+
+// readAnswers routes each answer line to its waiting caller by ID. A
+// malformed line means the process is not our helper any more: it is killed
+// and every waiting caller falls back.
+func (h *deviceCheckHelper) readAnswers(proc *helperProcess, stdout io.Reader) {
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 0, 64*1024), 256*1024)
+	for scanner.Scan() {
+		var response helperResponse
+		if err := json.Unmarshal(scanner.Bytes(), &response); err != nil {
+			slog.Warn("live attestation helper sent a malformed answer; restarting it")
+			h.mu.Lock()
+			if h.proc == proc {
+				h.stopLocked()
+			} else {
+				killHelperProcess(proc)
+			}
+			h.mu.Unlock()
+			break
+		}
+		h.mu.Lock()
+		answer, ok := proc.pending[response.ID]
+		delete(proc.pending, response.ID)
+		h.mu.Unlock()
+		if ok {
+			answer <- response // buffered; never blocks
+		}
+	}
+	// Drain so a killed or exiting helper never blocks on a full pipe.
+	_, _ = io.Copy(io.Discard, stdout)
+	h.mu.Lock()
+	if h.proc == proc {
+		h.proc = nil
+	}
+	proc.pending = map[uint64]chan helperResponse{}
+	h.mu.Unlock()
+	_ = proc.cmd.Wait()
+	close(proc.exited)
 }
 
 // stop ends the helper process; the gateway keeps it for its lifetime.
 func (h *deviceCheckHelper) stop() {
-	h.lock <- struct{}{}
-	defer func() { <-h.lock }()
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.stopLocked()
 }
 
+// running reports the current helper's pid (0 when none) for tests and logs.
+func (h *deviceCheckHelper) running() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.proc == nil || h.proc.cmd.Process == nil {
+		return 0
+	}
+	return h.proc.cmd.Process.Pid
+}
+
 func (h *deviceCheckHelper) stopLocked() {
-	if h.cmd == nil {
+	if h.proc == nil {
 		return
 	}
-	close(h.done)
-	_ = h.stdin.Close()
-	if h.cmd.Process != nil {
-		_ = h.cmd.Process.Kill()
+	killHelperProcess(h.proc)
+	h.proc = nil
+}
+
+func killHelperProcess(proc *helperProcess) {
+	_ = proc.stdin.Close()
+	if proc.cmd.Process != nil {
+		_ = proc.cmd.Process.Kill()
 	}
-	h.cmd, h.stdin, h.lines, h.done = nil, nil, nil, nil
 }
 
 // deviceCheckEncoder is shared by the one-shot script and the helper so both

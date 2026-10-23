@@ -11,14 +11,29 @@ import (
 	"time"
 )
 
+// MaxHelperConcurrency bounds -max-concurrent: each slot is one request that
+// may wait on DeviceCheck, so the bound also bounds goroutines and fallbacks.
+const MaxHelperConcurrency = 64
+
 // NewHelperHandler exposes only local capability checks and fresh generation.
 // It never accepts caller-supplied signals, account credentials, or commands.
+// It serves one generation at a time (the original behaviour).
 func NewHelperHandler(provider Provider, token string) (http.Handler, error) {
+	return NewHelperHandlerWithLimit(provider, token, 1)
+}
+
+// NewHelperHandlerWithLimit is NewHelperHandler with up to maxConcurrent
+// generations in flight; a request beyond that is still answered 429 at once.
+// Every request still gets its own freshly generated proof.
+func NewHelperHandlerWithLimit(provider Provider, token string, maxConcurrent int) (http.Handler, error) {
 	if provider == nil || !validHelperToken(token) {
 		return nil, errors.New("helper requires a provider and a strong token")
 	}
+	if maxConcurrent < 1 || maxConcurrent > MaxHelperConcurrency {
+		return nil, errors.New("helper concurrency must be between 1 and 64")
+	}
 	expected := sha256.Sum256([]byte("Bearer " + token))
-	busy := make(chan struct{}, 1)
+	busy := make(chan struct{}, maxConcurrent)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json")

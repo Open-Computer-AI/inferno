@@ -8,6 +8,14 @@ just as serial but makes callers wait on a lock. This proxy gives the AWS gatewa
 A helper it cannot reach (tunnel reconnecting, refused or reset connection) is retried for UNREACHABLE_S, so a blip
 does not fail the call; a real outage still fails fast. A slow answer (timeout) is not retried: it would stall the line.
 Headers (including Authorization) are passed through and never logged. Stdlib only.
+
+v2 (2026-10-23), two switches, both off by default (off = the behaviour above, unchanged):
+- QUEUE_CONCURRENCY=N (default 1): forward up to N requests at once. Only useful with a helper that serves N at once
+  (attestation helper v2, -max-concurrent >= N); against the old helper the extra ones get 429 and are retried as before.
+- QUEUE_KEEPALIVE=1 (default 0): reuse idle connections to the helper (kept at most KEEPALIVE_IDLE_S, below the helper's
+  15 s idle timeout). Through the ssh reverse tunnel every new connection costs one extra round trip to the Mac (channel
+  open) before the request; a reused one does not. A reused connection that turns out closed is retried once on a new
+  one (each POST generates a new proof, so a retry never reuses a proof).
 """
 import http.client
 import http.server
@@ -21,18 +29,72 @@ RETRY_S = 0.05        # pause before retrying a "busy" answer
 UNREACHABLE_S = 6.0   # how long a caller keeps retrying a helper it cannot reach
 UNREACHABLE_RETRY_S = 0.25
 UNREACHABLE = (ConnectionRefusedError, ConnectionResetError, http.client.RemoteDisconnected)
-lock = threading.Lock()
+CONCURRENCY = 1
+KEEPALIVE = False
+KEEPALIVE_IDLE_S = 10.0
+lock = threading.BoundedSemaphore(CONCURRENCY)  # CONCURRENCY 1 behaves exactly like the old threading.Lock()
 stats = {"served": 0, "waited_ms_max": 0, "busy_retries": 0, "unreachable_retries": 0, "failed": 0}
+idle = []  # (connection, time it went idle); only used with KEEPALIVE
+idle_lock = threading.Lock()
+STALE = (ConnectionResetError, BrokenPipeError, http.client.RemoteDisconnected, http.client.BadStatusLine)
+
+
+def _new_connection():
+    return http.client.HTTPConnection(UPSTREAM_HOST, UPSTREAM_PORT, timeout=15)
+
+
+def _take_idle():
+    now = time.monotonic()
+    with idle_lock:
+        while idle:
+            conn, since = idle.pop()
+            if now - since < KEEPALIVE_IDLE_S:
+                return conn
+            conn.close()
+    return None
+
+
+def _give_back(conn):
+    with idle_lock:
+        idle.append((conn, time.monotonic()))
+
+
+def _exchange(conn, method, path, headers, body):
+    conn.request(method, path, body=body, headers=headers)
+    resp = conn.getresponse()
+    data = resp.read()
+    return resp.status, resp.getheaders(), data, resp.will_close
 
 
 def forward(method, path, headers, body):
-    conn = http.client.HTTPConnection(UPSTREAM_HOST, UPSTREAM_PORT, timeout=15)
+    if not KEEPALIVE:
+        conn = _new_connection()
+        try:
+            conn.request(method, path, body=body, headers=headers)
+            resp = conn.getresponse()
+            return resp.status, resp.getheaders(), resp.read()
+        finally:
+            conn.close()
+    conn = _take_idle()
+    if conn is not None:
+        try:
+            status, rheaders, data, will_close = _exchange(conn, method, path, headers, body)
+        except STALE:
+            conn.close()  # closed while idle: retry once on a new connection below
+        except Exception:
+            conn.close()
+            raise
+        else:
+            _give_back(conn) if not will_close else conn.close()
+            return status, rheaders, data
+    conn = _new_connection()
     try:
-        conn.request(method, path, body=body, headers=headers)
-        resp = conn.getresponse()
-        return resp.status, resp.getheaders(), resp.read()
-    finally:
+        status, rheaders, data, will_close = _exchange(conn, method, path, headers, body)
+    except Exception:
         conn.close()
+        raise
+    _give_back(conn) if not will_close else conn.close()
+    return status, rheaders, data
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -96,6 +158,11 @@ if __name__ == "__main__":
     import os  # ports overridable so the test can run it next to a fake helper
     LISTEN = (LISTEN[0], int(os.environ.get("QUEUE_PORT", LISTEN[1])))
     UPSTREAM_PORT = int(os.environ.get("QUEUE_UPSTREAM_PORT", UPSTREAM_PORT))
+    CONCURRENCY = int(os.environ.get("QUEUE_CONCURRENCY", "1"))
+    if not 1 <= CONCURRENCY <= 64:
+        raise SystemExit("QUEUE_CONCURRENCY must be 1-64")
+    KEEPALIVE = os.environ.get("QUEUE_KEEPALIVE", "0") == "1"
+    lock = threading.BoundedSemaphore(CONCURRENCY)
     server = http.server.ThreadingHTTPServer(LISTEN, Handler)
     server.daemon_threads = True
     server.serve_forever()
