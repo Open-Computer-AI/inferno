@@ -346,7 +346,9 @@ func (p *darwinProvider) refreshSignals(ctx context.Context) (deviceSignals, err
 		p.mu.Lock()
 		cached, at := p.signals, p.signalsAt
 		p.mu.Unlock()
-		if !at.IsZero() && time.Since(at) < signalsStaleLimit {
+		// Only while Warm runs (the background loop keeps retrying); without
+		// it a failed read fails the request, as in the original helper.
+		if p.warming.Load() && !at.IsZero() && time.Since(at) < signalsStaleLimit {
 			slog.Warn("live attestation signals refresh failed; keeping the last good ones", "age", time.Since(at).Round(time.Second).String())
 			return cached, nil
 		}
@@ -418,9 +420,11 @@ func truncateSignal(value string, limit int, fallback string) string {
 // deviceCheckHelper keeps one ChatGPT-bundled Node process with the DeviceCheck
 // module loaded, so a Live call does not start a process (slow after idle on a
 // memory-pressed Mac). Concurrent callers are pipelined to that one process:
-// each request carries an ID and its answer is routed back by ID, so a caller
-// waits only for DeviceCheck itself, never for another caller's round trip.
-// Every request still asks DeviceCheck for a fresh token.
+// each request carries an ID and its answer is routed back by ID, so callers
+// do not wait for each other's Go-side round trip or lock. The Node script
+// still asks DeviceCheck one request at a time (macOS serializes DeviceCheck
+// across processes anyway: ~15-40 ms each), so a caller waits behind the
+// requests queued before it. Every request asks DeviceCheck for a fresh token.
 type deviceCheckHelper struct {
 	mu       sync.Mutex
 	proc     *helperProcess
@@ -436,6 +440,11 @@ type helperProcess struct {
 	stdin   io.WriteCloser
 	pending map[uint64]chan helperResponse
 	exited  chan struct{}
+	// answers counts answer lines routed so far. A timeout counts toward a
+	// restart only when the process answered nothing while that request
+	// waited: a process that is answering is behind, not stuck, and killing it
+	// would fail the requests queued behind it.
+	answers uint64
 }
 
 func newDeviceCheckHelper() *deviceCheckHelper {
@@ -497,6 +506,7 @@ func (h *deviceCheckHelper) call(ctx context.Context, identity, nodePath, module
 	}
 	answer := make(chan helperResponse, 1)
 	proc.pending[request.ID] = answer
+	answersAtSend := proc.answers
 	// One small line per request; the helper reads stdin continuously, so the
 	// write does not wait on DeviceCheck.
 	if _, err := proc.stdin.Write(append(payload, '\n')); err != nil {
@@ -526,7 +536,7 @@ func (h *deviceCheckHelper) call(ctx context.Context, identity, nodePath, module
 		// failing is restarted (a restart is the slow path we avoid).
 		h.mu.Lock()
 		delete(proc.pending, request.ID)
-		if h.proc == proc {
+		if h.proc == proc && proc.answers == answersAtSend {
 			h.failures++
 			if h.failures >= helperMaxFailures {
 				slog.Warn("live attestation helper unresponsive; restarting it", "failures", h.failures)
@@ -582,12 +592,25 @@ func (h *deviceCheckHelper) readAnswers(proc *helperProcess, stdout io.Reader) {
 			break
 		}
 		h.mu.Lock()
+		proc.answers++
 		answer, ok := proc.pending[response.ID]
 		delete(proc.pending, response.ID)
 		h.mu.Unlock()
 		if ok {
 			answer <- response // buffered; never blocks
 		}
+	}
+	if scanner.Err() != nil {
+		// An answer longer than the scanner's limit: not our helper's output.
+		// Kill it so waiting callers fail now instead of at their deadline.
+		slog.Warn("live attestation helper sent an oversized answer; restarting it")
+		h.mu.Lock()
+		if h.proc == proc {
+			h.stopLocked()
+		} else {
+			killHelperProcess(proc)
+		}
+		h.mu.Unlock()
 	}
 	// Drain so a killed or exiting helper never blocks on a full pipe.
 	_, _ = io.Copy(io.Discard, stdout)

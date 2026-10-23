@@ -122,6 +122,59 @@ func TestHelperRestartsAfterMalformedAnswer(t *testing.T) {
 	waitFor(t, func() bool { return helper.running() == 0 })
 }
 
+func TestHelperRestartsAfterOversizedAnswer(t *testing.T) {
+	node, helper := writeFakeNode(t), newDeviceCheckHelper()
+	defer helper.stop()
+	started := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), helperTimeout)
+	_, err := helper.generate(ctx, node+"|huge", node, "huge", "com.openai.chat", []byte(`{}`))
+	cancel()
+	if err == nil || errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error = %v after %s, want a prompt failure", err, time.Since(started))
+	}
+	waitFor(t, func() bool { return helper.running() == 0 })
+}
+
+// A helper that is answering, only slowly (a burst queued behind serial
+// DeviceCheck), is not restarted by its callers' timeouts: a restart would
+// fail every request still queued behind them.
+func TestHelperBehindIsNotRestartedByBurstTimeouts(t *testing.T) {
+	node, helper := writeFakeNode(t), newDeviceCheckHelper()
+	defer helper.stop()
+	if _, err := helper.generate(context.Background(), node+"|slow300", node, "slow300", "com.openai.chat", []byte(`{}`)); err != nil {
+		t.Fatal(err)
+	}
+	pid := helper.running()
+	const callers = 12 // 12 x 300 ms serial; a 1 s budget times out the later ones
+	var wg sync.WaitGroup
+	var ok, timeouts, other atomic.Int32
+	for range callers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			_, err := helper.generate(ctx, node+"|slow300", node, "slow300", "com.openai.chat", []byte(`{}`))
+			switch {
+			case err == nil:
+				ok.Add(1)
+			case errors.Is(err, context.DeadlineExceeded):
+				timeouts.Add(1)
+			default:
+				other.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if other.Load() != 0 || helper.running() != pid {
+		t.Fatalf("ok=%d timeouts=%d other=%d; helper pid %d -> %d (restarted while answering)",
+			ok.Load(), timeouts.Load(), other.Load(), pid, helper.running())
+	}
+	if ok.Load() < 2 || timeouts.Load() < 3 {
+		t.Fatalf("test did not exercise the burst: ok=%d timeouts=%d", ok.Load(), timeouts.Load())
+	}
+}
+
 func TestHelperRestartsWhenRuntimeChanges(t *testing.T) {
 	node, helper := writeFakeNode(t), newDeviceCheckHelper()
 	defer helper.stop()
@@ -274,6 +327,11 @@ func TestSignalsKeepLastGoodWhenRefreshFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	fail = true
+	// Without Warm a failed read fails, exactly as in the original helper.
+	if _, err := provider.refreshSignals(ctx); err == nil {
+		t.Fatal("a cold provider served cached signals after a failed read")
+	}
+	provider.warming.Store(true)
 	got, err := provider.refreshSignals(ctx)
 	if err != nil || got.Locale != "en_IN" {
 		t.Fatalf("refresh failure dropped good signals: %+v %v", got, err)

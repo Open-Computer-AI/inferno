@@ -26,6 +26,8 @@ while IFS= read -r line; do
   [ "$mode" = hang ] && sleep 30
   [ "$mode" = slow-first ] && [ "$n" = 1 ] && sleep 0.6
   [ "$mode" = slow ] && sleep 0.05
+  [ "$mode" = slow300 ] && sleep 0.3
+  [ "$mode" = huge ] && { head -c 300000 /dev/zero | tr '\0' x; echo; continue; }
   [ "$mode" = crash ] && exit 3
   if [ "$mode" = reverse3 ]; then
     # Collect three requests, then answer them newest first.
