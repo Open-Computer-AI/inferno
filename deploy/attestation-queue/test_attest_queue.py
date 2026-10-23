@@ -240,6 +240,28 @@ class QueueTests(unittest.TestCase):
             queue.close()
             helper.close()
 
+    def test_health_reports_in_flight(self):
+        helper = FakeHelper(delay=0.6)
+        queue = Queue(helper.port, QUEUE_CONCURRENCY="4")
+        try:
+            def health():
+                conn = http.client.HTTPConnection("127.0.0.1", queue.port, timeout=5)
+                conn.request("GET", "/queue-health")
+                text = conn.getresponse().read().decode()
+                conn.close()
+                return text
+            self.assertIn("'in_flight': 0", health())
+            pool = ThreadPoolExecutor(3)
+            futures = [pool.submit(queue.post) for _ in range(3)]
+            time.sleep(0.3)
+            self.assertIn("'in_flight': 3", health())
+            self.assertEqual([f.result()[0] for f in futures], [200] * 3)
+            pool.shutdown()
+            self.assertIn("'in_flight': 0", health())
+        finally:
+            queue.close()
+            helper.close()
+
     def test_bad_concurrency_refused(self):
         proc = subprocess.run([sys.executable, "-I", QUEUE_FILE],
                               env=dict(os.environ, QUEUE_PORT=str(free_port()), QUEUE_CONCURRENCY="0"),

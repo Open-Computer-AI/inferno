@@ -40,7 +40,10 @@ CONCURRENCY = 1
 KEEPALIVE = False
 KEEPALIVE_IDLE_S = 10.0
 lock = threading.BoundedSemaphore(CONCURRENCY)  # CONCURRENCY 1 behaves exactly like the old threading.Lock()
-stats = {"served": 0, "waited_ms_max": 0, "busy_retries": 0, "unreachable_retries": 0, "failed": 0}
+# in_flight (v2): attestation requests the queue holds right now (waiting or forwarded). A restart is safe only when it
+# is 0 and served/failed stay unchanged for a few seconds.
+stats = {"served": 0, "waited_ms_max": 0, "busy_retries": 0, "unreachable_retries": 0, "failed": 0, "in_flight": 0}
+stats_lock = threading.Lock()
 idle = []  # (connection, time it went idle); only used with KEEPALIVE
 idle_lock = threading.Lock()
 STALE = (ConnectionResetError, BrokenPipeError, http.client.RemoteDisconnected, http.client.BadStatusLine)
@@ -152,6 +155,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         problem = request_problem(self.headers)
         if problem:  # never forwarded; the unread body (if any) dies with the closed connection
             return self._send(problem[0], [("Content-Type", "application/json")], problem[1], close=True)
+        with stats_lock:
+            stats["in_flight"] += 1
+        try:
+            self._relay()
+        finally:
+            with stats_lock:
+                stats["in_flight"] -= 1
+
+    def _relay(self):
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length) if length else None
         headers = {k: v for k, v in self.headers.items() if k.lower() in FORWARD_HEADERS}
