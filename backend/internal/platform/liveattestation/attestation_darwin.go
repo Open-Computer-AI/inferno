@@ -456,7 +456,16 @@ type helperRequest struct {
 	Ping     bool            `json:"ping,omitempty"`
 	BundleID string          `json:"bundleId,omitempty"`
 	Signals  json.RawMessage `json:"signals,omitempty"`
+	// ExpiresAtMs is the caller's deadline (Unix ms, same machine clock). Node
+	// answers {id, error:"expired"} without asking DeviceCheck once it has
+	// passed, so work a caller abandoned neither delays the requests queued
+	// behind it nor spends a token.
+	ExpiresAtMs int64 `json:"expiresAtMs,omitempty"`
 }
+
+// helperExpired is Node's answer to a request whose caller's deadline passed
+// before its turn; it says nothing about the helper's health.
+const helperExpired = "expired"
 
 type helperResponse struct {
 	ID     uint64 `json:"id"`
@@ -499,6 +508,9 @@ func (h *deviceCheckHelper) call(ctx context.Context, identity, nodePath, module
 	proc := h.proc
 	h.seq++
 	request.ID = h.seq
+	if deadline, ok := ctx.Deadline(); ok {
+		request.ExpiresAtMs = deadline.UnixMilli()
+	}
 	payload, err := json.Marshal(request)
 	if err != nil {
 		h.mu.Unlock()
@@ -520,7 +532,22 @@ func (h *deviceCheckHelper) call(ctx context.Context, identity, nodePath, module
 	select {
 	case response := <-answer:
 		h.mu.Lock()
-		h.failures = 0
+		switch {
+		case response.Error == helperExpired, response.Pong:
+			// Neither proves nor disproves that DeviceCheck works.
+		case response.Error != "":
+			// A Node that only answers errors (DeviceCheck stuck in a bad
+			// state) is restarted like one that answers nothing.
+			if h.proc == proc {
+				h.failures++
+				if h.failures >= helperMaxFailures {
+					slog.Warn("live attestation helper keeps failing; restarting it", "failures", h.failures)
+					h.stopLocked()
+				}
+			}
+		default:
+			h.failures = 0 // only a proof resets the count
+		}
 		h.mu.Unlock()
 		return response, nil
 	case <-proc.exited:
@@ -732,7 +759,8 @@ const deviceCheckScript = deviceCheckEncoder + `
 });`
 
 // deviceCheckHelperScript answers one JSON line per request line:
-// {"id","bundleId","signals"} -> {"id","header"} or {"id","error"};
+// {"id","bundleId","signals","expiresAtMs"?} -> {"id","header"} or {"id","error"}
+// ("expired" without calling DeviceCheck once expiresAtMs has passed);
 // {"id","ping":true} -> {"id","pong":true}. It exits when stdin closes.
 const deviceCheckHelperScript = deviceCheckEncoder + `
 const readline = require("node:readline");
@@ -746,6 +774,8 @@ readline.createInterface({input: process.stdin})
         const request = JSON.parse(line);
         id = request.id;
         if (request.ping) return reply({id, pong: true});
+        // The caller gave up while this request waited its turn: skip it.
+        if (request.expiresAtMs && Date.now() >= request.expiresAtMs) return reply({id, error: "expired"});
         reply({id, header: await attest(request.signals, request.bundleId)});
       } catch (error) {
         reply({id, error: error instanceof Error ? error.message : String(error)});

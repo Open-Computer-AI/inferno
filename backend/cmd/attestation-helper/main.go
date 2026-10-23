@@ -18,8 +18,10 @@ import (
 func main() {
 	listen := flag.String("listen", "127.0.0.1:19085", "loopback listener")
 	tokenFile := flag.String("token-file", "", "owner-only helper token file")
-	// 1 and -warm=false give the original helper (one proof at a time, Node and
-	// osascript started on demand).
+	// -max-concurrent 1 -warm=false come close to the c8c64ad76 helper (one
+	// proof at a time, Node and osascript started on demand) but are not the
+	// older per-request-spawn helper. Roll back by restoring the old binary and
+	// launchd plist, not with these flags.
 	maxConcurrent := flag.Int("max-concurrent", 16, "proofs generated at once; beyond this a request gets 429 (1-64)")
 	warm := flag.Bool("warm", true, "start the DeviceCheck Node helper and read device signals at start, then keep both fresh")
 	flag.Parse()

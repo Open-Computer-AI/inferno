@@ -37,6 +37,12 @@ while IFS= read -r line; do
     ids=""; n=0; continue
   fi
   [ "$mode" = garbage ] && { echo "not json"; continue; }
+  case "$line" in *'"ping":true'*) ;; *)
+    # error: every proof fails; err2ok: two failures, then a proof, repeating.
+    if [ "$mode" = error ] || { [ "$mode" = err2ok ] && [ $((n % 3)) != 0 ]; }; then
+      printf '{"id":%s,"error":"DeviceCheck failed"}\n' "$id"; continue
+    fi ;;
+  esac
   case "$line" in
     *'"ping":true'*) printf '{"id":%s,"pong":true}\n' "$id" ;;
     *) printf '{"id":%s,"header":"{\\"v\\":1,\\"s\\":0,\\"t\\":\\"v1.fake-%s-%s\\"}"}\n' "$id" "$$" "$n" ;;

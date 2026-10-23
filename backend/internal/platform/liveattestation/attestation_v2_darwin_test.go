@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -513,5 +514,128 @@ func waitFor(t *testing.T, condition func() bool) {
 			t.Fatal("condition not reached in 3 s")
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// A Node helper that only answers errors is restarted after helperMaxFailures
+// in a row; a successful proof resets the count (a pong does not).
+func TestHelperRestartsAfterRepeatedErrorAnswers(t *testing.T) {
+	node := writeFakeNode(t)
+	t.Run("errors only", func(t *testing.T) {
+		helper := newDeviceCheckHelper()
+		defer helper.stop()
+		for attempt := 1; attempt <= helperMaxFailures; attempt++ {
+			if _, err := helper.generate(context.Background(), node+"|error", node, "error", "com.openai.chat", []byte(`{}`)); err == nil {
+				t.Fatalf("attempt %d: expected the error answer", attempt)
+			}
+			if attempt == helperMaxFailures {
+				break
+			}
+			if helper.running() == 0 {
+				t.Fatalf("attempt %d: restarted before %d errors", attempt, helperMaxFailures)
+			}
+			// A pong (no DeviceCheck involved) must not reset the count.
+			if err := helper.ping(context.Background(), node+"|error", node, "error"); err != nil {
+				t.Fatalf("ping: %v", err)
+			}
+		}
+		if helper.running() != 0 {
+			t.Fatalf("a helper answering only errors was not restarted after %d", helperMaxFailures)
+		}
+	})
+	t.Run("a proof resets the count", func(t *testing.T) {
+		helper := newDeviceCheckHelper()
+		defer helper.stop()
+		var pid int
+		for request := 1; request <= 6; request++ { // error, error, proof, error, error, proof
+			header, err := helper.generate(context.Background(), node+"|err2ok", node, "err2ok", "com.openai.chat", []byte(`{}`))
+			if (err == nil) != (request%3 == 0) {
+				t.Fatalf("request %d: header %q err %v", request, header, err)
+			}
+			if request == 1 {
+				pid = helper.running()
+			}
+			if helper.running() != pid {
+				t.Fatalf("request %d: helper restarted although proofs keep succeeding", request)
+			}
+		}
+	})
+}
+
+// fakeDeviceCheckAddon stands in for devicecheck.node under the REAL helper
+// script: each generateToken takes 300 ms and appends a line to <module>.calls.
+const fakeDeviceCheckAddon = `const fs = require("node:fs");
+exports.generateToken = () => new Promise((resolve) => setTimeout(() => {
+  fs.appendFileSync(__filename + ".calls", "x\n");
+  resolve({supported: true, tokenBase64: "dG9rZW4", latencyMs: 300});
+}, 300));
+`
+
+func realNodeForTest(t *testing.T) string {
+	t.Helper()
+	for _, candidate := range []string{filepath.Join(chatGPTApplicationPath, "Contents", "Resources", "cua_node", "bin", "node")} {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	if path, err := exec.LookPath("node"); err == nil {
+		return path
+	}
+	t.Skip("no node binary to run the real helper script")
+	return ""
+}
+
+// The real Node helper script skips work its caller abandoned: after a burst
+// whose tail timed out, the next caller does not wait behind the abandoned
+// requests, and no DeviceCheck token is generated for them.
+func TestRealScriptSkipsExpiredRequests(t *testing.T) {
+	node := realNodeForTest(t)
+	module := filepath.Join(t.TempDir(), "devicecheck.js")
+	if err := os.WriteFile(module, []byte(fakeDeviceCheckAddon), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	signals := []byte(`{"schemaVersion":1,"preferredLanguages":["en-IN"],"locale":"en_IN","timezone":"Asia/Kolkata","screenSizeSum":2000,"screenScale":2,"appSessionId":"s"}`)
+	helper := newDeviceCheckHelper()
+	defer helper.stop()
+	identity := node + "|" + module
+	if _, err := helper.generate(context.Background(), identity, node, module, "com.openai.test", signals); err != nil {
+		t.Fatalf("warm-up through the real script: %v", err)
+	}
+	var ok, timeouts atomic.Int32
+	var wg sync.WaitGroup
+	for range 12 { // 12 x 300 ms serial; a 1 s budget leaves most of them abandoned
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			if _, err := helper.generate(ctx, identity, node, module, "com.openai.test", signals); err == nil {
+				ok.Add(1)
+			} else {
+				timeouts.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	started := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := helper.generate(ctx, identity, node, module, "com.openai.test", signals); err != nil {
+		t.Fatalf("next caller: %v", err)
+	}
+	waited := time.Since(started)
+	data, _ := os.ReadFile(module + ".calls")
+	calls := strings.Count(string(data), "\n")
+	t.Logf("burst ok=%d timeouts=%d; next caller waited %s; generateToken calls %d", ok.Load(), timeouts.Load(), waited.Round(10*time.Millisecond), calls)
+	if timeouts.Load() < 3 {
+		t.Fatalf("test did not exercise abandoned requests (timeouts=%d)", timeouts.Load())
+	}
+	// At most one abandoned request can be mid-generation when the deadline
+	// passes; everything else queued behind it is skipped.
+	if waited > 1200*time.Millisecond {
+		t.Fatalf("next caller waited %s behind abandoned work", waited)
+	}
+	if limit := int(ok.Load()) + 2 + 1; calls > limit {
+		t.Fatalf("generateToken ran %d times for %d answered requests (+warm-up, next, one in flight): abandoned requests spent tokens", calls, ok.Load())
 	}
 }
