@@ -16,9 +16,16 @@ v2 (2026-10-23), two switches, both off by default (off = the behaviour above, u
   15 s idle timeout). Through the ssh reverse tunnel every new connection costs one extra round trip to the Mac (channel
   open) before the request; a reused one does not. A reused connection that turns out closed is retried once on a new
   one (each POST generates a new proof, so a retry never reuses a proof).
+
+Request hygiene (always on; the gateway's real request is forwarded byte-for-byte as before): only the headers the
+gateway's Go client sends (User-Agent, Accept, Authorization, Accept-Encoding) are forwarded; a request with
+Transfer-Encoding, more than one or a malformed Content-Length is refused 400 and a body over MAX_BODY 413, both without
+forwarding and with the client connection closed. With QUEUE_KEEPALIVE a helper connection goes back to the idle pool
+only after a response with a known length was read completely.
 """
 import http.client
 import http.server
+import re
 import threading
 import time
 
@@ -37,6 +44,23 @@ stats = {"served": 0, "waited_ms_max": 0, "busy_retries": 0, "unreachable_retrie
 idle = []  # (connection, time it went idle); only used with KEEPALIVE
 idle_lock = threading.Lock()
 STALE = (ConnectionResetError, BrokenPipeError, http.client.RemoteDisconnected, http.client.BadStatusLine)
+# Exactly the headers remote.go's Go client sends besides Host and Content-Length (which http.client sets itself).
+FORWARD_HEADERS = ("user-agent", "accept", "authorization", "accept-encoding")
+MAX_BODY = 4096             # attestation requests have no body; anything bigger is refused
+MAX_RESPONSE = 64 * 1024    # the helper answers < 20 KB (remote.go maxHelperResponse); only enforced with KEEPALIVE
+CONTENT_LENGTH = re.compile(r"[0-9]{1,10}")
+
+
+def request_problem(headers):
+    """(status, body) when the request must be refused without forwarding, else None."""
+    if headers.get_all("Transfer-Encoding"):
+        return 400, b'{"error":"bad request"}'
+    lengths = headers.get_all("Content-Length") or []
+    if len(lengths) > 1 or (lengths and not CONTENT_LENGTH.fullmatch(lengths[0].strip())):
+        return 400, b'{"error":"bad request"}'
+    if lengths and int(lengths[0].strip()) > MAX_BODY:
+        return 413, b'{"error":"request too large"}'
+    return None
 
 
 def _new_connection():
@@ -60,10 +84,16 @@ def _give_back(conn):
 
 
 def _exchange(conn, method, path, headers, body):
+    """Returns (status, headers, body, reusable). reusable only when the request body was fixed-length (or none) and
+    the response had a known length and was read to its end on a connection the helper keeps open."""
     conn.request(method, path, body=body, headers=headers)
     resp = conn.getresponse()
-    data = resp.read()
-    return resp.status, resp.getheaders(), data, resp.will_close
+    framed = not resp.chunked and resp.length is not None and not resp.will_close
+    data = resp.read(MAX_RESPONSE + 1)
+    if len(data) > MAX_RESPONSE:
+        raise ValueError("helper response too large")
+    reusable = framed and resp.isclosed() and (body is None or isinstance(body, bytes))
+    return resp.status, resp.getheaders(), data, reusable
 
 
 def forward(method, path, headers, body):
@@ -78,22 +108,22 @@ def forward(method, path, headers, body):
     conn = _take_idle()
     if conn is not None:
         try:
-            status, rheaders, data, will_close = _exchange(conn, method, path, headers, body)
+            status, rheaders, data, reusable = _exchange(conn, method, path, headers, body)
         except STALE:
             conn.close()  # closed while idle: retry once on a new connection below
         except Exception:
             conn.close()
             raise
         else:
-            _give_back(conn) if not will_close else conn.close()
+            _give_back(conn) if reusable else conn.close()
             return status, rheaders, data
     conn = _new_connection()
     try:
-        status, rheaders, data, will_close = _exchange(conn, method, path, headers, body)
+        status, rheaders, data, reusable = _exchange(conn, method, path, headers, body)
     except Exception:
         conn.close()
         raise
-    _give_back(conn) if not will_close else conn.close()
+    _give_back(conn) if reusable else conn.close()
     return status, rheaders, data
 
 
@@ -103,11 +133,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *_):  # no request logging (headers carry a token)
         pass
 
-    def _send(self, status, headers, body):
+    def _send(self, status, headers, body, close=False):
         self.send_response(status)
         for k, v in headers:
             if k.lower() not in ("transfer-encoding", "connection", "content-length"):
                 self.send_header(k, v)
+        if close:
+            self.close_connection = True
+            self.send_header("Connection", "close")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -116,9 +149,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path == "/queue-health":
             body = (str(stats) + "\n").encode()
             return self._send(200, [("Content-Type", "text/plain")], body)
+        problem = request_problem(self.headers)
+        if problem:  # never forwarded; the unread body (if any) dies with the closed connection
+            return self._send(problem[0], [("Content-Type", "application/json")], problem[1], close=True)
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length) if length else None
-        headers = {k: v for k, v in self.headers.items() if k.lower() not in ("host", "connection", "content-length")}
+        headers = {k: v for k, v in self.headers.items() if k.lower() in FORWARD_HEADERS}
         started = time.monotonic()
         last = (502, [("Content-Type", "application/json")], b'{"error":"attestation queue timeout"}')
         while time.monotonic() - started < DEADLINE_S:

@@ -37,6 +37,7 @@ func main() {
 	rounds := flag.Int("rounds", 1, "rounds")
 	gap := flag.Duration("gap", 2*time.Second, "pause between rounds")
 	timeout := flag.Duration("timeout", 8*time.Second, "per-request timeout (the gateway uses 8 s)")
+	health := flag.Bool("health", false, "only GET /health once (no proof is generated) and exit 0 when it answers 200")
 	flag.Parse()
 	if *k < 1 || *k > 64 || *rounds < 1 {
 		fail("k must be 1-64 and rounds >= 1")
@@ -50,6 +51,25 @@ func main() {
 	transport.Proxy = nil
 	transport.MaxIdleConnsPerHost = 64
 	client := &http.Client{Timeout: *timeout, Transport: transport}
+	if *health {
+		request, err := http.NewRequest(http.MethodGet, base+"/health", nil)
+		if err != nil {
+			fail("bad url")
+		}
+		request.Header.Set("Authorization", "Bearer "+token)
+		started := time.Now()
+		response, err := client.Do(request)
+		if err != nil {
+			fail("health request failed or timed out")
+		}
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		_ = response.Body.Close()
+		fmt.Printf("health: HTTP %d in %s: %s\n", response.StatusCode, ms(time.Since(started)), strings.TrimSpace(string(body)))
+		if response.StatusCode != http.StatusOK {
+			os.Exit(1)
+		}
+		return
+	}
 
 	var all []result
 	proofs := map[string]int{}
