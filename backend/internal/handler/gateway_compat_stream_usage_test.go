@@ -101,7 +101,7 @@ func runCompatStreamUsageHandler(t *testing.T, endpoint, upstreamStream string, 
 	}}
 	gw := service.NewGatewayService(
 		nil, &fakeGroupRepo{group: group}, run.usageRepo, run.billingRepo, nil, nil, nil, nil, cfg,
-		snapshot, nil, service.NewBillingService(cfg, nil), nil, nil, nil, run.upstream,
+		snapshot, newTestConcurrencyService(), service.NewBillingService(cfg, nil), nil, nil, nil, run.upstream,
 		&service.DeferredService{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 	h := &GatewayHandler{

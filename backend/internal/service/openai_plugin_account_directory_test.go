@@ -99,6 +99,8 @@ func TestAccountReadableSnapshot_DenylistTripwire(t *testing.T) {
 		"ID": {}, "Name": {}, "Notes": {}, "Platform": {}, "Type": {}, "Extra": {},
 		"Proxy": {}, "ProxyID": {}, "ProxyFallbackOriginID": {}, "ProxyFallbackOriginName": {},
 		"Concurrency": {}, "Priority": {}, "RateMultiplier": {}, "LoadFactor": {},
+		// Stage split-concurrency policy: non-secret integers like Concurrency.
+		"LiveConcurrency": {}, "RequestConcurrency": {}, "ConcurrencyPolicyGeneration": {}, "ConcurrencyPolicyChanged": {},
 		"Status": {}, "ErrorMessage": {}, "LastUsedAt": {}, "ExpiresAt": {},
 		"AutoPauseOnExpired": {}, "CreatedAt": {}, "UpdatedAt": {}, "Schedulable": {},
 		"RateLimitedAt": {}, "RateLimitResetAt": {}, "OverloadUntil": {},

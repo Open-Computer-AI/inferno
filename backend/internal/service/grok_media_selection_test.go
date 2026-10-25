@@ -89,6 +89,8 @@ func TestGrokVideoStickySelectionIgnoresHealthEscape(t *testing.T) {
 	svc := &OpenAIGatewayService{
 		accountRepo: schedulerTestOpenAIAccountRepo{accounts: []Account{account}},
 		cache:       &schedulerTestGatewayCache{},
+		// Stage split concurrency fails closed without a policy authority.
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
 	}
 	stats := newOpenAIAccountRuntimeStats()
 	for range 20 {
