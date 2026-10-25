@@ -1,0 +1,11 @@
+[Unit]
+Description=Restrict Inferno attestation tailnet ingress
+Before=tailscaled.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/inferno-attestation-tailnet-firewall 100.70.23.11 100.120.151.40
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
