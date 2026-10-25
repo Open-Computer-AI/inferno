@@ -81,7 +81,7 @@
                       }}
                     </p>
                   </div>
-                  <Button
+                  <BaseButton
                     type="button"
                     variant="secondary"
                     size="sm"
@@ -89,7 +89,7 @@
                     :disabled="subscriptionGroups.length === 0"
                   >
                     {{ t("admin.settings.defaults.addDefaultSubscription") }}
-                  </Button>
+                  </BaseButton>
                 </div>
 
                 <div
@@ -195,7 +195,7 @@
                       />
                     </div>
                     <div class="flex items-end">
-                      <Button
+                      <BaseButton
                         type="button"
                         variant="danger"
                         size="sm"
@@ -203,7 +203,7 @@
                         @click="removeDefaultSubscription(index)"
                       >
                         {{ t("common.delete") }}
-                      </Button>
+                      </BaseButton>
                     </div>
                   </div>
                 </div>
@@ -399,7 +399,7 @@
                           {{ t("admin.settings.authSourceDefaults.defaultSubscriptionsHint") }}
                         </p>
                       </div>
-                      <Button
+                      <BaseButton
                         type="button"
                         variant="secondary"
                         size="sm"
@@ -411,7 +411,7 @@
                         {{
                           t("admin.settings.defaults.addDefaultSubscription")
                         }}
-                      </Button>
+                      </BaseButton>
                     </div>
 
                     <div
@@ -526,7 +526,7 @@
                           />
                         </div>
                         <div class="flex items-end">
-                          <Button
+                          <BaseButton
                             type="button"
                             variant="danger"
                             size="sm"
@@ -539,7 +539,7 @@
                             "
                           >
                             {{ t("common.delete") }}
-                          </Button>
+                          </BaseButton>
                         </div>
                       </div>
                     </div>
@@ -619,11 +619,14 @@ import { defineComponent } from 'vue'
 import GroupBadge from '@/components/common/GroupBadge.vue'
 import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
 import BaseSelect from '@/components/common/Select.vue'
-import Button from '@/components/common/Button.vue'
+import BaseButton from '@/components/common/Button.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import type { GroupPlatform, SubscriptionType } from '@/types'
 import { useSettingsPageBindings } from './settingsPageBindings'
 
+// This interface is referenced by template-only type assertions, which the
+// TypeScript ESLint parser cannot count as a script-region usage.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface DefaultSubscriptionGroupOption {
   label: string
   platform: GroupPlatform
@@ -634,7 +637,7 @@ interface DefaultSubscriptionGroupOption {
 
 export default defineComponent({
   name: 'AdminUserSettingsPage',
-  components: { BaseSelect, Button, GroupBadge, GroupOptionItem, Toggle },
+  components: { BaseSelect, BaseButton, GroupBadge, GroupOptionItem, Toggle },
   setup() {
     return useSettingsPageBindings()
   },

@@ -24,7 +24,11 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => (key === 'common.copy' ? '复制' : key)
+      t: (key: string, params?: Record<string, string>) => {
+        if (key === 'common.copy') return '复制'
+        if (key === 'admin.accounts.modelMappingConflict') return `Model mapping conflict: ${params?.from} → ${params?.to}`
+        return key
+      }
     })
   }
 })
@@ -91,6 +95,36 @@ describe('ModelWhitelistSelector', () => {
     syncUpstreamModelsPreview.mockReset()
   })
 
+  it('rejects a custom whitelist model that is already mapped to a different target', async () => {
+    const wrapper = mountSelector({ modelMappings: [{ from: 'gpt-latest', to: 'deepseek-chat' }] })
+    await wrapper.get('input[placeholder="admin.accounts.enterCustomModelName"]').setValue(' gpt-latest ')
+    await wrapper.findAll('button').find(button => button.text() === 'admin.accounts.addModel')!.trigger('click')
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(showInfo).toHaveBeenCalledWith(expect.stringContaining('gpt-latest → deepseek-chat'))
+  })
+
+  it('keeps the duplicate warning before checking mappings', async () => {
+    const wrapper = mountSelector({ modelValue: ['gpt-latest'], modelMappings: [{ from: 'gpt-latest', to: 'deepseek-chat' }] })
+    await wrapper.get('input[placeholder="admin.accounts.enterCustomModelName"]').setValue('gpt-latest')
+    await wrapper.findAll('button').find(button => button.text() === 'admin.accounts.addModel')!.trigger('click')
+    expect(showInfo).toHaveBeenCalledWith('admin.accounts.modelExists')
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+  })
+
+  it('allows a matching identity mapping as a whitelist model', async () => {
+    const wrapper = mountSelector({ modelMappings: [{ from: 'gpt-latest', to: 'gpt-latest' }] })
+    await wrapper.get('input[placeholder="admin.accounts.enterCustomModelName"]').setValue('gpt-latest')
+    await wrapper.findAll('button').find(button => button.text() === 'admin.accounts.addModel')!.trigger('click')
+    expect(wrapper.emitted('update:modelValue')).toEqual([[['gpt-latest']]])
+  })
+
+  it('still allows custom models without a mapping prop', async () => {
+    const wrapper = mountSelector()
+    await wrapper.get('input[placeholder="admin.accounts.enterCustomModelName"]').setValue('custom-model')
+    await wrapper.findAll('button').find(button => button.text() === 'admin.accounts.addModel')!.trigger('click')
+    expect(wrapper.emitted('update:modelValue')).toEqual([[['custom-model']]])
+  })
+
   it('copies a model ID without selecting the model', async () => {
     const wrapper = mountSelector()
     await wrapper.get('div.cursor-pointer').trigger('click')
@@ -151,6 +185,26 @@ describe('ModelWhitelistSelector', () => {
     expect(wrapper.emitted('update:modelValue')).toEqual([[['x-preview-f-free']]])
     expect(showWarning).toHaveBeenCalledWith('admin.accounts.syncUpstreamModelsMetadataIncomplete')
     expect(showSuccess).not.toHaveBeenCalled()
+  })
+
+  it('exposes upstream sync for OpenCode Go and reports partial capability metadata', async () => {
+    syncUpstreamModels.mockResolvedValue({
+      models: ['gpt-5.6-sol'],
+      warnings: [{ code: 'upstream_model_metadata_partial', message: 'some metadata missing' }]
+    })
+    const wrapper = mountSelector({ platform: 'opencode_go', accountId: 46 })
+    const syncButton = wrapper
+      .findAll('button')
+      .find(button => button.text() === 'admin.accounts.syncUpstreamModels')
+
+    expect(syncButton).toBeDefined()
+    await syncButton!.trigger('click')
+    await flushPromises()
+
+    expect(syncUpstreamModels).toHaveBeenCalledWith(46)
+    expect(wrapper.emitted('update:modelValue')).toEqual([[['gpt-5.6-sol']]])
+    expect(showWarning).toHaveBeenCalledWith('admin.accounts.syncUpstreamModelsMetadataPartial')
+    expect(showSuccess).toHaveBeenCalledWith('admin.accounts.syncUpstreamModelsSuccess')
   })
 
   it('reports a successful preview so account creation can persist metadata', async () => {

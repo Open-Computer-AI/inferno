@@ -53,3 +53,18 @@ func TestEmbeddedFrontendBypassesJWKS(t *testing.T) {
 	// rest of RegisterCommonRoutes for the same gap is a separate job.
 	require.False(t, shouldBypassEmbeddedFrontend("/.well-known/other"))
 }
+
+func TestEmbeddedFrontendBypassesBareAPIAliases(t *testing.T) {
+	for _, path := range []string{
+		"/chat/completions", "/embeddings", "/messages/count_tokens", "/models/gpt-5.5",
+		"/videos", "/tts", "/stt", "/custom-voices", "/custom-voices/voice-123",
+		"/custom-voices/voice-123/audio", "/realtime", "/web_search", "/x_search",
+		"/contents/generations/tasks", "/contents/generations/tasks/task-123",
+		"/v3/contents/generations/tasks", "/v3/contents/generations/tasks/task-123",
+	} {
+		require.True(t, shouldBypassEmbeddedFrontend(path), "path=%s", path)
+	}
+	for _, path := range []string{"/model-plaza", "/custom/page-1", "/monitor", "/setup", "/v3/other"} {
+		require.False(t, shouldBypassEmbeddedFrontend(path), "path=%s", path)
+	}
+}

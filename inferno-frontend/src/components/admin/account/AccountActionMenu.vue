@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div v-if="show && position">
+    <div v-if="show && (anchorRect || position)">
       <!-- Backdrop: click anywhere outside to close. This popover is
            controlled by a `position` prop computed from a trigger this
            component does not render (AccountsView.vue owns the row's "more"
@@ -11,8 +11,8 @@
       <div class="am-backdrop" @click="emit('close')"></div>
       <div
         ref="menuRef"
-        class="am-menu"
-        :style="{ top: position.top + 'px', left: position.left + 'px' }"
+        class="am-menu overflow-y-auto overscroll-contain"
+        :style="menuStyle"
         role="menu"
         :aria-label="t('admin.accounts.moreActions')"
         @click.stop
@@ -110,10 +110,21 @@
  * than silently left out.
  */
 import { computed, nextTick, ref, watch, onUnmounted } from 'vue'
+import { useResizeObserver, useWindowSize } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import type { Account } from '@/types'
 
-const props = defineProps<{ show: boolean; account: Account | null; position: { top: number; left: number } | null }>()
+const props = withDefaults(defineProps<{
+  show: boolean
+  account: Account | null
+  /** Legacy fallback for callers that only have an already-computed position. */
+  position?: { top: number; left: number } | null
+  /** Trigger geometry used to measure and place the rendered menu. */
+  anchorRect?: DOMRect | null
+}>(), {
+  position: null,
+  anchorRect: null
+})
 const emit = defineEmits(['close', 'test', 'stats', 'schedule', 'duplicate', 'reauth', 'refresh-token', 'recover-state', 'reset-quota', 'set-privacy', 'create-spark-shadow'])
 const { t } = useI18n()
 const canDuplicate = computed(() => {
@@ -164,6 +175,50 @@ const showReauthGroup = computed(() => {
 })
 
 const menuRef = ref<HTMLElement | null>(null)
+const { width: viewportWidth, height: viewportHeight } = useWindowSize()
+const viewportPadding = 8
+const menuPosition = ref({
+  top: props.position?.top ?? viewportPadding,
+  left: props.position?.left ?? viewportPadding
+})
+
+const menuStyle = computed(() => ({
+  top: `${menuPosition.value.top}px`,
+  left: `${menuPosition.value.left}px`,
+  maxWidth: `${Math.max(0, viewportWidth.value - viewportPadding * 2)}px`,
+  maxHeight: `${Math.max(0, viewportHeight.value - viewportPadding * 2)}px`
+}))
+
+const updatePosition = () => {
+  if (!props.anchorRect || !menuRef.value) {
+    if (props.position) menuPosition.value = { ...props.position }
+    return
+  }
+
+  const { width, height } = menuRef.value.getBoundingClientRect()
+  const anchor = props.anchorRect
+  const gap = 4
+  const maxTop = viewportHeight.value - height - viewportPadding
+  const top = anchor.bottom + gap <= maxTop
+    ? anchor.bottom + gap
+    : anchor.top - height - gap
+  const left = viewportWidth.value < 768
+    ? anchor.left + anchor.width / 2 - width / 2
+    : anchor.right - width
+
+  menuPosition.value = {
+    top: Math.max(viewportPadding, Math.min(top, maxTop)),
+    left: Math.max(viewportPadding, Math.min(left, viewportWidth.value - width - viewportPadding))
+  }
+}
+
+// Measure after rendering so conditional actions and translated labels are included.
+watch(
+  [menuRef, () => props.show, () => props.anchorRect, () => props.position, viewportWidth, viewportHeight],
+  updatePosition,
+  { flush: 'post' }
+)
+useResizeObserver(menuRef, updatePosition)
 
 const getMenuItems = (): HTMLButtonElement[] => {
   if (!menuRef.value) return []
@@ -236,6 +291,8 @@ onUnmounted(() => {
   position: fixed;
   z-index: 9999;
   width: 236px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 4px;
   border: 1px solid var(--popover-border);
   border-radius: var(--r-md);

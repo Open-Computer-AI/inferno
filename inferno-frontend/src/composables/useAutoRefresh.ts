@@ -4,6 +4,7 @@ export interface UseAutoRefreshOptions {
   storageKey: string
   intervals?: readonly number[]
   defaultInterval?: number
+  defaultEnabled?: boolean
   onRefresh: () => Promise<void> | void
   /** Skip tick when this returns true (e.g. modal open, document hidden). */
   shouldPause?: () => boolean
@@ -14,11 +15,12 @@ export function useAutoRefresh(options: UseAutoRefreshOptions) {
     storageKey,
     intervals = [5, 10, 15, 30] as const,
     defaultInterval,
+    defaultEnabled,
     onRefresh,
     shouldPause,
   } = options
 
-  const enabled = ref(false)
+  const enabled = ref(defaultEnabled ?? false)
   const intervalSeconds = ref(defaultInterval ?? intervals[intervals.length - 1])
   const countdown = ref(0)
   const fetching = ref(false)

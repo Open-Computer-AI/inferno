@@ -161,7 +161,7 @@
         </template>
       </p>
 
-      <p v-if="!backendModeEnabled" class="lg__signup">
+      <p v-if="!backendModeEnabled && publicSettingsLoaded && registrationEnabled" class="lg__signup">
         {{ t('auth.dontHaveAccount') }}
         <router-link to="/register" class="lg__signup-link">{{ t('auth.signUp') }}</router-link>
       </p>
@@ -277,6 +277,7 @@ const legalDocuments = computed<{ to: string; title: string }[]>(() => [
 const publicSettingsLoaded = ref<boolean>(false)
 
 // Public settings
+const registrationEnabled = ref<boolean>(false)
 const turnstileEnabled = ref<boolean>(false)
 const turnstileSiteKey = ref<string>('')
 const tencentCaptchaEnabled = ref<boolean>(false)
@@ -388,6 +389,7 @@ onMounted(async () => {
 
   try {
     const settings = await getPublicSettings()
+    registrationEnabled.value = settings.registration_enabled === true
     turnstileEnabled.value = settings.turnstile_enabled
     turnstileSiteKey.value = settings.turnstile_site_key || ''
     tencentCaptchaEnabled.value = settings.tencent_captcha_enabled === true

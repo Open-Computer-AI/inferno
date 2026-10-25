@@ -1,0 +1,390 @@
+package service
+
+import (
+	"fmt"
+	"net/http"
+	"strings"
+
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/gin-gonic/gin"
+)
+
+// OpenCode Go 是 OpenCode Zen 的订阅网关：同一 API Key 下按模型分流到
+// Responses / Chat Completions / Anthropic Messages 三种原生端点，
+// 额度窗口为 rolling(5h) / weekly / monthly。
+
+const (
+	openCodeGoUsagePath = "/usage"
+	// DefaultOpenCodeGoTestModel is the admin connection-test fallback when
+	// the UI does not pick a model. glm-5.3 is a Chat Completions catalog ID.
+	DefaultOpenCodeGoTestModel = "glm-5.3"
+
+	protocolRulesCredentialKey   = "protocol_rules"
+	maxProtocolRules             = 64
+	maxProtocolRulePatternLength = 128
+)
+
+// DefaultOpenCodeGoModelIDs 是官方文档当前公开的模型 ID 目录，
+// 供 /v1/models 在尚未同步上游列表时回退，以及账号白名单预填。
+func DefaultOpenCodeGoModelIDs() []string {
+	return []string{
+		"grok-4.7",
+		"grok-4.6",
+		"gpt-5.6-luna",
+		"glm-5.3-flash",
+		"glm-5.3",
+		"glm-5.2",
+		"glm-5.1",
+		"kimi-k3",
+		"kimi-k2.7-code",
+		"kimi-k2.6",
+		"longcat-2.0",
+		"deepseek-v4-pro",
+		"deepseek-v4-flash",
+		"deepseek-v4-flash-vision-exp",
+		"mimo-v2.5",
+		"mimo-v2.5-pro",
+		"minimax-m3",
+		"minimax-m2.7",
+		"minimax-m2.5",
+		"muse-spark-1.3-contributor",
+		"muse-spark-1.2-contributor",
+		"qwen3.8-max",
+		"qwen3.8-flash",
+		"qwen3.7-max",
+		"qwen3.7-plus",
+		"qwen3.6-plus",
+		"hy4-preview",
+		"hy3",
+		"omen-alpha",
+	}
+}
+
+func normalizeOpenCodeGoModelID(model string) string {
+	model = strings.ToLower(strings.TrimSpace(model))
+	for _, prefix := range []string{"opencode-go/", "opencode_go/", "opencode/"} {
+		model = strings.TrimPrefix(model, prefix)
+	}
+	return model
+}
+
+// IsOpenCodeUnsupportedModel 判断请求的模型是否属于 OpenCode 专有协议端点模型。
+// 官方 Zen 上 gemini-* 仅走 Google SDK 专属端点 /zen/v1/models/<id>，
+// jev-* 仅走 SystemOne 专属端点 /zen/v1/systemone，
+// 在通用 Chat Completions / Anthropic Messages / Responses 网关端点上不可用。
+func IsOpenCodeUnsupportedModel(model string) bool {
+	normalized := normalizeOpenCodeGoModelID(model)
+	return strings.HasPrefix(normalized, "gemini-") || strings.HasPrefix(normalized, "jev-")
+}
+
+func writeOpenCodeUnsupportedModelError(c *gin.Context, isAnthropic bool, model string) error {
+	msg := fmt.Sprintf("Model '%s' is not supported on OpenCode standard gateway (gemini models require Google SDK endpoint, jev models require System One endpoint)", model)
+	if c != nil {
+		if isAnthropic {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"type": "error",
+				"error": gin.H{
+					"type":    "invalid_request_error",
+					"message": msg,
+				},
+			})
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": gin.H{
+					"type":    "invalid_request_error",
+					"code":    "model_not_supported",
+					"message": msg,
+				},
+			})
+		}
+	}
+	return fmt.Errorf("opencode unsupported model: %s", model)
+}
+
+// OpenCodeGoProtocolRule is one model-pattern → native protocol mapping.
+// Pattern is an exact ID or a suffix glob (foo* / *). First match wins.
+type OpenCodeGoProtocolRule struct {
+	Pattern   string   `json:"pattern"`
+	Protocol  string   `json:"protocol"`
+	Protocols []string `json:"protocols,omitempty"`
+}
+
+// DefaultOpenCodeGoProtocolRules is the built-in adaptive routing table for Go.
+func DefaultOpenCodeGoProtocolRules() []OpenCodeGoProtocolRule {
+	return []OpenCodeGoProtocolRule{
+		{Pattern: "grok-*", Protocol: APIProtocolResponses},
+		{Pattern: "gpt-*", Protocol: APIProtocolResponses},
+		{Pattern: "muse-spark-*", Protocol: APIProtocolResponses},
+		{Pattern: "minimax-*", Protocol: APIProtocolAnthropic},
+		{Pattern: "qwen*", Protocol: APIProtocolAnthropic},
+	}
+}
+
+// DefaultOpenCodeZenProtocolRules 对齐 https://opencode.ai/docs/zen/ 端点表：
+// GPT/Grok/Muse Spark → Responses，Claude/Qwen → Anthropic，其余 Chat Completions。
+func DefaultOpenCodeZenProtocolRules() []OpenCodeGoProtocolRule {
+	return []OpenCodeGoProtocolRule{
+		{Pattern: "grok-*", Protocol: APIProtocolResponses},
+		{Pattern: "gpt-*", Protocol: APIProtocolResponses},
+		{Pattern: "muse-spark-*", Protocol: APIProtocolResponses},
+		{Pattern: "claude-*", Protocol: APIProtocolAnthropic},
+		{Pattern: "qwen3.8-max", Protocol: APIProtocolChatCompletions},
+		{Pattern: "qwen*", Protocol: APIProtocolAnthropic},
+	}
+}
+
+// defaultOpenCodeProtocolRules 从 provider profile 取该接入模式的内置分流表。
+func defaultOpenCodeProtocolRules(mode string) []OpenCodeGoProtocolRule {
+	return LookupProviderProfile(PlatformOpenCodeGo).Endpoints(mode).ProtocolRules
+}
+
+func isNativeUpstreamProtocol(protocol string) bool {
+	switch protocol {
+	case APIProtocolChatCompletions, APIProtocolAnthropic, APIProtocolResponses:
+		return true
+	default:
+		return false
+	}
+}
+
+func protocolRulePatternMatches(pattern, model string) bool {
+	pattern = strings.ToLower(strings.TrimSpace(pattern))
+	model = normalizeOpenCodeGoModelID(model)
+	if pattern == "" || model == "" {
+		return false
+	}
+	if pattern == "*" {
+		return true
+	}
+	if strings.HasSuffix(pattern, "*") {
+		return strings.HasPrefix(model, strings.TrimSuffix(pattern, "*"))
+	}
+	return model == pattern
+}
+
+func matchProtocolRules(model string, rules []OpenCodeGoProtocolRule) string {
+	for _, rule := range rules {
+		if !isNativeUpstreamProtocol(rule.Protocol) {
+			continue
+		}
+		if protocolRulePatternMatches(rule.Pattern, model) {
+			return rule.Protocol
+		}
+	}
+	return APIProtocolChatCompletions
+}
+
+// OpenCodeGoModelProtocol 返回内置默认表下模型对应的原生上游协议。
+// 未命中时为 Chat Completions。账号自定义 protocol_rules 见
+// ResolveOpenCodeGoUpstreamProtocol。
+func OpenCodeGoModelProtocol(model string) string {
+	return matchProtocolRules(model, DefaultOpenCodeGoProtocolRules())
+}
+
+func (a *Account) configuredProtocolRules() ([]OpenCodeGoProtocolRule, bool) {
+	if a == nil || a.Credentials == nil {
+		return nil, false
+	}
+	raw, ok := a.Credentials[protocolRulesCredentialKey]
+	if !ok || raw == nil {
+		return nil, false
+	}
+	rules, err := parseProtocolRules(raw)
+	if err != nil {
+		return nil, false
+	}
+	return rules, true
+}
+
+func parseProtocolRules(raw any) ([]OpenCodeGoProtocolRule, error) {
+	items, err := protocolRuleItems(raw)
+	if err != nil {
+		return nil, err
+	}
+	if len(items) > maxProtocolRules {
+		return nil, fmt.Errorf("protocol_rules supports at most %d entries", maxProtocolRules)
+	}
+	rules := make([]OpenCodeGoProtocolRule, 0, len(items))
+	for i, item := range items {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("protocol_rules[%d] must be an object", i)
+		}
+		pattern, _ := entry["pattern"].(string)
+		protocol, _ := entry["protocol"].(string)
+		pattern, err := normalizeProtocolRulePattern(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("protocol_rules[%d]: %w", i, err)
+		}
+		protocol = strings.TrimSpace(protocol)
+		rawProtocols, hasProtocols := entry["protocols"]
+		var protocols []string
+		if hasProtocols {
+			values, ok := rawProtocols.([]any)
+			if !ok {
+				return nil, fmt.Errorf("protocol_rules[%d].protocols must be an array", i)
+			}
+			for _, value := range values {
+				candidate, ok := value.(string)
+				if !ok || !isNativeUpstreamProtocol(strings.TrimSpace(candidate)) {
+					return nil, fmt.Errorf("protocol_rules[%d].protocols contains an invalid protocol", i)
+				}
+				candidate = strings.TrimSpace(candidate)
+				if !containsProtocol(protocols, candidate) {
+					protocols = append(protocols, candidate)
+				}
+			}
+			if len(protocols) == 0 {
+				return nil, fmt.Errorf("protocol_rules[%d].protocols must not be empty", i)
+			}
+		}
+		if protocol == "" && len(protocols) > 0 {
+			protocol = protocols[0]
+		}
+		if !isNativeUpstreamProtocol(protocol) {
+			return nil, fmt.Errorf("protocol_rules[%d]: protocol must be chat_completions, anthropic, or responses", i)
+		}
+		normalized := normalizeProtocolSet(protocol, protocols)
+		if len(normalized) <= 1 {
+			normalized = nil
+		}
+		rules = append(rules, OpenCodeGoProtocolRule{Pattern: pattern, Protocol: protocol, Protocols: normalized})
+	}
+	return rules, nil
+}
+
+func protocolRuleItems(raw any) ([]any, error) {
+	switch items := raw.(type) {
+	case []any:
+		return items, nil
+	case []map[string]any:
+		out := make([]any, 0, len(items))
+		for _, item := range items {
+			out = append(out, item)
+		}
+		return out, nil
+	default:
+		return nil, fmt.Errorf("protocol_rules must be an array")
+	}
+}
+
+func normalizeProtocolRulePattern(pattern string) (string, error) {
+	pattern = strings.ToLower(strings.TrimSpace(pattern))
+	if pattern == "" {
+		return "", fmt.Errorf("pattern is required")
+	}
+	if len(pattern) > maxProtocolRulePatternLength {
+		return "", fmt.Errorf("pattern is too long")
+	}
+	if strings.ContainsAny(pattern, " \t") {
+		return "", fmt.Errorf("pattern must not contain whitespace")
+	}
+	star := strings.Count(pattern, "*")
+	if star > 1 || (star == 1 && !strings.HasSuffix(pattern, "*")) {
+		return "", fmt.Errorf("pattern may use a single trailing * wildcard")
+	}
+	return pattern, nil
+}
+
+// NormalizeProtocolRulesCredentials 校验并原地规范化 credentials.protocol_rules。
+// 未携带该字段时为 no-op，使旧账号继续使用内置默认表。
+func NormalizeProtocolRulesCredentials(credentials map[string]any) error {
+	if credentials == nil {
+		return nil
+	}
+	raw, ok := credentials[protocolRulesCredentialKey]
+	if !ok || raw == nil {
+		return nil
+	}
+	rules, err := parseProtocolRules(raw)
+	if err != nil {
+		return infraerrors.New(http.StatusBadRequest, "INVALID_OPENCODE_GO_PROTOCOL_RULES", err.Error())
+	}
+	encoded := make([]any, 0, len(rules))
+	for _, rule := range rules {
+		entry := map[string]any{"pattern": rule.Pattern, "protocol": rule.Protocol}
+		if len(rule.Protocols) > 1 {
+			values := make([]any, len(rule.Protocols))
+			for i, protocol := range rule.Protocols {
+				values[i] = protocol
+			}
+			entry["protocols"] = values
+		}
+		encoded = append(encoded, entry)
+	}
+	credentials[protocolRulesCredentialKey] = encoded
+	return nil
+}
+
+func (a *Account) IsOpenCodeGo() bool {
+	return a != nil && a.Platform == PlatformOpenCodeGo
+}
+
+// GetOpenCodeAccountMode 返回 OpenCode 账号类型。未设置时按 Go 处理，兼容已有账号。
+func (a *Account) GetOpenCodeAccountMode() string {
+	if a == nil || !a.IsOpenCodeGo() {
+		return ""
+	}
+	if strings.TrimSpace(a.GetCredential("account_mode")) == AccountModeZen {
+		return AccountModeZen
+	}
+	return AccountModeGo
+}
+
+func (a *Account) IsOpenCodeZen() bool {
+	return a.GetOpenCodeAccountMode() == AccountModeZen
+}
+
+func (a *Account) IsOpenCodeGoPlan() bool {
+	return a.GetOpenCodeAccountMode() == AccountModeGo
+}
+
+func (a *Account) IsMultiProtocolAPIKey() bool {
+	return a != nil && IsMultiProtocolAPIKeyProvider(a.Platform)
+}
+
+// openCodeGoNativeProtocol 返回 OpenCode Go 实际上游协议。
+// 规则未命中、空值或未知协议一律兜底 Chat Completions，避免落入 Responses 转换链。
+func openCodeGoNativeProtocol(account *Account, model string) string {
+	if account == nil {
+		return APIProtocolChatCompletions
+	}
+	switch proto := account.ResolveOpenCodeGoUpstreamProtocol(model); proto {
+	case APIProtocolAnthropic, APIProtocolResponses:
+		return proto
+	default:
+		return APIProtocolChatCompletions
+	}
+}
+
+// ResolveOpenCodeGoUpstreamProtocol 按账号协议配置与模型规则决定上游协议。
+// 显式 pinned 协议优先；adaptive（默认）先走 credentials.protocol_rules，
+// 未配置时回落内置默认表；已配置但未命中则走 Chat Completions。
+func (a *Account) ResolveOpenCodeGoUpstreamProtocol(model string) string {
+	if a == nil || !a.IsOpenCodeGo() {
+		return ""
+	}
+	if a.GetAPIProtocol() == APIProtocolChatCompletions || a.GetAPIProtocol() == APIProtocolAnthropic || a.GetAPIProtocol() == APIProtocolResponses {
+		return a.GetAPIProtocol()
+	}
+	if rules, present := a.configuredProtocolRules(); present {
+		return matchProtocolRules(model, rules)
+	}
+	return matchProtocolRules(model, defaultOpenCodeProtocolRules(a.GetOpenCodeAccountMode()))
+}
+
+// openCodeGoQuotaURL 根据 base_url 解析 OpenCode Go 额度端点。
+// /zen/go/v1（Chat 协议默认，DefaultOpenCodeGoBaseURL）与 /zen/go
+// （Anthropic 协议默认，DefaultOpenCodeGoAnthropicBaseURL）两种 base 统一
+// 剥掉尾部 /v1 后拼回 /v1/usage（实测 /zen/go/usage → 404），协议切换不
+// 影响额度探测端点。与 kimiQuotaURL 同一惯例。
+func openCodeGoQuotaURL(baseURL string) string {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		base = DefaultOpenCodeGoBaseURL
+	}
+	base = strings.TrimSuffix(base, "/v1")
+	return base + "/v1" + openCodeGoUsagePath
+}
+
+type ProtocolRule = OpenCodeGoProtocolRule

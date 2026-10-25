@@ -48,7 +48,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
-const MANIFEST = resolve(ROOT, 'docs/superpowers/analysis/COMMIT-MANIFEST.md')
+const MANIFEST = resolve(ROOT, 'docs/superpowers/analysis/archive/2026-09-23/COMMIT-MANIFEST.md')
 const STATE = resolve(ROOT, 'docs/superpowers/analysis/upstream-watch.json')
 
 const git = (args, allowFail = false) => {
@@ -69,7 +69,9 @@ const has = (flag) => process.argv.includes(flag)
 // ---------------------------------------------------------------- range
 
 if (!has('--no-fetch')) {
-  try { execFileSync('git', ['fetch', 'upstream', '--quiet'], { cwd: ROOT, stdio: 'ignore' }) } catch {}
+  try { execFileSync('git', ['fetch', 'upstream', '--quiet'], { cwd: ROOT, stdio: 'ignore' }) } catch {
+    // Keep using the last fetched ref when upstream cannot be reached.
+  }
 }
 
 if (!git(['rev-parse', '--verify', 'upstream/main'], true)) {

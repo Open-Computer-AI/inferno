@@ -148,6 +148,30 @@ describe('AccountTestModal', () => {
     })
   })
 
+  it('shows image-test prompt for Antigravity OAuth image models', async () => {
+    getAvailableModelsMock.mockResolvedValue([
+      { id: 'gemini-3.1-flash-image', display_name: 'Gemini 3.1 Flash Image' }
+    ])
+    const wrapper = mount(AccountTestModal, {
+      props: {
+        show: false,
+        account: { ...buildAccount(), platform: 'antigravity', type: 'oauth' }
+      },
+      global: {
+        stubs: {
+          BaseDialog: BaseDialogStub,
+          Select: SelectStub,
+          TextArea: TextAreaStub,
+          Icon: true
+        }
+      }
+    })
+
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+    expect(wrapper.find('textarea').exists()).toBe(true)
+  })
+
   it('renders Chat Completions path status from test SSE', async () => {
     const encoder = new TextEncoder()
     const chunks = [

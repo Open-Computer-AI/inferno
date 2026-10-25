@@ -1,12 +1,13 @@
 import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   createAccountMock,
   probeUpstreamBillingMock,
   syncUpstreamModelsMock,
   showWarningMock,
+  showErrorMock,
   importCodexSessionMock,
   createOpenAICodexPATMock,
   authIsSimpleMode,
@@ -15,6 +16,7 @@ const {
   probeUpstreamBillingMock: vi.fn(),
   syncUpstreamModelsMock: vi.fn(),
   showWarningMock: vi.fn(),
+  showErrorMock: vi.fn(),
   importCodexSessionMock: vi.fn(),
   createOpenAICodexPATMock: vi.fn(),
   authIsSimpleMode: { value: true },
@@ -22,7 +24,7 @@ const {
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
-    showError: vi.fn(),
+    showError: showErrorMock,
     showSuccess: vi.fn(),
     showWarning: showWarningMock,
   }),
@@ -69,6 +71,8 @@ vi.mock('vue-i18n', async () => {
 })
 
 import CreateAccountModal from '../CreateAccountModal.vue'
+import UpstreamRequestIdHeaderField from '../UpstreamRequestIdHeaderField.vue'
+import { defaultCNBaseUrl } from '../credentialsBuilder'
 
 const BaseDialogStub = defineComponent({
   name: 'BaseDialog',
@@ -183,16 +187,42 @@ async function submitApiKeyAccount(
   return wrapper
 }
 
-async function openCodexImportStep(toggleClicks = 0) {
+async function openCodexImportStep(toggleClicks = 0, requestIdHeader?: string) {
   const wrapper = mountModal()
   await selectButtonByText(wrapper, 'OpenAI')
   for (let click = 0; click < toggleClicks; click += 1) {
     await wrapper.get('[data-testid="openai-long-context-billing-toggle"]').trigger('click')
   }
   await wrapper.get('form#create-account-form input[type="text"]').setValue('Codex import')
+  if (requestIdHeader) {
+    await wrapper.get('[data-testid="upstream-request-id-header"]').setValue(requestIdHeader)
+  }
   await wrapper.get('form#create-account-form').trigger('submit.prevent')
   return wrapper
 }
+
+describe('CreateAccountModal provider platform fields', () => {
+  it.each([
+    ['Command Code', 'commandCode'],
+    ['Cline', 'cline'],
+  ])('shows %s-specific API URL and key copy', async (platform, key) => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, platform)
+    if (platform === 'Command Code') {
+      await selectButtonByText(wrapper, 'admin.accounts.cnProviders.apiProtocol.chatCompletions')
+    }
+
+    expect(wrapper.get('[data-testid="create-account-base-url"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain(`admin.accounts.${key}.baseUrlHint`)
+    expect(wrapper.get('form#create-account-form input[type="password"]').attributes('placeholder')).toBe(
+      `admin.accounts.${key}.apiKeyPlaceholder`
+    )
+    expect(wrapper.text()).toContain(`admin.accounts.${key}.apiKeyHint`)
+    if (platform === 'Cline') {
+      expect(wrapper.text()).toContain('admin.accounts.supportsAllModels')
+    }
+  })
+})
 
 describe('CreateAccountModal OpenAI long-context billing', () => {
   beforeEach(() => {
@@ -210,6 +240,136 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
       warnings: [],
     })
     createOpenAICodexPATMock.mockReset().mockResolvedValue({})
+  })
+
+  afterEach(() => vi.useRealTimers())
+
+  it('sets month and year expiry presets without submitting the account form', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-01-31T12:34:00'))
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('expiry account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+    const input = wrapper.get<HTMLInputElement>('input[type="datetime-local"]')
+
+    for (const [label, expected] of [
+      ['payment.oneMonth', '2026-02-28T12:34'],
+      ['payment.oneYear', '2027-01-31T12:34']
+    ]) {
+      const button = wrapper.findAll('button').find(candidate => candidate.text() === label)!
+      expect(button.attributes('type')).toBe('button')
+      await button.trigger('click')
+      expect(input.element.value).toBe(expected)
+      expect(createAccountMock).not.toHaveBeenCalled()
+    }
+
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(createAccountMock.mock.calls[0]?.[0]?.expires_at).toBe(
+      new Date('2027-01-31T12:34:00').getTime() / 1000
+    )
+    wrapper.unmount()
+  })
+
+  it('allows a manually entered expiry to override a preset before account creation', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('custom expiry account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+    await selectButtonByText(wrapper, 'payment.oneMonth')
+    await wrapper.get('input[type="datetime-local"]').setValue('2030-04-15T09:20')
+
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(createAccountMock.mock.calls[0]?.[0]?.expires_at).toBe(
+      new Date('2030-04-15T09:20:00').getTime() / 1000
+    )
+    wrapper.unmount()
+  })
+
+  it('trims an upstream request-id header and omits it when blank', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('header account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+    await wrapper.get('[data-testid="upstream-request-id-header"]').setValue('  X-Oneapi-Request-Id  ')
+    expect(wrapper.get<HTMLInputElement>('[data-testid="upstream-request-id-header"]').element.value).toBe(
+      '  X-Oneapi-Request-Id  '
+    )
+    expect(wrapper.getComponent(UpstreamRequestIdHeaderField).props('modelValue')).toBe(
+      '  X-Oneapi-Request-Id  '
+    )
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(Object.keys(createAccountMock.mock.calls[0]?.[0]?.extra ?? {})).toContain(
+      'upstream_request_id_header'
+    )
+    expect(createAccountMock.mock.calls[0]?.[0]?.extra?.upstream_request_id_header).toBe('X-Oneapi-Request-Id')
+
+    createAccountMock.mockClear()
+    await submitApiKeyAccount('openai')
+    expect(createAccountMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty(
+      'upstream_request_id_header'
+    )
+  })
+
+  it('retains the request-id header on account flows using the shared create helper', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Antigravity')
+    await selectButtonByText(wrapper, 'API Key')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Antigravity upstream')
+    await wrapper.get('input[placeholder="https://cloudcode-pa.googleapis.com"]').setValue(
+      'https://cloudcode-pa.googleapis.com'
+    )
+    await wrapper.get('input[placeholder="sk-..."]').setValue('test-upstream-key')
+    await wrapper.get('[data-testid="upstream-request-id-header"]').setValue('X-Upstream-Request-ID')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock.mock.calls[0]?.[0]?.platform).toBe('antigravity')
+    expect(createAccountMock.mock.calls[0]?.[0]?.extra?.upstream_request_id_header).toBe(
+      'X-Upstream-Request-ID'
+    )
+    wrapper.unmount()
+  })
+
+  it('clears the upstream request-id header when the create modal is closed and reopened', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    await wrapper.get('[data-testid="upstream-request-id-header"]').setValue('X-Old-Request-ID')
+
+    await wrapper.setProps({ show: false })
+    await wrapper.setProps({ show: true })
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+
+    expect((wrapper.get('[data-testid="upstream-request-id-header"]').element as HTMLInputElement).value).toBe('')
+  })
+
+  it('keeps image URL-to-base64 conversion opt-in for OpenAI API keys', async () => {
+    await submitApiKeyAccount('openai')
+    expect(createAccountMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty(
+      'images_url_to_b64_json'
+    )
+
+    createAccountMock.mockClear()
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('image account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+    await wrapper.get('[data-testid="openai-images-url-to-b64-json-toggle"]').trigger('click')
+    expect(wrapper.get('[data-testid="openai-images-url-to-b64-json-toggle"]').attributes('aria-checked')).toBe('true')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock.mock.calls[0]?.[0]?.extra?.images_url_to_b64_json).toBe(true)
   })
 
   it('hides only the redundant account toggle when every selected group enables tier pricing', async () => {
@@ -293,10 +453,10 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(syncUpstreamModelsMock).toHaveBeenCalledWith(42)
   })
 
-  it('warns when post-create capability metadata remains incomplete', async () => {
+  it('warns when post-create capability metadata is only partially available', async () => {
     syncUpstreamModelsMock.mockResolvedValue({
       models: ['x-preview-f-free'],
-      warnings: [{ code: 'upstream_model_metadata_incomplete', message: 'metadata incomplete' }],
+      warnings: [{ code: 'upstream_model_metadata_partial', message: 'metadata partial' }],
     })
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'OpenAI')
@@ -308,7 +468,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await flushPromises()
 
     expect(showWarningMock).toHaveBeenCalledWith(
-      'admin.accounts.syncUpstreamModelsMetadataIncomplete'
+      'admin.accounts.syncUpstreamModelsMetadataPartial'
     )
   })
 
@@ -402,7 +562,11 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await flushPromises()
 
     expect(createAccountMock).toHaveBeenCalledTimes(1)
-    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({
+    const credentials = createAccountMock.mock.calls[0]?.[0]?.credentials ?? {}
+    expect(Object.keys(credentials)).toEqual(
+      expect.arrayContaining(['account_mode', 'api_protocol', 'api_base_urls'])
+    )
+    expect(credentials).toMatchObject({
       account_mode: 'payg',
       api_protocol: 'adaptive',
       base_url: 'https://api.moonshot.cn/v1',
@@ -425,7 +589,11 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await flushPromises()
 
     expect(createAccountMock).toHaveBeenCalledTimes(1)
-    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({
+    const kimiCodingCredentials = createAccountMock.mock.calls[0]?.[0]?.credentials ?? {}
+    expect(Object.keys(kimiCodingCredentials)).toEqual(
+      expect.arrayContaining(['account_mode', 'api_protocol', 'api_base_urls'])
+    )
+    expect(kimiCodingCredentials).toMatchObject({
       account_mode: 'coding',
       api_protocol: 'adaptive',
       base_url: 'https://api.kimi.com/coding/v1',
@@ -434,6 +602,164 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
         anthropic: 'https://api.kimi.com/coding',
         responses: 'https://api.kimi.com/coding/v1'
       }
+    })
+  })
+
+  it('submits adaptive MiniMax endpoints', async () => {
+    authIsSimpleMode.value = false
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'MiniMax')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('MiniMax adaptive')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('sk-minimax')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    const minimaxCredentials = createAccountMock.mock.calls[0]?.[0]?.credentials ?? {}
+    expect(Object.keys(minimaxCredentials)).toEqual(
+      expect.arrayContaining(['account_mode', 'api_protocol', 'api_base_urls'])
+    )
+    expect(minimaxCredentials).toMatchObject({
+      account_mode: 'payg',
+      api_protocol: 'adaptive',
+      base_url: 'https://api.minimaxi.com/v1',
+      api_base_urls: {
+        chat_completions: 'https://api.minimaxi.com/v1',
+        anthropic: 'https://api.minimaxi.com/anthropic',
+        responses: 'https://api.minimaxi.com/v1'
+      }
+    })
+  })
+
+
+  it('submits Command Code with by-model adaptive endpoint defaults', async () => {
+    authIsSimpleMode.value = false
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Command Code')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Command Code account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('cc-test-key')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock.mock.calls[0]?.[0]?.type).toBe('apikey')
+    expect(createAccountMock.mock.calls[0]?.[0]?.platform).toBe('command_code')
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({
+      account_mode: 'payg',
+      api_protocol: 'adaptive',
+      base_url: 'https://api.commandcode.ai/provider/v1',
+      api_base_urls: {
+        chat_completions: 'https://api.commandcode.ai/provider/v1',
+        anthropic: 'https://api.commandcode.ai/provider',
+        responses: 'https://api.commandcode.ai/provider/v1'
+      }
+    })
+  })
+
+  it('submits Cline as an OpenAI-compatible API-key account', async () => {
+    authIsSimpleMode.value = false
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Cline')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Cline account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('cline-test-key')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock.mock.calls[0]?.[0]?.type).toBe('apikey')
+    expect(createAccountMock.mock.calls[0]?.[0]?.platform).toBe('cline')
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({
+      base_url: 'https://api.cline.bot/api/v1',
+      api_key: 'cline-test-key'
+    })
+    // Backend provider profile has only a Chat Completions native endpoint.
+    expect(defaultCNBaseUrl('cline', 'payg', 'chat_completions')).toBe('https://api.cline.bot/api/v1')
+    expect(defaultCNBaseUrl('cline', 'payg', 'responses')).toBe('')
+    expect(defaultCNBaseUrl('cline', 'payg', 'anthropic')).toBe('')
+  })
+
+
+  it.each([
+    ['chatCompletions', 'chat_completions', 'https://api.commandcode.ai/provider/v1'],
+    ['anthropic', 'anthropic', 'https://api.commandcode.ai/provider'],
+    ['responses', 'responses', 'https://api.commandcode.ai/provider/v1']
+  ])('uses the Command Code %s endpoint placeholder and cleared-input default', async (label, protocol, expectedUrl) => {
+    authIsSimpleMode.value = false
+    createAccountMock.mockClear()
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Command Code')
+    await selectButtonByText(wrapper, `admin.accounts.cnProviders.apiProtocol.${label}`)
+    const baseUrl = wrapper.get<HTMLInputElement>('[data-testid="create-account-base-url"]')
+    expect(baseUrl.attributes('placeholder')).toBe(expectedUrl)
+    await baseUrl.setValue('')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Command Code endpoint')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('cc-test-key')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock.mock.calls[0]?.[0]?.type).toBe('apikey')
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({ api_protocol: protocol, base_url: expectedUrl })
+  })
+
+  it('preserves provider selection and API-key mode while switching to and from existing providers', async () => {
+    authIsSimpleMode.value = false
+    createAccountMock.mockClear()
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Command Code')
+    expect(wrapper.get('button[aria-pressed="true"]').text()).toContain('Command Code')
+    await selectButtonByText(wrapper, 'OpenAI')
+    expect(wrapper.find('button[aria-pressed="true"]').exists()).toBe(false)
+    await selectButtonByText(wrapper, 'Cline')
+    expect(wrapper.get('button[aria-pressed="true"]').text()).toContain('Cline')
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'Command Code')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('switched provider')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('cc-key')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock.mock.calls[0]?.[0]).toMatchObject({ platform: 'command_code', type: 'apikey' })
+  })
+
+  it('submits OpenCode Zen and GO endpoint and protocol defaults', async () => {
+    authIsSimpleMode.value = false
+    const zen = mountModal()
+    await selectButtonByText(zen, 'OpenCode')
+    await zen.get('form#create-account-form input[type="text"]').setValue('oc-zen')
+    await zen.get('form#create-account-form input[type="password"]').setValue('sk-opencode-zen')
+    await zen.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({
+      account_mode: 'zen',
+      api_protocol: 'adaptive',
+      base_url: 'https://opencode.ai/zen/v1',
+      protocol_rules: [
+        { pattern: 'grok-*', protocol: 'responses' },
+        { pattern: 'gpt-*', protocol: 'responses' },
+        { pattern: 'muse-spark-*', protocol: 'responses' },
+        { pattern: 'claude-*', protocol: 'anthropic' },
+        { pattern: 'qwen*', protocol: 'anthropic' }
+      ]
+    })
+
+    createAccountMock.mockClear()
+    const go = mountModal()
+    await selectButtonByText(go, 'OpenCode')
+    await selectButtonByText(go, 'admin.accounts.opencodeGo.accountMode.go')
+    await go.get('form#create-account-form input[type="text"]').setValue('oc-go')
+    await go.get('form#create-account-form input[type="password"]').setValue('sk-opencode-go')
+    await go.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({
+      account_mode: 'go',
+      api_protocol: 'adaptive',
+      base_url: 'https://opencode.ai/zen/go/v1',
+      protocol_rules: [
+        { pattern: 'grok-*', protocol: 'responses' },
+        { pattern: 'gpt-*', protocol: 'responses' },
+        { pattern: 'muse-spark-*', protocol: 'responses' },
+        { pattern: 'minimax-*', protocol: 'anthropic' },
+        { pattern: 'qwen*', protocol: 'anthropic' }
+      ]
     })
   })
 
@@ -529,21 +855,23 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
   })
 
   it('leaves Codex session import billing ownership to the backend', async () => {
-    const wrapper = await openCodexImportStep()
+    const wrapper = await openCodexImportStep(0, ' X-Session-Request-ID ')
     await wrapper.get('[data-testid="import-codex-session"]').trigger('click')
     await flushPromises()
 
     expect(importCodexSessionMock).toHaveBeenCalledTimes(1)
     expect(importCodexSessionMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBeUndefined()
+    expect(importCodexSessionMock.mock.calls[0]?.[0]?.extra?.upstream_request_id_header).toBe('X-Session-Request-ID')
   })
 
   it('leaves Codex PAT import billing ownership to the backend', async () => {
-    const wrapper = await openCodexImportStep()
+    const wrapper = await openCodexImportStep(0, ' X-PAT-Request-ID ')
     await wrapper.get('[data-testid="import-codex-pat"]').trigger('click')
     await flushPromises()
 
     expect(createOpenAICodexPATMock).toHaveBeenCalledTimes(1)
     expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBeUndefined()
+    expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra?.upstream_request_id_header).toBe('X-PAT-Request-ID')
   })
 
   it('sends explicit true for Codex session import after the toggle is enabled', async () => {
@@ -576,5 +904,154 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await flushPromises()
 
     expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBe(false)
+  })
+
+  it('creates Gemini Vertex with API-key authentication', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Gemini')
+    await selectButtonByText(wrapper, 'Vertex')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Vertex API key')
+    await wrapper.get('[data-testid="vertex-auth-mode-apikey"]').setValue()
+    await wrapper.get('[data-testid="vertex-api-key-input"]').setValue('vertex-test-key')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    const payload = createAccountMock.mock.calls[0]?.[0]
+    expect(payload?.platform).toBe('gemini')
+    expect(payload?.type).toBe('service_account')
+    expect(payload?.credentials).toMatchObject({
+      auth_mode: 'apikey',
+      api_key: 'vertex-test-key',
+      location: 'global',
+      tier_id: 'vertex'
+    })
+    expect(payload?.credentials?.project_id).toBeUndefined()
+  })
+
+})
+
+describe('CreateAccountModal Gemini explicit-cache upstream', () => {
+  beforeEach(() => {
+    authIsSimpleMode.value = true
+    createAccountMock.mockReset().mockResolvedValue({ id: 45, platform: 'gemini', type: 'apikey' })
+    probeUpstreamBillingMock.mockReset().mockResolvedValue({})
+    syncUpstreamModelsMock.mockReset().mockResolvedValue({ models: [], metadata: {} })
+    showWarningMock.mockReset()
+    showErrorMock.mockReset()
+  })
+
+  async function openCustomGeminiKey() {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Gemini')
+    await selectButtonByText(wrapper, 'admin.accounts.gemini.accountType.apiKeyTitle')
+    await wrapper.findAll('form#create-account-form input[type="text"]')[0].setValue('Gemini proxy')
+    await wrapper.get('[data-testid="create-account-base-url"]').setValue('https://gateway.example.com')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('AQ.test-key')
+    return wrapper
+  }
+
+  it('saves the switch and normalized TTL for a custom Gemini API-key upstream', async () => {
+    const wrapper = await openCustomGeminiKey()
+    await wrapper.get('[data-testid="explicit-cache-upstream-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="explicit-cache-upstream-max-ttl"]').setValue('1200')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toEqual({
+      base_url: 'https://gateway.example.com',
+      api_key: 'AQ.test-key',
+      explicit_cache_upstream: true,
+      explicit_cache_upstream_max_ttl_seconds: 1200,
+      model_mapping: {
+        'gemini-3.1-flash-image': 'gemini-3.1-flash-image',
+        'gemini-2.5-flash-image': 'gemini-2.5-flash-image',
+        'gemini-2.0-flash': 'gemini-2.0-flash',
+        'gemini-2.5-flash': 'gemini-2.5-flash',
+        'gemini-2.5-pro': 'gemini-2.5-pro',
+        'gemini-3.5-flash': 'gemini-3.5-flash',
+        'gemini-3-flash-preview': 'gemini-3-flash-preview',
+        'gemini-3-pro-preview': 'gemini-3-pro-preview',
+        'gemini-4-argon': 'gemini-4-argon'
+      }
+    })
+  })
+
+  it('sends only the switch when the enabled TTL cap is blank', async () => {
+    const wrapper = await openCustomGeminiKey()
+    await wrapper.get('[data-testid="explicit-cache-upstream-toggle"]').trigger('click')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    const credentials = createAccountMock.mock.calls[0]?.[0]?.credentials
+    expect(credentials).toHaveProperty('explicit_cache_upstream', true)
+    expect(credentials).not.toHaveProperty('explicit_cache_upstream_max_ttl_seconds')
+  })
+
+  it('shows a validation error and does not submit an invalid nonblank TTL', async () => {
+    const wrapper = await openCustomGeminiKey()
+    await wrapper.get('[data-testid="explicit-cache-upstream-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="explicit-cache-upstream-max-ttl"]').setValue('0.9')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(showErrorMock).toHaveBeenCalledWith(
+      'admin.accounts.explicitCacheUpstreamInvalidTTL'
+    )
+    expect(createAccountMock).not.toHaveBeenCalled()
+  })
+
+  it('drops explicit-cache settings when the base URL becomes official', async () => {
+    const wrapper = await openCustomGeminiKey()
+    await wrapper.get('[data-testid="explicit-cache-upstream-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="create-account-base-url"]').setValue(
+      'https://generativelanguage.googleapis.com'
+    )
+    expect(wrapper.find('[data-testid="explicit-cache-upstream-section"]').exists()).toBe(false)
+
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toEqual({
+      base_url: 'https://generativelanguage.googleapis.com',
+      api_key: 'AQ.test-key',
+      tier_id: 'aistudio_free',
+      model_mapping: {
+        'gemini-3.1-flash-image': 'gemini-3.1-flash-image',
+        'gemini-2.5-flash-image': 'gemini-2.5-flash-image',
+        'gemini-2.0-flash': 'gemini-2.0-flash',
+        'gemini-2.5-flash': 'gemini-2.5-flash',
+        'gemini-2.5-pro': 'gemini-2.5-pro',
+        'gemini-3.5-flash': 'gemini-3.5-flash',
+        'gemini-3-flash-preview': 'gemini-3-flash-preview',
+        'gemini-3-pro-preview': 'gemini-3-pro-preview',
+        'gemini-4-argon': 'gemini-4-argon'
+      }
+    })
+  })
+
+  it('does not render the control for other platforms or Gemini OAuth accounts', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    expect(wrapper.find('[data-testid="explicit-cache-upstream-section"]').exists()).toBe(false)
+
+    await selectButtonByText(wrapper, 'Gemini')
+    await selectButtonByText(wrapper, 'admin.accounts.gemini.accountType.oauthTitle')
+    expect(wrapper.find('[data-testid="explicit-cache-upstream-section"]').exists()).toBe(false)
+  })
+
+  it('resets the switch and TTL when the create modal is reopened', async () => {
+    const wrapper = await openCustomGeminiKey()
+    await wrapper.get('[data-testid="explicit-cache-upstream-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="explicit-cache-upstream-max-ttl"]').setValue('1200')
+
+    await wrapper.setProps({ show: false })
+    await wrapper.setProps({ show: true })
+    await selectButtonByText(wrapper, 'Gemini')
+    await selectButtonByText(wrapper, 'admin.accounts.gemini.accountType.apiKeyTitle')
+    await wrapper.get('[data-testid="create-account-base-url"]').setValue('https://gateway.example.com')
+
+    expect(wrapper.get('[data-testid="explicit-cache-upstream-toggle"]').attributes('aria-checked')).toBe('false')
+    expect(wrapper.find('[data-testid="explicit-cache-upstream-max-ttl"]').exists()).toBe(false)
   })
 })

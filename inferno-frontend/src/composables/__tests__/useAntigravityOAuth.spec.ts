@@ -53,4 +53,14 @@ describe('useAntigravityOAuth.buildCredentials', () => {
 
     expect(credentials.refresh_token).toBe('rotated-refresh-token')
   })
+
+  it('preserves the account plan type returned by OAuth', () => {
+    const oauth = useAntigravityOAuth()
+    const credentials = oauth.buildCredentials({
+      access_token: 'access-token',
+      plan_type: 'ultra',
+    })
+
+    expect(credentials.plan_type).toBe('ultra')
+  })
 })

@@ -3361,8 +3361,8 @@ func TestGatewayService_GroupResolution_ReusesContextGroup(t *testing.T) {
 	account, err := svc.SelectAccountForModelWithExclusions(ctx, &groupID, "", "claude-3-5-sonnet-20241022", nil)
 	require.NoError(t, err)
 	require.NotNil(t, account)
-	require.Equal(t, 1, groupRepo.getByIDCalls) // +1 for require_privacy_set check
-	require.Equal(t, 0, groupRepo.getByIDLiteCalls)
+	require.Equal(t, 0, groupRepo.getByIDCalls)
+	require.Equal(t, 1, groupRepo.getByIDLiteCalls) // require_privacy_set，不走账号计数聚合
 }
 
 func TestGatewayService_GroupResolution_IgnoresInvalidContextGroup(t *testing.T) {
@@ -3404,8 +3404,8 @@ func TestGatewayService_GroupResolution_IgnoresInvalidContextGroup(t *testing.T)
 	account, err := svc.SelectAccountForModelWithExclusions(ctx, &groupID, "", "claude-3-5-sonnet-20241022", nil)
 	require.NoError(t, err)
 	require.NotNil(t, account)
-	require.Equal(t, 1, groupRepo.getByIDCalls) // +1 for require_privacy_set check
-	require.Equal(t, 1, groupRepo.getByIDLiteCalls)
+	require.Equal(t, 0, groupRepo.getByIDCalls)
+	require.Equal(t, 2, groupRepo.getByIDLiteCalls) // 分组解析 + require_privacy_set
 }
 
 func TestGatewayService_GroupContext_OverwritesInvalidContextGroup(t *testing.T) {
@@ -3474,8 +3474,8 @@ func TestGatewayService_GroupResolution_FallbackUsesLiteOnce(t *testing.T) {
 	account, err := svc.SelectAccountForModelWithExclusions(ctx, &groupID, "", "claude-3-5-sonnet-20241022", nil)
 	require.NoError(t, err)
 	require.NotNil(t, account)
-	require.Equal(t, 1, groupRepo.getByIDCalls) // +1 for require_privacy_set check
-	require.Equal(t, 1, groupRepo.getByIDLiteCalls)
+	require.Equal(t, 0, groupRepo.getByIDCalls)
+	require.Equal(t, 2, groupRepo.getByIDLiteCalls) // fallback 解析 + require_privacy_set
 }
 
 func TestGatewayService_ResolveGatewayGroup_DetectsFallbackCycle(t *testing.T) {
@@ -3514,4 +3514,141 @@ func TestGatewayService_ResolveGatewayGroup_DetectsFallbackCycle(t *testing.T) {
 	require.Nil(t, gotGroup)
 	require.Nil(t, gotID)
 	require.Contains(t, err.Error(), "fallback group cycle")
+}
+
+func TestModelRoutingAppliesToPlatform(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		targetPlatform string
+		groupPlatform  string
+		want           bool
+	}{
+		{"anthropic group", PlatformAnthropic, PlatformAnthropic, true},
+		{"openai group", PlatformOpenAI, PlatformOpenAI, true},
+		{"composite group resolved to anthropic", PlatformAnthropic, PlatformComposite, true},
+		{"composite group resolved to openai", PlatformOpenAI, PlatformComposite, true},
+		{"target platform outside the allowed set", PlatformGemini, PlatformGemini, false},
+		{"composite group resolved outside the allowed set", PlatformGemini, PlatformComposite, false},
+		{"group platform does not match target", PlatformOpenAI, PlatformAnthropic, false},
+		{"empty target platform", "", PlatformOpenAI, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, modelRoutingAppliesToPlatform(tc.targetPlatform, tc.groupPlatform))
+		})
+	}
+}
+
+// Model routing used to be read only for requests resolved to Anthropic, so an
+// OpenAI group's rules were stored and displayed but never honored. Routing an
+// OpenAI request must pick the routed account instead of the group-wide winner.
+func TestGatewayService_SelectAccountForModelWithPlatform_RoutedOpenAIGroup(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(13)
+	requestedModel := "gpt-6-astra"
+
+	repo := &mockAccountRepoForPlatform{
+		accounts: []Account{
+			// Priority 1 would win any group-wide selection, but it is not routed.
+			{ID: 1, Platform: PlatformOpenAI, Priority: 1, Status: StatusActive, Schedulable: true},
+			{ID: 2, Platform: PlatformOpenAI, Priority: 5, Status: StatusActive, Schedulable: true},
+		},
+		accountsByID: map[int64]*Account{},
+	}
+	for i := range repo.accounts {
+		repo.accountsByID[repo.accounts[i].ID] = &repo.accounts[i]
+	}
+
+	groupRepo := &mockGroupRepoForGateway{
+		groups: map[int64]*Group{
+			groupID: {
+				ID:                  groupID,
+				Name:                "openai-route-group",
+				Platform:            PlatformOpenAI,
+				Status:              StatusActive,
+				Hydrated:            true,
+				ModelRoutingEnabled: true,
+				ModelRouting: map[string][]int64{
+					requestedModel: {2},
+				},
+			},
+		},
+	}
+
+	svc := &GatewayService{
+		accountRepo: repo,
+		cache:       &mockGatewayCacheForPlatform{},
+		cfg:         testConfig(),
+		groupRepo:   groupRepo,
+	}
+
+	acc, err := svc.selectAccountForModelWithPlatform(ctx, &groupID, "", requestedModel, nil, PlatformOpenAI)
+	require.NoError(t, err)
+	require.NotNil(t, acc)
+	require.Equal(t, int64(2), acc.ID, "routed account must win over the higher-priority unrouted one")
+}
+
+func TestGatewayServiceResolveEffectiveGatewayGroupUsesFallbackChain(t *testing.T) {
+	primaryID := int64(9400)
+	fallbackID := int64(9401)
+	primary := &Group{
+		ID:              primaryID,
+		Platform:        PlatformComposite,
+		Status:          StatusActive,
+		Hydrated:        true,
+		ClaudeCodeOnly:  true,
+		FallbackGroupID: &fallbackID,
+	}
+	fallback := &Group{ID: fallbackID, Platform: PlatformOpenAI, Status: StatusActive, Hydrated: true}
+	svc := &GatewayService{groupRepo: &mockGroupRepoForGateway{groups: map[int64]*Group{
+		primaryID:  primary,
+		fallbackID: fallback,
+	}}}
+
+	group, resolvedID, err := svc.ResolveEffectiveGatewayGroup(context.Background(), &primaryID)
+
+	require.NoError(t, err)
+	require.Same(t, fallback, group)
+	require.Equal(t, &fallbackID, resolvedID)
+}
+
+func TestClearCompositeRouteDecisionClearsAllResolvedValues(t *testing.T) {
+	ctx := WithCompositeRouteDecision(context.Background(), CompositeRouteDecision{
+		Matched:        true,
+		Source:         CompositeRouteSourceExplicit,
+		PublicModel:    "public-alias",
+		TargetPlatform: PlatformOpenAI,
+		UpstreamModel:  "gpt-5.5",
+	})
+
+	cleared := ClearCompositeRouteDecision(ctx)
+	_, platformOK := ResolvedTargetPlatformFromContext(cleared)
+	_, upstreamOK := ResolvedUpstreamModelFromContext(cleared)
+	_, publicOK := RequestedPublicModelFromContext(cleared)
+	_, sourceOK := CompositeRouteSourceFromContext(cleared)
+
+	require.False(t, platformOK)
+	require.False(t, upstreamOK)
+	require.False(t, publicOK)
+	require.False(t, sourceOK)
+}
+
+func TestGatewayServiceResolveCompositeRouteDecisionUsesProviderResolver(t *testing.T) {
+	resolver := NewCompositeRouteResolver(nil)
+	resolver.SetModelOwnershipResolver(func(context.Context, int64, string) (CompositeModelOwnership, error) {
+		return CompositeModelOwnership{TargetPlatform: PlatformOpenCodeGo, Matched: true}, nil
+	})
+	svc := &GatewayService{compositeResolver: resolver}
+
+	decision, matched, err := svc.ResolveCompositeRouteDecision(
+		context.Background(),
+		&Group{ID: 9402, Platform: PlatformComposite},
+		"provider-alias",
+		CompositeRouteEndpointResponses,
+	)
+
+	require.NoError(t, err)
+	require.True(t, matched)
+	require.True(t, decision.Matched)
+	require.Equal(t, CompositeRouteSourceAccount, decision.Source)
+	require.Equal(t, PlatformOpenCodeGo, decision.TargetPlatform)
 }

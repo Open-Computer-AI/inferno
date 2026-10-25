@@ -333,6 +333,122 @@ describe('PaymentView recharge rate preview', () => {
   })
 })
 
+describe('PaymentView recharge promotions', () => {
+  it('submits the entered recharge amount so the backend can apply the configured tier', async () => {
+    routeState.path = '/purchase'
+    routeState.query = {}
+    getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture({
+      recharge_bonus_tiers: [{ min_amount: 100, bonus_percent: 20 }],
+      recharge_bonus_mode: 'discount',
+    }))
+    createOrder.mockReset().mockRejectedValue(new Error('capture request only'))
+    const wrapper = shallowMount(PaymentView, {
+      global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Teleport: true, Transition: false } },
+    })
+    await flushPromises()
+    wrapper.getComponent(AmountInput).vm.$emit('update:modelValue', 100)
+    await flushPromises()
+    const submit = wrapper.findAll('button').find((button) => button.text().includes('payment.createOrder'))
+    expect(submit).toBeDefined()
+    await submit!.trigger('click')
+    await flushPromises()
+    expect(createOrder).toHaveBeenCalledTimes(1)
+    expect(createOrder.mock.calls[0]?.[0]).toMatchObject({ amount: 100, order_type: 'balance' })
+  })
+
+  it.each([
+    '<script>alert(1)</script>Promo',
+    '<img src=x onerror=alert(1)>Promo',
+    '[evil](javascript:alert(1))',
+  ])('sanitizes untrusted promotion Markdown: %s', async (notice) => {
+    routeState.path = '/purchase'
+    routeState.query = {}
+    getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture({ recharge_bonus_notice: notice }))
+    const wrapper = shallowMount(PaymentView, {
+      global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Teleport: true, Transition: false } },
+    })
+    await flushPromises()
+    const noticeElement = wrapper.get('[data-testid="recharge-bonus-notice"]').element as HTMLElement
+    expect(noticeElement.querySelector('script')).toBeNull()
+    expect(noticeElement.querySelector('[onerror]')).toBeNull()
+    expect(noticeElement.querySelector('a[href^="javascript:"]')).toBeNull()
+  })
+
+  it.each([
+    { single_min: 81, single_max: 0, message: 'payment.amountNoMethod' },
+    { single_min: 0, single_max: 79, message: 'payment.amountNoMethod' },
+    { single_min: 80, single_max: 80, message: '' },
+  ])('checks gateway limits against the discounted $80 pay base: %o', async ({ single_min, single_max, message }) => {
+    routeState.path = '/purchase'
+    routeState.query = {}
+    const method = { ...checkoutInfoFixture().data.methods.wxpay, single_min, single_max }
+    getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture({
+      recharge_bonus_tiers: [{ min_amount: 100, bonus_percent: 20 }],
+      recharge_bonus_mode: 'discount',
+      methods: { wxpay: method },
+    }))
+    const wrapper = shallowMount(PaymentView, {
+      global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Teleport: true, Transition: false } },
+    })
+    await flushPromises()
+    wrapper.getComponent(AmountInput).vm.$emit('update:modelValue', 100)
+    await flushPromises()
+    if (message) expect(wrapper.text()).toContain(message)
+    else expect(wrapper.text()).not.toContain('payment.amountTooLow')
+  })
+
+  it('previews discount on payment, applies fees to the discounted base, and keeps credited balance', async () => {
+    routeState.path = '/purchase'
+    routeState.query = {}
+    getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture({
+      recharge_bonus_tiers: [{ min_amount: 100, bonus_percent: 20 }],
+      recharge_bonus_mode: 'discount',
+      recharge_bonus_notice: 'Limited offer **today**',
+      recharge_fee_rate: 10,
+    }))
+    const wrapper = shallowMount(PaymentView, {
+      global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Teleport: true, Transition: false } },
+    })
+    await flushPromises()
+    wrapper.getComponent(AmountInput).vm.$emit('update:modelValue', 100)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="recharge-bonus-notice"]').html()).toContain('<strong>today</strong>')
+    expect(wrapper.find('[data-testid="recharge-discount-row"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="recharge-discount-row"]').text()).toContain('20')
+    expect(wrapper.find('[data-testid="recharge-credited-row"]').text()).toContain('100.00')
+    expect(wrapper.text()).toContain('88.00')
+    expect(wrapper.find('[data-testid="recharge-bonus-row"]').exists()).toBe(false)
+  })
+})
+
+describe('PaymentView checkout help text', () => {
+  it('renders Markdown while sanitizing administrator-provided HTML', async () => {
+    routeState.path = '/purchase'
+    routeState.query = {}
+    getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture({
+      help_text: '**Payment help** <img src=x onerror=alert(1)> [unsafe](javascript:alert(1))',
+    }))
+    window.localStorage.clear()
+
+    const wrapper = shallowMount(PaymentView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          Teleport: true,
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    const help = wrapper.get('.markdown-body')
+    expect(help.find('strong').text()).toBe('Payment help')
+    expect(help.html().toLowerCase()).not.toContain('onerror')
+    expect(help.html().toLowerCase()).not.toContain('javascript:')
+    wrapper.unmount()
+  })
+})
+
 describe('PaymentView subscription confirmation amounts', () => {
   it('shows converted CNY pay amount using the subscription rate, not the balance multiplier', async () => {
     const wrapper = await mountSubscriptionConfirm({

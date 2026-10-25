@@ -192,6 +192,7 @@ import { useI18n } from 'vue-i18n'
 import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
 import { sanitizeSvg } from '@/utils/sanitize'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
+import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
 import { useAccountSeed } from '@/composables/useAccountSeed'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
@@ -323,10 +324,17 @@ function buildSelfGroups(): NavGroup[] {
 
   const billing: NavRow[] = []
   if (!isSimpleMode.value) {
-    billing.push({ path: '/subscriptions', label: t('shell.billing'), icon: 'hgi-invoice-01' })
+    const billingMode = resolveSiteBillingMode(appStore.cachedPublicSettings)
+    if (isFeatureFlagEnabled(FeatureFlags.subscription)) {
+      billing.push({ path: '/subscriptions', label: t('shell.billing'), icon: 'hgi-invoice-01' })
+    }
     if (isFeatureFlagEnabled(FeatureFlags.payment)) {
       billing.push(
-        { path: '/purchase', label: t('nav.buySubscription'), icon: 'hgi-credit-card' },
+        {
+          path: '/purchase',
+          label: t(billingMode === 'recharge_only' ? 'payment.tabTopUp' : billingMode === 'subscription_only' ? 'payment.tabSubscribe' : 'nav.buySubscription'),
+          icon: 'hgi-credit-card',
+        },
         { path: '/orders', label: t('nav.myOrders'), icon: 'hgi-receipt-text' }
       )
     }
@@ -388,9 +396,11 @@ function buildAdminGroups(): NavGroup[] {
   supply.push({ path: '/admin/proxies', label: t('nav.proxies'), icon: 'hgi-internet' })
 
   const customers: NavRow[] = [
-    { path: '/admin/users', label: t('nav.users'), icon: 'hgi-user-multiple-02' },
-    { path: '/admin/subscriptions', label: t('nav.subscriptions'), icon: 'hgi-credit-card' }
+    { path: '/admin/users', label: t('nav.users'), icon: 'hgi-user-multiple-02' }
   ]
+  if (isFeatureFlagEnabled(FeatureFlags.subscription)) {
+    customers.push({ path: '/admin/subscriptions', label: t('nav.subscriptions'), icon: 'hgi-credit-card' })
+  }
   if (flagAdminPayment()) {
     customers.push(
       { path: '/admin/orders', label: t('nav.orderManagement'), icon: 'hgi-receipt-text' },

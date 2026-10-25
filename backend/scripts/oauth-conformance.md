@@ -656,6 +656,7 @@ getting this wrong in the safe direction is still getting it wrong.
 | Route(s) | Handler | Evidence |
 |---|---|---|
 | `GET /v1/models`, `GET /models` | `modelsHandler` → `GatewayHandler.Models` (`gateway_handler.go:1073`) / `OpenAIGatewayHandler.CodexModels` | `gateway_handler.go`'s three `CheckBillingEligibility` calls are at `:242`, `:968` (both inside `Messages`) and `:2040` (`CountTokens`); `openai_codex_models_handler.go` has zero |
+| `GET /v1/models/:model` | `GatewayHandler.Models` | Same handler as the model-list route; no `CheckBillingEligibility` call. This upstream detail route is classified by code path and unit test; it was not part of the earlier live conformance run. |
 | `GET /v1/images/batches` | `BatchImage.List` | zero `CheckBillingEligibility` in `batch_image_handler.go` |
 | `GET /v1/images/batches/models` | `BatchImage.Models` | as above |
 | `GET /v1/images/batches/:id` | `BatchImage.Get` | as above |

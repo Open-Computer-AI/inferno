@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
 const apiMocks = vi.hoisted(() => ({
+  showError: vi.fn(),
   getPlatformQuotas: vi.fn(),
   updatePlatformQuotas: vi.fn(),
   resetPlatformQuotaWindow: vi.fn(),
@@ -20,7 +21,7 @@ vi.mock('@/api/admin', () => ({
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
-    showError: vi.fn(),
+    showError: apiMocks.showError,
     showSuccess: vi.fn(),
   }),
 }))
@@ -74,19 +75,41 @@ beforeEach(() => {
 })
 
 describe('UserPlatformQuotaModal', () => {
+  it.each([0, 4, 14])('rejects a negative limit in input %s instead of treating it as unlimited', async (index) => {
+    const w = await mountAndOpen()
+    await w.findAll('input[type=number]')[index].setValue('-1')
+    await w.findAll('button').find((b) => b.text() === 'admin.users.platformQuota.save')!.trigger('click')
+    await flushPromises()
+    expect(apiMocks.updatePlatformQuotas).not.toHaveBeenCalled()
+    expect(apiMocks.showError).toHaveBeenCalledWith('admin.users.platformQuota.invalidNumber')
+    expect(w.emitted('success')).toBeUndefined()
+    w.unmount()
+  })
+
+  it.each([['0', 0], ['', null]])('preserves the meaning of a limit entered as %j', async (input, expected) => {
+    const w = await mountAndOpen()
+    await w.findAll('input[type=number]')[0].setValue(input)
+    await w.findAll('button').find((b) => b.text() === 'admin.users.platformQuota.save')!.trigger('click')
+    await flushPromises()
+    expect(apiMocks.updatePlatformQuotas).toHaveBeenCalledTimes(1)
+    expect(apiMocks.updatePlatformQuotas.mock.calls[0][1][0].daily_limit_usd).toBe(expected)
+    w.unmount()
+  })
+
   it('挂载并 show=true 时调用 getPlatformQuotas', async () => {
     await mountAndOpen()
     expect(apiMocks.getPlatformQuotas).toHaveBeenCalledWith(99)
   })
 
-  it('空数据渲染 5 个 platform 行', async () => {
+  it('空数据渲染全部 10 个受支持的平台行', async () => {
     const w = await mountAndOpen()
-    const html = w.html()
-    expect(html).toContain('anthropic')
-    expect(html).toContain('openai')
-    expect(html).toContain('gemini')
-    expect(html).toContain('antigravity')
-    expect(html).toContain('grok')
+    expect(w.findAll('tbody tr').map((row) => row.find('td').text())).toEqual([
+      'anthropic', 'openai', 'gemini', 'antigravity', 'grok',
+      'kimi', 'zhipu', 'deepseek', 'minimax', 'opencode_go',
+    ])
+    for (const row of w.findAll('tbody tr')) {
+      expect(row.findAll('input[type=number]')).toHaveLength(3)
+    }
   })
 
   it('已有数据正确填充 limit input', async () => {
@@ -98,13 +121,13 @@ describe('UserPlatformQuotaModal', () => {
     })
     const w = await mountAndOpen()
     const inputs = w.findAll('input[type=number]')
-    // 5 platforms × 3 windows = 15 inputs
-    expect(inputs.length).toBe(15)
+    // 10 platforms × 3 windows = 30 inputs
+    expect(inputs.length).toBe(30)
     // 第一个 input 是 anthropic.daily = 10
     expect((inputs[0].element as HTMLInputElement).value).toBe('10')
   })
 
-  it('保存提交完整 5 platform payload', async () => {
+  it('保存提交完整 10 platform payload', async () => {
     apiMocks.getPlatformQuotas.mockResolvedValueOnce({
       platform_quotas: [
         { platform: 'openai', daily_limit_usd: null, weekly_limit_usd: 20, monthly_limit_usd: null,
@@ -121,7 +144,7 @@ describe('UserPlatformQuotaModal', () => {
     expect(apiMocks.updatePlatformQuotas).toHaveBeenCalledTimes(1)
     const [uid, payload] = apiMocks.updatePlatformQuotas.mock.calls[0]
     expect(uid).toBe(99)
-    expect(payload).toHaveLength(5) // 5 platforms always submitted
+    expect(payload).toHaveLength(10) // 10 platforms always submitted
     const openai = payload.find((p: any) => p.platform === 'openai')
     expect(openai.weekly_limit_usd).toBe(20)
   })
@@ -181,12 +204,25 @@ describe('UserPlatformQuotaModal', () => {
 
   it('重置按钮 confirm 确认则调用 API', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    apiMocks.getPlatformQuotas.mockResolvedValueOnce({
+      platform_quotas: [{
+        platform: 'anthropic', daily_limit_usd: 10, weekly_limit_usd: null, monthly_limit_usd: null,
+        daily_usage_usd: 3.2, weekly_usage_usd: 0, monthly_usage_usd: 0,
+      }],
+    })
     const w = await mountAndOpen()
     const resetBtns = w.findAll('button').filter((b) => b.text() === '↻')
     await resetBtns[0].trigger('click') // 第一个是 anthropic.daily
     await flushPromises()
     expect(apiMocks.resetPlatformQuotaWindow).toHaveBeenCalledWith(99, 'anthropic', 'daily')
     confirmSpy.mockRestore()
+  })
+
+  it('disables reset for platforms without a saved quota', async () => {
+    const w = await mountAndOpen()
+    const resetBtns = w.findAll('button').filter((b) => b.text() === '↻')
+    expect(resetBtns[0].attributes('disabled')).toBeDefined()
+    expect(resetBtns[0].attributes('title')).toBe('admin.users.platformQuota.reset.unavailable')
   })
 
   describe('subscription warning banner', () => {

@@ -9,6 +9,9 @@
           </div>
           <input v-model="filters.start_at" type="date" class="input w-full sm:w-44" :title="t('admin.affiliates.records.startAt')" @change="reloadFromFirstPage" />
           <input v-model="filters.end_at" type="date" class="input w-full sm:w-44" :title="t('admin.affiliates.records.endAt')" @change="reloadFromFirstPage" />
+          <button v-if="props.type === 'transfers'" class="btn btn-primary" type="button" @click="withdrawDialog = true">
+            {{ t('admin.affiliates.withdraw.button') }}
+          </button>
           <button class="btn btn-secondary px-2 md:px-3" :disabled="loading" :title="t('common.refresh')" @click="loadRecords">
             <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
           </button>
@@ -58,8 +61,9 @@
           </template>
           <template #cell-order="{ row }">
             <div class="space-y-0.5">
-              <div class="font-mono text-sm text-gray-900 dark:text-white">#{{ row.order_id }}</div>
-              <div class="max-w-56 truncate text-sm text-gray-500 dark:text-dark-400">{{ row.out_trade_no }}</div>
+              <div v-if="row.order_id != null" class="font-mono text-sm text-gray-900 dark:text-white">#{{ row.order_id }}</div>
+              <div v-if="row.out_trade_no" class="max-w-56 truncate text-sm text-gray-500 dark:text-dark-400">{{ row.out_trade_no }}</div>
+              <span v-if="row.order_id == null && !row.out_trade_no" class="text-sm text-gray-400 dark:text-dark-500">-</span>
             </div>
           </template>
           <template #cell-payment_type="{ row }">
@@ -72,16 +76,22 @@
             <AmountText :value="row.total_rebate" />
           </template>
           <template #cell-order_amount="{ row }">
-            <AmountText :value="row.order_amount" />
+            <NullableAmountText :value="row.order_amount" />
           </template>
           <template #cell-pay_amount="{ row }">
-            <span class="text-sm text-gray-900 dark:text-white">¥{{ formatAmount(row.pay_amount) }}</span>
+            <span v-if="row.pay_amount != null" class="text-sm text-gray-900 dark:text-white">¥{{ formatAmount(row.pay_amount) }}</span>
+            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
           </template>
           <template #cell-rebate_amount="{ row }">
             <AmountText :value="row.rebate_amount" strong />
           </template>
           <template #cell-amount="{ row }">
             <AmountText :value="row.amount" strong />
+          </template>
+          <template #cell-action="{ row }">
+            <span :class="['badge whitespace-nowrap', row.action === 'withdraw' ? 'badge-warning' : 'badge-primary']">
+              {{ t(row.action === 'withdraw' ? 'admin.affiliates.outflowTypes.withdraw' : 'admin.affiliates.outflowTypes.transfer') }}
+            </span>
           </template>
           <template #cell-balance_after="{ row }">
             <NullableAmountText :value="row.balance_after" />
@@ -112,6 +122,12 @@
         />
       </template>
     </TablePageLayout>
+
+    <AffiliateOfflineWithdrawDialog
+      :show="withdrawDialog"
+      @close="withdrawDialog = false"
+      @success="handleWithdrawSuccess"
+    />
 
     <BaseDialog
       :show="overviewDialog"
@@ -149,6 +165,7 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import AffiliateOfflineWithdrawDialog from './AffiliateOfflineWithdrawDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import OrderStatusBadge from '@/components/payment/OrderStatusBadge.vue'
 import type { Column } from '@/components/common/types'
@@ -174,6 +191,7 @@ const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 const overviewDialog = ref(false)
 const overviewLoading = ref(false)
 const selectedOverview = ref<AffiliateUserOverview | null>(null)
+const withdrawDialog = ref(false)
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
 const columns = computed<Column[]>(() => {
@@ -201,6 +219,7 @@ const columns = computed<Column[]>(() => {
   }
   return [
     { key: 'user', label: t('admin.affiliates.records.user'), sortable: true },
+    { key: 'action', label: t('admin.affiliates.records.outflowType'), sortable: true },
     { key: 'amount', label: t('admin.affiliates.records.transferAmount'), sortable: true },
     { key: 'balance_after', label: t('admin.affiliates.records.balanceAfter'), sortable: true },
     { key: 'available_quota_after', label: t('admin.affiliates.records.availableQuotaAfter'), sortable: true },
@@ -331,9 +350,14 @@ async function openUserOverview(userId: number) {
   }
 }
 
+function handleWithdrawSuccess() {
+  withdrawDialog.value = false
+  void loadRecords()
+}
+
 const UserCell = defineComponent({
   props: {
-    id: { type: Number, required: true },
+    id: { type: Number as PropType<number | null>, default: null },
     email: { type: String, default: '' },
     username: { type: String, default: '' },
     clickable: { type: Boolean, default: false },
@@ -341,13 +365,13 @@ const UserCell = defineComponent({
   emits: ['open'],
   setup(cellProps, { emit }) {
     return () => h('div', { class: 'space-y-0.5' }, [
-      h('div', { class: 'font-mono text-sm text-gray-900 dark:text-white' }, `#${cellProps.id}`),
+      cellProps.id == null ? null : h('div', { class: 'font-mono text-sm text-gray-900 dark:text-white' }, `#${cellProps.id}`),
       h(cellProps.clickable ? 'button' : 'div', {
         class: cellProps.clickable
           ? 'max-w-56 truncate text-left text-sm font-medium text-primary-600 hover:text-primary-700 hover:underline dark:text-primary-400 dark:hover:text-primary-300'
           : 'max-w-56 truncate text-sm text-gray-700 dark:text-gray-300',
-        type: cellProps.clickable ? 'button' : undefined,
-        onClick: cellProps.clickable ? () => emit('open', cellProps.id) : undefined,
+        type: cellProps.clickable && cellProps.id != null ? 'button' : undefined,
+        onClick: cellProps.clickable && cellProps.id != null ? () => emit('open', cellProps.id) : undefined,
       }, cellProps.email || '-'),
       h('div', { class: 'max-w-56 truncate text-sm text-gray-500 dark:text-dark-400' }, cellProps.username || '-'),
     ])

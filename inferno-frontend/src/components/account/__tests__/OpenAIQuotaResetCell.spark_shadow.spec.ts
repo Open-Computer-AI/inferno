@@ -4,6 +4,7 @@ import OpenAIQuotaResetCell from '../OpenAIQuotaResetCell.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import type { Account } from '@/types'
 import { refreshOpenAIQuota, resetOpenAIQuota } from '@/api/admin/accounts'
+import type { OpenAIQuotaRefreshResult } from '@/api/admin/accounts'
 
 vi.mock('@/api/admin/accounts', () => ({
   refreshOpenAIQuota: vi.fn(),
@@ -148,6 +149,36 @@ describe('OpenAIQuotaResetCell — 外审 F6:影子禁用重置', () => {
     wrapper.unmount()
   })
 
+  it('hydrates Codex points from the saved snapshot and refreshes them without hiding the live balance', async () => {
+    vi.mocked(refreshOpenAIQuota).mockResolvedValue({
+      credits: { has_credits: true, unlimited: false, balance: '12.50' },
+      fetched_at: 1770000000,
+      credits_cache_persisted: false,
+      cache_persisted: true,
+    })
+    const account = makeAccount({
+      extra: {
+        codex_credits_snapshot: {
+          credits: { has_credits: true, unlimited: false, balance: '8.25' },
+          fetched_at: 1760000000,
+        },
+      },
+    })
+    const wrapper = mount(OpenAIQuotaResetCell, { props: { account } })
+
+    const pointsButton = wrapper.get('[data-testid="codex-credits"]')
+    expect(pointsButton.text()).toContain('8.25')
+    expect(pointsButton.attributes('title')).toContain('admin.accounts.openaiQuotaReset.pointsTooltip')
+
+    await pointsButton.trigger('click')
+    await flushPromises()
+
+    expect(refreshOpenAIQuota).toHaveBeenCalledWith(1)
+    expect(wrapper.get('[data-testid="codex-credits"]').text()).toContain('12.50')
+    expect(wrapper.text()).toContain('admin.accounts.openaiQuotaReset.pointsCachePersistFailed')
+    wrapper.unmount()
+  })
+
   it('查询后默认折叠为最早到期时间,点击 +N 展开完整列表', async () => {
     vi.mocked(refreshOpenAIQuota).mockResolvedValue({
       rate_limit_reset_credits: {
@@ -182,6 +213,29 @@ describe('OpenAIQuotaResetCell — 外审 F6:影子禁用重置', () => {
     expect(wrapper.find('[data-testid="reset-credit-expiry-details"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('not-a-date')
     expect(wrapper.text()).not.toContain('undefined')
+    wrapper.unmount()
+  })
+
+  it('账号行切换后忽略旧账号尚未完成的配额响应', async () => {
+    let resolve!: (value: OpenAIQuotaRefreshResult) => void
+    vi.mocked(refreshOpenAIQuota).mockReturnValue(new Promise((done) => { resolve = done }))
+    const wrapper = mount(OpenAIQuotaResetCell, { props: { account: makeAccount({ id: 1 }) } })
+
+    await wrapper.findAll('button')[0].trigger('click')
+    await wrapper.setProps({ account: makeAccount({ id: 2 }) })
+    resolve({
+      rate_limit_reset_credits: {
+        available_count: 4,
+        credits: [{ expires_at: FUTURE_EXPIRY_EARLY }],
+      },
+      fetched_at: 1770000000,
+      cache_persisted: true,
+    })
+    await flushPromises()
+
+    expect(refreshOpenAIQuota).toHaveBeenCalledWith(1)
+    expect(wrapper.findAll('button')[0].text()).toContain('admin.accounts.openaiQuotaReset.count')
+    expect(wrapper.findAll('button')[0].text()).not.toContain('4')
     wrapper.unmount()
   })
 

@@ -99,6 +99,13 @@ deploy/docker-compose.local.yml
 # Merged from feat/billing-contract-adapter 2026-08-22. Their D5 (Razorpay)
 # and D6 (Dockerfile) labels were already on this branch, so these renumber
 # to D7 rather than colliding.
+docs/superpowers/specs/2026-08-18-authorization-code-pkce-design.md
+docs/superpowers/plans/2026-08-18-authorization-code-pkce.md
+docs/superpowers/specs/2026-08-19-oauth-bearer-inference-design.md
+docs/superpowers/plans/2026-08-19-oauth-bearer-inference.md
+docs/superpowers/specs/2026-08-19-billing-contract-adapter-design.md
+docs/superpowers/specs/2026-08-22-agent-registry-and-chronos-design.md
+docs/superpowers/plans/2026-08-22-agent-registry-and-chronos.md
 # D7 -- Inferno product identity + honest paid-tier reporting
 backend/internal/service/setting_public.go
 backend/internal/service/setting_parse.go
@@ -475,6 +482,63 @@ backend/internal/service/setting_features.go
 backend/internal/service/payment_order_result_test.go
 backend/internal/service/setting_service_update_test.go
 # D9 -- agent registry / Chronos design spec (docs only, same as D4)
+# D11 -- agent registry + Chronos cron signer (Task 1: agents +
+# agent_cron_fires ent schemas and migrations). The shared codegen files
+# this go generate ./ent run touched (client.go, ent.go, hook/hook.go,
+# intercept/intercept.go, migrate/schema.go, mutation.go,
+# predicate/predicate.go, runtime/runtime.go, tx.go) are already declared
+# above (D7's org/oauth_client tasks) -- not re-listed here, same files.
+backend/ent/schema/agent.go
+backend/ent/schema/agent_cron_fire.go
+backend/ent/agent.go
+backend/ent/agent/agent.go
+backend/ent/agent/where.go
+backend/ent/agent_create.go
+backend/ent/agent_delete.go
+backend/ent/agent_query.go
+backend/ent/agent_update.go
+backend/ent/agentcronfire.go
+backend/ent/agentcronfire/agentcronfire.go
+backend/ent/agentcronfire/where.go
+backend/ent/agentcronfire_create.go
+backend/ent/agentcronfire_delete.go
+backend/ent/agentcronfire_query.go
+backend/ent/agentcronfire_update.go
+backend/migrations/912_agents.sql
+backend/migrations/913_agent_cron_fires.sql
+# D11 continued -- ruling T4-1 (task 4 fix round 1) corrected 913's
+# field-level UNIQUE on dedup_key (globally unique) to a composite UNIQUE
+# index on (agent_row_id, dedup_key) -- dedup_key lives in the calling
+# agent's own namespace, not a global one; see 914's own comment.
+backend/migrations/914_agent_cron_fires_dedup_key_per_agent.sql
+# D12 -- agent registry service layer (Task 2: AgentRegistryService
+# register + list, additive to D11's schemas).
+backend/internal/service/agent_registry.go
+# D13 -- agent registry HTTP surface (task 3): the desktop's cloud discovery
+# call and an agent's own boot-time register/heartbeat. Additive; upstream has
+# no /api/agents.
+backend/internal/handler/agent_handler.go
+backend/internal/server/routes/agents.go
+backend/internal/server/routes/agents_route_test.go
+backend/scripts/agent-registry-chronos-conformance.md
+backend/internal/service/agent_registry_test.go
+# D14 -- Chronos scheduler surface (task 4): an agent arms/cancels/lists its
+# own one-shot fires at /api/agent-cron/{provision,cancel,list}. Additive;
+# upstream has no such surface. agent_handler.go and routes/agents.go are
+# already declared under D13 (this task adds three methods/routes to those
+# same files); agent_registry.go/agent_registry_test.go are already declared
+# under D12 (this task adds ResolveOwnedAgentRowID to that same file).
+backend/internal/service/agent_cron.go
+backend/internal/service/agent_cron_test.go
+backend/internal/server/routes/agent_cron_route_test.go
+# D15 -- Chronos firer (task 5): mints an RS256 "fire" token
+# (purpose=cron_fire), POSTs it to an armed row's callback_url, applies the
+# non-2xx-retries/2xx-terminal response contract, and rehydrates every armed
+# row into the (in-memory) timing wheel on boot. Additive; upstream has no
+# such surface. service/wire.go and cmd/server/wire_gen.go (ProvideAgentCronFirer,
+# wired after the timing wheel is constructed) are already declared above.
+backend/internal/service/agent_cron_firer.go
+backend/internal/service/agent_cron_firer_test.go
 "
 
 declared_list() { printf '%s\n' "$DECLARED" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'; }

@@ -23,6 +23,12 @@ export type PaymentType = 'alipay' | 'wxpay' | 'alipay_direct' | 'wxpay_direct' 
 
 export type OrderType = 'balance' | 'subscription'
 
+/** Recharge promotion threshold and percentage, shared by checkout and admin settings. */
+export interface RechargeBonusTier {
+  min_amount: number
+  bonus_percent: number
+}
+
 // ==================== Configuration ====================
 
 export interface PaymentConfig {
@@ -71,6 +77,12 @@ export interface CheckoutInfoResponse {
   /** Subscription CNY conversion rate (1 USD = X CNY); 0 = disabled, plan price is charged as-is */
   subscription_usd_to_cny_rate: number
   recharge_fee_rate: number
+  /** Recharge promotion tiers; missing/empty means no promotion. */
+  recharge_bonus_tiers?: RechargeBonusTier[]
+  /** Recharge promotion mode; missing values default to bonus. */
+  recharge_bonus_mode?: string
+  /** Markdown announcement shown above recharge amount selection. */
+  recharge_bonus_notice?: string
   help_text: string
   help_image_url: string
   stripe_publishable_key: string

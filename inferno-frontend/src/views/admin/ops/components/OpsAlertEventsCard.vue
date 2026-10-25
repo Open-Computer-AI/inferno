@@ -40,7 +40,7 @@
  * in a 11px grey. Same data, one chip each, key muted and value in mono, so
  * the eye can find `group_id` without reading the whole string.
  */
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
@@ -65,6 +65,8 @@ const loading = ref(false)
 const loadingMore = ref(false)
 const events = ref<AlertEvent[]>([])
 const hasMore = ref(true)
+let listRequestId = 0
+onBeforeUnmount(() => { listRequestId++ })
 const scrollEl = ref<HTMLElement | null>(null)
 
 // Detail modal
@@ -139,18 +141,22 @@ function buildQuery(overrides: Partial<AlertEventsQuery> = {}): AlertEventsQuery
 }
 
 async function loadFirstPage() {
+  const requestId = ++listRequestId
+  loadingMore.value = false
   loading.value = true
   try {
     const data = await opsAPI.listAlertEvents(buildQuery())
+    if (requestId !== listRequestId) return
     events.value = data
     hasMore.value = data.length === PAGE_SIZE
   } catch (err: any) {
+    if (requestId !== listRequestId) return
     console.error('[OpsAlertEventsCard] Failed to load alert events', err)
     appStore.showError(err?.response?.data?.detail || t('admin.ops.alertEvents.loadFailed'))
     events.value = []
     hasMore.value = false
   } finally {
-    loading.value = false
+    if (requestId === listRequestId) loading.value = false
   }
 }
 
@@ -160,11 +166,13 @@ async function loadMore() {
   const last = events.value[events.value.length - 1]
   if (!last) return
 
+  const requestId = listRequestId
   loadingMore.value = true
   try {
     const data = await opsAPI.listAlertEvents(
       buildQuery({ before_fired_at: last.fired_at || last.created_at, before_id: last.id })
     )
+    if (requestId !== listRequestId) return
     if (!data.length) {
       hasMore.value = false
       return
@@ -172,10 +180,11 @@ async function loadMore() {
     events.value = [...events.value, ...data]
     if (data.length < PAGE_SIZE) hasMore.value = false
   } catch (err: any) {
+    if (requestId !== listRequestId) return
     console.error('[OpsAlertEventsCard] Failed to load more alert events', err)
     hasMore.value = false
   } finally {
-    loadingMore.value = false
+    if (requestId === listRequestId) loadingMore.value = false
   }
 }
 

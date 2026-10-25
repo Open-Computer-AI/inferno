@@ -481,7 +481,12 @@ func (s *OpenAIGatewayService) shouldFailoverLiveCreateError(err error) bool {
 		// 凭证读取和网络传输错误都可能只影响当前账号或代理。
 		return true
 	}
+	// Merge note (integrate/stage-all-20261025): upstream added an account
+	// parameter that enables a model_not_found 400 failover. Live creation
+	// keeps stage's failover policy, so no account is passed here and that
+	// branch never applies (pinned by TestLiveCreateFailoverKeepsStagePolicy).
 	return s.shouldFailoverOpenAIUpstreamResponse(
+		nil,
 		upstreamErr.StatusCode,
 		"",
 		upstreamErr.ResponseBody,

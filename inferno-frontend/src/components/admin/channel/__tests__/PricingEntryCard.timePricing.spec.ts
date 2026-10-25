@@ -84,3 +84,18 @@ describe('PricingEntryCard service tier multipliers', () => {
     expect(shown.text()).toContain('admin.channels.form.flexMultiplier')
   })
 })
+
+describe('PricingEntryCard reasoning-effort multipliers', () => {
+  it('updates an individual effort and exposes a clear-all action', async () => {
+    const entry = { ...createEntry(), reasoning_effort_multipliers: { high: 1.5, max: 3 } }
+    const wrapper = shallowMount(PricingEntryCard, { props: { entry } })
+
+    await wrapper.get('[data-reasoning-effort="high"]').setValue('0.5')
+    expect(wrapper.emitted('update')?.[0]?.[0]).toMatchObject({
+      reasoning_effort_multipliers: { high: '0.5', max: 3 },
+    })
+
+    await wrapper.get('[data-testid="reasoning-effort-multipliers"] button').trigger('click')
+    expect(wrapper.emitted('update')?.[1]?.[0]).toMatchObject({ reasoning_effort_multipliers: null })
+  })
+})

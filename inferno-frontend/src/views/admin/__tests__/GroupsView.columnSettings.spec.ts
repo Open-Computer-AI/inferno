@@ -7,6 +7,7 @@ import GroupsView from '../GroupsView.vue'
 const {
   listGroups,
   getAllGroups,
+  getModelAllowlistCandidates,
   getModelsListCandidates,
   getUsageSummary,
   getCapacitySummary,
@@ -19,6 +20,7 @@ const {
 } = vi.hoisted(() => ({
   listGroups: vi.fn(),
   getAllGroups: vi.fn(),
+  getModelAllowlistCandidates: vi.fn(),
   getModelsListCandidates: vi.fn(),
   getUsageSummary: vi.fn(),
   getCapacitySummary: vi.fn(),
@@ -53,6 +55,7 @@ vi.mock('@/api/admin', () => ({
     groups: {
       list: listGroups,
       getAll: getAllGroups,
+      getModelAllowlistCandidates,
       getModelsListCandidates,
       getUsageSummary,
       getCapacitySummary,
@@ -73,6 +76,10 @@ vi.mock('@/stores/app', () => ({
     showError,
     showSuccess,
   }),
+}))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ isSimpleMode: false }),
 }))
 
 vi.mock('@/stores/onboarding', () => ({
@@ -153,6 +160,8 @@ const DataTableStub = {
   template: `
     <div>
       <div data-test="columns">{{ columns.map((col) => col.key).join(',') }}</div>
+      <div data-test="columns-meta">{{ JSON.stringify(columns.map((col) => ({ key: col.key, sortable: !!col.sortable }))) }}</div>
+      <button data-test="sort-name" @click="$emit('sort', 'name', 'asc')">Sort Name</button>
       <div data-test="rows">{{ data.map((row) => row.name).join(',') }}</div>
       <div v-if="data.length" data-test="usage-cell">
         <slot name="cell-usage" :row="data[0]" />
@@ -214,6 +223,9 @@ const mountView = async () => {
 const columnKeys = (wrapper: ReturnType<typeof mount>) =>
   wrapper.get('[data-test="columns"]').text().split(',').filter(Boolean)
 
+const columnMeta = (wrapper: ReturnType<typeof mount>) =>
+  JSON.parse(wrapper.get('[data-test="columns-meta"]').text()) as Array<{ key: string; sortable: boolean }>
+
 const openColumnSettings = async (wrapper: ReturnType<typeof mount>) => {
   await wrapper.get('button[title="Column Settings"]').trigger('click')
 }
@@ -233,6 +245,7 @@ describe('admin GroupsView column settings', () => {
 
     listGroups.mockReset()
     getAllGroups.mockReset()
+    getModelAllowlistCandidates.mockReset()
     getModelsListCandidates.mockReset()
     getUsageSummary.mockReset()
     getCapacitySummary.mockReset()
@@ -250,6 +263,7 @@ describe('admin GroupsView column settings', () => {
       pages: 1,
     })
     getAllGroups.mockResolvedValue([])
+    getModelAllowlistCandidates.mockResolvedValue([])
     getModelsListCandidates.mockResolvedValue([])
     getUsageSummary.mockResolvedValue([])
     getCapacitySummary.mockResolvedValue([])
@@ -279,6 +293,16 @@ describe('admin GroupsView column settings', () => {
     ])
     expect(localStorage.getItem('group-hidden-columns')).toBe(JSON.stringify(['id']))
     expect(localStorage.getItem('group-column-settings-version')).toBe('2')
+  })
+
+  it('does not expose unsupported group-name sorting', async () => {
+    const wrapper = await mountView()
+    expect(columnMeta(wrapper).find((column) => column.key === 'name')?.sortable).toBe(false)
+
+    listGroups.mockClear()
+    await wrapper.get('[data-test="sort-name"]').trigger('click')
+    await flushPromises()
+    expect(listGroups).not.toHaveBeenCalled()
   })
 
   it('applies saved hidden columns on mount and ignores unknown keys', async () => {

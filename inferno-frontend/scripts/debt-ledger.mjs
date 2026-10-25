@@ -75,7 +75,7 @@ const LEDGER = [
     what: 'Upstream specs with no equivalent in ours, or holding fewer cases — behaviour they pin that we do not',
     origin: 'scripts/behaviour-parity.mjs 2026-08-31; 4 missing files + 3 shortfalls remain, each needing a reason or a test',
     expect: 'closed',
-    probe: `cd ${ROOT} && n=$(node scripts/behaviour-parity.mjs --gaps 2>/dev/null | grep -cE '^  (-|[0-9a-f]{7})'); [ "$n" != "0" ] && echo "$n upstream-pinned behaviours unmatched in ours"`
+    probe: `cd ${ROOT} && report=$(node scripts/behaviour-parity.mjs --gaps 2>/dev/null) && printf '%s\\n' "$report" | grep -q '^0 missing file(s) · 0 shortfall(s) ·' || echo "upstream-pinned behaviours remain unmatched; run: node scripts/behaviour-parity.mjs --gaps"`
   },
   {
     id: 'port-coverage-clean',
@@ -111,7 +111,7 @@ const LEDGER = [
      * took that file from 19% to 13% and the headline never moved.
      *
      * port-coverage --check-baseline diffs the current unaccounted set against
-     * docs/superpowers/analysis/port-coverage-missing.txt and exits 1 naming
+     * docs/superpowers/analysis/archive/2026-09-23/port-coverage-missing.txt and exits 1 naming
      * every line that changed state. Verified against four injected defects:
      * a reverted hunk, a changed locale value, a flipped default and an
      * inverted predicate. All four caught; the flipped default had previously
@@ -181,7 +181,15 @@ const LEDGER = [
     what: 'Every static t() key resolves — part 08 shipped cells that "render raw paths until they land"',
     origin: 'part 08 departures: "19 i18n keys pending"',
     expect: 'closed',
-    probe: `cd ${ROOT} && npx vitest run src/i18n/__tests__/keyResolution.spec.ts --silent >/dev/null 2>&1 || echo "unresolved t() keys remain"`
+    /*
+     * Distinguishes "the test failed" from "the test could not run". Without
+     * that split this row read OPEN on a machine that simply had no
+     * node_modules -- reporting a defect that did not exist, which is the old
+     * i18n-keycheck failure inverted: that one claimed success while scanning
+     * nothing, this one claimed failure while running nothing. Both are a
+     * probe lying about what it observed.
+     */
+    probe: `cd ${ROOT} && { [ -x node_modules/.bin/vitest ] || { echo "cannot check — node_modules absent, run pnpm install"; exit 0; }; npx vitest run src/i18n/__tests__/keyResolution.spec.ts --silent >/dev/null 2>&1 || echo "unresolved t() keys remain"; }`
   },
   {
     id: 'sidebar-reachability',

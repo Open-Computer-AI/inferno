@@ -21,14 +21,20 @@ const {
   getS3Config,
   getImageStorageConfig,
   getSchedule,
+  updateSchedule,
   listBackups,
+  getBackup,
   getDownloadURL,
+  deleteBackup,
 } = vi.hoisted(() => ({
   getS3Config: vi.fn(),
   getImageStorageConfig: vi.fn(),
   getSchedule: vi.fn(),
+  updateSchedule: vi.fn(),
   listBackups: vi.fn(),
+  getBackup: vi.fn(),
   getDownloadURL: vi.fn(),
+  deleteBackup: vi.fn(),
 }))
 
 vi.mock('@/api', () => ({
@@ -41,11 +47,11 @@ vi.mock('@/api', () => ({
       updateImageStorageConfig: vi.fn(),
       testImageStorageConnection: vi.fn(),
       getSchedule,
-      updateSchedule: vi.fn(),
+      updateSchedule,
       createBackup: vi.fn(),
       listBackups,
-      getBackup: vi.fn(),
-      deleteBackup: vi.fn(),
+      getBackup,
+      deleteBackup,
       getDownloadURL,
       restoreBackup: vi.fn(),
     },
@@ -101,6 +107,10 @@ describe('admin BackupView 分卷备份', () => {
     getS3Config.mockResolvedValue({})
     getImageStorageConfig.mockResolvedValue({ config: {}, secret_configured: false })
     getSchedule.mockResolvedValue({ enabled: false, cron_expr: '', retain_days: 14, retain_count: 10 })
+    updateSchedule.mockReset().mockResolvedValue({})
+    deleteBackup.mockReset().mockResolvedValue(undefined)
+    listBackups.mockReset().mockResolvedValue({ items: [] })
+    getBackup.mockReset()
     getDownloadURL.mockReset()
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
   })
@@ -108,6 +118,29 @@ describe('admin BackupView 分卷备份', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     document.body.innerHTML = ''
+  })
+
+  it.each(['backup', 'restore'])('does not resume %s polling after navigation during initial loading', async (operation) => {
+    vi.useFakeTimers()
+    let finish!: (value: object) => void
+    listBackups.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const wrapper = mountBackupView()
+    try {
+      await flushPromises()
+      wrapper.unmount()
+      expect(vi.getTimerCount()).toBe(0)
+      finish({ items: [{ ...baseRecord('pending'),
+        status: operation === 'backup' ? 'running' : 'completed',
+        restore_status: operation === 'restore' ? 'running' : undefined,
+      }] })
+      await flushPromises()
+      expect(vi.getTimerCount()).toBe(0)
+      expect(getBackup).not.toHaveBeenCalled()
+    } finally {
+      wrapper.unmount()
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
   })
 
   it('显示分卷数并在下载时列出每个分卷链接', async () => {
@@ -164,5 +197,120 @@ describe('admin BackupView 分卷备份', () => {
 
     expect(wrapper.find('tbody tr td:nth-child(5)').text()).toBe('-')
     expect(wrapper.findAll('button').some(button => button.text() === 'common.delete')).toBe(false)
+  })
+
+  it('保留旧配置中的 0，并且默认不启用月度归档', async () => {
+    getSchedule.mockResolvedValue({ enabled: true, cron_expr: '0 4 * * *', retain_days: 0, retain_count: 0 })
+    const wrapper = mountBackupView()
+    await flushPromises()
+
+    expect((wrapper.get('[data-testid="backup-retain-days"]').element as HTMLInputElement).value).toBe('0')
+    expect((wrapper.get('[data-testid="backup-retain-count"]').element as HTMLInputElement).value).toBe('0')
+    expect((wrapper.get('[data-testid="archive-enabled"]').element as HTMLInputElement).checked).toBe(false)
+    await wrapper.get('[data-testid="save-backup-schedule"]').trigger('click')
+    await flushPromises()
+    expect(updateSchedule).toHaveBeenCalledWith(expect.objectContaining({
+      retain_days: 0,
+      retain_count: 0,
+      monthly_archive: expect.objectContaining({ enabled: false }),
+    }))
+  })
+
+  it('saves selected archive dates and permanent retention as zero', async () => {
+    const wrapper = mountBackupView()
+    await flushPromises()
+    await wrapper.get('[data-testid="archive-enabled"]').setValue(true)
+    await wrapper.get('#backup-archive-dates').trigger('click')
+    await wrapper.get('[data-testid="backup-archive"] input[type="checkbox"][value="15"]').setValue(true)
+    await wrapper.get('[data-testid="archive-month-end"]').setValue(true)
+    await wrapper.get('[data-testid="save-backup-schedule"]').trigger('click')
+    await flushPromises()
+
+    expect(updateSchedule).toHaveBeenCalledWith(expect.objectContaining({
+      monthly_archive: {
+        enabled: true,
+        days: [1, 15],
+        include_month_end: true,
+        retain_count: 0,
+      },
+    }))
+  })
+
+  it('blocks enabled archive schedules without a date or with an invalid retention count', async () => {
+    const wrapper = mountBackupView()
+    await flushPromises()
+    await wrapper.get('[data-testid="archive-enabled"]').setValue(true)
+    await wrapper.get('#backup-archive-dates').trigger('click')
+    await wrapper.get('[data-testid="backup-archive"] input[type="checkbox"][value="1"]').setValue(false)
+    expect(wrapper.get('[data-testid="save-backup-schedule"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="archive-month-end"]').setValue(true)
+    await wrapper.get('[data-testid="archive-forever"]').setValue(false)
+    await wrapper.get('[data-testid="archive-count"]').setValue('1.5')
+    expect(wrapper.get('[data-testid="save-backup-schedule"]').attributes('disabled')).toBeDefined()
+    expect(updateSchedule).not.toHaveBeenCalled()
+  })
+
+  it('preserves hidden archive settings while disabled and restores edits when re-enabled', async () => {
+    getSchedule.mockResolvedValue({
+      enabled: true,
+      cron_expr: '0 4 * * *',
+      retain_days: 14,
+      retain_count: 10,
+      monthly_archive: { enabled: true, days: [1, 15], include_month_end: false, retain_count: 12 },
+    })
+    const wrapper = mountBackupView()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="archive-count"]').setValue('1')
+    await wrapper.get('[data-testid="archive-enabled"]').setValue(false)
+    expect(wrapper.find('[data-testid="archive-count"]').exists()).toBe(false)
+
+    const save = wrapper.get('[data-testid="save-backup-schedule"]')
+    await save.trigger('click')
+    await flushPromises()
+    expect(updateSchedule).toHaveBeenLastCalledWith(expect.objectContaining({
+      monthly_archive: { enabled: false, days: [1, 15], include_month_end: false, retain_count: 12 },
+    }))
+
+    await wrapper.get('[data-testid="archive-enabled"]').setValue(true)
+    expect((wrapper.get('[data-testid="archive-count"]').element as HTMLInputElement).value).toBe('1')
+  })
+
+  it('supports keyboard opening and Escape dismissal of the archive date picker', async () => {
+    getSchedule.mockResolvedValue({
+      enabled: true,
+      cron_expr: '0 4 * * *',
+      retain_days: 14,
+      retain_count: 10,
+      monthly_archive: { enabled: true, days: [1, 15], include_month_end: true, retain_count: 23 },
+    })
+    const wrapper = mountBackupView()
+    await flushPromises()
+
+    await wrapper.get('#backup-archive-dates').trigger('keydown', { key: 'ArrowDown' })
+    await flushPromises()
+    expect(wrapper.find('#backup-archive-options').exists()).toBe(true)
+    expect((wrapper.get('#backup-archive-options input[value="15"]').element as HTMLInputElement).checked).toBe(true)
+
+    await wrapper.get('#backup-archive-options').trigger('keydown', { key: 'Escape' })
+    expect(wrapper.find('#backup-archive-options').exists()).toBe(false)
+  })
+
+  it('requires explicit confirmation before deleting monthly archive copies', async () => {
+    listBackups.mockResolvedValue({
+      items: [{ ...baseRecord('archived'), monthly_archive: { dates: ['2026-09-01'], retain_count: 12 } }],
+    })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const wrapper = mountBackupView()
+    await flushPromises()
+    const button = wrapper.findAll('button').find(item => item.text() === 'common.delete')!
+    await button.trigger('click')
+    expect(confirm).toHaveBeenCalledWith('admin.backup.archive.deleteConfirm')
+    expect(deleteBackup).not.toHaveBeenCalled()
+
+    confirm.mockReturnValue(true)
+    await button.trigger('click')
+    await flushPromises()
+    expect(deleteBackup).toHaveBeenCalledWith('archived', true)
   })
 })

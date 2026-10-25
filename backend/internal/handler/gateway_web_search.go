@@ -88,6 +88,18 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 		return
 	}
 
+	// 余额模式在途预留（与计费同口径估算；计费任务扣减余额缓存后才释放）。
+	inflightDone, inflightErr := reserveInflightBalance(c, h.billingCacheService, h.gatewayService, apiKey, subscription, service.InflightEstimateRequest{Model: "grok-" + strings.ReplaceAll(searchLabel, "_", "-"), Kind: service.InflightEstimatePerRequest, SearchCalls: 1})
+	if inflightErr != nil {
+		status, code, message, retryAfter := billingErrorDetails(inflightErr)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		c.JSON(status, gin.H{"error": gin.H{"type": code, "message": message}})
+		return
+	}
+	defer inflightDone()
+
 	subject, subjectOK := middleware2.GetAuthSubjectFromContext(c)
 	if !subjectOK {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{

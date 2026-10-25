@@ -231,6 +231,82 @@ func TestAccountIsModelSupported(t *testing.T) {
 			requestedModel: "gemini-3-flash",
 			expected:       false,
 		},
+
+		// DeepSeek 空映射：官方模型白名单（不再是「允许所有」）
+		{
+			name:           "deepseek empty mapping allows official flash",
+			platform:       PlatformDeepseek,
+			credentials:    map[string]any{},
+			requestedModel: "deepseek-flash",
+			expected:       true,
+		},
+		{
+			name:           "deepseek empty mapping normalizes claude code long context suffix",
+			platform:       PlatformDeepseek,
+			credentials:    map[string]any{},
+			requestedModel: "deepseek-flash[1m]",
+			expected:       true,
+		},
+		{
+			name:           "deepseek empty mapping matches case-insensitively",
+			platform:       PlatformDeepseek,
+			credentials:    map[string]any{},
+			requestedModel: "deepseek-FLASH",
+			expected:       true,
+		},
+		{
+			name:           "deepseek empty mapping allows versioned pro name",
+			platform:       PlatformDeepseek,
+			credentials:    map[string]any{},
+			requestedModel: "deepseek-v4-pro-0813",
+			expected:       true,
+		},
+		{
+			name:           "deepseek empty mapping rejects retired chat model",
+			platform:       PlatformDeepseek,
+			credentials:    map[string]any{},
+			requestedModel: "deepseek-chat",
+			expected:       false,
+		},
+		{
+			name:           "deepseek empty mapping rejects foreign claude model",
+			platform:       PlatformDeepseek,
+			credentials:    map[string]any{},
+			requestedModel: "claude-sonnet-4-6",
+			expected:       false,
+		},
+		{
+			name:           "deepseek empty mapping rejects unknown gpt model",
+			platform:       PlatformDeepseek,
+			credentials:    map[string]any{},
+			requestedModel: "gpt-future-model",
+			expected:       false,
+		},
+		{
+			name:           "deepseek empty mapping rejects typo",
+			platform:       PlatformDeepseek,
+			credentials:    map[string]any{},
+			requestedModel: "deepseek-flas",
+			expected:       false,
+		},
+		{
+			name:     "deepseek explicit mapping wins over whitelist",
+			platform: PlatformDeepseek,
+			credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"foo-bar": "deepseek-flash",
+				},
+			},
+			requestedModel: "foo-bar",
+			expected:       true,
+		},
+		{
+			name:           "non deepseek empty mapping still allows all",
+			platform:       PlatformAnthropic,
+			credentials:    map[string]any{},
+			requestedModel: "any-model",
+			expected:       true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -412,16 +488,10 @@ func TestAccountGetModelMapping_AntigravityGemini31ProAliasesRespectWildcard(t *
 		},
 	}
 
-	mapping := account.GetModelMapping()
-
-	if got := mapping["gemini-3.1-pro"]; got != "" {
-		t.Fatalf("expected gemini-3.1-pro exact alias to stay unset when wildcard exists, got %q", got)
-	}
-	if got := mapping["gemini-3.1-pro-high"]; got != "" {
-		t.Fatalf("expected gemini-3.1-pro-high exact alias to stay unset when wildcard exists, got %q", got)
-	}
-	if got := mapping["gemini-3.1-pro-preview"]; got != "" {
-		t.Fatalf("expected gemini-3.1-pro-preview exact alias to stay unset when wildcard exists, got %q", got)
+	for _, model := range []string{"gemini-3.1-pro", "gemini-3.1-pro-high", "gemini-3.1-pro-preview"} {
+		if got, matched := account.ResolveMappedModel(model); got != "custom-wildcard" || !matched {
+			t.Errorf("ResolveMappedModel(%q) = (%q, %v), want (custom-wildcard, true)", model, got, matched)
+		}
 	}
 }
 
@@ -534,6 +604,44 @@ func TestAccountGetModelMapping_AntigravityEnsuresGeminiDefaultPassthroughs(t *t
 	}
 	if mapping["gemini-3.1-pro-low"] != "gemini-3.1-pro-low" {
 		t.Fatalf("expected gemini-3.1-pro-low passthrough to be auto-filled, got: %q", mapping["gemini-3.1-pro-low"])
+	}
+}
+
+func TestAccountGetModelMapping_AntigravityPreservesExactCustomPassthroughOverride(t *testing.T) {
+	account := &Account{Platform: PlatformAntigravity, Credentials: map[string]any{"model_mapping": map[string]any{
+		"gemini-3.6-flash": "custom-flash-target",
+	}}}
+	mapping := account.GetModelMapping()
+	if got := mapping["gemini-3.6-flash"]; got != "custom-flash-target" {
+		t.Fatalf("expected exact custom override, got %q", got)
+	}
+	if got, matched := account.ResolveMappedModel("gemini-3.6-flash"); got != "custom-flash-target" || !matched {
+		t.Fatalf("ResolveMappedModel(gemini-3.6-flash) = (%q, %v), want custom override", got, matched)
+	}
+}
+
+func TestAccountGetModelMapping_AntigravityWildcardOverridesPassthrough(t *testing.T) {
+	account := &Account{Platform: PlatformAntigravity, Credentials: map[string]any{"model_mapping": map[string]any{
+		"gemini-3.6-*": "wildcard-flash-target",
+	}}}
+	if got, matched := account.ResolveMappedModel("gemini-3.6-flash-medium"); got != "wildcard-flash-target" || !matched {
+		t.Fatalf("ResolveMappedModel(gemini-3.6-flash-medium) = (%q, %v), want wildcard mapping", got, matched)
+	}
+}
+
+func TestAccountGetModelMapping_AntigravityExplicitMappingDoesNotEnableNonDefaultModels(t *testing.T) {
+	account := &Account{Platform: PlatformAntigravity, Credentials: map[string]any{"model_mapping": map[string]any{
+		domain.AntigravityGemini31ProAgentModel: domain.AntigravityGemini31ProAgentModel,
+	}}}
+	if account.IsModelSupported("gemini-3.5-flash") {
+		t.Fatal("explicit mappings must not enable models outside the default passthrough list")
+	}
+}
+
+func TestAccountGetModelMapping_AntigravityEmptyMappingUsesDefaultCatalog(t *testing.T) {
+	account := &Account{Platform: PlatformAntigravity, Credentials: map[string]any{"model_mapping": map[string]any{}}}
+	if got := account.GetModelMapping()["gemini-3.8-flash-low"]; got != "gemini-3.8-flash-low" {
+		t.Fatalf("expected empty explicit mapping to use the default catalog entry, got %q", got)
 	}
 }
 

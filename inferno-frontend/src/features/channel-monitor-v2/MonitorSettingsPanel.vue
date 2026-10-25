@@ -83,6 +83,25 @@
           <p class="mt-0.5 text-xs text-[var(--muted-foreground)] dark:text-[var(--muted-foreground)]">
             {{ t('channelMonitorV2.settings.platformsHint') }}
           </p>
+          <div v-if="availablePlatforms.length" class="mt-3 flex flex-wrap items-center gap-2">
+            <Select
+              v-model="selectedPlatform"
+              class="min-w-48"
+              :options="availablePlatforms"
+              :aria-label="t('channelMonitorV2.settings.selectPlatform')"
+              :placeholder="t('channelMonitorV2.settings.selectPlatform')"
+              :disabled="saving"
+            />
+            <AppButton
+              type="button"
+              variant="secondary"
+              size="sm"
+              :disabled="saving || !selectedPlatform"
+              @click="addPlatform"
+            >
+              {{ t('channelMonitorV2.settings.addPlatform') }}
+            </AppButton>
+          </div>
         </div>
         <div class="divide-y divide-[var(--brand-line)] divide-[var(--brand-line)]">
           <div
@@ -258,6 +277,8 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Toggle from '@/components/common/Toggle.vue'
 import AppButton from '@/components/common/Button.vue'
+import Select from '@/components/common/Select.vue'
+import { CONCRETE_PLATFORM_OPTIONS } from '@/constants/platforms'
 import Segmented from '@/components/common/Segmented.vue'
 import Checkbox from '@/components/common/Checkbox.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -280,6 +301,18 @@ const saving = ref(false)
 const draft = ref<MonitorConfig | null>(null)
 const original = ref('')
 const groups = ref<AdminGroup[]>([])
+const selectedPlatform = ref('')
+const availablePlatforms = computed(() =>
+  CONCRETE_PLATFORM_OPTIONS.filter(
+    (option) => !draft.value?.platforms.some((platform) => platform.platform === option.value)
+  )
+)
+
+function addPlatform() {
+  if (!draft.value || !availablePlatforms.value.some((option) => option.value === selectedPlatform.value)) return
+  draft.value.platforms.push({ platform: selectedPlatform.value, enabled: true, models: [] })
+  selectedPlatform.value = ''
+}
 
 const dirty = computed(() => (draft.value ? JSON.stringify(draft.value) !== original.value : false))
 const namedModelCount = computed(

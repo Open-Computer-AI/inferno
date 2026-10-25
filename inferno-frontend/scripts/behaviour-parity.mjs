@@ -6,16 +6,17 @@
  * upstream's literal lines. That question is meaningless for the ports we
  * deliberately REBUILT in the June idiom: we take the logic and rewrite the
  * markup, so upstream's lines are correctly absent and coverage correctly reads
- * near zero. Twelve of the 103 ports are that kind, and nothing measured them.
+ * near zero. The June rebuild therefore uses upstream's own tests as a
+ * behavior-oriented comparison, not a literal-source or style comparison.
  *
  * The oracle is upstream's own tests. They ship one with roughly 92% of
  * commits, and a test is a statement about behaviour rather than about markup,
- * so it survives a rewrite that class names do not. 61 of our 103 ported
- * commits carry upstream test cases; 212 cases in total.
+ * so it survives a rewrite that class names do not. The comparison boundary is
+ * the current merge-base-to-upstream/main range, not a historical manifest.
  *
  * WHAT IT MEASURES, two things:
  *
- *   1. Every upstream spec file touched by a ported commit — does an equivalent
+ *   1. Every currently existing upstream spec file changed in that range — does an equivalent
  *      path exist in ours at all? A missing file means behaviour upstream
  *      specified that nothing in our tree pins.
  *   2. For the specs that do exist — does ours hold at least as many cases as
@@ -37,11 +38,15 @@ import { dirname, resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
-const MANIFEST = resolve(ROOT, 'docs/superpowers/analysis/COMMIT-MANIFEST.md')
 
 const git = (args) => {
   try {
-    return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+    return execFileSync('git', args, {
+      cwd: ROOT,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'ignore']
+    })
   } catch {
     return ''
   }
@@ -68,35 +73,56 @@ const RELOCATED = {
     n: 1,
     to: 'OpenAIQuotaResetCell.autoState.spec.ts',
     why: "upstream's 开关关闭时不显示历史运行态 is our \"renders nothing when auto-reset is switched off, even with a stale state\""
+  },
+  'frontend/src/views/admin/__tests__/GroupsView.codexManifest.spec.ts': {
+    n: 1,
+    to: 'GroupsView.duplicate.spec.ts',
+    why: 'the June edit-view regression asserts sequential Codex manifest field updates remain in the parent edit config'
   }
 }
 
-const shas = [...readFileSync(MANIFEST, 'utf8').matchAll(/^\| \d+ \| `([0-9a-f]{7,})`/gm)].map((m) => m[1])
-if (!shas.length) { console.error('no manifest rows found — wrong path?'); process.exit(1) }
+const base = git(['merge-base', 'HEAD', 'upstream/main']).trim()
+const tip = git(['rev-parse', 'upstream/main']).trim()
+if (!base || !tip) {
+  console.error('could not resolve candidate/upstream merge base and upstream/main')
+  process.exit(1)
+}
+const changedSpecs = git(['diff', '--name-only', `${base}..${tip}`, '--', 'frontend/'])
+  .split('\n')
+  .filter((path) => path.includes('.spec.'))
+  .sort()
+if (!changedSpecs.length) {
+  console.error(`no upstream spec files changed in ${base.slice(0, 8)}..${tip.slice(0, 8)}`)
+  process.exit(1)
+}
 
 const seen = new Set()
 const missing = []
 const shared = []
 let upstreamCases = 0
 
-for (const sha of shas) {
-  const files = git(['show', '--name-only', '--format=', sha, '--', 'frontend/']).split('\n').filter(Boolean)
-  for (const sp of files.filter((f) => f.includes('.spec.'))) {
-    if (seen.has(sp)) continue
-    seen.add(sp)
+for (const sp of changedSpecs) {
+  if (seen.has(sp)) continue
+  seen.add(sp)
 
-    const up = git(['show', `upstream/main:${sp}`])
-    if (!up) continue
-    const u = countCases(up)
-    if (!u) continue
-    upstreamCases += u
+  const up = git(['show', `upstream/main:${sp}`])
+  if (!up) continue
+  const u = countCases(up)
+  if (!u) continue
+  upstreamCases += u
 
-    const ourPath = join(ROOT, sp.replace('frontend/', 'inferno-frontend/'))
-    let ours
-    try { ours = readFileSync(ourPath, 'utf8') } catch { missing.push({ sha, sp, u }); continue }
-    const reloc = RELOCATED[sp]
-    shared.push({ sp, u, o: countCases(ours) + (reloc?.n ?? 0), reloc })
+  const ourPath = join(ROOT, sp.replace('frontend/', 'inferno-frontend/'))
+  let ours
+  const reloc = RELOCATED[sp]
+  try { ours = readFileSync(ourPath, 'utf8') } catch {
+    if (reloc) {
+      shared.push({ sp, u, o: reloc.n, reloc })
+    } else {
+      missing.push({ sp, u })
+    }
+    continue
   }
+  shared.push({ sp, u, o: countCases(ours) + (reloc?.n ?? 0), reloc })
 }
 
 if (!upstreamCases) {
@@ -109,7 +135,7 @@ const gapsOnly = process.argv.includes('--gaps')
 
 if (missing.length) {
   console.log('Upstream specs with NO equivalent file in ours:\n')
-  for (const m of missing) console.log(`  ${m.sha}  ${String(m.u).padStart(3)} cases  ${m.sp.replace('frontend/src/', '')}`)
+  for (const m of missing) console.log(`  ${String(m.u).padStart(3)} cases  ${m.sp.replace('frontend/src/', '')}`)
   console.log()
 }
 
@@ -132,7 +158,8 @@ if (relocated.length) {
 if (!gapsOnly) {
   const ourTotal = shared.reduce((n, r) => n + r.o, 0)
   const upTotal = shared.reduce((n, r) => n + r.u, 0)
+  console.log(`Compared range ${base.slice(0, 8)}..${tip.slice(0, 8)}`)
   console.log(`${shared.length} shared specs · ours ${ourTotal} cases vs upstream ${upTotal}`)
 }
-console.log(`${missing.length} missing file(s) · ${short.length} shortfall(s) · ${upstreamCases} upstream cases examined`)
+console.log(`${missing.length} missing file(s) · ${short.length} shortfall(s) · ${upstreamCases} upstream cases examined from ${changedSpecs.length} touched specs`)
 console.log('A shortfall is not automatically wrong — a rebuild can consolidate. It needs a reason.')

@@ -20,6 +20,7 @@ export default {
     create: '创建',
     update: '更新',
     confirm: '确认',
+    prompt: '输入',
     apply: '应用',
     reset: '重置',
     search: '搜索',

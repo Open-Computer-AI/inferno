@@ -43,8 +43,8 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const OURS = resolve(ROOT, 'inferno-frontend')
-const MANIFEST = resolve(ROOT, 'docs/superpowers/analysis/COMMIT-MANIFEST.md')
-const BASELINE = resolve(ROOT, 'docs/superpowers/analysis/port-coverage-missing.txt')
+const MANIFEST = resolve(ROOT, 'docs/superpowers/analysis/archive/2026-09-23/COMMIT-MANIFEST.md')
+const BASELINE = resolve(ROOT, 'docs/superpowers/analysis/archive/2026-09-23/port-coverage-missing.txt')
 
 const git = (args) =>
   execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })

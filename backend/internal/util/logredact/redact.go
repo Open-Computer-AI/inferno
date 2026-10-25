@@ -42,6 +42,8 @@ type textRedactPatterns struct {
 var (
 	reGOCSPX = regexp.MustCompile(`GOCSPX-[0-9A-Za-z_-]{24,}`)
 	reAIza   = regexp.MustCompile(`AIza[0-9A-Za-z_-]{35}`)
+	// Gemini auth key：AQ.Ab 前缀 + 48 位，长度放宽以覆盖格式变体。
+	reGeminiAuthKey = regexp.MustCompile(`AQ\.Ab[0-9A-Za-z_-]{40,}`)
 
 	defaultTextRedactPatterns = compileTextRedactPatterns(nil)
 	extraTextPatternCache     sync.Map // map[string]*textRedactPatterns
@@ -69,6 +71,7 @@ func RedactJSON(raw []byte, extraKeys ...string) string {
 	}
 	keys := buildKeySet(extraKeys)
 	redacted := redactValueWithDepth(value, keys, 0)
+	redacted = redactGeminiAuthKeysInValue(redacted)
 	encoded, err := json.Marshal(redacted)
 	if err != nil {
 		return "<redacted>"
@@ -99,6 +102,7 @@ func RedactText(input string, extraKeys ...string) string {
 	out := input
 	out = reGOCSPX.ReplaceAllString(out, "GOCSPX-***")
 	out = reAIza.ReplaceAllString(out, "AIza***")
+	out = reGeminiAuthKey.ReplaceAllString(out, "AQ.***")
 	out = patterns.reJSONLike.ReplaceAllString(out, `$1***$3`)
 	out = patterns.reQueryLike.ReplaceAllString(out, `$1=***`)
 	out = patterns.rePlain.ReplaceAllString(out, `$1$2***`)
@@ -193,6 +197,30 @@ func buildKeySet(extraKeys []string) map[string]struct{} {
 		keys[normalized] = struct{}{}
 	}
 	return keys
+}
+
+// redactGeminiAuthKeysInValue scrubs AQ.Ab keys embedded in unstructured JSON
+// string values, including nested objects and arrays. Named sensitive fields are
+// already replaced by redactValueWithDepth and remain fully redacted.
+func redactGeminiAuthKeysInValue(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for key, item := range v {
+			out[key] = redactGeminiAuthKeysInValue(item)
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			out[i] = redactGeminiAuthKeysInValue(item)
+		}
+		return out
+	case string:
+		return reGeminiAuthKey.ReplaceAllString(v, "AQ.***")
+	default:
+		return value
+	}
 }
 
 func redactValueWithDepth(value any, keys map[string]struct{}, depth int) any {

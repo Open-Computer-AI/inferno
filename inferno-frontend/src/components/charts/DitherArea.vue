@@ -47,6 +47,8 @@ const props = defineProps<{
   /** The faint always-on tile. */
   restColor: string
   markerColor: string
+  /** Optional formatter for the stacked readout (for example currency). */
+  valueFormatter?: (value: number) => string
 }>()
 
 const TOP = 0.16 // headroom above the tallest point
@@ -419,7 +421,7 @@ defineExpose({ scrubIndex })
         :style="{ left: `${markerX.value.value}%`, top: `${markerY.value.value}%` }"
       >
         <span class="area__readout-date">{{ scrubLabel }}</span>
-        <span class="area__readout-value">{{ scrubValue.toLocaleString() }}</span>
+        <span class="area__readout-value">{{ props.valueFormatter?.(scrubValue) ?? scrubValue.toLocaleString() }}</span>
       </span>
     </template>
   </div>

@@ -153,6 +153,12 @@ func registerRoutes(
 	// the token mint used.
 	routes.RegisterBillingContractRoutes(r, h.OAuth, h.BillingContract)
 
+	// The desktop's agent discovery/registration surface: GET /api/agents,
+	// POST /api/agents/register. Mounted at the server ROOT, deliberately
+	// NOT under /api/v1 and NOT on the panel envelope, for the same reason
+	// RegisterBillingContractRoutes is. See RegisterAgentRoutes.
+	routes.RegisterAgentRoutes(r, h.OAuth, h.Agent)
+
 	// GET/POST /oauth/authorize (Task 4): the browser-facing authorization
 	// endpoint, mounted at the server root -- not under /api -- and NOT
 	// bypassed to the embedded frontend by web.FrontendServer (see
@@ -174,8 +180,8 @@ func registerRoutes(
 	routes.RegisterUserRoutes(v1, h, jwtAuth, auditLog, settingService, panelRateLimiter)
 	routes.RegisterModelPlazaRoutes(v1, h, optionalJWTAuth, settingService, panelRateLimiter)
 	routes.RegisterAdminRoutes(v1, h, adminAuth, auditLog, stepUpAuth, settingService, panelRateLimiter)
-	routes.RegisterGatewayRoutes(r, h, apiKeyAuth, apiKeyService, subscriptionService, opsService, settingService, compositeResolver, oauthBackingKeyService, cfg)
-	routes.RegisterPaymentRoutes(v1, h.Payment, h.PaymentWebhook, h.Admin.Payment, jwtAuth, adminAuth, auditLog, settingService, panelRateLimiter)
+routes.RegisterGatewayRoutes(r, h, apiKeyAuth, apiKeyService, subscriptionService, opsService, settingService, compositeResolver, oauthBackingKeyService, cfg)
+	routes.RegisterPaymentRoutes(v1, h.Payment, h.PaymentWebhook, h.Admin.Payment, jwtAuth, adminAuth, auditLog, settingService, panelRateLimiter, redisClient)
 
 	handler.RegisterPageRoutes(v1, cfg.Pricing.DataDir, gin.HandlerFunc(jwtAuth), gin.HandlerFunc(adminAuth), settingService)
 }

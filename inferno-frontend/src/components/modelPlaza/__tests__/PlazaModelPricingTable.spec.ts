@@ -46,6 +46,8 @@ function mountTable(
   extraProps?: {
     imageRateIndependent?: boolean
     imageRateMultiplier?: number | null
+    videoRateIndependent?: boolean
+    videoRateMultiplier?: number | null
     peakWindow?: string
     peakRateMultiplier?: number | null
   }
@@ -56,6 +58,20 @@ function mountTable(
 }
 
 describe('PlazaModelPricingTable', () => {
+  it('shows only valid configured reasoning-effort billing multipliers', () => {
+    const model = tokenModel({
+      pricing: {
+        ...tokenModel().pricing!,
+        reasoning_effort_multipliers: { high: 1.5, max: 0, custom: 2 },
+      },
+    })
+    const wrapper = mountTable([model], 1)
+
+    expect(wrapper.find('[data-reasoning-effort="high"]').exists()).toBe(true)
+    expect(wrapper.find('[data-reasoning-effort="max"]').exists()).toBe(false)
+    expect(wrapper.find('[data-reasoning-effort="custom"]').exists()).toBe(false)
+  })
+
   it('倍率为 1 时展示渠道单价原值($/1M),价格保底 2 位小数', () => {
     const wrapper = mountTable([tokenModel()], 1)
     const text = wrapper.text()
@@ -239,6 +255,57 @@ describe('PlazaModelPricingTable', () => {
     expect(text).toContain('modelPlaza.table.perUnitRequest')
   })
 
+  it('video 模型展示基础价和各分辨率阶梯价,单位均按秒标注', () => {
+    const model = tokenModel({
+      name: 'video-generation',
+      pricing: {
+        billing_mode: 'video',
+        input_price: null,
+        output_price: null,
+        cache_write_price: null,
+        cache_read_price: null,
+        image_input_price: null,
+        image_output_price: null,
+        per_request_price: 0.05,
+        intervals: [
+          {
+            min_tokens: 0,
+            max_tokens: null,
+            tier_label: '480p',
+            input_price: null,
+            output_price: null,
+            cache_write_price: null,
+            cache_read_price: null,
+            per_request_price: 0
+          },
+          {
+            min_tokens: 0,
+            max_tokens: null,
+            tier_label: '720p',
+            input_price: null,
+            output_price: null,
+            cache_write_price: null,
+            cache_read_price: null,
+            per_request_price: 0.12
+          }
+        ]
+      },
+      official_pricing: null
+    })
+
+    const text = mountTable([model], 1).text()
+
+    expect(text).toContain('modelPlaza.table.perVideo')
+    expect(text).toContain('modelPlaza.table.videoPrice')
+    expect(text).toContain('$0.05')
+    expect(text).toContain('480p')
+    expect(text).toContain('$0.00')
+    expect(text).toContain('720p')
+    expect(text).toContain('$0.12')
+    expect(text.match(/modelPlaza\.table\.perUnitSecond/g)).toHaveLength(3)
+    expect(text).not.toContain('modelPlaza.table.perUnitRequest')
+  })
+
   it('token 模型阶梯定价内联进输入/输出列,按倍率折算', () => {
     const model = tokenModel({
       pricing: {
@@ -285,6 +352,35 @@ describe('PlazaModelPricingTable', () => {
     expect(text).toContain('$15.00')
   })
 
+  it('multiplier-only token tiers inherit base prices before display', () => {
+    const multiplierOnlyInterval = {
+      min_tokens: 272000,
+      max_tokens: null,
+      tier_label: '>272K',
+      input_price: null,
+      output_price: null,
+      cache_write_price: null,
+      cache_read_price: null,
+      input_multiplier: 2,
+      output_multiplier: 1.5,
+      cache_write_multiplier: 2,
+      cache_read_multiplier: 2,
+      per_request_price: null
+    }
+    const model = tokenModel({
+      pricing: {
+        ...tokenModel().pricing!,
+        intervals: [multiplierOnlyInterval]
+      }
+    })
+
+    const cells = mountTable([model], 1).findAll('tbody td')
+    expect(cells[1].text()).toContain('$6.00')
+    expect(cells[2].text()).toContain('$22.50')
+    expect(cells[3].text()).toContain('$7.50')
+    expect(cells[3].text()).toContain('$0.60')
+  })
+
   it('生图独立倍率开启时,按图价格 × 独立倍率,不乘分组倍率;倍率列展示独立倍率', () => {
     const model = tokenModel({
       name: 'gpt-image-2',
@@ -323,6 +419,32 @@ describe('PlazaModelPricingTable', () => {
     // 倍率列展示独立倍率 1x,而非分组倍率 0.1x
     const rateCell = wrapper.findAll('tbody tr td').at(-1)!
     expect(rateCell.text()).toBe('1x')
+  })
+
+  it('视频独立倍率开启时,按秒价格 × 视频独立倍率,不乘分组倍率', () => {
+    const model = tokenModel({
+      name: 'sora-video',
+      pricing: {
+        billing_mode: 'video',
+        input_price: null,
+        output_price: null,
+        cache_write_price: null,
+        cache_read_price: null,
+        image_input_price: null,
+        image_output_price: null,
+        per_request_price: 0.5,
+        intervals: []
+      },
+      official_pricing: null
+    })
+    const wrapper = mountTable([model], 2, null, {
+      videoRateIndependent: true,
+      videoRateMultiplier: 0.7
+    })
+    expect(wrapper.text()).toContain('$0.35')
+    expect(wrapper.text()).not.toContain('$1.00')
+    const rateCell = wrapper.findAll('tbody tr td').at(-1)!
+    expect(rateCell.text()).toBe('0.7x')
   })
 
   it('生图独立倍率关闭时,按图价格仍乘分组/专属生效倍率', () => {

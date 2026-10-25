@@ -28,6 +28,22 @@
             :api-base-url="publicSettings?.api_base_url || ''"
             :custom-endpoints="publicSettings?.custom_endpoints || []"
           />
+          <div v-if="selectedIds.length" class="flex flex-wrap items-center gap-3 text-sm">
+            <span class="text-gray-600 dark:text-gray-300">
+              {{ t('keys.bulkEdit.selectedCount', { count: selectedIds.length }) }}
+            </span>
+            <button
+              class="btn btn-primary btn-sm"
+              :disabled="loading"
+              data-test="bulk-edit-keys"
+              @click="showBulkEditModal = true"
+            >
+              {{ t('keys.bulkEdit.title') }}
+            </button>
+            <button class="btn btn-secondary btn-sm" @click="selectedIds = []">
+              {{ t('keys.bulkEdit.clearSelection') }}
+            </button>
+          </div>
         </div>
       </template>
 
@@ -85,6 +101,11 @@
           :columns="columns"
           :data="apiKeys"
           :loading="loading"
+          selectable
+          row-key="id"
+          :selected-keys="selectedIds"
+          :selection-label="(key: ApiKey) => t('keys.bulkEdit.selectKey', { name: key.name })"
+          @update:selected-keys="handleSelectionChange"
           :sticky-column-dividers="apiKeys.length >= pagination.page_size"
           :server-side-sort="true"
           default-sort-key="created_at"
@@ -382,7 +403,7 @@
               </button>
               <!-- Import to CC Switch Button -->
               <button
-                v-if="!publicSettings?.hide_ccs_import_button"
+                v-if="!publicSettings?.hide_ccs_import_button && row.group?.platform !== 'typesafe'"
                 @click="importToCcswitch(row)"
                 class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400"
               >
@@ -466,11 +487,62 @@
         </div>
 
         <div>
-          <label class="input-label">{{ t('keys.groupLabel') }}</label>
+          <fieldset v-if="!showEditModal" class="space-y-2" data-tour="key-form-provider" :aria-busy="groupsLoading">
+            <legend class="input-label">{{ t('keys.providerLabel') }}</legend>
+            <div class="grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" :aria-label="t('keys.providerLabel')">
+              <label
+                v-for="provider in createProviderOptions"
+                :key="provider.value"
+                class="key-provider-option"
+                :data-disabled="provider.count === 0 || groupsLoading || undefined"
+              >
+                <input
+                  type="radio"
+                  name="key-provider"
+                  class="key-provider-option__input"
+                  :value="provider.value"
+                  :checked="createProvider === provider.value"
+                  :disabled="provider.count === 0 || groupsLoading"
+                  @change="selectCreateProvider(provider.value)"
+                />
+                <span
+                  class="key-provider-option__surface"
+                  :data-selected="createProvider === provider.value || undefined"
+                  :data-disabled="provider.count === 0 || groupsLoading || undefined"
+                >
+                  <span class="key-provider-option__icons" aria-hidden="true">
+                    <span
+                      v-for="platform in KEY_GROUP_PROVIDER_ICONS[provider.value]"
+                      :key="platform"
+                      class="key-provider-option__icon"
+                    >
+                      <PlatformIcon :platform="platform" size="sm" />
+                    </span>
+                  </span>
+                  <span class="key-provider-option__label">{{ provider.label }}</span>
+                </span>
+              </label>
+            </div>
+            <p class="input-hint" aria-live="polite">
+              {{
+                groupsLoading
+                  ? t('common.loading')
+                  : groups.length === 0 || !createProvider
+                    ? t('common.noGroupsAvailable')
+                    : t(`keys.providerHints.${createProvider}`)
+              }}
+            </p>
+          </fieldset>
+
           <Select
+            :key="showEditModal ? 'edit' : (createProvider ?? 'create-loading')"
+            id="key-form-group"
+            :aria-label="t('keys.groupLabel')"
             v-model="formData.group_id"
-            :options="groupOptions"
+            :options="formGroupOptions"
             :placeholder="t('keys.selectGroup')"
+            :empty-text="t('common.noGroupsAvailable')"
+            :loading="groupsLoading"
             :searchable="true"
             :search-placeholder="t('keys.searchGroup')"
             data-tour="key-form-group"
@@ -953,6 +1025,14 @@
       </template>
     </BaseDialog>
 
+    <BulkEditKeysModal
+      :show="showBulkEditModal"
+      :selected-keys="selectedApiKeys"
+      :groups="groups"
+      @close="showBulkEditModal = false"
+      @updated="handleBulkUpdated"
+    />
+
     <!-- Delete Confirmation Dialog -->
     <ConfirmDialog
       :show="showDeleteDialog"
@@ -995,6 +1075,7 @@
       :api-key="selectedKey?.key || ''"
       :base-url="publicSettings?.api_base_url || ''"
       :platform="selectedKey?.group?.platform || null"
+      :claude-code-only="selectedKey?.group?.claude_code_only || false"
       :allow-messages-dispatch="selectedKey?.group?.allow_messages_dispatch || false"
       @close="closeUseKeyModal"
     />
@@ -1118,7 +1199,7 @@
 </template>
 
 <script setup lang="ts">
-	import { ref, reactive, computed, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
+	import { ref, reactive, computed, watch, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
 	import { useI18n } from 'vue-i18n'
 	import { useAppStore } from '@/stores/app'
 	import { useOnboardingStore } from '@/stores/onboarding'
@@ -1138,9 +1219,11 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import SearchInput from '@/components/common/SearchInput.vue'
 	import Icon from '@/components/icons/Icon.vue'
 	import UseKeyModal from '@/components/keys/UseKeyModal.vue'
+	import BulkEditKeysModal from '@/components/keys/BulkEditKeysModal.vue'
 	import EndpointPopover from '@/components/keys/EndpointPopover.vue'
 	import GroupBadge from '@/components/common/GroupBadge.vue'
 	import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
+	import PlatformIcon from '@/components/common/PlatformIcon.vue'
 	import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform, UpdateApiKeyRequest } from '@/types'
 import type { Column } from '@/components/common/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
@@ -1148,7 +1231,15 @@ import { formatDateTime } from '@/utils/format'
 import { maskApiKey } from '@/utils/maskApiKey'
 import { PRODUCT_NAME } from '@/config/brand'
 import {
+  KEY_GROUP_PROVIDERS,
+  KEY_GROUP_PROVIDER_ICONS,
+  getKeyGroupProvider,
+  type KeyGroupProvider
+} from '@/utils/keyGroupProviders'
+import {
   buildCcSwitchImportDeeplink,
+  CC_SWITCH_USAGE_SCRIPT,
+  isCcSwitchImportSupported,
   type CcSwitchClientType
 } from '@/utils/ccswitchImport'
 
@@ -1181,7 +1272,7 @@ const allColumns = computed<Column[]>(() => [
   { key: 'name', label: t('common.name'), sortable: true },
   { key: 'id', label: t('keys.id'), sortable: true },
   { key: 'key', label: t('keys.apiKey'), sortable: false },
-  { key: 'group', label: t('keys.group'), sortable: false },
+  { key: 'group', label: t('keys.group'), sortable: true },
   { key: 'current_concurrency', label: t('keys.currentConcurrency'), sortable: true },
   { key: 'usage', label: t('keys.usage'), sortable: false },
   { key: 'rate_limit', label: t('keys.rateLimitColumn'), sortable: false },
@@ -1272,7 +1363,23 @@ const columns = computed<Column[]>(() =>
 )
 
 const apiKeys = ref<ApiKey[]>([])
+const selectedIds = ref<number[]>([])
+const showBulkEditModal = ref(false)
+const selectedApiKeys = computed(() => apiKeys.value.filter((key) => selectedIds.value.includes(key.id)))
+
+const handleSelectionChange = (ids: Array<string | number>) => {
+  const visibleIds = new Set(apiKeys.value.map((key) => key.id))
+  selectedIds.value = [...new Set(ids.map(Number))].filter((id) => visibleIds.has(id))
+}
+
+const handleBulkUpdated = (succeededIds: number[]) => {
+  const succeeded = new Set(succeededIds)
+  selectedIds.value = selectedIds.value.filter((id) => !succeeded.has(id))
+  loadApiKeys()
+}
+
 const groups = ref<Group[]>([])
+const groupsLoading = ref(true)
 const loading = ref(false)
 const submitting = ref(false)
 const now = ref(new Date())
@@ -1395,6 +1502,7 @@ const statusFilterOptions = computed(() => [
 ])
 
 const onFilterChange = () => {
+  selectedIds.value = []
   pagination.value.page = 1
   loadApiKeys()
 }
@@ -1424,6 +1532,55 @@ const groupOptions = computed(() =>
     subscriptionType: group.subscription_type,
     platform: group.platform
   }))
+)
+
+const createProvider = ref<KeyGroupProvider | null>(null)
+const createProviderOptions = computed(() => KEY_GROUP_PROVIDERS.map((value) => ({
+  value,
+  label: t(`keys.providers.${value}`),
+  count: groups.value.filter((group) => getKeyGroupProvider(group.platform) === value).length
+})))
+
+// Edit mode must retain every available group. Only a new key is narrowed to
+// the provider bucket selected above.
+const formGroupOptions = computed(() => {
+  if (showEditModal.value) return groupOptions.value
+  if (!createProvider.value) return []
+  return groupOptions.value.filter((group) => getKeyGroupProvider(group.platform) === createProvider.value)
+})
+
+const selectCreateProvider = (provider: KeyGroupProvider) => {
+  const option = createProviderOptions.value.find((item) => item.value === provider)
+  if (!option || option.count === 0 || groupsLoading.value) return
+  if (createProvider.value === provider) return
+  createProvider.value = provider
+  formData.value.group_id = null
+}
+
+// Also handles groups arriving after the create dialog has already opened.
+watch(
+  [showCreateModal, showEditModal, groupsLoading, createProviderOptions],
+  ([isCreateOpen, isEditOpen, isLoading, providers]) => {
+    if (!isCreateOpen || isEditOpen) return
+
+    if (isLoading) {
+      createProvider.value = null
+      formData.value.group_id = null
+      return
+    }
+
+    const currentProvider = providers.find(
+      (provider) => provider.value === createProvider.value && provider.count > 0
+    )
+    if (!currentProvider) {
+      createProvider.value = providers.find((provider) => provider.count > 0)?.value ?? null
+    }
+
+    if (!formGroupOptions.value.some((group) => group.value === formData.value.group_id)) {
+      formData.value.group_id = null
+    }
+  },
+  { immediate: true }
 )
 
 // Group dropdown search
@@ -1479,6 +1636,7 @@ const loadApiKeys = async () => {
     })
     if (signal.aborted) return
     apiKeys.value = response.items
+    handleSelectionChange(selectedIds.value)
     pagination.value.total = response.total
     pagination.value.pages = response.pages
 
@@ -1508,10 +1666,13 @@ const loadApiKeys = async () => {
 }
 
 const loadGroups = async () => {
+  groupsLoading.value = true
   try {
     groups.value = await userGroupsAPI.getAvailable()
   } catch (error) {
     console.error('Failed to load groups:', error)
+  } finally {
+    groupsLoading.value = false
   }
 }
 
@@ -1542,17 +1703,20 @@ const closeUseKeyModal = () => {
 }
 
 const handlePageChange = (page: number) => {
+  selectedIds.value = []
   pagination.value.page = page
   loadApiKeys()
 }
 
 const handlePageSizeChange = (pageSize: number) => {
+  selectedIds.value = []
   pagination.value.page_size = pageSize
   pagination.value.page = 1
   loadApiKeys()
 }
 
 const handleSort = (key: string, order: 'asc' | 'desc') => {
+  selectedIds.value = []
   sortState.value.sort_by = key
   sortState.value.sort_order = order
   pagination.value.page = 1
@@ -1788,6 +1952,7 @@ const handleDelete = async () => {
 const closeModals = () => {
   showCreateModal.value = false
   showEditModal.value = false
+  createProvider.value = null
   selectedKey.value = null
   formData.value = {
     name: '',
@@ -1825,14 +1990,18 @@ const setExpirationDays = (days: number) => {
 
 // Reset quota used for an API key
 const resetQuotaUsed = async () => {
-  if (!selectedKey.value) return
+  const key = selectedKey.value
+  if (!key) return
   showResetQuotaDialog.value = false
   try {
-    await keysAPI.update(selectedKey.value.id, { reset_quota: true })
+    const updatedKey = await keysAPI.update(key.id, { reset_quota: true })
     appStore.showSuccess(t('keys.quotaResetSuccess'))
-    // Update local state
-    if (selectedKey.value) {
-      selectedKey.value.quota_used = 0
+    key.quota_used = updatedKey.quota_used
+    if (key.status !== updatedKey.status) {
+      key.status = updatedKey.status
+      if (selectedKey.value?.id === key.id) {
+        formData.value.status = updatedKey.status === 'active' ? 'active' : 'inactive'
+      }
     }
   } catch (error: any) {
     const errorMsg = error.response?.data?.detail || t('keys.failedToResetQuota')
@@ -1874,6 +2043,8 @@ const resetRateLimitUsage = async () => {
 const importToCcswitch = (row: ApiKey) => {
   const platform = row.group?.platform || 'anthropic'
 
+  if (!isCcSwitchImportSupported(platform)) return
+
   // For antigravity platform, show client selection dialog
   if (platform === 'antigravity') {
     pendingCcsRow.value = row
@@ -1889,22 +2060,6 @@ const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
   const baseUrl = publicSettings.value?.api_base_url || window.location.origin
   const platform = row.group?.platform || 'anthropic'
 
-  const usageScript = `({
-    request: {
-      url: "{{baseUrl}}/v1/usage",
-      method: "GET",
-      headers: { "Authorization": "Bearer {{apiKey}}" }
-    },
-    extractor: function(response) {
-      const remaining = response?.remaining ?? response?.quota?.remaining ?? response?.balance;
-      const unit = response?.unit ?? response?.quota?.unit ?? "USD";
-      return {
-        isValid: response?.is_active ?? response?.isValid ?? true,
-        remaining,
-        unit
-      };
-    }
-  })`
   const providerName = (publicSettings.value?.site_name || PRODUCT_NAME).trim() || PRODUCT_NAME
   const deeplink = buildCcSwitchImportDeeplink({
     baseUrl,
@@ -1912,7 +2067,7 @@ const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
     clientType,
     providerName,
     apiKey: row.key,
-    usageScript
+    usageScript: CC_SWITCH_USAGE_SCRIPT
   })
 
   try {
@@ -1970,3 +2125,90 @@ onUnmounted(() => {
   if (resetTimer) clearInterval(resetTimer)
 })
 </script>
+
+<style scoped>
+.key-provider-option {
+  position: relative;
+  display: block;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.key-provider-option[data-disabled] {
+  cursor: not-allowed;
+}
+
+.key-provider-option__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.key-provider-option__surface {
+  display: flex;
+  min-height: 54px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card);
+  padding: 8px;
+  color: var(--muted-foreground);
+  text-align: center;
+  transition: background-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.key-provider-option__surface:hover:not([data-disabled]) {
+  background: var(--brand-tint);
+}
+
+.key-provider-option__surface[data-selected] {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  box-shadow: 0 0 0 1px var(--brand);
+  color: var(--foreground);
+}
+
+.key-provider-option__surface[data-disabled] {
+  opacity: 0.55;
+}
+
+.key-provider-option__input:focus-visible + .key-provider-option__surface {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.key-provider-option__icons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.key-provider-option__icon {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: var(--r-sm);
+  background: var(--brand-tint);
+  color: var(--brand);
+}
+
+.key-provider-option__label {
+  overflow: hidden;
+  max-width: 100%;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>

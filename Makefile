@@ -3,6 +3,19 @@
 FRONTEND_CRITICAL_VITEST := \
 	src/api/__tests__/client.spec.ts \
 	src/api/__tests__/tokenRefresh.spec.ts \
+	src/api/__tests__/keys.bulkUpdate.spec.ts \
+	src/composables/__tests__/useModelWhitelist.spec.ts \
+	src/components/account/__tests__/OpenAIReferralCell.spec.ts \
+	src/components/account/__tests__/OpenAIReferralCell.transport.spec.ts \
+	src/components/account/__tests__/OpenAIQuotaResetCell.spark_shadow.spec.ts \
+	src/constants/__tests__/platforms.spec.ts \
+	src/components/account/__tests__/credentialsBuilder.platformCatalog.spec.ts \
+	src/components/account/__tests__/CreateAccountModal.spec.ts \
+	src/components/account/__tests__/EditAccountModal.spec.ts \
+	src/components/account/__tests__/credentialsBuilder.spec.ts \
+	src/components/account/__tests__/OpenCodeGoProtocolRulesEditor.spec.ts \
+	src/components/keys/__tests__/BulkEditKeysModal.spec.ts \
+	src/views/user/__tests__/KeysView.spec.ts \
 	src/api/__tests__/channelMonitorV2.spec.ts \
 	src/views/auth/__tests__/LinuxDoCallbackView.spec.ts \
 	src/views/auth/__tests__/WechatCallbackView.spec.ts \
@@ -10,6 +23,18 @@ FRONTEND_CRITICAL_VITEST := \
 	src/views/user/__tests__/PaymentResultView.spec.ts \
 	src/views/user/__tests__/ChannelStatusView.mode.spec.ts \
 	src/components/user/profile/__tests__/ProfileInfoCard.spec.ts \
+	src/stores/__tests__/adminCompliance.reset.spec.ts \
+	src/components/user/profile/__tests__/ProfileEditForm.draft.spec.ts \
+	src/components/user/profile/__tests__/ProfileBalanceNotifyCard.spec.ts \
+	src/components/user/profile/__tests__/ProfileIdentityBindingsSection.spec.ts \
+	src/components/payment/__tests__/paymentCountdown.spec.ts \
+	src/components/account/__tests__/UsageProgressBar.spec.ts \
+	src/components/common/__tests__/BaseDialog.escape.spec.ts \
+	src/components/common/__tests__/disabledSelectors.spec.ts \
+	src/components/admin/group/__tests__/GroupModal.cleanup.spec.ts \
+	src/components/admin/usage/__tests__/UsageCleanupDialog.spec.ts \
+	src/views/admin/__tests__/BackupView.spec.ts \
+	src/views/admin/__tests__/PluginsView.spec.ts \
 	src/views/admin/__tests__/SettingsView.spec.ts \
 	src/features/channel-monitor-v2/__tests__/designSystem.structure.spec.ts \
 	src/features/channel-monitor-v2/__tests__/monitorFormat.spec.ts \

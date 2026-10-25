@@ -1,4 +1,4 @@
-import { getCurrentInstance, inject } from 'vue'
+import { computed, getCurrentInstance, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { SETTINGS_VIEW_CONTEXT } from './settingsViewContext'
 
@@ -18,7 +18,21 @@ export function useSettingsPageBindings(): Record<string, any> {
     owner = owner.parent
   }
   const { t } = useI18n()
+  const bindings = injected ?? setupState(owner)
+  const form = bindings.form ?? setupState(owner).form
+  // The API stores platform user IDs as a comma-separated string; the selector exposes IDs.
+  const riskControlAllowlistedUserIds = computed<number[]>({
+    get: () => Array.from(new Set(
+      String(form.cyber_policy_user_allowlist ?? '')
+        .split(/[,\s]+/)
+        .map(Number)
+        .filter((id) => Number.isSafeInteger(id) && id > 0),
+    )),
+    set: (ids) => {
+      form.cyber_policy_user_allowlist = ids.join(',')
+    },
+  })
   /* Return plain enumerable keys. Vue registers setup bindings by enumerating
    * the setup result, while the refs inside this object remain live. */
-  return { ...(injected ?? setupState(owner)), t }
+  return { ...bindings, riskControlAllowlistedUserIds, t }
 }

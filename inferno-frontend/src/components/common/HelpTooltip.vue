@@ -30,8 +30,19 @@ function onEnter() {
   openTooltip()
 }
 
-function onLeave() {
+function isInside(element: HTMLElement | null, target: EventTarget | null): boolean {
+  return target instanceof Node && element?.contains(target) === true
+}
+
+function onLeave(event: MouseEvent) {
   if (props.trigger !== 'hover') return
+  if (isInside(tooltipRef.value, event.relatedTarget)) return
+  closeTooltip()
+}
+
+function onTooltipLeave(event: MouseEvent) {
+  if (props.trigger !== 'hover') return
+  if (isInside(triggerRef.value, event.relatedTarget)) return
   closeTooltip()
 }
 
@@ -126,6 +137,7 @@ onBeforeUnmount(() => {
           props.widthClass,
         ]"
         :style="{ top: `calc(${tooltipStyle.top} - 8px)`, left: tooltipStyle.left }"
+        @mouseleave="onTooltipLeave"
       >
         <IconButton
           v-if="props.trigger === 'click'"
