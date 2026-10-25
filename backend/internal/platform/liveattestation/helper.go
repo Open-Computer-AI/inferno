@@ -8,17 +8,33 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 )
 
+// MaxHelperConcurrency bounds -max-concurrent: each slot is one request that
+// may wait on DeviceCheck, so the bound also bounds goroutines and fallbacks.
+const MaxHelperConcurrency = 64
+
 // NewHelperHandler exposes only local capability checks and fresh generation.
 // It never accepts caller-supplied signals, account credentials, or commands.
+// It serves one generation at a time (the original behaviour).
 func NewHelperHandler(provider Provider, token string) (http.Handler, error) {
+	return NewHelperHandlerWithLimit(provider, token, 1)
+}
+
+// NewHelperHandlerWithLimit is NewHelperHandler with up to maxConcurrent
+// generations in flight; a request beyond that is still answered 429 at once.
+// Every request still gets its own freshly generated proof.
+func NewHelperHandlerWithLimit(provider Provider, token string, maxConcurrent int) (http.Handler, error) {
 	if provider == nil || !validHelperToken(token) {
 		return nil, errors.New("helper requires a provider and a strong token")
 	}
+	if maxConcurrent < 1 || maxConcurrent > MaxHelperConcurrency {
+		return nil, errors.New("helper concurrency must be between 1 and 64")
+	}
 	expected := sha256.Sum256([]byte("Bearer " + token))
-	busy := make(chan struct{}, 1)
+	busy := make(chan struct{}, maxConcurrent)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json")
@@ -56,7 +72,7 @@ func NewHelperHandler(provider Provider, token string) (http.Handler, error) {
 				http.Error(w, `{"error":"local runtime unavailable"}`, http.StatusServiceUnavailable)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(remoteHelperResponse{Supported: true})
+			writeHelperJSON(w, remoteHelperResponse{Supported: true})
 			return
 		}
 		select {
@@ -71,6 +87,21 @@ func NewHelperHandler(provider Provider, token string) (http.Handler, error) {
 			http.Error(w, `{"error":"local attestation generation unavailable"}`, http.StatusServiceUnavailable)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(remoteHelperResponse{Attestation: header})
+		writeHelperJSON(w, remoteHelperResponse{Attestation: header})
 	}), nil
+}
+
+// writeHelperJSON writes the same bytes json.Encoder did (JSON plus a newline)
+// with an explicit Content-Length: a proof (~4 KB) is past net/http's buffer,
+// which would otherwise send it chunked; a fixed length lets a keep-alive
+// client (the AWS queue) know exactly where the answer ends.
+func writeHelperJSON(w http.ResponseWriter, value remoteHelperResponse) {
+	body, err := json.Marshal(value)
+	if err != nil {
+		http.Error(w, `{"error":"local attestation generation unavailable"}`, http.StatusServiceUnavailable)
+		return
+	}
+	body = append(body, '\n')
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	_, _ = w.Write(body)
 }

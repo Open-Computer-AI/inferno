@@ -25,6 +25,24 @@ while IFS= read -r line; do
   id=$(printf '%s' "$line" | sed -E 's/.*"id":([0-9]+).*/\1/')
   [ "$mode" = hang ] && sleep 30
   [ "$mode" = slow-first ] && [ "$n" = 1 ] && sleep 0.6
+  [ "$mode" = slow ] && sleep 0.05
+  [ "$mode" = slow300 ] && sleep 0.3
+  [ "$mode" = huge ] && { head -c 300000 /dev/zero | tr '\0' x; echo; continue; }
+  [ "$mode" = crash ] && exit 3
+  if [ "$mode" = reverse3 ]; then
+    # Collect three requests, then answer them newest first.
+    ids="$id $ids"
+    [ "$n" -lt 3 ] && continue
+    for i in $ids; do printf '{"id":%s,"header":"{\\"v\\":1,\\"s\\":0,\\"t\\":\\"v1.fake-%s-%s\\"}"}\n' "$i" "$$" "$i"; done
+    ids=""; n=0; continue
+  fi
+  [ "$mode" = garbage ] && { echo "not json"; continue; }
+  case "$line" in *'"ping":true'*) ;; *)
+    # error: every proof fails; err2ok: two failures, then a proof, repeating.
+    if [ "$mode" = error ] || { [ "$mode" = err2ok ] && [ $((n % 3)) != 0 ]; }; then
+      printf '{"id":%s,"error":"DeviceCheck failed"}\n' "$id"; continue
+    fi ;;
+  esac
   case "$line" in
     *'"ping":true'*) printf '{"id":%s,"pong":true}\n' "$id" ;;
     *) printf '{"id":%s,"header":"{\\"v\\":1,\\"s\\":0,\\"t\\":\\"v1.fake-%s-%s\\"}"}\n' "$id" "$$" "$n" ;;
@@ -94,12 +112,14 @@ func TestHelperRestartsAfterExit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := helper.generate(ctx, node+"|exit-after-one", node, "exit-after-one", "com.openai.chat", []byte(`{}`)); err == nil {
-		t.Fatal("expected an error from the exited helper")
+	// The next call either reaches the exiting process (error, then restart)
+	// or starts a new one at once; within two calls a new process answers.
+	var third string
+	for attempt := 0; attempt < 2 && third == ""; attempt++ {
+		third, _ = helper.generate(ctx, node+"|exit-after-one", node, "exit-after-one", "com.openai.chat", []byte(`{}`))
 	}
-	third, err := helper.generate(ctx, node+"|exit-after-one", node, "exit-after-one", "com.openai.chat", []byte(`{}`))
-	if err != nil {
-		t.Fatalf("helper did not restart: %v", err)
+	if third == "" {
+		t.Fatal("helper did not restart")
 	}
 	if fakePid(t, first) == fakePid(t, third) {
 		t.Fatal("expected a new helper process after the exit")
@@ -120,7 +140,7 @@ func TestHelperTimeoutKeepsHelperUntilRepeatedFailures(t *testing.T) {
 		if elapsed := time.Since(started); elapsed > 2*time.Second {
 			t.Fatalf("timeout took %s", elapsed)
 		}
-		if stopped := helper.cmd == nil; stopped != (attempt == helperMaxFailures) {
+		if stopped := helper.running() == 0; stopped != (attempt == helperMaxFailures) {
 			t.Fatalf("attempt %d: helper stopped = %v", attempt, stopped)
 		}
 	}
@@ -138,25 +158,28 @@ func TestHelperSkipsLateAnswerAfterTimeout(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("error = %v, want deadline exceeded", err)
 	}
-	pid := helper.cmd.Process.Pid
+	pid := helper.running()
 	header, err := helper.generate(context.Background(), node+"|slow-first", node, "slow-first", "com.openai.chat", []byte(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Same process, and the answer is the second request's (the first one's late
 	// answer was skipped by its ID).
-	if helper.cmd == nil || helper.cmd.Process.Pid != pid || !strings.HasSuffix(fakeToken(t, header), "-2") {
+	if pid == 0 || helper.running() != pid || !strings.HasSuffix(fakeToken(t, header), "-2") {
 		t.Fatalf("expected the second answer from the same helper, got %s", header)
 	}
 }
 
-func TestHelperLockHonoursDeadline(t *testing.T) {
+func TestHelperHonoursAnExpiredDeadline(t *testing.T) {
 	helper := newDeviceCheckHelper()
-	helper.lock <- struct{}{} // another request holds the helper
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
 	defer cancel()
+	time.Sleep(time.Millisecond)
 	if _, err := helper.generate(ctx, "x", "/nonexistent", "ok", "com.openai.chat", nil); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("error = %v, want deadline exceeded while waiting for the lock", err)
+		t.Fatalf("error = %v, want deadline exceeded", err)
+	}
+	if helper.running() != 0 {
+		t.Fatal("an expired request started a helper")
 	}
 }
 
