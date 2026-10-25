@@ -202,11 +202,6 @@ describe('路由守卫逻辑', () => {
       const redirect = simulateGuard('/login', { requiresAuth: false }, authState)
       expect(redirect).toBeNull()
     })
-
-    it('访问 /home 公开页面允许通过', () => {
-      const redirect = simulateGuard('/home', { requiresAuth: false }, authState)
-      expect(redirect).toBeNull()
-    })
   })
 
   // --- 已认证普通用户 ---
@@ -395,7 +390,10 @@ describe('路由守卫逻辑', () => {
   })
 
   describe('Backend Mode', () => {
-    it('unauthenticated: /home redirects to /login', () => {
+    it('unauthenticated: a public route off the allowlist redirects to /login', () => {
+      // This case used to be carried by /home. The landing page is gone, so it
+      // moved to /model-plaza -- still the point being made is the allowlist's
+      // negative half: requiresAuth: false is NOT enough in backend mode.
       const authState: MockAuthState = {
         isAuthenticated: false,
         isAdmin: false,
@@ -403,7 +401,7 @@ describe('路由守卫逻辑', () => {
         backendModeEnabled: true,
         hasPendingAuthSession: false,
       }
-      const redirect = simulateGuard('/home', { requiresAuth: false }, authState)
+      const redirect = simulateGuard('/model-plaza', { requiresAuth: false }, authState)
       expect(redirect).toBe('/login')
     })
 

@@ -181,7 +181,15 @@ const LEDGER = [
     what: 'Every static t() key resolves — part 08 shipped cells that "render raw paths until they land"',
     origin: 'part 08 departures: "19 i18n keys pending"',
     expect: 'closed',
-    probe: `cd ${ROOT} && npx vitest run src/i18n/__tests__/keyResolution.spec.ts --silent >/dev/null 2>&1 || echo "unresolved t() keys remain"`
+    /*
+     * Distinguishes "the test failed" from "the test could not run". Without
+     * that split this row read OPEN on a machine that simply had no
+     * node_modules -- reporting a defect that did not exist, which is the old
+     * i18n-keycheck failure inverted: that one claimed success while scanning
+     * nothing, this one claimed failure while running nothing. Both are a
+     * probe lying about what it observed.
+     */
+    probe: `cd ${ROOT} && { [ -x node_modules/.bin/vitest ] || { echo "cannot check — node_modules absent, run pnpm install"; exit 0; }; npx vitest run src/i18n/__tests__/keyResolution.spec.ts --silent >/dev/null 2>&1 || echo "unresolved t() keys remain"; }`
   },
   {
     id: 'sidebar-reachability',

@@ -56,6 +56,9 @@ services:
       - SERVER_HOST=0.0.0.0
       - SERVER_PORT=8080
       - SERVER_MODE=${SERVER_MODE:-release}
+      # Base URL clients reach this server on. Becomes the OAuth `iss` claim;
+      # clients verify it against their portal URL. Empty = token exchange 500s.
+      - SERVER_FRONTEND_URL=${SERVER_FRONTEND_URL:-}
       - ENABLE_SERVER_TIMING=${ENABLE_SERVER_TIMING:-false}
       - RUN_MODE=${RUN_MODE:-standard}
       - UPDATE_GITHUB_TOKEN=${UPDATE_GITHUB_TOKEN:-}
