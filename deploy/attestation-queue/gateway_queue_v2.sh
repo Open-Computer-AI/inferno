@@ -7,7 +7,8 @@
 #             restart. 5a: file swapped with switches off (= v1 behaviour), restart, health. 5b: drop-in
 #             QUEUE_CONCURRENCY=16, restart, health. With GW_TF=<gateway token file>: attest-load K=1 after each, K=3/6/10 at
 #             the end. Any failed check: STOP with the exact rollback command.
-#   rollback  idle check, drop-in removed + restart (behaviour back to v1); then the v1 file restored from the backup + restart.
+#   rollback  guard first (idle; skipped when the queue is down or silent, or with FORCE=1), then drop-in removed and
+#             the v1 file restored from the backup, then one restart + health.
 #   status    read-only: file md5, drop-in, unit state, /queue-health.
 # Never prints the token (attest-load reads the file). Overridable for tests: QDIR, DROPDIR, UNIT, HEALTH_URL, SUDO, IDLE_WAIT.
 set -uo pipefail
@@ -32,8 +33,8 @@ idle_check() {
   if [ -n "$a" ] && [ "$a" = "$b" ] && ! echo "$b" | grep -Eq "in_flight['\"]?: *[1-9]"; then echo QUEUE_IDLE; return 0; fi
   echo "NOT IDLE (counters moved or in_flight > 0): wait and run again"; return 1
 }
-restart() {
-  idle_check || die "queue busy, nothing restarted"
+restart() {  # restart <hint> [noidle]
+  [ "${2:-}" = noidle ] || idle_check || die "queue busy, nothing restarted"
   $SUDO systemctl daemon-reload && $SUDO systemctl restart "$UNIT" || die "restart failed; $1"
   sleep 2
   [ "$(systemctl is-active "$UNIT")" = active ] || die "$UNIT not active; $1"
@@ -82,16 +83,20 @@ apply)
   echo "APPLY_OK. Watch 1 h: /queue-health failed not growing, busy_retries ~0, no new 503 on Live creates."
   ;;
 rollback)
-  if [ -f "$DROP" ]; then
-    $SUDO rm -f "$DROP"; echo "drop-in removed (behaviour back to v1)"; restart "drop-in already removed: fix the unit by hand"
+  # One guard before any file changes. A queue that is down or silent holds no calls, so it is not waited on (waiting
+  # would leave the unit down); FORCE=1 skips the wait under traffic (proofs in flight then fail once).
+  if [ "${FORCE:-0}" = 1 ]; then echo "FORCE=1: no idle wait"
+  elif [ "$(systemctl is-active "$UNIT")" != active ] || [ -z "$(health)" ]; then echo "queue down or silent: no idle wait"
+  else idle_check || die "queue busy, nothing touched; run again when idle, or FORCE=1 $RB"
   fi
-  if [ -f "$BAK" ]; then
-    [ "$(md5 "$BAK")" = "$V1_MD5" ] || die "backup is not v1; restore by hand"
-    $SUDO cp -p "$BAK" "$Q" && echo "v1 file restored"; restart "v1 file restored but restart failed"
-    [ "$(md5 "$Q")" = "$V1_MD5" ] && $SUDO rm -f "$BAK" && echo "ROLLBACK_OK"
-  else
-    echo "no v1 backup: file was never swapped by this script"
-  fi
+  [ ! -f "$BAK" ] || [ "$(md5 "$BAK")" = "$V1_MD5" ] || die "backup is not v1; restore by hand"
+  [ -f "$DROP" ] || [ -f "$BAK" ] || { echo "nothing to roll back (no drop-in, no v1 backup)"; exit 0; }
+  # Both changes first, then one restart: the unit comes back on v1 even when v2 is what made it silent.
+  if [ -f "$DROP" ]; then $SUDO rm -f "$DROP" && echo "drop-in removed" || die "drop-in removal failed; fix by hand"; fi
+  if [ -f "$BAK" ]; then $SUDO cp -p "$BAK" "$Q" && echo "v1 file restored" || die "v1 restore failed; fix by hand"; fi
+  restart "rolled back on disk but the unit did not come back: check journalctl -u $UNIT" noidle
+  [ "$(md5 "$Q")" = "$V1_MD5" ] || die "queue file is not v1 after rollback; fix by hand"
+  $SUDO rm -f "$BAK"; echo "ROLLBACK_OK"
   ;;
 *) die "mode: apply|rollback|status" ;;
 esac
