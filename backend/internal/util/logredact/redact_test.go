@@ -38,6 +38,43 @@ func TestRedactText_GOCSPX(t *testing.T) {
 	}
 }
 
+func TestRedactText_GeminiAPIKeys(t *testing.T) {
+	legacyKey := "AI" + "za" + strings.Repeat("Ab1_-", 7)
+	authKey := "AQ." + "Ab" + strings.Repeat("Xy9_-z", 8)
+	in := "upstream rejected " + legacyKey + " and " + authKey + " for model gemini-3.1-pro"
+	out := RedactText(in)
+	if strings.Contains(out, legacyKey) || strings.Contains(out, authKey) {
+		t.Fatalf("expected Gemini keys redacted, got %q", out)
+	}
+	for _, want := range []string{"AIza***", "AQ.***", "for model gemini-3.1-pro"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in %q", want, out)
+		}
+	}
+}
+
+func TestRedactText_GeminiAuthKeyInsideJSONStrings(t *testing.T) {
+	authKey := "AQ." + "Ab" + strings.Repeat("Xy9_-z", 8)
+	in := `{"error":{"message":"API key invalid: ` + authKey + `","details":["retry with ` + authKey + `",{"note":"` + authKey + `"}]},"access_token":"` + authKey + `"}`
+	out := RedactText(in)
+	if strings.Contains(out, authKey) {
+		t.Fatalf("Gemini auth key leaked in JSON: %q", out)
+	}
+	if !strings.Contains(out, `"access_token":"***"`) {
+		t.Fatalf("expected named API-key field to remain fully redacted, got %q", out)
+	}
+	if strings.Count(out, "AQ.***") != 3 {
+		t.Fatalf("expected three free-text key redactions, got %q", out)
+	}
+}
+
+func TestRedactText_GeminiAuthKeyPrefixAloneUnchanged(t *testing.T) {
+	in := "key format AQ.Ab... is documented"
+	if out := RedactText(in); out != in {
+		t.Fatalf("expected short AQ. prefix unchanged, got %q", out)
+	}
+}
+
 func TestRedactText_ExtraKeyCacheUsesNormalizedSortedKey(t *testing.T) {
 	clearExtraTextPatternCache()
 

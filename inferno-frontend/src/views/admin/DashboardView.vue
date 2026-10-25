@@ -171,7 +171,12 @@
           </div>
 
           <!-- User Usage Trend (Full Width) -->
-          <UserUsageTrendChart :points="userTrend" :loading="userTrendLoading" />
+          <UserUsageTrendChart
+            :points="userTrend"
+            :loading="userTrendLoading"
+            :metric="userTrendMetric"
+            @update:metric="setUserTrendMetric"
+          />
         <!-- Quick Actions -->
         <div class="surface-card p-4">
           <div class="mb-3 flex items-center justify-between">
@@ -272,6 +277,7 @@ const rankingError = ref(false)
 const trendData = ref<TrendDataPoint[]>([])
 const modelStats = ref<ModelStat[]>([])
 const userTrend = ref<UserUsageTrendPoint[]>([])
+const userTrendMetric = ref<'tokens' | 'actual_cost'>('tokens')
 const rankingItems = ref<UserSpendingRankingItem[]>([])
 const rankingTotalActualCost = ref(0)
 const rankingTotalRequests = ref(0)
@@ -575,6 +581,13 @@ const loadDashboardSnapshot = async (includeStats: boolean) => {
   }
 }
 
+const setUserTrendMetric = (metric: 'tokens' | 'actual_cost') => {
+  if (userTrendMetric.value === metric) return
+  userTrendMetric.value = metric
+  userTrend.value = []
+  loadUsersTrend()
+}
+
 const loadUsersTrend = async () => {
   const currentSeq = ++usersTrendLoadSeq
   userTrendLoading.value = true
@@ -583,7 +596,8 @@ const loadUsersTrend = async () => {
       start_date: startDate.value,
       end_date: endDate.value,
       granularity: granularity.value,
-      limit: 12
+      limit: 12,
+      metric: userTrendMetric.value
     })
     if (currentSeq !== usersTrendLoadSeq) return
     userTrend.value = response.trend || []

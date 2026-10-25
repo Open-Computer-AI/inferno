@@ -114,6 +114,7 @@ export function healthScoreClass(
   requestCount: number,
 ): string {
   const score = healthModeScore(health, mode)
+  if (mode === 'ttft' && score == null) return 'health-unknown'
   if (score == null) {
     if (requestCount <= 0) return 'health-unknown'
     // Fall back to coarse state when score is absent (older payloads).

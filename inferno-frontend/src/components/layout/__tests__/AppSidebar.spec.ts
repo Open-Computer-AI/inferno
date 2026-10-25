@@ -87,7 +87,7 @@ describe('AppSidebar route reachability', () => {
     // The route carries `requiresRiskControl`, so an ungated row is a dead link
     // that bounces the admin to /admin/settings.
     const gated = componentSource.matchAll(
-      /isFeatureFlagEnabled\(FeatureFlags\.riskControl\)\)\s*\{([\s\S]*?)\n  \}/g
+      /isFeatureFlagEnabled\(FeatureFlags\.riskControl\)\)\s*\{([\s\S]*?)\n {2}\}/g
     )
     const blocks = Array.from(gated, (m) => m[1])
     expect(blocks.length).toBeGreaterThan(0)

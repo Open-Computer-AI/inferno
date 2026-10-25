@@ -21,7 +21,7 @@
           <span class="settings-page-section__muted">
             {{ t("admin.settings.adminApiKey.notConfigured") }}
           </span>
-          <Button
+          <BaseButton
             type="button"
             variant="solid"
             size="sm"
@@ -34,7 +34,7 @@
                 ? t("admin.settings.adminApiKey.creating")
                 : t("admin.settings.adminApiKey.create")
             }}
-          </Button>
+          </BaseButton>
         </div>
 
         <div v-else class="settings-page-section__stack">
@@ -46,7 +46,7 @@
               <code class="settings-page-section__code">{{ adminApiKeyMasked }}</code>
             </div>
             <div class="settings-page-section__actions">
-              <Button
+              <BaseButton
                 type="button"
                 variant="secondary"
                 size="sm"
@@ -59,8 +59,8 @@
                     ? t("admin.settings.adminApiKey.regenerating")
                     : t("admin.settings.adminApiKey.regenerate")
                 }}
-              </Button>
-              <Button
+              </BaseButton>
+              <BaseButton
                 type="button"
                 variant="danger"
                 size="sm"
@@ -68,7 +68,7 @@
                 @click="deleteAdminApiKey"
               >
                 {{ t("admin.settings.adminApiKey.delete") }}
-              </Button>
+              </BaseButton>
             </div>
           </div>
 
@@ -79,9 +79,9 @@
               </p>
               <div class="settings-page-section__action-row">
                 <code class="settings-page-section__code settings-page-section__code--expanded">{{ newAdminApiKey }}</code>
-                <Button type="button" variant="solid" size="sm" @click="copyNewKey">
+                <BaseButton type="button" variant="solid" size="sm" @click="copyNewKey">
                   {{ t("admin.settings.adminApiKey.copyKey") }}
-                </Button>
+                </BaseButton>
               </div>
               <p class="settings-page-section__hint">
                 {{ t("admin.settings.adminApiKey.usage") }}
@@ -97,12 +97,12 @@
 <script lang="ts">
 import { defineComponent } from 'vue'
 import Icon from '@/components/icons/Icon.vue'
-import Button from '@/components/common/Button.vue'
+import BaseButton from '@/components/common/Button.vue'
 import { useSettingsPageBindings } from './settingsPageBindings'
 
 export default defineComponent({
   name: 'AdminApiKeySettingsPage',
-  components: { Button, Icon },
+  components: { BaseButton, Icon },
   setup() {
     return useSettingsPageBindings()
   },

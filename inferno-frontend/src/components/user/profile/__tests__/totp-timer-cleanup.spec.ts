@@ -99,6 +99,33 @@ describe('TOTP 弹窗定时器清理', () => {
     expect(clearIntervalSpy).toHaveBeenCalledWith(timerId)
   })
 
+  it.each([TotpSetupModal, TotpDisableDialog])(
+    'does not start a cooldown after unmounting while sending',
+    async (component) => {
+      let resolveSend!: (value: unknown) => void
+      mocks.sendVerifyCode.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveSend = resolve
+        })
+      )
+
+      const wrapper = mount(component)
+      await flushPromises()
+      const sendButton = wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('profile.totp.sendCode'))
+
+      expect(sendButton).toBeTruthy()
+      await sendButton!.trigger('click')
+      wrapper.unmount()
+      resolveSend({ success: true })
+      await flushPromises()
+
+      expect(setIntervalSpy).not.toHaveBeenCalled()
+      expect(mocks.showSuccess).not.toHaveBeenCalled()
+    }
+  )
+
   it('TotpDisableDialog 卸载时清理倒计时定时器', async () => {
     const wrapper = mount(TotpDisableDialog)
     await flushPromises()
@@ -122,7 +149,7 @@ describe('TOTP 弹窗定时器清理', () => {
   it('TotpSetupModal 失败时改用 toast 并不渲染内联错误', async () => {
     mocks.getVerificationMethod.mockResolvedValue({ method: 'password' })
     mocks.initiateSetup.mockRejectedValue({
-      response: { data: { message: 'setup failed' } }
+      response: { data: { detail: 'setup failed' } }
     })
 
     const wrapper = mount(TotpSetupModal)
@@ -140,7 +167,7 @@ describe('TOTP 弹窗定时器清理', () => {
   it('TotpDisableDialog 失败时改用 toast 并不渲染内联错误', async () => {
     mocks.getVerificationMethod.mockResolvedValue({ method: 'password' })
     mocks.disable.mockRejectedValue({
-      response: { data: { message: 'disable failed' } }
+      response: { data: { detail: 'disable failed' } }
     })
 
     const wrapper = mount(TotpDisableDialog)

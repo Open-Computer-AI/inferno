@@ -11,7 +11,7 @@ describe('Codex models API', () => {
 
   it('builds the authenticated Codex manifest endpoint from the public API base', () => {
     expect(buildCodexModelsManifestUrl('https://example.com/api/v1/')).toBe(
-      'https://example.com/api/v1/models?client_version=0.147.0'
+      'https://example.com/api/v1/models?client_version=0.158.0'
     )
   })
 
@@ -43,14 +43,14 @@ describe('Codex models API', () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => manifest
+      text: async () => JSON.stringify(manifest)
     })
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await fetchCodexModelsManifest('https://example.com/v1', 'sk-user-test')
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://example.com/v1/models?client_version=0.147.0',
+      'https://example.com/v1/models?client_version=0.158.0',
       expect.objectContaining({
         headers: {
           Accept: 'application/json',
@@ -70,7 +70,7 @@ describe('Codex models API', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ object: 'list', data: [] })
+      text: async () => JSON.stringify({ object: 'list', data: [] })
     }))
 
     await expect(fetchCodexModelsManifest('https://example.com/v1', 'sk-user-test'))

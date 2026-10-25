@@ -81,13 +81,15 @@
  * is an honest approximation, not a hard ceiling like the prototype's mockup
  * data implies — flagging it here rather than silently inventing a field.
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { platformLabel } from '@/utils/platformColors'
 import type { AdminGroup, GroupPlatform } from '@/types'
 import Checkbox from '@/components/common/Checkbox.vue'
+import { useAuthStore } from '@/stores'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
 
 interface Props {
   modelValue: number[]
@@ -115,7 +117,9 @@ const isSearchable = computed(() => {
 // "some groups are hidden" check, so the hidden count is real rather than
 // re-derived from a different filter path.
 const platformFilteredGroups = computed(() => {
-  let result: AdminGroup[] = props.groups
+  let result: AdminGroup[] = authStore.isSimpleMode
+    ? props.groups.filter((group) => group.platform !== 'composite')
+    : props.groups
   if (props.platform) {
     if (props.platform === 'antigravity' && props.mixedScheduling) {
       result = result.filter(
@@ -140,6 +144,21 @@ const filteredGroups = computed(() => {
 })
 
 const hiddenByPlatform = computed(() => props.groups.length - platformFilteredGroups.value.length)
+
+watch(
+  () => [authStore.isSimpleMode, props.groups, props.modelValue] as const,
+  () => {
+    if (!authStore.isSimpleMode || props.groups.length === 0) return
+    const visibleIds = new Set(
+      props.groups.filter((group) => group.platform !== 'composite').map((group) => group.id)
+    )
+    const cleaned = props.modelValue.filter((id) => visibleIds.has(id))
+    if (cleaned.length !== props.modelValue.length) {
+      emit('update:modelValue', cleaned)
+    }
+  },
+  { immediate: true, deep: true }
+)
 
 // Replaces silently hiding ineligible groups (migration note): explain why
 // the list is short instead of leaving the operator to guess.

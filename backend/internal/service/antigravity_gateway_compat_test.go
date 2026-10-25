@@ -28,6 +28,20 @@ type antigravityCompatErrorReader struct {
 	err  error
 }
 
+type antigravityCompatNotifyingWriter struct {
+	gin.ResponseWriter
+	wrote chan struct{}
+}
+
+func (w *antigravityCompatNotifyingWriter) Write(data []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(data)
+	select {
+	case w.wrote <- struct{}{}:
+	default:
+	}
+	return n, err
+}
+
 func (r *antigravityCompatErrorReader) Read(p []byte) (int, error) {
 	if r.off < len(r.data) {
 		n := copy(p, r.data[r.off:])
@@ -91,6 +105,7 @@ func newAntigravityCompatAccount(accountType string) *Account {
 			"model_mapping": map[string]any{
 				"gemini-3.1-pro-high":      "gemini-3.1-pro-high",
 				"claude-sonnet-4-5":        "claude-sonnet-4-5",
+				"claude-sonnet-4-6":        "claude-sonnet-4-6",
 				"claude-opus-4-6-thinking": "claude-opus-4-6-thinking",
 			},
 		},
@@ -228,22 +243,27 @@ func TestAntigravityCompatRejectsUnsupportedAccountType(t *testing.T) {
 func TestBuildAntigravityCompatGeminiBody_ConfiguresMixedToolInvocations(t *testing.T) {
 	svc := &AntigravityGatewayService{}
 	tests := []struct {
-		name      string
-		tools     string
-		wantField bool
+		name           string
+		tools          string
+		wantFuncs      bool
+		wantGoogle     bool
+		wantServerFlag bool
 	}{
 		{
-			name:      "mixed server and client tools",
-			tools:     `[{"name":"get_weather","input_schema":{"type":"object"}},{"type":"web_search_20250305","name":"web_search"}]`,
-			wantField: true,
+			name:       "mixed server and client tools prefer client tools",
+			tools:      `[{"name":"get_weather","input_schema":{"type":"object"}},{"type":"web_search_20250305","name":"web_search"}]`,
+			wantFuncs:  true,
+			wantGoogle: false,
 		},
 		{
-			name:  "client tools only",
-			tools: `[{"name":"get_weather","input_schema":{"type":"object"}}]`,
+			name:      "client tools only",
+			tools:     `[{"name":"get_weather","input_schema":{"type":"object"}}]`,
+			wantFuncs: true,
 		},
 		{
-			name:  "server tools only",
-			tools: `[{"type":"web_search_20250305","name":"web_search"}]`,
+			name:       "server tools only",
+			tools:      `[{"type":"web_search_20250305","name":"web_search"}]`,
+			wantGoogle: true,
 		},
 	}
 
@@ -258,19 +278,38 @@ func TestBuildAntigravityCompatGeminiBody_ConfiguresMixedToolInvocations(t *test
 			require.NoError(t, json.Unmarshal(body, &wrapped))
 			request, ok := wrapped["request"].(map[string]any)
 			require.True(t, ok)
+
+			tools, _ := request["tools"].([]any)
+			hasFuncs, hasGoogle := false, false
+			for _, raw := range tools {
+				tool, ok := raw.(map[string]any)
+				if !ok {
+					continue
+				}
+				if decls, ok := tool["functionDeclarations"].([]any); ok && len(decls) > 0 {
+					hasFuncs = true
+				}
+				if _, ok := tool["googleSearch"]; ok {
+					hasGoogle = true
+				}
+			}
+			require.Equal(t, tt.wantFuncs, hasFuncs)
+			require.Equal(t, tt.wantGoogle, hasGoogle)
+
 			toolConfig, exists := request["toolConfig"].(map[string]any)
-			if !tt.wantField {
-				require.False(t, exists)
+			if !tt.wantServerFlag {
+				if exists {
+					require.NotContains(t, toolConfig, "includeServerSideToolInvocations")
+				}
 				return
 			}
 			require.True(t, exists)
 			require.Equal(t, true, toolConfig["includeServerSideToolInvocations"])
-			require.NotContains(t, toolConfig, "include_server_side_tool_invocations")
 		})
 	}
 }
 
-func TestAntigravityCompatChatMixedBuiltInToolsEnableServerSideInvocations(t *testing.T) {
+func TestAntigravityCompatChatMixedBuiltInToolsPreferClientFunctions(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	upstream := &queuedHTTPUpstreamStub{responses: []*http.Response{antigravityCompatSuccessResponse()}}
 	svc := newAntigravityCompatService(config.GatewayConfig{MaxLineSize: defaultMaxLineSize}, upstream)
@@ -293,10 +332,43 @@ func TestAntigravityCompatChatMixedBuiltInToolsEnableServerSideInvocations(t *te
 	require.NotNil(t, result)
 	require.Len(t, upstream.requestBodies, 1)
 	requestBody := upstream.requestBodies[0]
-	require.True(t, gjson.GetBytes(requestBody, "request.toolConfig.includeServerSideToolInvocations").Bool())
+	require.False(t, gjson.GetBytes(requestBody, "request.toolConfig.includeServerSideToolInvocations").Exists())
 	require.Len(t, gjson.GetBytes(requestBody, "request.tools.0.functionDeclarations").Array(), 2)
-	require.True(t, gjson.GetBytes(requestBody, "request.tools.1.googleSearch").Exists())
-	require.True(t, gjson.GetBytes(requestBody, "request.tools.2.codeExecution").Exists())
+	// No built-in tool entries should remain once client functions are present.
+	for _, tool := range gjson.GetBytes(requestBody, "request.tools").Array() {
+		require.False(t, tool.Get("googleSearch").Exists())
+		require.False(t, tool.Get("codeExecution").Exists())
+	}
+}
+
+func TestAntigravityCompatResponsesCodexWebSearchMixedWithFunctionsDropsBuiltins(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstream := &queuedHTTPUpstreamStub{responses: []*http.Response{antigravityCompatSuccessResponse()}}
+	svc := newAntigravityCompatService(config.GatewayConfig{MaxLineSize: defaultMaxLineSize}, upstream)
+	body := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"input":"Reply with exactly: pong",
+		"stream":true,
+		"tools":[
+			{"type":"function","name":"shell","description":"Run a shell command","parameters":{"type":"object","properties":{"command":{"type":"array","items":{"type":"string"}}},"required":["command"],"additionalProperties":false},"strict":true},
+			{"type":"web_search"}
+		]
+	}`)
+	c, _ := newAntigravityCompatContext(http.MethodPost, "/v1/responses", body)
+
+	result, err := svc.ForwardAsResponses(context.Background(), c, newAntigravityCompatAccount(AccountTypeOAuth), body, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.requestBodies, 1)
+	requestBody := upstream.requestBodies[0]
+	require.Equal(t, "agent", gjson.GetBytes(requestBody, "requestType").String())
+	require.NotEqual(t, "gemini-2.5-flash", gjson.GetBytes(requestBody, "model").String())
+	require.True(t, gjson.GetBytes(requestBody, "request.tools.0.functionDeclarations.#(name==\"shell\")").Exists())
+	for _, tool := range gjson.GetBytes(requestBody, "request.tools").Array() {
+		require.False(t, tool.Get("googleSearch").Exists())
+	}
+	require.False(t, gjson.GetBytes(requestBody, "request.toolConfig.includeServerSideToolInvocations").Exists())
 }
 
 func TestAntigravityCompatPreservesChatTokenLimit(t *testing.T) {
@@ -727,4 +799,76 @@ func TestAntigravityCompatKeepaliveAfterFirstEvent(t *testing.T) {
 	require.Contains(t, recorder.Body.String(), ": ping\n\n")
 	require.Contains(t, recorder.Header().Get("Content-Type"), "text/event-stream")
 	require.NoError(t, reader.Close())
+}
+
+func TestAntigravityCompatPreContentKeepalive(t *testing.T) {
+	c, recorder := newAntigravityCompatContext(http.MethodPost, "/v1/responses", nil)
+	writer := newAntigravityClientWriter(c.Writer, c.Writer, "test")
+	writer.beforeFirstWrite = func() { c.Header("Content-Type", "text/event-stream") }
+	start := time.Now().Add(-20 * time.Second)
+	session := newAntigravityCompatStreamSession("gemini-3.1-pro", start, newAntigravityResponsesStreamAdapter("gemini-3.1-pro"), writer)
+
+	session.writePreContentKeepalive(start.Add(14 * time.Second))
+	require.Empty(t, recorder.Body.String())
+	session.writePreContentKeepalive(start.Add(15 * time.Second))
+	require.Equal(t, ": ping\n\n", recorder.Body.String())
+	require.True(t, session.preContentKeepaliveSent)
+	require.False(t, session.hasMeaningfulData())
+}
+
+func TestAntigravityCompatHandlerPreContentKeepalive(t *testing.T) {
+	svc := newAntigravityCompatService(config.GatewayConfig{MaxLineSize: defaultMaxLineSize}, nil)
+	c, recorder := newAntigravityCompatContext(http.MethodPost, "/v1/responses", nil)
+	notifier := &antigravityCompatNotifyingWriter{ResponseWriter: c.Writer, wrote: make(chan struct{}, 1)}
+	c.Writer = notifier
+	reader, pipeWriter := io.Pipe()
+	resp := &http.Response{StatusCode: http.StatusOK, Body: reader}
+	done := make(chan error, 1)
+	go func() {
+		_, err := svc.handleAntigravityCompatStreamWithKeepaliveInterval(
+			c, resp, time.Now().Add(-10*time.Millisecond), "gemini-3.1-pro",
+			newAntigravityResponsesStreamAdapter("gemini-3.1-pro"), "test", 10*time.Millisecond, time.Second,
+		)
+		done <- err
+	}()
+
+	select {
+	case <-notifier.wrote:
+	case <-time.After(time.Second):
+		_ = pipeWriter.Close()
+		t.Fatal("no pre-content keepalive")
+	}
+	require.Equal(t, ": ping\n\n", recorder.Body.String())
+	require.NoError(t, pipeWriter.Close())
+	require.Error(t, <-done)
+	require.Contains(t, recorder.Body.String(), "event: error")
+	require.True(t, IsResponseCommitted(c))
+}
+
+func TestAntigravityCompatSignatureOnlyStreamTriggersFailover(t *testing.T) {
+	svc := newAntigravityCompatService(config.GatewayConfig{MaxLineSize: defaultMaxLineSize}, nil)
+	c, recorder := newAntigravityCompatContext(http.MethodPost, "/v1/responses", nil)
+	body := `data: {"response":{"responseId":"resp_3757","candidates":[{"content":{"parts":[{"thoughtSignature":"sig","text":""}]}}]}}` + "\n\n"
+	resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}
+
+	result, err := svc.handleResponsesStreamingFromAntigravity(c, resp, time.Now(), "gemini-3.1-pro")
+
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Empty(t, recorder.Body.String())
+}
+
+func TestAntigravityCompatMalformedFunctionCallTriggersFailover(t *testing.T) {
+	svc := newAntigravityCompatService(config.GatewayConfig{MaxLineSize: defaultMaxLineSize}, nil)
+	c, recorder := newAntigravityCompatContext(http.MethodPost, "/v1/responses", nil)
+	body := `data: {"response":{"responseId":"resp_3757","candidates":[{"finishReason":"MALFORMED_FUNCTION_CALL"}]}}` + "\n\n"
+	resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}
+
+	result, err := svc.handleResponsesStreamingFromAntigravity(c, resp, time.Now(), "gemini-3.1-pro")
+
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Empty(t, recorder.Body.String())
 }

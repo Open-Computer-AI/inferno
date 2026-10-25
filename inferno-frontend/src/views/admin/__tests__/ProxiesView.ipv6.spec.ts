@@ -49,3 +49,15 @@ describe('proxy batch URL parsing (IPv6 support)', () => {
     expect(port).toBe('1080')
   })
 })
+
+describe('proxy edit and filter behavior', () => {
+  it('resets pagination when proxy filters change', () => {
+    expect(source.match(/@change="handleFilterChange"/g)).toHaveLength(2)
+    expect(source).toMatch(/const handleFilterChange = \(\) => \{\s*pagination\.page = 1\s*loadProxies\(\)/)
+  })
+
+  it('sends empty proxy credentials so administrators can clear them', () => {
+    expect(source).toContain('username: editForm.username.trim(),')
+    expect(source).toContain('updateData.password = editForm.password.trim()')
+  })
+})

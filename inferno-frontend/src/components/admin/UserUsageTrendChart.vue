@@ -35,10 +35,12 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import { useChartTokens } from '@/composables/useChartTokens'
 import { formatNumber } from '@/utils/format'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   points: UserUsageTrendPoint[]
   loading?: boolean
-}>()
+  metric: 'tokens' | 'actual_cost'
+}>(), { metric: 'tokens' })
+const emit = defineEmits<{ 'update:metric': [metric: 'tokens' | 'actual_cost'] }>()
 
 const { t } = useI18n()
 const { tokens } = useChartTokens()
@@ -67,9 +69,10 @@ const model = computed(() => {
       user = { name: displayName(point), byDate: new Map(), total: 0 }
       users.set(point.user_id, user)
     }
-    const tokensOnDay = Number.isFinite(point.tokens) ? point.tokens : 0
-    user.byDate.set(point.date, (user.byDate.get(point.date) ?? 0) + tokensOnDay)
-    user.total += tokensOnDay
+    const value = props.metric === 'tokens' ? point.tokens : point.actual_cost
+    const metricValue = Number.isFinite(value) ? value : 0
+    user.byDate.set(point.date, (user.byDate.get(point.date) ?? 0) + metricValue)
+    user.total += metricValue
   }
 
   const labels = Array.from(dates).sort()
@@ -102,6 +105,22 @@ const model = computed(() => {
 
 const hasData = computed(() => model.value.series.length > 0 && model.value.total > 0)
 
+const formatSpending = (value: number): string => {
+  const safe = Number.isFinite(value) ? value : 0
+  if (safe === 0) return '0.00'
+  if (safe >= 1000) return `${(safe / 1000).toFixed(2)}K`
+  if (safe >= 1) return safe.toFixed(2)
+  if (safe >= 0.01) return safe.toFixed(3)
+  return safe.toFixed(4)
+}
+
+const formatMetricValue = (value: number): string =>
+  props.metric === 'tokens' ? formatNumber(value) : `$${formatSpending(value)}`
+
+const selectMetric = (metric: 'tokens' | 'actual_cost') => {
+  if (metric !== props.metric) emit('update:metric', metric)
+}
+
 /* Dates arrive as YYYY-MM-DD. Sliced, never passed through `new Date`: that
    would reinterpret a plain date in the browser's timezone and can shift the
    label by a day either side of UTC. */
@@ -121,12 +140,20 @@ const restColor = computed(
           {{ t('admin.dashboard.recentUsage') }}
         </h3>
         <p v-if="hasData" class="utrend__sub">
-          {{ t('admin.dashboard.acrossUsers', model.userCount, { named: { count: model.userCount } }) }}
+          {{ t(metric === 'tokens' ? 'admin.dashboard.acrossUsers' : 'admin.dashboard.spendingAcrossUsers', model.userCount, { named: { count: model.userCount } }) }}
         </p>
       </div>
+      <div class="utrend__metrics" role="group" :aria-label="t('admin.dashboard.recentUsage')">
+        <button type="button" class="utrend__metric" :class="{ 'utrend__metric--active': metric === 'tokens' }" :aria-pressed="metric === 'tokens'" @click="selectMetric('tokens')">
+          {{ t('admin.dashboard.tokens') }}
+        </button>
+        <button type="button" class="utrend__metric" :class="{ 'utrend__metric--active': metric === 'actual_cost' }" :aria-pressed="metric === 'actual_cost'" @click="selectMetric('actual_cost')">
+          {{ t('admin.dashboard.actualSpending') }}
+        </button>
+      </div>
       <p v-if="hasData" class="utrend__total">
-        {{ formatNumber(model.total) }}
-        <span class="utrend__total-unit">{{ t('admin.dashboard.tokensUnit') }}</span>
+        {{ formatMetricValue(model.total) }}
+        <span v-if="metric === 'tokens'" class="utrend__total-unit">{{ t('admin.dashboard.tokensUnit') }}</span>
       </p>
     </div>
 
@@ -152,6 +179,7 @@ const restColor = computed(
           :labels="axisLabels"
           :rest-color="restColor"
           :marker-color="tokens.brand"
+          :value-formatter="formatMetricValue"
         />
       </div>
     </template>
@@ -175,6 +203,38 @@ const restColor = computed(
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 10px;
+}
+
+.utrend__metrics {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--brand-tint);
+}
+
+.utrend__metric {
+  padding: 5px 8px;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-medium);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.utrend__metric:hover {
+  color: var(--foreground);
+}
+
+.utrend__metric--active {
+  background: var(--brand);
+  color: var(--brand-foreground, white);
+}
+
+.utrend__metric--active:hover {
+  color: var(--brand-foreground, white);
 }
 
 .utrend__title {

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import type { RechargeBonusTier } from '@/types/payment'
+import { formatRechargeBonusNumber, quoteRechargeBonus, type RechargeBonusMode } from '@/utils/rechargeBonus'
 import { formatPaymentAmount, paymentCurrencySymbol } from './currency'
 
 /**
@@ -44,12 +46,18 @@ interface Props {
   // this is provider-dependent -- the default is CNY, and the Razorpay flow is
   // INR, so a hardcoded '$' is wrong for most installs.
   currency?: string | null
+  bonusTiers?: RechargeBonusTier[]
+  bonusMode?: RechargeBonusMode
+  multiplier?: number
 }
 
 const props = withDefaults(defineProps<Props>(), {
   amounts: () => [10, 20, 50, 100, 200, 500, 1000, 2000, 5000],
   min: 0,
-  max: 0
+  max: 0,
+  bonusTiers: () => [],
+  bonusMode: 'bonus',
+  multiplier: 1,
 })
 
 const emit = defineEmits<{
@@ -83,6 +91,27 @@ const underMin = computed(() => props.min > 0 && hasCustomNum.value && customNum
 const outOfRange = computed(() => overMax.value || underMin.value)
 
 const money = (value: number) => formatPaymentAmount(value, props.currency, locale.value)
+const showBonusPreview = computed(() => props.bonusTiers.length > 0)
+function quoteFor(amount: number) {
+  return quoteRechargeBonus(props.bonusTiers, amount, {
+    multiplier: props.multiplier,
+    mode: props.bonusMode,
+    currencyDigits: (() => {
+      try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: props.currency || 'USD' }).resolvedOptions().maximumFractionDigits ?? 2 }
+      catch { return 2 }
+    })(),
+  })
+}
+function badgeText(amount: number) {
+  const percent = formatRechargeBonusNumber(quoteFor(amount).percent)
+  return props.bonusMode === 'discount' ? `${percent}% OFF` : `+${percent}%`
+}
+function previewText(amount: number) {
+  const quote = quoteFor(amount)
+  return props.bonusMode === 'discount'
+    ? t('payment.rechargeBonus.payShort', { amount: money(quote.payBase) })
+    : t('payment.rechargeBonus.creditedShort', { amount: '$' + quote.credited.toFixed(2) })
+}
 const currencySymbol = computed(() => paymentCurrencySymbol(props.currency, locale.value))
 
 const rangeHint = computed(() => {
@@ -106,8 +135,12 @@ function pickPreset(amount: number) {
 }
 
 function onInput(event: Event) {
-  const val = (event.target as HTMLInputElement).value
-  if (!AMOUNT_PATTERN.test(val)) return
+  const input = event.target as HTMLInputElement
+  const val = input.value
+  if (!AMOUNT_PATTERN.test(val)) {
+    input.value = customText.value
+    return
+  }
   customText.value = val
   if (val === '') {
     emit('update:modelValue', null)
@@ -147,7 +180,9 @@ watch(
         :data-selected="isSelected(a) ? '' : undefined"
         @click="pickPreset(a)"
       >
-        {{ money(a) }}
+        <span v-if="quoteFor(a).percent > 0" class="amt__badge" data-testid="quick-amount-bonus-badge">{{ badgeText(a) }}</span>
+        <span class="block">{{ money(a) }}</span>
+        <span v-if="showBonusPreview" class="amt__preview" :class="{ 'amt__preview--promo': quoteFor(a).percent > 0 }" data-testid="quick-amount-credited">{{ previewText(a) }}</span>
       </button>
     </div>
 
@@ -185,9 +220,11 @@ watch(
 /* 62px is the widest four-figure preset ("$5,000") plus its padding, not a
    token: it is this control's own measurement, not a scale value. */
 .amt__chip {
+  position: relative;
   min-width: 62px;
-  height: var(--s2a-h-sm); /* 32px, the prototype's explicit chip height */
-  padding: 0 12px;
+  min-height: var(--s2a-h-sm); /* 32px minimum; promo previews can grow vertically. */
+  height: auto;
+  padding: 6px 12px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--card);
@@ -211,6 +248,27 @@ watch(
   background: var(--brand-tint);
   color: var(--warm-strong);
 }
+
+.amt__badge {
+  position: absolute;
+  top: -9px;
+  right: -7px;
+  z-index: 1;
+  border-radius: 4px;
+  background: #dc2626;
+  padding: 2px 5px;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+}
+.amt__preview {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 400;
+}
+.amt__preview--promo { color: #dc2626; }
 
 .amt__field {
   display: block;

@@ -32,6 +32,15 @@ describe('MetricCell', () => {
     expect(critical.find('strong').attributes('class')).toContain('var(--destructive)')
   })
 
+  it('does not color a missing metric as critical', () => {
+    const wrapper = mount(MetricCell, {
+      props: { label: '首 Token P50', value: '-', detail: '-', state: 'critical' },
+    })
+
+    expect(wrapper.find('strong').attributes('class')).toContain('var(--muted-foreground)')
+    expect(wrapper.find('[aria-hidden="true"]').exists()).toBe(false)
+  })
+
   it('renders multi-part detail as non-truncated chips (AVG · P90 fully visible)', () => {
     const wrapper = mount(MetricCell, {
       props: {

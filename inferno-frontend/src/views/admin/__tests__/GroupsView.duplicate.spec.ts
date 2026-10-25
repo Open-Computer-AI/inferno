@@ -9,6 +9,7 @@ const {
   listGroups,
   duplicateGroup,
   updateGroup,
+  getModelAllowlistCandidates,
   getModelsListCandidates,
   getUsageSummary,
   getCapacitySummary,
@@ -19,6 +20,7 @@ const {
   listGroups: vi.fn(),
   duplicateGroup: vi.fn(),
   updateGroup: vi.fn(),
+  getModelAllowlistCandidates: vi.fn(),
   getModelsListCandidates: vi.fn(),
   getUsageSummary: vi.fn(),
   getCapacitySummary: vi.fn(),
@@ -32,6 +34,7 @@ vi.mock('@/api/admin', () => ({
     groups: {
       list: listGroups,
       duplicate: duplicateGroup,
+      getModelAllowlistCandidates,
       getModelsListCandidates,
       getUsageSummary,
       getCapacitySummary,
@@ -51,6 +54,10 @@ vi.mock('@/api/admin', () => ({
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({ showSuccess, showError })
+}))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ isSimpleMode: false })
 }))
 
 vi.mock('@/stores/onboarding', () => ({
@@ -145,6 +152,35 @@ const BaseDialogStub = defineComponent({
   template: '<div v-if="show"><slot /><slot name="footer" /></div>'
 })
 
+const CodexManifestAccountsFieldStub = defineComponent({
+  props: { modelValue: { type: Object, required: true } },
+  emits: ['update:modelValue'],
+  setup(props, { emit, expose }) {
+    expose({ validate: () => true, resetValidation: () => undefined })
+    return {
+      enable: () => emit('update:modelValue', { ...props.modelValue as object, enabled: true }),
+      selectAccount: () => emit('update:modelValue', {
+        ...props.modelValue as object,
+        enabled: true,
+        account_ids: [17],
+        fallback_to_scheduler: true
+      }),
+      selectAccountOnly: () => emit('update:modelValue', {
+        ...props.modelValue as object,
+        account_ids: [17]
+      })
+    }
+  },
+  template: `
+    <div data-testid="codex-manifest-field">
+      <output data-testid="codex-manifest-value">{{ JSON.stringify(modelValue) }}</output>
+      <button type="button" data-testid="codex-manifest-enable" @click="enable">enable</button>
+      <button type="button" data-testid="codex-manifest-select-account" @click="selectAccount">select</button>
+      <button type="button" data-testid="codex-manifest-select-account-only" @click="selectAccountOnly">select account only</button>
+    </div>
+  `
+})
+
 function mountView() {
   return mount(GroupsView, {
     global: {
@@ -162,6 +198,7 @@ function mountView() {
         GroupCapacityBadge: true,
         GroupRateMultipliersModal: true,
         GroupRPMOverridesModal: true,
+        CodexManifestAccountsField: CodexManifestAccountsFieldStub,
         VueDraggable: true
       }
     }
@@ -176,6 +213,7 @@ describe('GroupsView duplicate action', () => {
       listGroups,
       duplicateGroup,
       updateGroup,
+      getModelAllowlistCandidates,
       getModelsListCandidates,
       getUsageSummary,
       getCapacitySummary,
@@ -199,6 +237,7 @@ describe('GroupsView duplicate action', () => {
       name: 'Primary (Copy)',
       status: 'inactive'
     })
+    getModelAllowlistCandidates.mockResolvedValue([])
     getModelsListCandidates.mockResolvedValue([])
     getUsageSummary.mockResolvedValue([])
     getCapacitySummary.mockResolvedValue([])
@@ -300,6 +339,93 @@ describe('GroupsView duplicate action', () => {
 
     expect(updateGroup).toHaveBeenCalledTimes(1)
     expect(showError).toHaveBeenCalledWith('group name already exists')
+    wrapper.unmount()
+  })
+
+  it('validates and saves the Codex manifest configuration on edit', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const editButton = wrapper.findAll('button').find((button) => button.text() === 'common.edit')
+    expect(editButton).toBeTruthy()
+    await editButton!.trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="codex-manifest-enable"]').trigger('click')
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+    expect(updateGroup).not.toHaveBeenCalled()
+    expect(showError).toHaveBeenCalledWith('admin.groups.codexModelsManifest.selectAtLeastOne')
+
+    await wrapper.get('[data-testid="codex-manifest-select-account"]').trigger('click')
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+
+    expect(updateGroup).toHaveBeenCalledWith(42, expect.objectContaining({
+      codex_models_manifest_config: {
+        enabled: true,
+        account_ids: [17],
+        fallback_to_scheduler: true
+      }
+    }))
+    wrapper.unmount()
+  })
+
+  it('retains consecutive manifest updates from the editor field', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const editButton = wrapper.findAll('button').find((button) => button.text() === 'common.edit')
+    expect(editButton).toBeTruthy()
+    await editButton!.trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="codex-manifest-enable"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="codex-manifest-value"]').text()).toContain('"enabled":true')
+
+    await wrapper.get('[data-testid="codex-manifest-select-account-only"]').trigger('click')
+    await flushPromises()
+    expect(JSON.parse(wrapper.get('[data-testid="codex-manifest-value"]').text())).toEqual({
+      enabled: true,
+      account_ids: [17],
+      fallback_to_scheduler: false
+    })
+    wrapper.unmount()
+  })
+
+  it('round-trips group reasoning multipliers and blocks invalid values', async () => {
+    const group = {
+      ...sourceGroup,
+      model_pricing: [{
+        platform: 'openai', models: ['example-model'], billing_mode: 'token',
+        input_price: 3e-6, output_price: 15e-6, cache_write_price: null,
+        cache_write_1h_price: null, cache_read_price: null,
+        reasoning_effort_multipliers: { high: 1.5, max: 3 },
+        image_input_price: null, image_output_price: null, per_request_price: null,
+        intervals: [], time_pricing: null,
+      }],
+    }
+    listGroups.mockResolvedValue({ items: [group], total: 1, page: 1, page_size: 20, pages: 1 })
+    updateGroup.mockResolvedValue(group)
+    const wrapper = mountView()
+    await flushPromises()
+    const editButton = wrapper.findAll('button').find(button => button.text() === 'common.edit')
+    await editButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get<HTMLInputElement>('[data-reasoning-effort="high"]').element.value).toBe('1.5')
+    await wrapper.get('[data-reasoning-effort="high"]').setValue('0.5')
+    await wrapper.get('[data-reasoning-effort="max"]').setValue('0')
+    await wrapper.get('#edit-group-form').trigger('submit')
+    expect(updateGroup).not.toHaveBeenCalled()
+    expect(showError).toHaveBeenCalledWith(expect.stringContaining('reasoningEffortMultiplierPositive'))
+
+    await wrapper.get('[data-reasoning-effort="max"]').setValue('')
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+    expect(updateGroup).toHaveBeenCalledWith(42, expect.objectContaining({
+      model_pricing: [expect.objectContaining({ reasoning_effort_multipliers: { high: 0.5 } })],
+    }))
     wrapper.unmount()
   })
 })

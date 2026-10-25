@@ -34,6 +34,7 @@ import { useClipboard } from '@/composables/useClipboard'
 import { useAppStore } from '@/stores'
 import { opsAPI, type OpsRequestDetailsParams, type OpsRequestDetail } from '@/api/admin/ops'
 import { parseTimeRangeMinutes, formatDateTime } from '../utils/opsFormatters'
+import { getAccountNameMap } from '../utils/accountNameMap'
 
 export interface OpsRequestDetailsPreset {
   title: string
@@ -61,6 +62,10 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const appStore = useAppStore()
 const { copyToClipboard } = useClipboard()
+const showTTFT = computed(() => props.preset.sort === 'ttft_desc')
+const latencyLabel = computed(() => t(showTTFT.value
+  ? 'admin.ops.ttftLabel'
+  : 'admin.ops.requestDetails.table.duration'))
 
 // 与 DataTable 一致：< 768px 切换为卡片视图，避免宽表在移动端被截断。
 const isDesktopViewport = useMediaQuery('(min-width: 768px)')
@@ -70,6 +75,8 @@ const items = ref<OpsRequestDetail[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(10)
+const accountNameById = ref<Map<number, string>>(new Map())
+const forcedRefreshAccountIds = new Set<number>()
 
 const close = () => emit('update:modelValue', false)
 
@@ -116,6 +123,7 @@ const fetchData = async () => {
     const res = await opsAPI.listRequestDetails(params)
     items.value = res.items || []
     total.value = res.total || 0
+    refreshAccountNames()
   } catch (e: any) {
     console.error('[OpsRequestDetailsModal] Failed to fetch request details', e)
     appStore.showError(e?.message || t('admin.ops.requestDetails.failedToLoad'))
@@ -178,6 +186,30 @@ function openErrorDetail(errorId: number | null | undefined) {
   emit('openErrorDetail', errorId)
 }
 
+async function refreshAccountNames() {
+  const ids = items.value
+    .map(row => row.account_id)
+    .filter((id): id is number => typeof id === 'number' && id > 0)
+  if (ids.length === 0) return
+  try {
+    let map = await getAccountNameMap()
+    const missingIds = ids.filter(id => !map.has(id) && !forcedRefreshAccountIds.has(id))
+    if (missingIds.length > 0) {
+      for (const id of missingIds) forcedRefreshAccountIds.add(id)
+      map = await getAccountNameMap(true)
+    }
+    accountNameById.value = map
+  } catch (e) {
+    console.warn('[OpsRequestDetailsModal] Failed to load account names', e)
+  }
+}
+
+function accountLabel(row: OpsRequestDetail): string {
+  const id = row.account_id
+  if (typeof id !== 'number' || id <= 0) return '-'
+  return accountNameById.value.get(id) || `#${id}`
+}
+
 /* A real identifier beats the array index: paging replaces the whole array, and
    keying on position makes Vue patch row 1's DOM into row 1 of the next page. */
 function rowKey(row: OpsRequestDetail, idx: number) {
@@ -201,6 +233,10 @@ function kindLabel(kind: string) {
 
 function durationLabel(ms: number | null | undefined) {
   return typeof ms === 'number' ? `${ms} ms` : '-'
+}
+
+function latencyValue(row: OpsRequestDetail) {
+  return durationLabel(showTTFT.value ? row.first_token_ms : row.duration_ms)
 }
 </script>
 
@@ -241,9 +277,10 @@ function durationLabel(ms: number | null | undefined) {
                   </div>
 
                   <p class="reqd__model">{{ row.model || '-' }}</p>
+                  <p v-if="typeof row.account_id === 'number' && row.account_id > 0" class="reqd__model reqd__account" :title="accountLabel(row)">{{ t('admin.ops.requestDetails.table.account') }}: {{ accountLabel(row) }}</p>
 
                   <div class="reqd__facts">
-                    <span class="reqd__fact">{{ durationLabel(row.duration_ms) }}</span>
+                    <span class="reqd__fact">{{ latencyLabel }}: {{ latencyValue(row) }}</span>
                     <span v-if="row.status_code != null" class="reqd__status" :data-tone="statusTone(row.status_code)">
                       {{ row.status_code }}
                     </span>
@@ -275,7 +312,8 @@ function durationLabel(ms: number | null | undefined) {
                     <th scope="col">{{ t('admin.ops.requestDetails.table.kind') }}</th>
                     <th scope="col">{{ t('admin.ops.requestDetails.table.platform') }}</th>
                     <th scope="col">{{ t('admin.ops.requestDetails.table.model') }}</th>
-                    <th scope="col">{{ t('admin.ops.requestDetails.table.duration') }}</th>
+                    <th scope="col">{{ t('admin.ops.requestDetails.table.account') }}</th>
+                    <th scope="col">{{ latencyLabel }}</th>
                     <th scope="col">{{ t('admin.ops.requestDetails.table.status') }}</th>
                     <th scope="col">{{ t('admin.ops.requestDetails.table.requestId') }}</th>
                     <th scope="col" class="reqd__th--right">{{ t('admin.ops.requestDetails.table.actions') }}</th>
@@ -292,7 +330,8 @@ function durationLabel(ms: number | null | undefined) {
                       <span class="reqd__platform">{{ row.platform || 'unknown' }}</span>
                     </td>
                     <td class="reqd__td--model" :title="row.model || ''">{{ row.model || '-' }}</td>
-                    <td class="reqd__td--nowrap reqd__td--num">{{ durationLabel(row.duration_ms) }}</td>
+                    <td class="reqd__td--model" :title="accountLabel(row)">{{ accountLabel(row) }}</td>
+                    <td class="reqd__td--nowrap reqd__td--num">{{ latencyValue(row) }}</td>
                     <td class="reqd__td--nowrap">
                       <!-- A chip implies a recorded value. A null status gets plain
                            text instead, or every success row shows an empty pill. -->

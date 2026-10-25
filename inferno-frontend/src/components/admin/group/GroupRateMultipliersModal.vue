@@ -63,7 +63,7 @@
           <button
             type="button"
             class="btn btn-primary shrink-0"
-            :disabled="!selectedUser || !newRate"
+            :disabled="!selectedUser || !isValidNewRate"
             @click="handleAddLocal"
           >
             {{ t('common.add') }}
@@ -87,7 +87,7 @@
             <button
               type="button"
               class="btn btn-primary btn-sm shrink-0 px-2.5 py-1 text-xs"
-              :disabled="!batchFactor || batchFactor <= 0"
+              :disabled="!isValidBatchFactor"
               @click="applyBatchFactor"
             >
               {{ t('admin.groups.applyMultiplier') }}
@@ -239,7 +239,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
@@ -274,11 +274,18 @@ const searchResults = ref<AdminUser[]>([])
 const showDropdown = ref(false)
 const selectedUser = ref<AdminUser | null>(null)
 const newRate = ref<number | null>(null)
+const isValidNewRate = computed(() => newRate.value != null && Number.isFinite(newRate.value) && newRate.value > 0)
 const currentPage = ref(1)
 const pageSize = ref(10)
 const batchFactor = ref<number | null>(null)
+const isValidBatchFactor = computed(() => {
+  const factor = batchFactor.value
+  return factor != null && Number.isFinite(factor) && factor > 0
+    && localEntries.value.every(entry => entry.rate_multiplier == null || Number.isFinite(entry.rate_multiplier * factor))
+})
 
-let searchTimeout: ReturnType<typeof setTimeout>
+let searchTimeout: ReturnType<typeof setTimeout> | null = null
+let loadVersion = 0
 
 const platformColorClass = computed(() => {
   switch (props.group?.platform) {
@@ -291,7 +298,7 @@ const platformColorClass = computed(() => {
 
 // 是否显示"最终倍率"预览列
 const showFinalRate = computed(() => {
-  return batchFactor.value != null && batchFactor.value > 0 && batchFactor.value !== 1
+  return isValidBatchFactor.value && batchFactor.value !== 1
 })
 
 // 计算最终倍率预览
@@ -319,18 +326,23 @@ const cloneEntries = (entries: GroupRateMultiplierEntry[]): LocalEntry[] => {
 
 const loadEntries = async () => {
   if (!props.group) return
+  const version = loadVersion
   loading.value = true
+  serverEntries.value = []
+  localEntries.value = []
   try {
     const raw = await adminAPI.groups.getGroupRateMultipliers(props.group.id)
+    if (version !== loadVersion) return
     // 仅显示已设置 rate_multiplier 的条目；rpm_override 在另一个弹窗管理，保留不动
     serverEntries.value = raw.filter(e => e.rate_multiplier != null)
     localEntries.value = cloneEntries(serverEntries.value)
     adjustPage()
   } catch (error) {
+    if (version !== loadVersion) return
     appStore.showError(t('admin.groups.failedToLoad'))
     console.error('Error loading group rate multipliers:', error)
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
 }
 
@@ -341,8 +353,16 @@ const adjustPage = () => {
   }
 }
 
-watch(() => props.show, (val) => {
-  if (val && props.group) {
+const clearSearchTimeout = () => {
+  if (searchTimeout !== null) {
+    clearTimeout(searchTimeout)
+    searchTimeout = null
+  }
+}
+
+watch([() => props.show, () => props.group?.id], ([show]) => {
+  loadVersion++
+  if (show && props.group) {
     currentPage.value = 1
     batchFactor.value = null
     searchQuery.value = ''
@@ -359,7 +379,7 @@ const handlePageSizeChange = (newSize: number) => {
 }
 
 const handleSearchUsers = () => {
-  clearTimeout(searchTimeout)
+  clearSearchTimeout()
   selectedUser.value = null
   if (!searchQuery.value.trim()) {
     searchResults.value = []
@@ -367,6 +387,7 @@ const handleSearchUsers = () => {
     return
   }
   searchTimeout = setTimeout(async () => {
+    searchTimeout = null
     try {
       const res = await adminAPI.users.list(1, 10, { search: searchQuery.value.trim() })
       searchResults.value = res.items
@@ -386,7 +407,8 @@ const selectUser = (user: AdminUser) => {
 
 // 本地添加（或覆盖已有用户）
 const handleAddLocal = () => {
-  if (!selectedUser.value || !newRate.value) return
+  const rate = newRate.value
+  if (!selectedUser.value || rate == null || !Number.isFinite(rate) || rate <= 0) return
   const user = selectedUser.value
   const idx = localEntries.value.findIndex(e => e.user_id === user.id)
   const entry: LocalEntry = {
@@ -395,7 +417,7 @@ const handleAddLocal = () => {
     user_email: user.email,
     user_notes: user.notes || '',
     user_status: user.status || 'active',
-    rate_multiplier: newRate.value,
+    rate_multiplier: rate,
     rpm_override: null
   }
   if (idx >= 0) {
@@ -418,7 +440,7 @@ const updateLocalRate = (userId: number, value: string) => {
     return
   }
   const num = parseFloat(value)
-  if (isNaN(num)) return
+  if (!Number.isFinite(num) || num <= 0) return
   entry.rate_multiplier = num
 }
 
@@ -430,12 +452,18 @@ const removeLocal = (userId: number) => {
 
 // 批量乘数应用到本地
 const applyBatchFactor = () => {
-  if (!batchFactor.value || batchFactor.value <= 0) return
-  for (const entry of localEntries.value) {
-    if (entry.rate_multiplier != null) {
-      entry.rate_multiplier = parseFloat((entry.rate_multiplier * batchFactor.value).toFixed(6))
-    }
-  }
+  const factor = batchFactor.value
+  if (factor == null || !Number.isFinite(factor) || factor <= 0) return
+  const updatedRates = localEntries.value.map(entry => {
+    if (entry.rate_multiplier == null) return null
+    const updatedRate = entry.rate_multiplier * factor
+    if (!Number.isFinite(updatedRate)) return Number.NaN
+    return parseFloat(updatedRate.toFixed(6))
+  })
+  if (updatedRates.some(rate => rate != null && !Number.isFinite(rate))) return
+  localEntries.value.forEach((entry, index) => {
+    entry.rate_multiplier = updatedRates[index]
+  })
   batchFactor.value = null
 }
 
@@ -487,9 +515,14 @@ const handleClickOutside = () => {
   showDropdown.value = false
 }
 
-if (typeof document !== 'undefined') {
+onMounted(() => {
   document.addEventListener('click', handleClickOutside)
-}
+})
+onUnmounted(() => {
+  loadVersion++
+  clearSearchTimeout()
+  document.removeEventListener('click', handleClickOutside)
+})
 </script>
 
 <style scoped>

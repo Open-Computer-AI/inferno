@@ -126,6 +126,53 @@ describe('admin DashboardView', () => {
     })
   })
 
+  it('loads recent usage by the selected metric and ignores a stale response', async () => {
+    let resolveTokens!: (value: { trend: Array<{ user_id: number }> }) => void
+    getUserUsageTrend.mockImplementationOnce(
+      () => new Promise(resolve => { resolveTokens = resolve })
+    )
+    getUserUsageTrend.mockResolvedValueOnce({ trend: [{ date: '2026-01-01', user_id: 2, username: 'spender', email: '', requests: 1, tokens: 10, cost: 5, actual_cost: 5 }] })
+
+    const wrapper = mount(DashboardView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          LoadingSpinner: true,
+          Icon: true,
+          DateRangePicker: true,
+          Select: true,
+          ModelDistributionChart: true,
+          TokenUsageTrend: true,
+          UserUsageTrendChart: {
+            props: ['points', 'loading', 'metric'],
+            emits: ['update:metric'],
+            template: `<div>
+              <button type="button" data-testid="select-spending" @click="$emit('update:metric', 'actual_cost')">spending</button>
+              <span data-testid="selected-metric">{{ metric }}</span>
+              <span data-testid="trend-users">{{ points.map(point => point.user_id).join(',') }}</span>
+            </div>`
+          },
+          RouterLink: {
+            props: ['to'],
+            template: '<a :href="to"><slot /></a>'
+          }
+        }
+      }
+    })
+    await flushPromises()
+
+    expect(getUserUsageTrend).toHaveBeenCalledWith(expect.objectContaining({ metric: 'tokens', limit: 12 }))
+    await wrapper.get('[data-testid="select-spending"]').trigger('click')
+    expect(getUserUsageTrend).toHaveBeenCalledWith(expect.objectContaining({ metric: 'actual_cost', limit: 12 }))
+    await flushPromises()
+    expect(wrapper.get('[data-testid="selected-metric"]').text()).toBe('actual_cost')
+    expect(wrapper.get('[data-testid="trend-users"]').text()).toBe('2')
+
+    resolveTokens({ trend: [{ user_id: 1 }] })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="trend-users"]').text()).toBe('2')
+  })
+
   it('uses last 24 hours as default dashboard range', async () => {
     mount(DashboardView, {
       global: {

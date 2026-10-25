@@ -262,6 +262,7 @@ watch(
 
         <OpsErrorLogTable
           class="errdet__table"
+          summary-first
           :rows="rows"
           :total="total"
           :loading="loading"

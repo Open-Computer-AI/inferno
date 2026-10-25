@@ -61,6 +61,8 @@ import (
 //     (openai_codex_models_handler.go). gateway_handler.go's three
 //     CheckBillingEligibility calls are at :242 and :968 (both inside Messages)
 //     and :2040 (CountTokens); the codex models file has zero.
+//   - GET /v1/models/:model -> GatewayHandler.Models, with the same absence of
+//     CheckBillingEligibility as the collection endpoint.
 //   - the batch-image job surface -> BatchImageHandler
 //     (batch_image_handler.go), which contains ZERO CheckBillingEligibility in
 //     the whole file. POST /v1/images/batches is excluded deliberately: it is
@@ -82,6 +84,7 @@ import (
 // internal/server/routes/gateway_billing_divergence_test.go.
 var nonBillableClassRoutes = []extraRoute{
 	{http.MethodGet, "/v1/models"},
+	{http.MethodGet, "/v1/models/:model"},
 	{http.MethodGet, "/models"},
 	{http.MethodGet, "/v1/images/batches"},
 	{http.MethodGet, "/v1/images/batches/models"},
@@ -99,6 +102,7 @@ var nonBillableClassRoutes = []extraRoute{
 // above, in the same order: gin route patterns need real segments to match.
 var nonBillableClassRequestPaths = []string{
 	"/v1/models",
+	"/v1/models/gpt-5.5",
 	"/models",
 	"/v1/images/batches",
 	"/v1/images/batches/models",

@@ -86,6 +86,7 @@ describe('UserPlatformQuotaCell', () => {
         ],
       },
     })
+
     // anthropic and gemini both compute to 0% (no usage); PLATFORM_ORDER
     // breaks the tie in anthropic's favour for the one bar shown.
     expect(w.get('.upq__platform').text()).toBe('anthropic')
@@ -95,5 +96,13 @@ describe('UserPlatformQuotaCell', () => {
     expect(w.get('.upq__more').text()).toBe('+1')
     expect(w.get('.upq__more').attributes('title')).toBe('gemini')
     expect(w.text()).not.toContain('openai')
+  })
+
+  it('excludes TypeSafe quotas from the rendered platform breakdown', () => {
+    const w = mount(UserPlatformQuotaCell, {
+      props: { quotas: [item({ platform: 'typesafe' as PlatformQuotaItem['platform'], daily_limit_usd: 10 })] },
+    })
+    expect(w.text()).toContain('admin.users.platformQuota.cellNotConfigured')
+    expect(w.text()).not.toContain('typesafe')
   })
 })

@@ -7,6 +7,7 @@ import enSettings from "@/i18n/locales/en/admin/settings";
 import zhCommon from "@/i18n/locales/zh/common";
 import zhSettings from "@/i18n/locales/zh/admin/settings";
 import SettingsView from "../SettingsView.vue";
+import OpenAIFastPolicyUserSelector from "../settings/OpenAIFastPolicyUserSelector.vue";
 
 const {
   getSettings,
@@ -26,6 +27,8 @@ const {
   updateUpstreamBillingProbeSettings,
   getOllamaCloudUsageSettings,
   updateOllamaCloudUsageSettings,
+  getOpenCodeGoUsageSettings,
+  updateOpenCodeGoUsageSettings,
   getGroups,
   listProxies,
   getProviders,
@@ -67,6 +70,12 @@ const {
     debounce_minutes: 1,
   }),
   updateOllamaCloudUsageSettings: vi.fn().mockImplementation(async (payload) => payload),
+  getOpenCodeGoUsageSettings: vi.fn().mockResolvedValue({
+    enabled: false,
+    interval_minutes: 15,
+    debounce_minutes: 1,
+  }),
+  updateOpenCodeGoUsageSettings: vi.fn().mockImplementation(async (payload) => payload),
   getGroups: vi.fn(),
   listProxies: vi.fn(),
   getProviders: vi.fn(),
@@ -103,6 +112,8 @@ vi.mock("@/api", () => ({
       updateUpstreamBillingProbeSettings,
       getOllamaCloudUsageSettings,
       updateOllamaCloudUsageSettings,
+      getOpenCodeGoUsageSettings,
+      updateOpenCodeGoUsageSettings,
     },
     groups: {
       getAll: getGroups,
@@ -143,6 +154,7 @@ vi.mock("@/composables/useClipboard", () => ({
 
 vi.mock("@/utils/apiError", () => ({
   extractApiErrorMessage: () => "error",
+  extractI18nErrorMessage: () => "error",
 }));
 
 vi.mock("vue-i18n", async () => {
@@ -201,8 +213,9 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.openaiExperimentalScheduler.lowRatePriorityTitle": "低倍率优先",
     "admin.settings.openaiExperimentalScheduler.lowRatePriorityDescription": "开启后优先选择计费倍率较低的账号；倍率相同时，再比较账号优先级和当前负载等。启用实验调度策略后，此开关不生效。",
     "admin.settings.openaiExperimentalScheduler.oauthRateTitle": "OAuth 调度参考倍率",
-    "admin.settings.openaiExperimentalScheduler.oauthRatePriorityDescription": "同一分组同时包含 API Key 和 OAuth 账号时，OAuth 账号按此倍率与已探测的 API Key 计费倍率一起排序。",
-    "admin.settings.openaiExperimentalScheduler.oauthRateWeightedDescription": "同一分组同时包含 API Key 和 OAuth 账号时，计算“计费倍率”得分时，OAuth 账号按此倍率参与计算。",
+    "admin.settings.openaiExperimentalScheduler.oauthRatePriorityDescription": "OAuth 账号按此参考倍率参与低倍率优先调度；留空时使用各自账号倍率。API Key 账号优先使用有效探测倍率，无有效探测时使用账号倍率。",
+    "admin.settings.openaiExperimentalScheduler.oauthRateWeightedDescription": "计算“计费倍率”得分时，OAuth 账号使用此参考倍率；留空时使用各自账号倍率。API Key 账号优先使用有效探测倍率，无有效探测时使用账号倍率。",
+    "admin.settings.openaiExperimentalScheduler.oauthRateInvalid": "OAuth 调度参考倍率必须是非负数字，或留空以使用账号倍率。",
     "admin.settings.openaiExperimentalScheduler.stickyWeightedTitle": "粘性加权",
     "admin.settings.openaiExperimentalScheduler.stickyWeightedDescription": "开启后 previous_response_id 和 session_hash 粘性进入高级调度打分；关闭时仍按旧逻辑硬命中粘性账号。",
     "admin.settings.openaiExperimentalScheduler.subscriptionPriorityTitle": "订阅优先",
@@ -229,6 +242,7 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.upstreamBillingProbe.intervalHint": "范围 5–1440 分钟。",
     "admin.settings.upstreamBillingProbe.saved": "上游倍率自动探测设置已保存",
     "admin.settings.upstreamBillingProbe.saveFailed": "保存上游倍率自动探测设置失败",
+    "admin.settings.gatewayForwarding.claudeCodeVersionSyncedValue": "当前同步到：{version}",
     "admin.settings.openaiFastPolicy.summaryTargetModels": "目标模型",
     "admin.settings.openaiFastPolicy.summaryAllModels": "全部模型",
     "admin.settings.openaiFastPolicy.summaryOtherModels": "其他模型",
@@ -620,6 +634,57 @@ async function openUsersTab(wrapper: ReturnType<typeof mountView>) {
   await flushPromises();
 }
 
+async function openFeaturesTab(wrapper: ReturnType<typeof mountView>) {
+  const featuresTabButton = wrapper
+    .findAll(".settings-sidebar__item")
+    .find((node) => node.text().includes("admin.settings.tabs.features"));
+
+  expect(featuresTabButton).toBeDefined();
+  await featuresTabButton?.trigger("click");
+  await flushPromises();
+}
+
+
+describe("admin SettingsView risk-control allowlist", () => {
+  it("loads selected IDs and saves selector changes through the settings API", async () => {
+    getSettings.mockReset();
+    updateSettings.mockReset();
+    getSettings.mockResolvedValue({
+      ...baseSettingsResponse,
+      cyber_policy_user_allowlist: "7, 12",
+    });
+    updateSettings.mockImplementation(async (payload) => ({
+      ...baseSettingsResponse,
+      ...payload,
+    }));
+
+    const wrapper = mountView();
+    await flushPromises();
+    await openFeaturesTab(wrapper);
+
+    const selector = wrapper.findComponent(OpenAIFastPolicyUserSelector);
+    expect(selector.exists()).toBe(true);
+    expect(selector.props("modelValue")).toEqual([7, 12]);
+    selector.vm.$emit("update:modelValue", [7, 12, 42]);
+    await flushPromises();
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ cyber_policy_user_allowlist: "7,12,42" }),
+    );
+
+    selector.vm.$emit("update:modelValue", []);
+    await flushPromises();
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+    expect(updateSettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({ cyber_policy_user_allowlist: "" }),
+    );
+    wrapper.unmount();
+  });
+});
+
 describe("admin SettingsView email domain quota copy", () => {
   it("documents the email domain quota and empty-whitelist behavior in both locales", () => {
     expect(zhCommon.auth.emailDomainRegistrationLimit).toContain("主流邮箱");
@@ -642,6 +707,53 @@ describe("admin SettingsView email domain quota copy", () => {
   });
 });
 
+describe("admin SettingsView channel monitor privacy controls", () => {
+  beforeEach(() => {
+    getSettings.mockReset();
+    updateSettings.mockReset();
+    getSettings.mockResolvedValue({
+      ...baseSettingsResponse,
+      channel_monitor_enabled: true,
+      channel_monitor_mode: "v2",
+      channel_monitor_hide_user_ranking: true,
+    });
+    updateSettings.mockImplementation(async (payload) => ({
+      ...baseSettingsResponse,
+      ...payload,
+    }));
+  });
+
+  it("loads and saves the V2 hide-user-ranking toggle", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await openFeaturesTab(wrapper);
+
+    const featureCard = wrapper
+      .findAll(".settings-surface")
+      .find((node) => node.text().includes("admin.settings.features.channelMonitor.title"));
+    expect(featureCard).toBeDefined();
+
+    const rankingRow = featureCard!
+      .findAll("div.flex.items-start.justify-between")
+      .find((node) => node.text().includes("admin.settings.features.channelMonitor.hideUserRanking"));
+    expect(rankingRow).toBeDefined();
+    const toggle = rankingRow!.get(".toggle-stub");
+    expect(toggle).toBeDefined();
+    expect((toggle!.element as HTMLInputElement).checked).toBe(true);
+
+    await toggle!.setValue(false);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel_monitor_mode: "v2",
+        channel_monitor_hide_user_ranking: false,
+      }),
+    );
+  });
+});
+
 describe("admin SettingsView payment visible method controls", () => {
   beforeEach(() => {
     getSettings.mockReset();
@@ -659,6 +771,8 @@ describe("admin SettingsView payment visible method controls", () => {
     updateUpstreamBillingProbeSettings.mockReset();
     getOllamaCloudUsageSettings.mockReset();
     updateOllamaCloudUsageSettings.mockReset();
+    getOpenCodeGoUsageSettings.mockReset();
+    updateOpenCodeGoUsageSettings.mockReset();
     getGroups.mockReset();
     listProxies.mockReset();
     getProviders.mockReset();
@@ -725,6 +839,12 @@ describe("admin SettingsView payment visible method controls", () => {
       debounce_minutes: 1,
     });
     updateOllamaCloudUsageSettings.mockImplementation(async (payload) => payload);
+    getOpenCodeGoUsageSettings.mockResolvedValue({
+      enabled: false,
+      interval_minutes: 15,
+      debounce_minutes: 1,
+    });
+    updateOpenCodeGoUsageSettings.mockImplementation(async (payload) => payload);
     getGroups.mockResolvedValue([]);
     listProxies.mockResolvedValue({
       items: [],
@@ -1435,6 +1555,69 @@ describe("admin SettingsView payment visible method controls", () => {
     });
   });
 
+  it("loads and saves OpenCode Go usage refresh settings with the full contract", async () => {
+    getOpenCodeGoUsageSettings.mockResolvedValueOnce({
+      enabled: false,
+      interval_minutes: 15,
+      debounce_minutes: 1,
+    });
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const card = wrapper.get('[data-testid="opencode-go-usage-global-settings"]');
+    expect(card.isVisible()).toBe(true);
+    expect(
+      (card.get('[data-testid="opencode-go-usage-global-enabled"]').element as HTMLInputElement)
+        .checked,
+    ).toBe(false);
+    expect(card.find('[data-testid="opencode-go-usage-global-interval"]').exists()).toBe(false);
+
+    await card.get('[data-testid="opencode-go-usage-global-enabled"]').setValue(true);
+    await card.get('[data-testid="opencode-go-usage-global-debounce"]').setValue(2);
+    await card.get('[data-testid="opencode-go-usage-global-interval"]').setValue(45);
+    await card.get('[data-testid="opencode-go-usage-global-save"]').trigger("click");
+    await flushPromises();
+
+    expect(updateOpenCodeGoUsageSettings).toHaveBeenCalledWith({
+      enabled: true,
+      interval_minutes: 45,
+      debounce_minutes: 2,
+    });
+  });
+
+  it("round-trips Claude Code runtime-version controls through system settings", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      claude_code_client_version: "2.1.280",
+      claude_code_client_version_synced: "2.1.281",
+      claude_code_version_auto_sync_enabled: true,
+    });
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const version = wrapper.get<HTMLInputElement>('[data-testid="claude-code-client-version"]');
+    const autoSync = wrapper.get<HTMLInputElement>('[data-testid="claude-code-version-auto-sync"]');
+    expect(version.element.value).toBe("2.1.280");
+    expect(autoSync.element.checked).toBe(true);
+    expect(wrapper.get('[data-testid="claude-code-version-synced"]').text()).toContain("2.1.281");
+
+    await version.setValue("2.1.282");
+    await autoSync.setValue(false);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        claude_code_client_version: "2.1.282",
+        claude_code_version_auto_sync_enabled: false,
+      }),
+    );
+  });
+
   it("places and explains rate controls for both scheduling modes", async () => {
     const wrapper = mountView();
 
@@ -1448,7 +1631,7 @@ describe("admin SettingsView payment visible method controls", () => {
     await lowRateToggle.setValue(true);
     const priorityModeText = wrapper.text();
     expect(priorityModeText).toContain(
-      "同一分组同时包含 API Key 和 OAuth 账号时，OAuth 账号按此倍率与已探测的 API Key 计费倍率一起排序。",
+      "OAuth 账号按此参考倍率参与低倍率优先调度；留空时使用各自账号倍率。",
     );
     expect(priorityModeText.indexOf("低倍率优先")).toBeLessThan(
       priorityModeText.indexOf("OAuth 调度参考倍率"),
@@ -1482,10 +1665,10 @@ describe("admin SettingsView payment visible method controls", () => {
     ).toBe(true);
     const weightedModeText = wrapper.text();
     expect(weightedModeText).toContain(
-      "同一分组同时包含 API Key 和 OAuth 账号时，计算“计费倍率”得分时，OAuth 账号按此倍率参与计算。",
+      "计算“计费倍率”得分时，OAuth 账号使用此参考倍率；留空时使用各自账号倍率。",
     );
     expect(weightedModeText).not.toContain(
-      "OAuth 账号按此倍率与已探测的 API Key 计费倍率一起排序。",
+      "OAuth 账号按此参考倍率参与低倍率优先调度；",
     );
     expect(weightedModeText.indexOf("订阅优先")).toBeLessThan(
       weightedModeText.indexOf("OAuth 调度参考倍率"),
@@ -1494,6 +1677,69 @@ describe("admin SettingsView payment visible method controls", () => {
       weightedModeText.indexOf("调度权值覆盖"),
     );
     expect(weightedModeText).toContain("计费倍率");
+  });
+
+  it.each([false, true])(
+    "clears the OAuth reference rate while preserving zero (weighted=%s)",
+    async (weighted) => {
+      getSettings.mockResolvedValueOnce({
+        ...baseSettingsResponse,
+        openai_low_upstream_rate_priority_enabled: !weighted,
+        openai_advanced_scheduler_enabled: weighted,
+        openai_oauth_scheduling_rate_multiplier: 0.7,
+      });
+      const wrapper = mountView();
+      await flushPromises();
+      await openGatewayTab(wrapper);
+
+      const input = wrapper.get<HTMLInputElement>(
+        '[data-testid="openai-oauth-scheduling-rate-multiplier"]',
+      );
+      expect(input.attributes("required")).toBeUndefined();
+      await input.setValue("");
+      await wrapper.find("form").trigger("submit.prevent");
+      await flushPromises();
+      expect(updateSettings).toHaveBeenLastCalledWith(
+        expect.objectContaining({ openai_oauth_scheduling_rate_multiplier: null }),
+      );
+
+      await input.setValue("0");
+      await wrapper.find("form").trigger("submit.prevent");
+      await flushPromises();
+      expect(updateSettings).toHaveBeenLastCalledWith(
+        expect.objectContaining({ openai_oauth_scheduling_rate_multiplier: 0 }),
+      );
+
+      updateSettings.mockClear();
+      await input.setValue("-1");
+      await wrapper.find("form").trigger("submit.prevent");
+      await flushPromises();
+      expect(updateSettings).not.toHaveBeenCalled();
+      expect(showError).toHaveBeenCalledWith(
+        "OAuth 调度参考倍率必须是非负数字，或留空以使用账号倍率。",
+      );
+    },
+  );
+
+  it("loads and resaves a cleared OAuth reference rate as null", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      openai_advanced_scheduler_enabled: true,
+      openai_oauth_scheduling_rate_multiplier: null,
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const input = wrapper.get<HTMLInputElement>(
+      '[data-testid="openai-oauth-scheduling-rate-multiplier"]',
+    );
+    expect(input.element.value).toBe("");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+    expect(updateSettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({ openai_oauth_scheduling_rate_multiplier: null }),
+    );
   });
 
   it("passes translated upload and remove labels to the payment help image uploader", async () => {

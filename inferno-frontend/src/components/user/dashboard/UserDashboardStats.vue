@@ -18,11 +18,11 @@
       <header class="dashboard-panel__header">
         <div>
           <h3 class="dashboard-panel__title">{{ t('dashboard.platformBreakdown') }}</h3>
-          <p class="dashboard-panel__description">{{ t('dashboard.platformCount', { count: sortedPlatforms.length }) }}</p>
+          <p class="dashboard-panel__description">{{ t('dashboard.platformCount', { count: platformCount }) }}</p>
         </div>
       </header>
       <div class="platform-breakdown__grid">
-        <article v-for="item in platformCards" :key="item.platform" class="platform-breakdown__item" :data-other="item.isOther || undefined">
+        <article v-for="item in platformCards" :key="item.platform" data-testid="platform-card" :data-platform="item.platform" class="platform-breakdown__item" :data-other="item.isOther || undefined">
           <div class="platform-breakdown__head">
             <span class="platform-breakdown__name">{{ item.isOther ? t('dashboard.platformOther') : platformLabel(item.platform) }}</span>
             <span class="platform-breakdown__total" :title="t('dashboard.actual')">${{ formatCost(item.total_actual_cost) }}</span>
@@ -105,7 +105,9 @@ const platformCards = computed<FusedPlatformCard[]>(() => {
 
   // 建立 quota Map
   const byQuota = new Map<string, PlatformQuotaItem>()
-  for (const q of props.platformQuotas ?? []) byQuota.set(q.platform, q)
+  for (const q of props.platformQuotas ?? []) {
+    if (hasAnyLimit(q)) byQuota.set(q.platform, q)
+  }
 
   // union 平台集合。后端 by_platform / quota 接口均不会返回 platform='__other__'，
   // 无需显式排除；__other__ 由下方差值补差逻辑单独追加。
@@ -157,6 +159,8 @@ const platformCards = computed<FusedPlatformCard[]>(() => {
 
   return cards
 })
+
+const platformCount = computed(() => platformCards.value.filter((card) => !card.isOther).length)
 
 // Quota helpers
 

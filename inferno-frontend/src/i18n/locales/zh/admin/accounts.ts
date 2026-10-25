@@ -80,6 +80,8 @@ export default {
       editAccount: '编辑账号',
       deleteAccount: '删除账号',
       searchAccounts: '搜索账号...',
+      moreFilters: '更多筛选',
+      moreFiltersActive: '更多筛选（已启用 {count} 项）',
       notes: '备注',
       notesPlaceholder: '请输入备注',
       notesHint: '备注可选',
@@ -96,6 +98,12 @@ export default {
       schedulableEnabled: '调度已开启',
       schedulableDisabled: '调度已关闭',
       failedToToggleSchedulable: '切换调度状态失败',
+      priorityQuick: {
+        raise: '提高优先级（数值 -1）',
+        lower: '降低优先级（数值 +1）',
+        editHint: '点击直接输入；数值越小越优先',
+        failed: '更新优先级失败'
+      },
       groupCountTotal: '共 {count} 个分组',
       columns: {
         name: '名称',
@@ -175,6 +183,48 @@ export default {
           response_too_large: '设置页超过响应大小限制',
           invalid_html: '无法识别设置页格式',
           OLLAMA_CLOUD_USAGE_REFRESH_RATE_LIMITED: '刷新过于频繁，请在 {retry_after_seconds} 秒后重试。'
+        }
+      },
+      opencodeGo: {
+        accountMode: {
+          zen: 'Zen',
+          zenDesc: '按量付费网关，消耗账户余额并按 Token 计费。',
+          go: 'GO',
+          goDesc: '订阅制网关，按 5 小时、每周和每月用量窗口限流。'
+        },
+        protocolRules: {
+          title: '模型协议路由',
+          hint: '自适应模式会按模型选择原生上游协议。可使用精确 ID 或末尾 * 通配符（如 grok-*、qwen*）。按首条匹配规则生效；未匹配模型使用 Chat Completions。',
+          patternPlaceholder: 'grok-* 或 deepseek-v4-flash',
+          add: '添加规则',
+          remove: '删除规则',
+          restoreDefaults: '恢复默认值',
+          fallback: '未匹配模型 → Chat Completions (/v1/chat/completions)'
+        },
+        title: 'OpenCode Go 用量',
+        panelHint: '上游 OpenCode Go 账号上报的用量窗口。可手动刷新，或开启自动刷新。',
+        notRefreshed: '尚未刷新',
+        refreshNow: '刷新用量',
+        autoRefresh: '自动刷新用量',
+        autoRefreshHint: '只有账号开关和全局开关同时启用时才会定时刷新。',
+        rolling: '5 小时',
+        rollingShort: '5h',
+        weekly: '周',
+        weeklyShort: '7d',
+        monthly: '月',
+        monthlyShort: '1m',
+        status: '状态',
+        updatedAt: '更新时间',
+        ok: '正常',
+        unauthorized: '会话已过期',
+        failed: '刷新失败',
+        windowWithReset: '已用 {percent}，{reset} 重置',
+        loadFailed: '加载 OpenCode Go 用量设置失败',
+        autoRefreshFailed: '更新自动刷新设置失败',
+        refreshSuccess: 'OpenCode Go 用量已刷新',
+        refreshFailed: '刷新 OpenCode Go 用量失败',
+        errors: {
+          OPENCODE_GO_USAGE_REFRESH_RATE_LIMITED: '刷新过于频繁，请在 {retry_after_seconds} 秒后重试。'
         }
       },
       upstreamBilling: {
@@ -323,6 +373,9 @@ export default {
         kimi: 'Kimi',
         zhipu: 'Zhipu GLM',
         deepseek: 'DeepSeek',
+        minimax: 'MiniMax',
+        opencode_go: 'OpenCode',
+        typesafe: 'TypeSafe / Jev',
       },
       cnProviders: {
         accountMode: {
@@ -505,6 +558,12 @@ export default {
       openaiQuotaReset: {
         count: '次数',
         reset: '重置',
+        points: 'Codex 积分',
+        pointsUnlimited: '无限',
+        pointsAvailable: '可用',
+        pointsTooltip: '点击刷新 Codex 积分',
+        pointsUpdatedAt: '更新于 {time}',
+        pointsCachePersistFailed: '已获取实时 Codex 积分，但无法更新已保存的快照。',
         countTooltipLoad: '点击查询剩余重置次数',
         countTooltipRefresh: '点击刷新剩余重置次数',
         resetTooltipReady: '消耗 1 次重置次数以立即恢复当前窗口',
@@ -532,6 +591,31 @@ export default {
         },
         confirmTitle: '确认重置周限',
         confirmMessage: '将消耗 1 次重置次数立即恢复当前窗口，剩余 {count} 次。此操作不可撤销，确定继续吗？'
+      },
+      openaiReferral: {
+        available: '可邀请',
+        invite: '邀请用户',
+        fromAccount: '邀请账号：',
+        personal: '邀请朋友',
+        workspace: '邀请同事',
+        email: '受邀人邮箱',
+        consent: '我已取得此人的同意，可以向其发送邀请。',
+        send: '发送邀请',
+        sending: '正在发送…',
+        sent: '邀请已发送至 {email}',
+        queryHint: '点击查询剩余可邀请次数',
+        checkedAt: '查询时间：{time}，点击刷新',
+        unavailable: '当前无法邀请用户，可能未满足活动条件或次数已用完。',
+        invalidEmail: '请输入一个有效的邮箱地址。',
+        rejected: '上游拒绝了邀请，请检查邮箱和活动资格。',
+        alreadyInvited: '此邮箱已有邀请，请在 Codex 中查看邀请状态。',
+        rateLimited: '邀请频率或次数已达上限，请稍后再试。',
+        sendUnknown: '暂时无法确认邀请是否已发送，请先在 Codex 中核对邀请状态，再决定是否重试。',
+        programChanged: '账号的邀请计划已变化，请刷新邀请资格后再发送。',
+        consentRequired: '请先确认已取得受邀人的同意。',
+        shadowHint: '请在母账号上发送邀请。',
+        cacheFailed: '实时次数已获取，但缓存保存失败，请重新查询。',
+        refreshFailed: '邀请已发送，但剩余次数刷新失败，请重新查询。'
       },
       tier: {
         free: 'Free',
@@ -655,6 +739,13 @@ export default {
       vertexSaJsonUploadHint: '上传或拖入 JSON 后会自动读取 project_id，密钥内容仅用于创建账号提交。',
       vertexSaJsonEditHint: 'Service Account JSON 不在编辑页显示；需要更换 JSON 时请删除账号后重新创建。',
       vertexProjectIdPlaceholder: '从 JSON 自动读取',
+      vertexAuthMode: '认证方式',
+      vertexAuthModeServiceAccount: 'Service Account JSON',
+      vertexAuthModeApiKey: 'API Key',
+      vertexApiKeyHint: '使用 Google Cloud 中用于 Vertex AI Gemini 的 API Key。API Key 认证不支持显式上下文缓存。',
+      vertexApiKeyRequired: '请输入 API Key',
+      vertexApiKeyProjectIdPlaceholder: '可选',
+      vertexApiKeyProjectIdHint: '留空使用全局 endpoint；填写 Project ID 后使用项目级 endpoint 并选择 location。',
       vertexLocationHint: '不同 Vertex 模型可用 location 可能不同，这里选择账号默认 endpoint location。',
       vertexLocationRequired: '请填写 Vertex location',
       vertexSaJsonMissingFields: 'Service Account JSON 缺少 project_id、client_email 或 private_key',
@@ -670,6 +761,14 @@ export default {
       apiKeyRequired: 'API Key *',
       apiKeyPlaceholder: 'sk-ant-api03-...',
       apiKeyHint: '您的 Claude Console API Key',
+      upstreamRequestIdHeader: '上游ID',
+      upstreamRequestIdHeaderPlaceholder: '留空不记录',
+      upstreamRequestIdHeaderHelp: {
+        intro: '填写直接上游在响应头中声明请求标识的头名，记录到用量明细的“上游ID”列；留空则不记录。',
+        examplesTitle: '常见取值',
+        sub2apiNote: '对应对方用量明细的请求ID列',
+        official: '{platform} 官方 API'
+      },
       // OpenAI specific hints
       openai: {
         baseUrlHint: '留空使用官方 OpenAI API',
@@ -710,6 +809,9 @@ export default {
         responsesModeForceResponses: '强制 Responses',
         responsesModeForceChatCompletions: '强制 Chat Completions',
         responsesModeTextDisabledHint: '未启用 Responses / Chat Completions 端点时，此设置不适用。',
+        imagesUrlToB64Json: '生图结果 URL 转 base64',
+        imagesUrlToB64JsonDesc:
+          '仅对 OpenAI API Key 的 Images 非流式响应生效。上游返回的图片缺少 b64_json 但带 url 时，网关下载该 url 并以 base64 回填 b64_json（url 保留），兼容按官方接口实现的客户端；下载失败则原样返回。',
         endpointCapabilities: '端点能力',
         endpointCapabilitiesDesc:
           '用于调度筛选。文本端点会跟随上方 Responses API 支持显示为 Responses、Chat Completions 或自动模式；Embeddings 独立控制 /v1/embeddings。',
@@ -719,6 +821,7 @@ export default {
         capabilityChatCompletions: 'Chat Completions',
         capabilityChatCompletionsAuto: 'Chat Completions（自动探测）',
         capabilityEmbeddings: 'Embeddings',
+        capabilitySeedance: 'Seedance',
         responsesStatusAutoSupported: '自动探测：Responses',
         responsesStatusAutoUnsupported: '自动探测：Chat Completions',
         responsesStatusAutoUnknown: '自动探测：未探测',
@@ -770,6 +873,16 @@ export default {
         testModeDefault: '常规请求',
         testModeCompact: 'Compact 探测',
         modelRestrictionDisabledByPassthrough: '已开启自动透传：模型白名单/映射不会生效。',
+      },
+      commandCode: {
+        baseUrlHint: 'Command Code Provider API 基础 URL。',
+        apiKeyPlaceholder: 'Command Code API Key',
+        apiKeyHint: '请输入 Command Code 账号的 API Key。',
+      },
+      cline: {
+        baseUrlHint: 'Cline API 基础 URL。',
+        apiKeyPlaceholder: 'Cline API Key',
+        apiKeyHint: '请输入 Cline 账号的 API Key。',
       },
       grok: {
         baseUrlHint: 'Grok OAuth 账号会转发到官方 xAI API Base URL。',
@@ -857,6 +970,7 @@ export default {
       syncUpstreamModelsLoading: '同步上游中...',
       syncUpstreamModelsSuccess: '已从上游同步 {count} 个新模型（上游共 {total} 个）',
       syncUpstreamModelsMetadataIncomplete: '模型 ID 已同步，但能力元数据不完整，未更新。',
+      syncUpstreamModelsMetadataPartial: '已更新部分模型的能力元数据；其余模型能力仍不完整。',
       syncUpstreamModelsNoChanges: '上游 {count} 个模型均已在白名单中',
       syncUpstreamModelsEmpty: '上游没有返回可同步的模型',
       syncUpstreamModelsFailed: '同步上游模型失败',
@@ -866,6 +980,7 @@ export default {
       enterCustomModelName: '输入自定义模型名称',
       addModel: '填入',
       modelExists: '该模型已存在',
+      modelMappingConflict: '该模型已配置映射 {from} → {to}，请在模型映射中修改或删除后再添加白名单模型',
       modelCount: '{count} 个模型',
       poolMode: '池模式',
       poolModeHint: '上游为账号池时启用，错误不标记本地账号状态',
@@ -875,9 +990,17 @@ export default {
       poolModeRetryCountHint: '仅在池模式下生效。0 表示不原地重试；默认 {default}，最大 {max}。',
       poolModeRetryStatusCodes: '同账号重试状态码',
       poolModeRetryStatusCodesHint: '仅在池模式下生效。以英文逗号分隔的 HTTP 状态码（100-599），命中时触发同账号重试。留空使用默认值（{default}）。',
+      explicitCacheUpstream: '上游支持显式缓存',
+      explicitCacheUpstreamHint: '仅当上游是已支持显式缓存的本系统时开启',
+      explicitCacheUpstreamInfo:
+        '开启后该账号可创建 Gemini 显式缓存（cachedContents）：缓存只在本账号上使用，失败不换号。上游必须保证缓存只发往创建它的账号；号池类网关或未支持显式缓存的上游开启后，缓存会时有时无。',
+      explicitCacheUpstreamMaxTTL: '上游缓存有效期上限（秒）',
+      explicitCacheUpstreamInvalidTTL: '请输入 1 至 {max} 秒的整数有效期，或留空。',
+      explicitCacheUpstreamMaxTTLHint: '填写上游网关允许的最长有效期，超出的请求不会发往该账号；留空沿用本站上限。',
       customErrorCodes: '自定义错误码',
       customErrorCodesHint: '仅对选中的错误码停止调度',
-      customErrorCodesWarning: '仅选中的错误码会停止调度，其他错误将返回 500。',
+      customErrorCodesWarning:
+        '自定义错误码仅用于筛选常规的账号错误处理（如停止调度、限流标记），不决定请求是否重试或切换账号。未选中的错误仍可能触发重试或切换账号，最终返回给客户端的状态码取决于网关路径和错误透传规则，并非统一返回 500。列表为空时不做筛选。',
       customErrorCodes429Warning:
         '429 已有内置的限流处理机制。添加到自定义错误码后，将直接停止调度而非临时限流。确定要添加吗？',
       customErrorCodes529Warning:
@@ -927,6 +1050,30 @@ export default {
         title: '客户端工具缓存（可能改变自动工具选择）',
         hint: '仅对已识别为 Free 的 Grok OAuth 账号生效，默认会为 Codex、Trae 等客户端函数工具请求启用上游提示缓存；如不接受自动工具选择行为，可关闭此开关退出。'
       },
+      grokMediaEligibility: {
+        title: '媒体生成资格',
+        hint: '控制该 Grok OAuth 账号是否可被图片和视频生成请求选中。',
+        auto: '自动判断',
+        enabled: '强制启用',
+        disabled: '强制禁用',
+        current: '当前判定：',
+        eligible: '可用',
+        ineligible: '不可用',
+        loading: '正在读取媒体资格…',
+        loadFailed: '无法读取媒体资格',
+        autoHint: '自动判断只会清除手工覆盖，不会主动触发媒体请求。',
+        forceEnableWarning: '强制启用会绕过自动资格检查，仅应对已确认支持生图/生视频的账号使用。',
+        partialSave: '账号其他配置可能已保存，但媒体资格未更新，请重试。',
+        reasons: {
+          eligible: '已确认付费资格',
+          billing_inconclusive: 'Billing 信息不明确',
+          billing_forbidden: 'Billing 接口拒绝访问',
+          billing_free_tier: 'Free 账号',
+          billing_unobserved: '尚未探测到 Billing',
+          override_enabled: '手工强制启用',
+          override_disabled: '手工强制禁用'
+        }
+      },
       autoPauseOnExpired: '过期自动暂停调度',
       autoPauseOnExpiredDesc: '启用后，账号过期将自动暂停调度',
 	  autoPause5hThreshold: '5h 用量阈值(%)',
@@ -935,6 +1082,46 @@ export default {
 	  autoPause5hDisabled: '禁用 5h 自动暂停',
 	  autoPause7dDisabled: '禁用 7d 自动暂停',
 	  autoPauseDisabledHint: '开启后该账号永不进入自动暂停（即使全局默认阈值已配置）。',
+	  claudeResetCredits: {
+	    count: '次数',
+	    countTooltipLoad: '点击查询 Claude 剩余重置次数（只读，不会消耗）',
+	    countTooltipRefresh: '点击刷新 Claude 剩余重置次数（只读，不会消耗）',
+	    fetched: '查询时间：{time}',
+	    error: '无法查询重置次数',
+	    ineligible: '此账号当前不可使用重置',
+	    cooldown: '冷却至 {time}',
+	    expiresAt: '到期 {time}',
+	    expiresAtFull: '重置次数到期时间：{time}',
+	    clears: '可清除窗口：{windows}',
+	    notUsableNow: '暂不可用',
+	    requiresLimit: '需达到限额后才能使用',
+	    reset: '重置',
+	    resetTooltipNeedQuery: '请先点「次数」查询；查询到可用的重置后才能使用',
+	    resetTooltipNone: '当前没有可立即使用的重置',
+	    resetTooltipReady: '消耗 1 次重置，清除限额窗口（需确认）',
+	    confirmTitle: '确认使用 Claude 重置',
+	    confirmMessage: '将消耗 1 次重置次数，立即恢复 {windows} 窗口，剩余 {count} 次。此操作不可撤销，确定继续吗？',
+	    windows: {
+	      fiveHour: '5h',
+	      sevenDay: '7d',
+	      sevenDayOverage: '7d 超额'
+	    },
+	    outcome: {
+	      reset: '重置成功，已清除：{windows}',
+	      alreadyUsed: '该重置已被使用，正在刷新确认',
+	      cooldown: '重置处于冷却中，请稍后再试',
+	      cooldownUntil: '重置处于冷却中，冷却至 {time}',
+	      notLimited: '当前未达到限额，无需重置，未消耗次数',
+	      ineligible: '此账号当前不可使用重置',
+	      unknown: '结果未确认，已阻止再次兑换，请稍后查询',
+	      unavailable: '重置服务暂时不可用，未确认消耗，请稍后再试',
+	      inProgress: '该重置请求仍在处理中，请稍后查询结果',
+	      retryBackoff: '该重置请求刚刚失败，请稍后再试',
+	      busy: '另一个重置正在进行中，请稍后再试',
+	      notAvailable: '当前没有可立即使用的重置，未消耗次数',
+	      failed: '重置请求失败'
+	    }
+	  },
       // Quota control (Anthropic OAuth/SetupToken only)
       autoResetCredit: {
         title: '自动使用重置卡',
@@ -1353,7 +1540,7 @@ export default {
         modelPassthrough: 'Gemini 直接转发模型',
         modelPassthroughDesc: '所有模型请求将直接转发至 Gemini API，不进行模型限制或映射。',
         baseUrlHint: '留空使用官方 Gemini API',
-        apiKeyHint: '您的 Gemini API Key（以 AIza 开头）',
+        apiKeyHint: 'AI Studio 新建的 Key 以 AQ. 开头（旧版以 AIza 开头）；第三方上游填写其提供的 Key',
         tier: {
           label: '账号等级',
           hint: '提示：系统会优先尝试自动识别账号等级；若自动识别不可用或失败，则使用你选择的等级作为回退（本地模拟配额）。',

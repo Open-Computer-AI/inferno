@@ -3,10 +3,12 @@ import {
   apiIntervalsToForm,
   apiTimePricingToForm,
   createDefaultTimePricingForm,
+  formReasoningEffortMultipliersToAPI,
   formIntervalsToAPI,
   formTimePricingToAPI,
   isValidPositiveMultiplier,
   validateIntervals,
+  validateReasoningEffortMultipliers,
   validateTimePricing,
   type IntervalFormEntry,
   type TimePricingFormEntry,
@@ -55,6 +57,24 @@ describe('positive multiplier validation', () => {
     expect(validateIntervals([
       makeInterval({ min_tokens: 100, input_multiplier: 0 }),
     ], 'token', t)).toContain('multiplierPositive')
+  })
+})
+
+describe('reasoning-effort multiplier conversion', () => {
+  it('converts configured values to numbers and omits cleared levels', () => {
+    expect(formReasoningEffortMultipliersToAPI({ high: '1.5', max: '', low: 2 })).toEqual({
+      high: 1.5,
+      low: 2,
+    })
+    expect(formReasoningEffortMultipliersToAPI({ high: '' })).toBeNull()
+    expect(formReasoningEffortMultipliersToAPI(null)).toBeNull()
+  })
+
+  it('accepts blank levels but rejects unsupported levels and non-positive values', () => {
+    expect(validateReasoningEffortMultipliers({ high: '', max: 1.5 }, t)).toBeNull()
+    expect(validateReasoningEffortMultipliers({ unsupported: 2 }, t)).toContain('reasoningEffortLevelInvalid')
+    expect(validateReasoningEffortMultipliers({ high: 'Infinity' }, t)).toContain('reasoningEffortMultiplierPositive')
+    expect(validateReasoningEffortMultipliers({ max: 0 }, t)).toContain('reasoningEffortMultiplierPositive')
   })
 })
 

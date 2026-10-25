@@ -19,10 +19,11 @@ describe('UsageProgressBar', () => {
   })
 
   afterEach(() => {
+    vi.restoreAllMocks()
     vi.useRealTimers()
   })
 
-  it('showNowWhenIdle=true 且利用率为 0 时显示“现在”', () => {
+  it('showNowWhenIdle=true 且利用率为 0 但有未来 resetsAt 时显示倒计时', () => {
     const wrapper = mount(UsageProgressBar, {
       props: {
         label: '5h',
@@ -33,8 +34,8 @@ describe('UsageProgressBar', () => {
       }
     })
 
-    expect(wrapper.text()).toContain('usage.resetNow')
-    expect(wrapper.text()).not.toContain('2h 30m')
+    expect(wrapper.text()).toContain('2h 30m')
+    expect(wrapper.text()).not.toContain('usage.resetNow')
   })
 
   it('showNowWhenIdle=true 但利用率大于 0 时显示倒计时', () => {
@@ -66,6 +67,71 @@ describe('UsageProgressBar', () => {
 
     expect(wrapper.text()).toContain('2h 30m')
     expect(wrapper.text()).not.toContain('usage.resetNow')
+  })
+
+  it('refreshes an active window countdown when a background tab becomes visible', async () => {
+    const wrapper = mount(UsageProgressBar, {
+      props: {
+        label: '5h',
+        utilization: 12,
+        resetsAt: '2026-03-17T02:30:00Z',
+        color: 'indigo'
+      }
+    })
+
+    expect(wrapper.text()).toContain('2h 30m')
+    // Background tabs can throttle the periodic timer while time advances.
+    vi.setSystemTime(new Date('2026-03-17T01:00:00Z'))
+    document.dispatchEvent(new Event('visibilitychange'))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('1h 30m')
+    wrapper.unmount()
+  })
+
+  it('does not refresh the countdown when the tab is still hidden', async () => {
+    const hiddenDescriptor = Object.getOwnPropertyDescriptor(document, 'hidden')
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+    const wrapper = mount(UsageProgressBar, {
+      props: {
+        label: '5h',
+        utilization: 12,
+        resetsAt: '2026-03-17T02:30:00Z',
+        color: 'indigo'
+      }
+    })
+
+    try {
+      expect(wrapper.text()).toContain('2h 30m')
+      vi.setSystemTime(new Date('2026-03-17T01:00:00Z'))
+      document.dispatchEvent(new Event('visibilitychange'))
+      await wrapper.vm.$nextTick()
+      expect(wrapper.text()).toContain('2h 30m')
+    } finally {
+      wrapper.unmount()
+      if (hiddenDescriptor) Object.defineProperty(document, 'hidden', hiddenDescriptor)
+      else Reflect.deleteProperty(document, 'hidden')
+    }
+  })
+
+  it('removes its visibility listener on unmount', () => {
+    const add = vi.spyOn(document, 'addEventListener')
+    const remove = vi.spyOn(document, 'removeEventListener')
+    const wrapper = mount(UsageProgressBar, {
+      props: {
+        label: '5h',
+        utilization: 12,
+        resetsAt: '2026-03-17T02:30:00Z',
+        color: 'indigo'
+      }
+    })
+    const handlers = add.mock.calls
+      .filter(([event]) => event === 'visibilitychange')
+      .map(([, handler]) => handler)
+
+    expect(handlers).toHaveLength(1)
+    wrapper.unmount()
+    expect(remove).toHaveBeenCalledWith('visibilitychange', handlers[0])
   })
 
   it('resetsAt 已过期且利用率大于 0 时显示「待刷新」', () => {

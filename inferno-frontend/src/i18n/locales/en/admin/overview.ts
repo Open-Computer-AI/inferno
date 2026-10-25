@@ -99,6 +99,8 @@ export default {
       accountCost: 'Cost',
       noDataAvailable: 'No data available',
       recentUsage: 'Recent usage',
+      actualSpending: 'Actual spending ($)',
+      spendingAcrossUsers: 'Actual spending per day across {count} user | Actual spending per day across {count} users',
       acrossUsers: 'Tokens per day across {count} user | Tokens per day across {count} users',
       otherUsers: 'Other ({count})',
       tokensUnit: 'tokens',
@@ -178,6 +180,29 @@ export default {
         retainCount: 'Max Retain Count',
         retainCountHint: 'Maximum number of backups to keep, 0 = unlimited',
         saved: 'Schedule configuration saved'
+      },
+      archive: {
+        title: 'Monthly archives',
+        description: 'Keep selected monthly scheduled backups independently of normal retention.',
+        enabled: 'Enable monthly archives',
+        dates: 'Archive on these dates',
+        day: 'Day {day}',
+        monthEnd: 'Month end',
+        datesHint: 'If a selected date does not exist in a month, that archive is created on the last day of that month.',
+        retention: 'Monthly archive retention',
+        count: 'Number of monthly copies to keep',
+        copies: 'copies',
+        forever: 'Keep forever',
+        foreverHint: 'Archived backups are never removed by monthly archive retention.',
+        countHint: 'Keep only the newest selected number of monthly archive copies.',
+        fallbackHint: 'An archive is created only by a completed scheduled backup.',
+        independentHint: 'Monthly archive retention is independent of normal backup expiry and count limits.',
+        disabledHint: 'Monthly archives are off; existing archived backups keep their current retention.',
+        daysRequired: 'Select at least one day or month end.',
+        countInvalid: 'Enter a positive whole number or select Keep forever.',
+        badge: 'Monthly archive',
+        retainLatest: 'Keep latest {count}',
+        deleteConfirm: 'Delete this monthly archive and all its archived copies? This cannot be undone.'
       },
       operations: {
         title: 'Backup Records',
@@ -464,6 +489,7 @@ export default {
         paymentType: 'Payment Method',
         orderStatus: 'Order Status',
         transferAmount: 'Transfer Amount',
+        outflowType: 'Action',
         balanceAfter: 'Balance After',
         availableQuotaAfter: 'Available After',
         frozenQuotaAfter: 'Frozen After',
@@ -471,6 +497,31 @@ export default {
         invitedAt: 'Invited At',
         rebatedAt: 'Rebated At',
         transferredAt: 'Transferred At'
+      },
+      outflowTypes: {
+        transfer: 'Transfer to balance',
+        withdraw: 'Offline withdrawal'
+      },
+      withdraw: {
+        button: 'Record offline withdrawal',
+        title: 'Record offline withdrawal',
+        user: 'User',
+        userPlaceholder: 'Search by email, username, or user ID',
+        noUserFound: 'No matching users found',
+        availableQuota: 'Available affiliate quota',
+        frozenHint: 'Frozen quota is not withdrawable.',
+        amount: 'Amount paid outside the site (USD)',
+        amountHint: 'Up to 8 decimal places. This records an external payment and deducts affiliate quota.',
+        amountRequired: 'Enter an amount greater than zero.',
+        amountExceeds: 'Amount exceeds available affiliate quota.',
+        fillAll: 'Use all',
+        warning: 'Only record a withdrawal after the user has been paid outside the site. This action cannot be undone.',
+        uncertainHint: 'The result is not confirmed. Retry the same user and amount; the idempotency key prevents a second deduction.',
+        submit: 'Record withdrawal',
+        submitting: 'Recording…',
+        retry: 'Retry same withdrawal',
+        success: 'Recorded offline withdrawal {amount}; remaining affiliate quota {remaining}.',
+        replayed: 'Withdrawal was already recorded: {amount}; remaining affiliate quota {remaining}.'
       },
       overview: {
         title: 'Affiliate User Overview',
@@ -489,6 +540,13 @@ export default {
       passwordCopied: 'Password copied',
       description: 'Manage users and their permissions',
       createUser: 'Create User',
+      bulkDelete: {
+        action: 'Delete selected ({count})',
+        title: 'Delete selected users',
+        confirm: 'Delete the {count} selected users? This action cannot be undone. Administrator accounts cannot be deleted.',
+        success: 'Deleted {count} users',
+        failed: 'Failed to delete {count} users. They remain selected for retry.'
+      },
       bulkLimits: {
         action: 'Set limits ({count})',
         title: 'Set user limits',
@@ -813,6 +871,7 @@ export default {
           confirm: 'Reset the {window} usage for {platform} for this user? This is effective immediately.',
           success: 'Reset {platform} {window} usage',
           failed: 'Reset failed',
+          unavailable: 'Configure a quota before resetting usage',
         },
         updateSuccess: 'Platform quotas updated',
         updateFailed: 'Save failed',
@@ -882,7 +941,7 @@ export default {
       accountsAvailable: 'Avail:',
       accountsRateLimited: 'Limited:',
       accountsTotal: 'Total:',
-      accountsUnit: '',
+      accountsUnit: 'accounts',
       rateAndAccounts: '{rate}x rate · {count} accounts',
       accountsCount: '{count} accounts',
       rateLabel: 'rate',
@@ -932,6 +991,7 @@ export default {
         reasoningEffortModelPlaceholder: 'Empty = all / gpt / gpt-5.4',
         reasoningEffortFrom: 'Request value',
         reasoningEffortTo: 'Forwarded value',
+        reasoningEffortToDeny: 'Deny',
         reasoningEffortFromPlaceholder: 'Select A',
         reasoningEffortToPlaceholder: 'Select B',
         fromRequired: 'Select request value A',
@@ -954,6 +1014,12 @@ export default {
       exclusiveObj: {
         yes: 'Yes',
         no: 'No'
+      },
+      i18nField: {
+        default: 'Default',
+        add: 'Add {language} version',
+        edit: 'Edit {language} version',
+        placeholder: '{language} version; leave empty to show the default text'
       },
       enterGroupName: 'Enter group name',
       optionalDescription: 'Optional description',
@@ -1122,6 +1188,24 @@ export default {
         bufferRangeError: 'Safety buffer must be between 0 and 99.99',
         sumTooHigh: 'Min gross margin plus safety buffer must be less than 100%, otherwise every account would be excluded'
       },
+      modelAllowlist: {
+        title: 'Model Allowlist',
+        hint: 'When enabled, models outside the allowlist are rejected with 404 model_not_found, and model listing endpoints only show allowlisted models. Entries support exact model IDs and trailing * wildcards. Note: Claude Code probes with haiku-family models for titles/summaries and /messages/count_tokens is also allowlist-controlled, so make sure the small models you need are selected too.',
+        loading: 'Loading candidate models...',
+        empty: 'No candidate models; add custom entries below',
+        selectedSummary: 'Selected {selected} / {total}',
+        selectAll: 'Select all',
+        invertSelection: 'Invert',
+        wildcardTag: 'wildcard',
+        customPlaceholder: 'Custom entry, e.g. claude-* or gpt-5.5-codex',
+        addCustom: 'Add',
+        emptySelectionError: 'The model allowlist is enabled; select or add at least one model entry',
+        errors: {
+          empty: 'Please enter a model entry',
+          invalidWildcard: 'Wildcard * is only allowed at the end of an entry',
+          duplicate: 'This entry already exists'
+        }
+      },
       modelsList: {
         title: 'Custom /v1/models Model List',
         hint: 'Only changes the /v1/models response. Whitelist model calls and account routing are unchanged.',
@@ -1130,6 +1214,19 @@ export default {
         selectedSummary: 'Selected {selected} / {total}',
         selectAll: 'Select all',
         invertSelection: 'Invert'
+      },
+      codexModelsManifest: {
+        title: 'Pinned Accounts for Model Lists',
+        hint: 'When enabled, ordinary model lists and Codex Model Manifest are discovered from the pinned accounts first, then merged and filtered using account mappings and the group model list. Rate-limited or overloaded pinned accounts are still used.',
+        enable: 'Fetch model lists with specific accounts',
+        enabledHint: 'Accounts are limited to OpenAI accounts bound to this group, at most 10.',
+        disabledHint: 'Disabled: ordinary lists use local mappings or defaults; Codex uses a local catalog when configured, otherwise scheduler discovery.',
+        accounts: 'Pinned accounts',
+        searchPlaceholder: 'Search accounts (OpenAI accounts in this group)',
+        searchEmpty: 'No matching accounts',
+        fallback: 'Fall back to the scheduler when all pinned accounts are unavailable',
+        fallbackHint: 'Off: return 503 / the upstream error. On: fall back to the existing scheduler path.',
+        selectAtLeastOne: 'Select at least one account after enabling pinned accounts'
       },
       compositeRoutes: {
         action: 'Routes',

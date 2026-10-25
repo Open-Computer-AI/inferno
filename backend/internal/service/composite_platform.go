@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 )
 
@@ -45,6 +46,19 @@ func WithCompositeRouteDecision(ctx context.Context, decision CompositeRouteDeci
 	if source := strings.TrimSpace(decision.Source); source != "" {
 		ctx = context.WithValue(ctx, ctxkey.CompositeRouteSource, source)
 	}
+	return ctx
+}
+
+// ClearCompositeRouteDecision masks any route decision inherited from an
+// earlier routing attempt in the request context.
+func ClearCompositeRouteDecision(ctx context.Context) context.Context {
+	if ctx == nil {
+		return nil
+	}
+	ctx = context.WithValue(ctx, ctxkey.ResolvedTargetPlatform, nil)
+	ctx = context.WithValue(ctx, ctxkey.ResolvedUpstreamModel, nil)
+	ctx = context.WithValue(ctx, ctxkey.RequestedPublicModel, nil)
+	ctx = context.WithValue(ctx, ctxkey.CompositeRouteSource, nil)
 	return ctx
 }
 
@@ -112,6 +126,14 @@ func DetectModelPlatform(model string) (string, bool) {
 			return PlatformZhipu, true
 		case "deepseek":
 			return PlatformDeepseek, true
+		case "minimax":
+			return PlatformMiniMax, true
+		case "opencode", "opencode-go", "opencode_go":
+			return PlatformOpenCodeGo, true
+		case "typesafe", "jev":
+			if domain.IsConcretePlatform(domain.PlatformTypeSafe) {
+				return domain.PlatformTypeSafe, true
+			}
 		}
 		if rest != "" {
 			normalized = strings.TrimPrefix(rest, "models/")
@@ -148,6 +170,13 @@ func DetectModelPlatform(model string) (string, bool) {
 		return PlatformZhipu, true
 	case strings.HasPrefix(normalized, "deepseek-"):
 		return PlatformDeepseek, true
+	case strings.HasPrefix(normalized, "jev-") && domain.IsConcretePlatform(domain.PlatformTypeSafe):
+		return domain.PlatformTypeSafe, true
+	case strings.HasPrefix(normalized, "minimax-"),
+		strings.HasPrefix(normalized, "abab5"),
+		strings.HasPrefix(normalized, "abab6"),
+		strings.HasPrefix(normalized, "abab7"):
+		return PlatformMiniMax, true
 	default:
 		return "", false
 	}
@@ -192,12 +221,12 @@ func (s *GatewayService) resolveCompositeRouteDecision(ctx context.Context, grou
 	return decision, decision.Matched, nil
 }
 
+// ResolveCompositeRouteDecision exposes the existing route-resolution path to
+// HTTP handlers without duplicating its detector and account-ownership logic.
+func (s *GatewayService) ResolveCompositeRouteDecision(ctx context.Context, group *Group, requestedModel, endpoint string) (CompositeRouteDecision, bool, error) {
+	return s.resolveCompositeRouteDecision(ctx, group, requestedModel, endpoint)
+}
+
 func isConcreteRequestPlatform(platform string) bool {
-	switch platform {
-	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok,
-		PlatformKimi, PlatformZhipu, PlatformDeepseek:
-		return true
-	default:
-		return false
-	}
+	return domain.IsConcretePlatform(platform)
 }

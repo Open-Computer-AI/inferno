@@ -93,6 +93,8 @@ export default {
       tokens: 'Token',
       cache: '缓存',
       recentUsage: '最近使用',
+      actualSpending: '实际消费 ($)',
+      spendingAcrossUsers: '{count} 位用户的每日实际消费',
       acrossUsers: '{count} 位用户的每日 Token 用量',
       otherUsers: '其他（{count}）',
       tokensUnit: 'Token',
@@ -172,6 +174,29 @@ export default {
         retainCount: '最大保留份数',
         retainCountHint: '最多保留的备份数量，0 = 不限制',
         saved: '定时备份配置已保存'
+      },
+      archive: {
+        title: '月度归档',
+        description: '将选定日期的定时备份独立保留，不受常规保留策略影响。',
+        enabled: '启用月度归档',
+        dates: '归档日期',
+        day: '第 {day} 天',
+        monthEnd: '月末',
+        datesHint: '如果某月不存在所选日期，则在该月最后一天创建归档。',
+        retention: '月度归档保留策略',
+        count: '保留的月度归档份数',
+        copies: '份',
+        forever: '永久保留',
+        foreverHint: '月度归档不会被自动删除。',
+        countHint: '仅保留最新的指定数量月度归档。',
+        fallbackHint: '仅成功完成的定时备份会生成月度归档。',
+        independentHint: '月度归档保留策略独立于常规过期时间和数量限制。',
+        disabledHint: '月度归档已关闭；现有归档保留设置不会被更改。',
+        daysRequired: '至少选择一个日期或月末。',
+        countInvalid: '请输入正整数，或选择永久保留。',
+        badge: '月度归档',
+        retainLatest: '保留最新 {count} 份',
+        deleteConfirm: '删除此月度归档及其所有归档副本？此操作无法撤销。'
       },
       operations: {
         title: '备份记录',
@@ -458,6 +483,7 @@ export default {
         paymentType: '支付方式',
         orderStatus: '订单状态',
         transferAmount: '提取金额',
+        outflowType: '操作类型',
         balanceAfter: '提取后余额',
         availableQuotaAfter: '提取后可提',
         frozenQuotaAfter: '提取后冻结',
@@ -465,6 +491,31 @@ export default {
         invitedAt: '邀请时间',
         rebatedAt: '返利时间',
         transferredAt: '提取时间'
+      },
+      outflowTypes: {
+        transfer: '转入账户余额',
+        withdraw: '线下提现'
+      },
+      withdraw: {
+        button: '登记线下提现',
+        title: '登记线下提现',
+        user: '用户',
+        userPlaceholder: '按邮箱、用户名或用户 ID 搜索',
+        noUserFound: '未找到匹配用户',
+        availableQuota: '可提现返利额度',
+        frozenHint: '冻结额度不可提现。',
+        amount: '已在线下支付的金额（USD）',
+        amountHint: '最多 8 位小数。该操作会记录站外付款并扣减返利额度。',
+        amountRequired: '请输入大于零的金额。',
+        amountExceeds: '金额超过可提现返利额度。',
+        fillAll: '全部提取',
+        warning: '仅在用户已在线下收到付款后登记。此操作无法撤销。',
+        uncertainHint: '暂未确认操作结果。请重试相同用户和金额；幂等键可防止重复扣款。',
+        submit: '登记提现',
+        submitting: '正在登记…',
+        retry: '重试同一笔提现',
+        success: '已登记线下提现 {amount}；剩余返利额度 {remaining}。',
+        replayed: '该提现已登记：{amount}；剩余返利额度 {remaining}。'
       },
       overview: {
         title: '用户返利概览',
@@ -483,6 +534,13 @@ export default {
       passwordCopied: '密码已复制',
       description: '管理用户账户和权限',
       createUser: '创建用户',
+      bulkDelete: {
+        action: '批量删除（{count}）',
+        title: '删除已选用户',
+        confirm: '确定删除已选的 {count} 个用户吗？此操作无法撤销。管理员账号无法删除。',
+        success: '已删除 {count} 个用户',
+        failed: '{count} 个用户删除失败，已保留选中，可重试。'
+      },
       bulkLimits: {
         action: '批量设置限制（{count}）',
         title: '批量设置用户限制',
@@ -804,6 +862,7 @@ export default {
           confirm: '确认重置该用户 {platform} 平台的 {window} 用量？此操作立即生效。',
           success: '已重置 {platform} {window} 用量',
           failed: '重置失败',
+          unavailable: '请先配置配额，再重置用量',
         },
         updateSuccess: '平台限额已更新',
         updateFailed: '保存失败',
@@ -908,6 +967,7 @@ export default {
         reasoningEffortModelPlaceholder: '留空则全部 / gpt / gpt-5.4',
         reasoningEffortFrom: '请求值',
         reasoningEffortTo: '转发值',
+        reasoningEffortToDeny: '拒绝',
         reasoningEffortFromPlaceholder: '请选择 A',
         reasoningEffortToPlaceholder: '请选择 B',
         fromRequired: '请选择请求值 A',
@@ -979,6 +1039,12 @@ export default {
         privacySetOnly: '仅允许隐私保护已设置的账号',
         privacySetOnlyEnabled: '已启用，Privacy 未设置的账号将被排除',
         disabled: '未启用'
+      },
+      i18nField: {
+        default: '默认',
+        add: '新增 {language} 版',
+        edit: '编辑 {language} 版',
+        placeholder: '{language} 版，留空则显示默认内容'
       },
       enterGroupName: '请输入分组名称',
       optionalDescription: '可选描述',
@@ -1113,6 +1179,24 @@ export default {
         bufferRangeError: '安全缓冲应在 0 到 99.99 之间',
         sumTooHigh: '最低毛利率与安全缓冲之和必须小于 100%，否则将排除全部账号'
       },
+      modelAllowlist: {
+        title: '模型白名单',
+        hint: '开启后，不在白名单中的模型会被拒绝（404 model_not_found），模型列表接口也只展示白名单内的模型。条目支持精确模型 ID 与末尾 * 通配。注意：Claude Code 会用 haiku 系小模型做标题/摘要等探测，/messages/count_tokens 同样受白名单控制，请一并勾选所需的小模型。',
+        loading: '正在加载候选模型...',
+        empty: '暂无候选模型，可在下方手工添加条目',
+        selectedSummary: '已选 {selected} / {total}',
+        selectAll: '全选',
+        invertSelection: '反选',
+        wildcardTag: '通配',
+        customPlaceholder: '自定义条目，如 claude-* 或 gpt-5.5-codex',
+        addCustom: '添加',
+        emptySelectionError: '模型白名单已开启，请至少选择或添加一个模型条目',
+        errors: {
+          empty: '请输入模型条目',
+          invalidWildcard: '通配符 * 只能出现在条目末尾',
+          duplicate: '该条目已存在'
+        }
+      },
       modelsList: {
         title: '自定义 /v1/models 模型列表',
         hint: '仅影响 /v1/models 展示结果，不影响白名单模型调用和账号调度。',
@@ -1121,6 +1205,19 @@ export default {
         selectedSummary: '已选 {selected} / {total}',
         selectAll: '全选',
         invertSelection: '反选'
+      },
+      codexModelsManifest: {
+        title: '固定账号获取模型列表',
+        hint: '开启后，普通模型列表与 Codex Model Manifest 均优先从选定账号获取并合并，再应用账号映射和分组列表过滤；限流/过载中的选定账号仍会被使用。',
+        enable: '使用特定账号获取模型列表',
+        enabledHint: '账号来源限定为当前分组内的 OpenAI 账号，最多选择 10 个。',
+        disabledHint: '未启用：普通列表使用本地映射或默认模型；Codex 优先使用本地目录，无本地目录时由调度器选账。',
+        accounts: '选定账号',
+        searchPlaceholder: '搜索账号（当前分组内 OpenAI 账号）',
+        searchEmpty: '未找到匹配账号',
+        fallback: '选定账号全部不可用时回退调度器',
+        fallbackHint: '关闭时返回 503 / 上游错误；开启时回退到现有调度器选账路径。',
+        selectAtLeastOne: '开启固定账号后至少选择一个账号'
       },
       compositeRoutes: {
         action: '路由',
@@ -1247,14 +1344,6 @@ export default {
         selectAccounts: '选择账号',
         noAccounts: '此分组暂无账号',
         loadingAccounts: '加载账号中...',
-      claudeMaxSimulation: {
-        title: 'Claude Max 用量模拟',
-        tooltip:
-          '启用后，对于没有上游缓存写入用量的 Claude 模型，系统会确定性地将 token 映射为少量输入加 1h 缓存创建，同时保持总 token 不变。',
-        enabled: '已启用（模拟 1h 缓存）',
-        disabled: '已禁用',
-        hint: '仅调整用量计费日志中的 token 类别。不会持久化每个请求的映射状态。'
-      },
         removeRule: '删除规则',
         noRules: '暂无路由规则',
         noRulesHint: '添加路由规则以将特定模型请求优先路由到指定账号',
@@ -1266,6 +1355,14 @@ export default {
         tooltip: '启用后，当请求包含 MCP 工具时，会在 system prompt 中注入 XML 格式调用协议提示词。关闭此选项可避免对某些客户端造成干扰。',
         enabled: '已启用',
         disabled: '已禁用'
+      },
+      claudeMaxSimulation: {
+        title: 'Claude Max 用量模拟',
+        tooltip:
+          '启用后，对于没有上游缓存写入用量的 Claude 模型，系统会确定性地将 token 映射为少量输入加 1h 缓存创建，同时保持总 token 不变。',
+        enabled: '已启用（模拟 1h 缓存）',
+        disabled: '已禁用',
+        hint: '仅调整用量计费日志中的 token 类别。不会持久化每个请求的映射状态。'
       },
       supportedScopes: {
         title: '支持的模型系列',

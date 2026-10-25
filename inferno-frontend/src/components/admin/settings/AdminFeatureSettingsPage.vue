@@ -1,6 +1,34 @@
 <template>
-	        <!-- Tab: Features (功能开关) -->
+        <!-- Tab: Features (功能开关) -->
         <div class="space-y-6">
+
+        <div class="settings-surface">
+          <div class="border-b border-[var(--border-subtle)] px-6 py-4">
+            <h2 class="text-lg font-[var(--fw-medium)] text-[var(--foreground)]">
+              {{ t('admin.settings.features.siteBillingMode.title') }}
+            </h2>
+            <p class="mt-1 text-sm text-[var(--muted-foreground)]">
+              {{ t('admin.settings.features.siteBillingMode.description') }}
+            </p>
+          </div>
+          <div class="space-y-5 p-6">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div class="min-w-0">
+                <label class="text-sm font-[var(--fw-medium)] text-[var(--foreground)]">
+                  {{ t('admin.settings.features.siteBillingMode.label') }}
+                </label>
+                <p class="mt-1 text-xs text-[var(--muted-foreground)]">
+                  {{ siteBillingModeHint }}
+                </p>
+              </div>
+              <Segmented
+                v-model="siteBillingMode"
+                :items="siteBillingModeOptions"
+                :aria-label="t('admin.settings.features.siteBillingMode.label')"
+              />
+            </div>
+          </div>
+        </div>
 
         <div class="settings-surface">
           <div class="border-b border-[var(--border-subtle)] px-6 py-4            ">
@@ -92,6 +120,18 @@
                   </p>
                 </div>
                 <Toggle v-model="form.channel_monitor_hide_throughput" />
+              </div>
+
+              <div v-if="form.channel_monitor_mode === 'v2'" class="flex items-start justify-between gap-4">
+                <div class="min-w-0">
+                  <p class="text-sm font-[var(--fw-medium)] text-[var(--foreground)]">
+                    {{ t('admin.settings.features.channelMonitor.hideUserRanking') }}
+                  </p>
+                  <p class="mt-1 text-xs text-[var(--muted-foreground)]">
+                    {{ t('admin.settings.features.channelMonitor.hideUserRankingHint') }}
+                  </p>
+                </div>
+                <Toggle v-model="form.channel_monitor_hide_user_ranking" />
               </div>
 
               <div v-if="form.channel_monitor_mode === 'v1'" class="flex items-start justify-between gap-4">
@@ -257,6 +297,18 @@
                 </p>
               </div>
               <Toggle v-model="form.cyber_session_block_enabled" />
+            </div>
+
+            <div>
+              <label class="field-label">
+                {{ t('admin.settings.features.riskControl.riskControlUserAllowlist') }}
+              </label>
+              <OpenAIFastPolicyUserSelector
+                v-model="riskControlAllowlistedUserIds"
+              />
+              <p class="mt-1 text-xs text-[var(--muted-foreground)]">
+                {{ t('admin.settings.features.riskControl.riskControlUserAllowlistHint') }}
+              </p>
             </div>
 
             <div v-if="form.cyber_session_block_enabled">
@@ -701,11 +753,12 @@ import AppButton from '@/components/common/Button.vue'
 import Checkbox from '@/components/common/Checkbox.vue'
 import Segmented from '@/components/common/Segmented.vue'
 import Toggle from '@/components/common/Toggle.vue'
+import OpenAIFastPolicyUserSelector from '@/views/admin/settings/OpenAIFastPolicyUserSelector.vue'
 import { useSettingsPageBindings } from './settingsPageBindings'
 
 export default defineComponent({
   name: 'AdminFeatureSettingsPage',
-  components: { AppButton, BaseDialog, Checkbox, Segmented, Toggle },
+  components: { AppButton, BaseDialog, Checkbox, OpenAIFastPolicyUserSelector, Segmented, Toggle },
   setup() {
     return useSettingsPageBindings()
   },

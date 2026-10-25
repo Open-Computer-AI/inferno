@@ -40,6 +40,29 @@ describe('HelpTooltip', () => {
     wrapper.unmount()
   })
 
+  it('stays open while the pointer moves between trigger and tooltip', async () => {
+    const wrapper = mount(HelpTooltip, {
+      attachTo: document.body,
+      props: { content: 'hover details' },
+    })
+    const trigger = wrapper.get('.group')
+    await trigger.trigger('mouseenter')
+    await nextTick()
+    const tooltip = getTooltipElement()
+
+    await trigger.trigger('mouseleave', { relatedTarget: tooltip })
+    expect(tooltip.style.display).not.toBe('none')
+
+    tooltip.dispatchEvent(new MouseEvent('mouseleave', { relatedTarget: trigger.element }))
+    await nextTick()
+    expect(tooltip.style.display).not.toBe('none')
+
+    tooltip.dispatchEvent(new MouseEvent('mouseleave', { relatedTarget: document.body }))
+    await nextTick()
+    expect(tooltip.style.display).toBe('none')
+    wrapper.unmount()
+  })
+
   it('supports click-to-toggle details and closes on outside click', async () => {
     const wrapper = mount(HelpTooltip, {
       attachTo: document.body,
