@@ -15,6 +15,12 @@ type Account func(*sql.Selector)
 // AccountGroup is the predicate function for accountgroup builders.
 type AccountGroup func(*sql.Selector)
 
+// Agent is the predicate function for agent builders.
+type Agent func(*sql.Selector)
+
+// AgentCronFire is the predicate function for agentcronfire builders.
+type AgentCronFire func(*sql.Selector)
+
 // Announcement is the predicate function for announcement builders.
 type Announcement func(*sql.Selector)
 

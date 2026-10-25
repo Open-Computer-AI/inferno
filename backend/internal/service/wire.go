@@ -537,6 +537,37 @@ func ProvideDeferredService(accountRepo AccountRepository, timingWheel *TimingWh
 	return svc
 }
 
+// ProvideAgentCronFirer wires AgentCronFirer over the same dbent.Client
+// AgentCronService (Task 4) manages agent_cron_fires through, and
+// rehydrates every currently-armed row into the timing wheel immediately —
+// this MUST run after timingWheel is constructed (ProvideTimingWheelService
+// already started it by the time wire hands it here as a parameter), because
+// TimingWheelService is in-memory: a restart drops every pending timer, and
+// agent_cron_fires is the truth (ent/schema/agent_cron_fire.go's own doc
+// comment). See AgentCronFirer.RehydrateOnBoot.
+//
+// issuer is the SAME cfg.Server.FrontendURL every other OAuth-issued token
+// in this server stamps into `iss` (ProvideOAuthTokenService,
+// ProvideOAuthDeviceService) — a fire token must verify against the
+// identical JWKS an agent already trusts for its own access token.
+//
+// A rehydration failure is logged, not fatal: refusing to boot the ENTIRE
+// server (billing, inference, every other endpoint) over a fault scoped to
+// one feature's in-memory cache would be a strictly worse outcome than the
+// documented one ("nothing errors when this is broken -- the work simply
+// never happens"). An operator can see the log line and restart; a crashed
+// boot serves nobody.
+func ProvideAgentCronFirer(entClient *dbent.Client, keySvc *OAuthKeyService, timingWheel *TimingWheelService, cfg *config.Config) *AgentCronFirer {
+	firer := NewAgentCronFirer(entClient, keySvc, timingWheel, cfg.Server.FrontendURL)
+	n, err := firer.RehydrateOnBoot(context.Background())
+	if err != nil {
+		logger.LegacyPrintf("service.agent_cron_firer", "[AgentCronFirer] rehydrate on boot failed: %v", err)
+	} else {
+		logger.LegacyPrintf("service.agent_cron_firer", "[AgentCronFirer] rehydrated %d armed fire(s) on boot", n)
+	}
+	return firer
+}
+
 // ProvideConcurrencyService creates ConcurrencyService and starts slot cleanup worker.
 func ProvideConcurrencyService(cache ConcurrencyCache, accountRepo AccountRepository, cfg *config.Config) *ConcurrencyService {
 	svc := NewConcurrencyService(cache)
@@ -935,6 +966,23 @@ var ProviderSet = wire.NewSet(
 	// Core services
 	ProvideAuthService,
 	NewOrgService,
+	NewAgentRegistryService,
+	NewAgentCronService,
+	ProvideAgentCronFirer,
+	// AgentCronService.Provision depends on cronArmer (ArmNow only, ruling
+	// T5-1) rather than a concrete *AgentCronFirer field, so Wire needs an
+	// explicit bind to satisfy it -- cronArmer is unexported, so this bind
+	// can only live HERE, in the same package that declares it (a
+	// cmd/server/wire.go bind could not even spell the type name). This is
+	// also what makes ProvideAgentCronFirer a REAL, load-bearing member of
+	// the injector graph rather than an orphaned side effect: it is now
+	// transitively required to build AgentCronService -> AgentHandler ->
+	// the handler set -> the router -> Application.Server, so a real
+	// `go generate ./...` regen resolves it automatically through
+	// cmd/server/wire.go's existing `service.ProviderSet` inclusion, with no
+	// further change needed there (verified with
+	// `go run github.com/google/wire/cmd/wire check ./cmd/server`).
+	wire.Bind(new(cronArmer), new(*AgentCronFirer)),
 	NewOAuthKeyService,
 	NewOAuthClientService,
 	NewOAuthAuthorizeService,

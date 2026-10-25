@@ -345,7 +345,7 @@ func newBillingRouteEnvWithSources(t *testing.T, planSrc service.BillingPlanSour
 	gin.SetMode(gin.TestMode)
 
 	dbName := fmt.Sprintf("file:%s?mode=memory&cache=shared",
-		strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()))
+		strings.NewReplacer("/", "_", " ", "_", "?", "_", "#", "_", "&", "_", ":", "_").Replace(t.Name()))
 	db, err := sql.Open("sqlite", dbName)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
