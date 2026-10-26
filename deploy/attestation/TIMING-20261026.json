@@ -1,0 +1,586 @@
+{
+  "date": "2026-10-26",
+  "scope": "low-rate sequential diagnostics; no production capacity change",
+  "request_counts": {
+    "total_timed_requests": 157,
+    "proof_requests": 92,
+    "health_requests": 65,
+    "http_statuses": [
+      200
+    ],
+    "valid_count": 157,
+    "askpass_helper_removed": true
+  },
+  "primary_aws_profiles": {
+    "production-queue-fresh/health": {
+      "count": 12,
+      "valid_count": 12,
+      "connection_reuse_count": 0,
+      "connect_ms": {
+        "min": 0.144,
+        "p95": 0.393,
+        "p99": 0.393,
+        "max": 0.393,
+        "p50": 0.222
+      },
+      "request_send_ms": {
+        "min": 0.073,
+        "p95": 0.303,
+        "p99": 0.303,
+        "max": 0.303,
+        "p50": 0.1
+      },
+      "headers_wait_ms": {
+        "min": 756.398,
+        "p95": 1036.716,
+        "p99": 1036.716,
+        "max": 1036.716,
+        "p50": 812.592
+      },
+      "body_read_ms": {
+        "min": 0.014,
+        "p95": 0.136,
+        "p99": 0.136,
+        "max": 0.136,
+        "p50": 0.016
+      },
+      "total_ms": {
+        "min": 756.961,
+        "p95": 1037.177,
+        "p99": 1037.177,
+        "max": 1037.177,
+        "p50": 812.985
+      }
+    },
+    "production-queue-fresh/v1/attestation": {
+      "count": 12,
+      "valid_count": 12,
+      "connection_reuse_count": 0,
+      "connect_ms": {
+        "min": 0.178,
+        "p95": 0.24,
+        "p99": 0.24,
+        "max": 0.24,
+        "p50": 0.218
+      },
+      "request_send_ms": {
+        "min": 0.093,
+        "p95": 0.134,
+        "p99": 0.134,
+        "max": 0.134,
+        "p50": 0.097
+      },
+      "headers_wait_ms": {
+        "min": 741.551,
+        "p95": 1063.027,
+        "p99": 1063.027,
+        "max": 1063.027,
+        "p50": 840.136
+      },
+      "body_read_ms": {
+        "min": 0.014,
+        "p95": 0.155,
+        "p99": 0.155,
+        "max": 0.155,
+        "p50": 0.018
+      },
+      "total_ms": {
+        "min": 742.059,
+        "p95": 1063.366,
+        "p99": 1063.366,
+        "max": 1063.366,
+        "p50": 840.458
+      }
+    },
+    "helper-fresh/health": {
+      "count": 12,
+      "valid_count": 12,
+      "connection_reuse_count": 0,
+      "connect_ms": {
+        "min": 0.187,
+        "p95": 0.434,
+        "p99": 0.434,
+        "max": 0.434,
+        "p50": 0.221
+      },
+      "request_send_ms": {
+        "min": 0.088,
+        "p95": 0.174,
+        "p99": 0.174,
+        "max": 0.174,
+        "p50": 0.095
+      },
+      "headers_wait_ms": {
+        "min": 471.571,
+        "p95": 810.725,
+        "p99": 810.725,
+        "max": 810.725,
+        "p50": 634.624
+      },
+      "body_read_ms": {
+        "min": 0.016,
+        "p95": 0.02,
+        "p99": 0.02,
+        "max": 0.02,
+        "p50": 0.016
+      },
+      "total_ms": {
+        "min": 471.905,
+        "p95": 811.079,
+        "p99": 811.079,
+        "max": 811.079,
+        "p50": 635.135
+      }
+    },
+    "helper-fresh/v1/attestation": {
+      "count": 12,
+      "valid_count": 12,
+      "connection_reuse_count": 0,
+      "connect_ms": {
+        "min": 0.207,
+        "p95": 0.261,
+        "p99": 0.261,
+        "max": 0.261,
+        "p50": 0.222
+      },
+      "request_send_ms": {
+        "min": 0.096,
+        "p95": 0.122,
+        "p99": 0.122,
+        "max": 0.122,
+        "p50": 0.102
+      },
+      "headers_wait_ms": {
+        "min": 810.764,
+        "p95": 1061.962,
+        "p99": 1061.962,
+        "max": 1061.962,
+        "p50": 829.511
+      },
+      "body_read_ms": {
+        "min": 0.017,
+        "p95": 0.019,
+        "p99": 0.019,
+        "max": 0.019,
+        "p50": 0.018
+      },
+      "total_ms": {
+        "min": 811.136,
+        "p95": 1062.289,
+        "p99": 1062.289,
+        "max": 1062.289,
+        "p50": 829.873
+      }
+    },
+    "helper-reused/health": {
+      "count": 11,
+      "valid_count": 11,
+      "connection_reuse_count": 11,
+      "connect_ms": {
+        "min": 0.0,
+        "p95": 0.0,
+        "p99": 0.0,
+        "max": 0.0,
+        "p50": 0.0
+      },
+      "request_send_ms": {
+        "min": 0.15,
+        "p95": 0.24,
+        "p99": 0.24,
+        "max": 0.24,
+        "p50": 0.189
+      },
+      "headers_wait_ms": {
+        "min": 234.478,
+        "p95": 553.86,
+        "p99": 553.86,
+        "max": 553.86,
+        "p50": 367.602
+      },
+      "body_read_ms": {
+        "min": 0.016,
+        "p95": 0.02,
+        "p99": 0.02,
+        "max": 0.02,
+        "p50": 0.016
+      },
+      "total_ms": {
+        "min": 234.736,
+        "p95": 554.055,
+        "p99": 554.055,
+        "max": 554.055,
+        "p50": 367.798
+      }
+    },
+    "helper-reused/v1/attestation": {
+      "count": 12,
+      "valid_count": 12,
+      "connection_reuse_count": 12,
+      "connect_ms": {
+        "min": 0.0,
+        "p95": 0.0,
+        "p99": 0.0,
+        "max": 0.0,
+        "p50": 0.0
+      },
+      "request_send_ms": {
+        "min": 0.172,
+        "p95": 0.241,
+        "p99": 0.241,
+        "max": 0.241,
+        "p50": 0.188
+      },
+      "headers_wait_ms": {
+        "min": 265.221,
+        "p95": 474.928,
+        "p99": 474.928,
+        "max": 474.928,
+        "p50": 285.906
+      },
+      "body_read_ms": {
+        "min": 0.017,
+        "p95": 0.027,
+        "p99": 0.027,
+        "max": 0.027,
+        "p50": 0.018
+      },
+      "total_ms": {
+        "min": 265.444,
+        "p95": 475.132,
+        "p99": 475.132,
+        "max": 475.132,
+        "p50": 286.112
+      }
+    },
+    "instrumented-queue-copy/health": {
+      "count": 12,
+      "valid_count": 12,
+      "connection_reuse_count": 0,
+      "connect_ms": {
+        "min": 0.127,
+        "p95": 0.231,
+        "p99": 0.231,
+        "max": 0.231,
+        "p50": 0.214
+      },
+      "request_send_ms": {
+        "min": 0.08,
+        "p95": 0.856,
+        "p99": 0.856,
+        "max": 0.856,
+        "p50": 0.393
+      },
+      "headers_wait_ms": {
+        "min": 467.904,
+        "p95": 1163.021,
+        "p99": 1163.021,
+        "max": 1163.021,
+        "p50": 759.867
+      },
+      "body_read_ms": {
+        "min": 0.009,
+        "p95": 0.155,
+        "p99": 0.155,
+        "max": 0.155,
+        "p50": 0.011
+      },
+      "total_ms": {
+        "min": 468.26,
+        "p95": 1163.943,
+        "p99": 1163.943,
+        "max": 1163.943,
+        "p50": 760.68
+      }
+    },
+    "instrumented-queue-copy/v1/attestation": {
+      "count": 12,
+      "valid_count": 12,
+      "connection_reuse_count": 0,
+      "connect_ms": {
+        "min": 0.207,
+        "p95": 0.249,
+        "p99": 0.249,
+        "max": 0.249,
+        "p50": 0.218
+      },
+      "request_send_ms": {
+        "min": 0.106,
+        "p95": 0.323,
+        "p99": 0.323,
+        "max": 0.323,
+        "p50": 0.116
+      },
+      "headers_wait_ms": {
+        "min": 730.755,
+        "p95": 837.754,
+        "p99": 837.754,
+        "max": 837.754,
+        "p50": 816.066
+      },
+      "body_read_ms": {
+        "min": 0.011,
+        "p95": 0.148,
+        "p99": 0.148,
+        "max": 0.148,
+        "p50": 0.041
+      },
+      "total_ms": {
+        "min": 731.174,
+        "p95": 838.129,
+        "p99": 838.129,
+        "max": 838.129,
+        "p50": 816.536
+      }
+    }
+  },
+  "air_local_profiles": {
+    "/health": {
+      "count": 12,
+      "valid_count": 12,
+      "connection_reuse_count": 0,
+      "connect_ms": {
+        "min": 0.462,
+        "p95": 2.246,
+        "p99": 2.246,
+        "max": 2.246,
+        "p50": 0.679
+      },
+      "request_send_ms": {
+        "min": 0.036,
+        "p95": 0.289,
+        "p99": 0.289,
+        "max": 0.289,
+        "p50": 0.251
+      },
+      "headers_wait_ms": {
+        "min": 0.507,
+        "p95": 2.472,
+        "p99": 2.472,
+        "max": 2.472,
+        "p50": 1.035
+      },
+      "body_read_ms": {
+        "min": 0.009,
+        "p95": 0.074,
+        "p99": 0.074,
+        "max": 0.074,
+        "p50": 0.061
+      },
+      "total_ms": {
+        "min": 1.481,
+        "p95": 3.669,
+        "p99": 3.669,
+        "max": 3.669,
+        "p50": 2.154
+      }
+    },
+    "/v1/attestation": {
+      "count": 12,
+      "valid_count": 12,
+      "connection_reuse_count": 0,
+      "connect_ms": {
+        "min": 0.121,
+        "p95": 0.441,
+        "p99": 0.441,
+        "max": 0.441,
+        "p50": 0.312
+      },
+      "request_send_ms": {
+        "min": 0.023,
+        "p95": 0.192,
+        "p99": 0.192,
+        "max": 0.192,
+        "p50": 0.141
+      },
+      "headers_wait_ms": {
+        "min": 23.937,
+        "p95": 30.399,
+        "p99": 30.399,
+        "max": 30.399,
+        "p50": 29.508
+      },
+      "body_read_ms": {
+        "min": 0.006,
+        "p95": 0.079,
+        "p99": 0.079,
+        "max": 0.079,
+        "p50": 0.064
+      },
+      "total_ms": {
+        "min": 24.088,
+        "p95": 30.976,
+        "p99": 30.976,
+        "max": 30.976,
+        "p50": 30.127
+      }
+    }
+  },
+  "components_and_direct_paired_comparison": {
+    "queue_copy_components": {
+      "admission_wait_ms": {
+        "count": 24,
+        "min": 0.004717963747680187,
+        "median": 0.0054354895837605,
+        "p95": 0.012513017281889915,
+        "max": 0.020390027202665806
+      },
+      "server_before_response_ms": {
+        "count": 24,
+        "min": 467.0988549478352,
+        "median": 779.9708779784851,
+        "p95": 836.9497079402208,
+        "max": 1162.8446349641308
+      },
+      "attempt_counts": [
+        1
+      ],
+      "upstream_connect_ms": {
+        "count": 24,
+        "min": 0.15388394240289927,
+        "median": 0.19838352454826236,
+        "p95": 0.2687619999051094,
+        "max": 0.3188449190929532
+      },
+      "upstream_send_including_connect_ms": {
+        "count": 24,
+        "min": 0.22146000992506742,
+        "median": 0.2662474871613085,
+        "p95": 0.33297401387244463,
+        "max": 0.38890703581273556
+      },
+      "upstream_headers_wait_ms": {
+        "count": 24,
+        "min": 466.71972901094705,
+        "median": 779.5430184924044,
+        "p95": 836.4713350310922,
+        "max": 1162.3101889854297
+      },
+      "upstream_body_read_ms": {
+        "count": 24,
+        "min": 0.018813996575772762,
+        "median": 0.01925695687532425,
+        "p95": 0.020634965039789677,
+        "max": 0.020683975890278816
+      },
+      "upstream_total_ms": {
+        "count": 24,
+        "min": 467.05790504347533,
+        "median": 779.9268090166152,
+        "p95": 836.8982400279492,
+        "max": 1162.803165963851
+      },
+      "queue_processing_excluding_forwarding_and_admission_ms": {
+        "count": 24,
+        "min": 0.03620784264057875,
+        "median": 0.041406077798455954,
+        "p95": 0.07477996405214071,
+        "max": 0.07792201358824968
+      }
+    },
+    "paired_connection_comparison": {
+      "/health": {
+        "samples": 11,
+        "fresh_minus_reused_ms": {
+          "count": 11,
+          "min": -62.04099999999994,
+          "median": 270.075,
+          "p95": 576.343,
+          "max": 576.343
+        },
+        "mean_saving_ms": 245.7920909090909,
+        "mean_saving_bootstrap95ci_ms": [
+          124.56563636363636,
+          372.7928181818182
+        ]
+      },
+      "/v1/attestation": {
+        "samples": 12,
+        "fresh_minus_reused_ms": {
+          "count": 12,
+          "min": 364.507,
+          "median": 545.4549999999999,
+          "p95": 752.9,
+          "max": 752.9
+        },
+        "mean_saving_ms": 547.6336666666666,
+        "mean_saving_bootstrap95ci_ms": [
+          501.7255833333333,
+          595.7044999999999
+        ]
+      }
+    },
+    "all_rows": 120,
+    "all_successful": true,
+    "aws_window_utc": [
+      "2026-10-26T04:06:59.155274+00:00",
+      "2026-10-26T04:08:27.174906+00:00"
+    ],
+    "local_window_utc": [
+      "2026-10-26T04:08:33.343545+00:00",
+      "2026-10-26T04:08:44.787551+00:00"
+    ]
+  },
+  "later_queue_paired_comparison": {
+    "False": {
+      "samples": 12,
+      "median_ms": 671.5640000000001,
+      "max_ms": 1064.384,
+      "upstream_new_connections": 12
+    },
+    "True": {
+      "samples": 12,
+      "median_ms": 278.51649999999995,
+      "max_ms": 678.508,
+      "upstream_new_connections": 0
+    },
+    "paired_saving": {
+      "mean_ms": 328.08108333333337,
+      "median_ms": 282.74850000000004,
+      "min_ms": 227.09000000000003,
+      "max_ms": 734.378,
+      "bootstrap95ci_mean_ms": [
+        262.805,
+        415.19208333333336
+      ]
+    }
+  },
+  "tailscale_disco_ping": {
+    "samples_ms": [
+      223,
+      242,
+      219,
+      225,
+      224,
+      220
+    ],
+    "median_ms": 223.5,
+    "route": "DERP(blr)"
+  },
+  "later_trace_request_totals_ms": {
+    "fresh-proof-1": 1691.127,
+    "connection-warmup-health": 488.076,
+    "reused-proof": 300.859,
+    "fresh-proof-2": 553.508
+  },
+  "runtime_after": {
+    "production_queue_pid": "1038746",
+    "gateway_pid": 481177,
+    "queue_stats": {
+      "served": 3765,
+      "waited_ms_max": 12314,
+      "busy_retries": 0,
+      "unreachable_retries": 404,
+      "failed": 19,
+      "in_flight": 0
+    },
+    "diagnostic_port_closed": true,
+    "no_remaining_packet_capture": true
+  },
+  "limitations": [
+    "No pure DeviceCheck-internal phase timing.",
+    "Queue internal timings came from a separate copy.",
+    "Small low-rate samples do not qualify 32/33 concurrency.",
+    "Different rounds must not be pooled as one simultaneous comparison.",
+    "The earlier 2173.8 ms production event is not assigned a specific cause."
+  ]
+}
