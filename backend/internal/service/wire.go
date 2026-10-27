@@ -998,6 +998,7 @@ var ProviderSet = wire.NewSet(
 	ProvideBillingContractService,
 	NewPasskeyService,
 	NewUserService,
+	NewMCPOAuthService,
 	ProvideAPIKeyService,
 	ProvideAPIKeyAuthCacheInvalidator,
 	ProvideAuthCacheInvalidationWorker,

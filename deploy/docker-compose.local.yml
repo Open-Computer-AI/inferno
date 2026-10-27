@@ -60,6 +60,7 @@ services:
       # clients verify it against their portal URL. Empty = token exchange 500s.
       - SERVER_FRONTEND_URL=${SERVER_FRONTEND_URL:-}
       - ENABLE_SERVER_TIMING=${ENABLE_SERVER_TIMING:-false}
+      - MCP_PUBLIC_URL=${MCP_PUBLIC_URL:-}
       - RUN_MODE=${RUN_MODE:-standard}
       - UPDATE_GITHUB_TOKEN=${UPDATE_GITHUB_TOKEN:-}
 
