@@ -46,15 +46,25 @@ class Runner:
 
     @staticmethod
     def terminate(child):
-        if child.poll() is None:
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            if child.poll() is not None:
+                return
             try:
-                os.killpg(child.pid, signal.SIGTERM)
-                child.wait(timeout=.5)
+                os.killpg(child.pid, sig)
             except ProcessLookupError:
-                pass
-            except subprocess.TimeoutExpired:
-                os.killpg(child.pid, signal.SIGKILL)
+                return
+            except PermissionError:
+                # macOS can deny signaling a group containing only zombies.
+                # Reap/observe the owned child; never mask a live-child denial.
+                if child.poll() is not None:
+                    return
+                raise
+            try:
                 child.wait(timeout=.5)
+                return
+            except subprocess.TimeoutExpired:
+                pass
+        raise subprocess.TimeoutExpired(child.args, .5)
 
     def stop(self):
         self.stopping.set()

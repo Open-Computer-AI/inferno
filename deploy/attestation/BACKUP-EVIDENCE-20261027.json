@@ -7,6 +7,10 @@
       "sha256": "7513fdaaeb24293470a23eb00b30c4b55f89d10435f2d31845ddc5a934e71e69"
     },
     {
+      "name": "aws-direct-controller-kill-gate.json",
+      "sha256": "57289af10567d9220c42738e62372878a298286a918f14cd2167045eb2e484c4"
+    },
+    {
       "name": "aws-latency-controller-kill-gate.json",
       "sha256": "655273bcdb7bde048d20d9655c20ff845bc2edd2503649f2b9c19786099afe7f"
     },
@@ -15,8 +19,32 @@
       "sha256": "1b96093bf7e2bf37abb6aadaf366274918d9a9a364b059b2faae0ee038c00d37"
     },
     {
+      "name": "aws-latency-independent-cleanup-579214cc8ab86ef0.json",
+      "sha256": "177c9ce6278570facf457535ebcb4064f63c900f4ae89ca7a41ba6f87eb8f003"
+    },
+    {
       "name": "aws-latency-independent-cleanup-751e78699146006f.json",
       "sha256": "cbed6cfa894ca268673a63fab94cf6cdf493da8874245a8cd4ac7737b6da4263"
+    },
+    {
+      "name": "aws-latency-independent-cleanup-b61c7868e477e93e.json",
+      "sha256": "8c8f6ddd0b0eca1ccbb4858487a46a2dde75d46828f65118c84a43dbf6fbfd1e"
+    },
+    {
+      "name": "aws-latency-independent-cleanup-cc57e933a38fcccf.json",
+      "sha256": "5677785155b340fc5ff52c29f753f87adfe13d69b7caa9099abe3011fc39471d"
+    },
+    {
+      "name": "aws-latency-independent-cleanup-e3578a9715fd772c.json",
+      "sha256": "1774b7db260c9c2b1a80434d7ac81ae21ffda86edc62e4d4d00839f48d718a5d"
+    },
+    {
+      "name": "aws-origin-direct-latency-summary.json",
+      "sha256": "a5d6be701b43902744adf45bc120db2e7fbfceb5b00522165f718c8ec66c5d84"
+    },
+    {
+      "name": "aws-origin-direct-paired-latency.json",
+      "sha256": "fef476d7e018339038ace6b1728e880afc55c3b9a8a1a7d9ce85427bcb5dcd01"
     },
     {
       "name": "aws-origin-latency-summary.json",
@@ -27,8 +55,108 @@
       "sha256": "73a20ae1be5772992bd2af4e1bb26d66639ba81e6c1162518098866eb600bd07"
     },
     {
+      "name": "aws-production-monitor-4b57f5804425fef2.jsonl",
+      "sha256": "99d728f265b5a89d193e4efac0edd147bfccd1fe39a196dd4e2db608ada33360"
+    },
+    {
+      "name": "aws-production-monitor-579214cc8ab86ef0.jsonl",
+      "sha256": "f0aefb5e30ab02c5fc3a50bf8b4eeb955e2d40925ffceca2918547dcff2807b5"
+    },
+    {
+      "name": "aws-production-monitor-b61c7868e477e93e.jsonl",
+      "sha256": "0d7b8b020636efe80c0415e211811647bf1099bd5834e4d5249d40b5b8650dd7"
+    },
+    {
+      "name": "aws-production-monitor-cc57e933a38fcccf.jsonl",
+      "sha256": "5458d9735e32a5004914115312bff496ec4b71b3cfac3019d94ff81ddc217631"
+    },
+    {
+      "name": "aws-production-monitor-e3578a9715fd772c.jsonl",
+      "sha256": "4b9a9d96a640848ebce1eec5602ddc6c1e05a559d2516bcd49422f5ef0cc0ee2"
+    },
+    {
+      "name": "controller-cleanup-1793073869720263000.json",
+      "sha256": "4d097f2ea4a7294dedee4e133b82ba54c7c6cbf85bbb9fb75ae4ea11bd0b9b9e"
+    },
+    {
+      "name": "direct-aws-other-authenticated-recheck.json",
+      "sha256": "b948b973076f1e8cea8f20fa93a512c7a5d1e3a3c1fe8d4ca62b6aed6d9440d1"
+    },
+    {
+      "name": "direct-aws-other-final-auth-check.json",
+      "sha256": "a411b53e84a3dc766c7f591cf29f957ececaa6786298e6f1285408a3cc836a19"
+    },
+    {
+      "name": "direct-binary-partial-transfer.json",
+      "sha256": "4e71378bbb6689f624923ccfe9910f2f0cf25efbce5b5657d8c6dfd7e5279bda"
+    },
+    {
+      "name": "direct-client-identity-preflight.json",
+      "sha256": "54a41e2eaa72707944f1d0b7cbfb7301336c43c4930339a1edf03ddfe9d9c5b6"
+    },
+    {
+      "name": "direct-phase-production-identity.json",
+      "sha256": "fbbbff13fe38552b118a56df454beed44e0df5aa4e9d05c90e9e561b8d1af4e9"
+    },
+    {
+      "name": "direct-phase-production-inventory.json",
+      "sha256": "7be2dc0f1fccacf5a9e38b1cb8f1bdb80fa0b5a499665488d94847671ea62c28"
+    },
+    {
+      "name": "direct-phase-resources-after.json",
+      "sha256": "a7e6b427aefc2ec1e52b719c1777ee984006ac902d86ac16488dd8475fd08ae7"
+    },
+    {
+      "name": "direct-phase-resources-before.json",
+      "sha256": "d94657db7fabf6744ebfefb840a46f04fe75cbac09abbbbd190839b709e2d9ef"
+    },
+    {
+      "name": "gateway-binary-identity-direct.json",
+      "sha256": "69c7c5e34eb28caa990cac7a879ea03479a4092f292334087d7f25c0ee656126"
+    },
+    {
+      "name": "helper-receipts-1793073869720263000.json",
+      "sha256": "e68f13e18942e85b55304504429b014ae0aac5188b1351ccad89a66e9b67032e"
+    },
+    {
+      "name": "independent-cleanup-1793074590733987000.json",
+      "sha256": "9f33b74de9b77b2ddafa441d32b6a4680b49d783ee14549d26b1e5933811030d"
+    },
+    {
       "name": "live-case-both-unavailable.json",
       "sha256": "bb93fb6499817838d98dd69d486084ba71235419e37992ffff013c5001903c0c"
+    },
+    {
+      "name": "live-case-direct-air-down-this.json",
+      "sha256": "4ce4961d5a1106fb54f4a2ef62e3f177b0c97d59366e19c886dca89a33f6999d"
+    },
+    {
+      "name": "live-case-direct-air-healthy.json",
+      "sha256": "1d096ea3b1668032216b6104230b67d629bd14dfb2e210826ff2f6c2c7a0cbf8"
+    },
+    {
+      "name": "live-case-direct-air-this-down-other.json",
+      "sha256": "44e471a4e0e3a21c85b572831cf347dc59743976351e2f70f834b9fd0e47d568"
+    },
+    {
+      "name": "live-case-direct-all-down.json",
+      "sha256": "e0873ee7fad02d2fb5f0966632dc2bf79f3289e3ab0e4cdb9bd7fb7bcafb5056"
+    },
+    {
+      "name": "live-case-direct-other-healthy.json",
+      "sha256": "f6cde8ed0abf1a9e84b319d9c783b2642f8980119ba691283627315fa342a940"
+    },
+    {
+      "name": "live-case-direct-recovered.json",
+      "sha256": "2dc1ca878051e406cd91795ddbe7542969928b71910ffa097295e1842cc71780"
+    },
+    {
+      "name": "live-case-direct-tunnel-down-air.json",
+      "sha256": "b858f7aaf8a5c753c9230e915412e4d2836a681ac728e8755d69a2f05f289224"
+    },
+    {
+      "name": "live-case-direct-two-down-this.json",
+      "sha256": "4a84b8163f5890d98e27bf06774c0a8425f838fc250eb34ab6d7923155289549"
     },
     {
       "name": "live-case-established-session-helpers-down.json",
@@ -87,8 +215,16 @@
       "sha256": "5851583fb555248800397dbf004e436bc8509867d663a75794a9c03e15da6bbd"
     },
     {
+      "name": "live-independent-cleanup-c8b57b69486a.json",
+      "sha256": "ac8991a080ad42e93e883991dbf8979766a62638afb441d602c10e3a468d7bbe"
+    },
+    {
       "name": "live-independent-cleanup-ebd1423896d7.json",
       "sha256": "7486d71f7fc971267e385ea8570669876cfb8c6d6e4ab802fd4b945bcb03723c"
+    },
+    {
+      "name": "live-independent-cleanup-f385ebb72e78.json",
+      "sha256": "2fb9c9dd54952b301afeadc721870e927c3cc3f01ffed5b635ea1eb794a040e3"
     },
     {
       "name": "native-compatibility-proofs.json",
@@ -131,6 +267,10 @@
       "sha256": "c1cf1cafd6727d26affe24d24c7ae44bcab0bb577d16586a173474121bb48ce7"
     },
     {
+      "name": "phase-cleanup-1793074590777824000.json",
+      "sha256": "0834f6d2335fe746a2757470b7073fed10fe96d0f70cfb8a8024ce00351ddead"
+    },
+    {
       "name": "pool-case-air-recovered.json",
       "sha256": "92673d5640bc2201f25b1f3f4a21cb45b9d0bcae5e68ecce5d43f87d5f03dfac"
     },
@@ -163,6 +303,38 @@
       "sha256": "95fdc22645b293f9e028cd1dc73f4141aee1c29bb0b7da562db10eec4f693268"
     },
     {
+      "name": "production-case-direct-air-down-this.json",
+      "sha256": "871e1218b5f336f28ffe99ae0d04ac2be76bf9e8c41355c1f201b11fce8764c3"
+    },
+    {
+      "name": "production-case-direct-air-healthy.json",
+      "sha256": "17ca67643411fc8699d614c865175067c7e5d40a9b3663c31ad5be21057432d0"
+    },
+    {
+      "name": "production-case-direct-air-this-down-other.json",
+      "sha256": "49a4afdd153dab42d8ddef610570f3ad463f17b9528780a86bad8c2fb3e8e7dd"
+    },
+    {
+      "name": "production-case-direct-all-down.json",
+      "sha256": "942f8bdf86ddf1f373224916ae92e33dc635b414ac6d2c98874022697c1ef692"
+    },
+    {
+      "name": "production-case-direct-other-healthy.json",
+      "sha256": "b4522ae109fae268a026de2e6b4df9940dbe98561ef122104f695b2df8721147"
+    },
+    {
+      "name": "production-case-direct-recovered.json",
+      "sha256": "88f979ab34358a72d79b289a7668019227cd1b6769784a9a9a3b1ca0add44fb9"
+    },
+    {
+      "name": "production-case-direct-tunnel-down-air.json",
+      "sha256": "bfef9d12c7f9c7b5df1f2958132034f096d7e205bf3aafeeb09a6077ae82941a"
+    },
+    {
+      "name": "production-case-direct-two-down-this.json",
+      "sha256": "27cfb7e9e2d1dd35a582a8131e65007d6dfa2c6560be2e274cc3f9bc60e5d460"
+    },
+    {
       "name": "production-case-healthy-air.json",
       "sha256": "03aae21c49cee26d0ac38806312ac8091453b3f0720d0ddd1c9ef7344c9bc422"
     },
@@ -193,6 +365,22 @@
     {
       "name": "production-counter-window-summary.json",
       "sha256": "3b48370e6162a56c75ea77bab54b71c778a3290f043a0f797753964603df3699"
+    },
+    {
+      "name": "production-queue-connection-mode.json",
+      "sha256": "3c3f8e971ce2fd82a738d45171d9c232fd0a4310307f2a247f4164fc81032fdf"
+    },
+    {
+      "name": "soak-direct-concurrent-resources.json",
+      "sha256": "2cc1396516ee3103014d2722a4e7c1579b101196785d89c0e3c694f5aedb8eff"
+    },
+    {
+      "name": "soak-direct-other-pro.json",
+      "sha256": "2db86a24f6bf75869f32b64fdb9ba63da60ef23efbe9b62307cc1313e5c6abfe"
+    },
+    {
+      "name": "soak-direct-summary.json",
+      "sha256": "1cc939449368f7b45974b0a43046849881b39b5b0c0bad83b763a1c5b1b98766"
     },
     {
       "name": "soak-other-pro-postreview-proxy-metadata.json",

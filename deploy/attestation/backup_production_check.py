@@ -4,6 +4,7 @@ import pathlib
 import subprocess
 
 from backup_air_reference import aws_command
+from backup_helpers import owned_file
 
 SOURCE = r'''
 import ast,hashlib,http.client,json,re,subprocess
@@ -39,16 +40,29 @@ print(json.dumps({'processes':pids,'gateway_sha256':binary,'queue_sha256':queue,
 
 
 def snapshot(root):
-    result = subprocess.run(aws_command(root / 'private'), input=SOURCE,
+    scope_path = root / 'private' / 'production-identity.json'
+    source, suffix = SOURCE, ''
+    expected_gateway_hash = '4bb9f392de4cfc17586223d6e903c4b3403d5afaf87c8d07f21e254f8fc3267c'
+    if scope_path.exists():
+        owned_file(scope_path, 0o600)
+        scope = json.loads(scope_path.read_text())
+        if type(scope['gateway_pid']) is not int or scope['gateway_pid'] < 2:
+            raise ValueError('invalid phase gateway identity')
+        expected_gateway_hash = scope['gateway_sha256']
+        if len(expected_gateway_hash) != 64 or any(x not in '0123456789abcdef' for x in expected_gateway_hash):
+            raise ValueError('invalid phase binary identity')
+        source = SOURCE.replace('481177', str(scope['gateway_pid']))
+        suffix = '-direct-' + str(scope['gateway_pid'])
+    result = subprocess.run(aws_command(root / 'private'), input=source,
                             capture_output=True, text=True, timeout=20, check=True)
     row = json.loads(result.stdout)
-    if row['gateway_sha256'] != '4bb9f392de4cfc17586223d6e903c4b3403d5afaf87c8d07f21e254f8fc3267c':
+    if row['gateway_sha256'] != expected_gateway_hash:
         raise RuntimeError('production gateway identity changed')
     if row['queue_sha256'] != '9205dfc2f0cda5a9c63db482816c4ffe7ed96bbbd2efa6cfbdb2302eec9f697d':
         raise RuntimeError('production queue identity changed')
     if not row['air_reverse_listener_pids'] or not all(x['status'] == 200 and x['supported'] for x in row['health'].values()):
         raise RuntimeError('production Air/queue health failed')
-    baseline = root / 'production-pool-baseline.json'
+    baseline = root / ('production-pool-baseline' + suffix + '.json')
     if baseline.exists():
         before = json.loads(baseline.read_text())
         for field in ('processes', 'gateway_sha256', 'queue_sha256', 'air_reverse_listener_pids'):
@@ -56,7 +70,7 @@ def snapshot(root):
                 raise RuntimeError('production identity differs from pool baseline')
     else:
         baseline.write_text(json.dumps(row, indent=2))
-    counters = root / 'production-queue-counter-baseline.json'
+    counters = root / ('production-queue-counter-baseline' + suffix + '.json')
     if counters.exists():
         previous = json.loads(counters.read_text())
         for field in ('failed', 'unreachable_retries', 'busy_retries'):
@@ -79,7 +93,7 @@ def production_case(function):
     @functools.wraps(function)
     def wrapped(*args, **kwargs):
         root, scenario = pathlib.Path(sys.argv[1]).resolve(), sys.argv[2]
-        enabled = scenario.startswith('pool-') or scenario in {'healthy-air', 'air-tunnel-down', 'two-down', 'all-down', 'air-recovered'}
+        enabled = scenario.startswith(('pool-', 'direct-')) or scenario in {'healthy-air', 'air-tunnel-down', 'two-down', 'all-down', 'air-recovered'}
         if not enabled:
             return function(*args, **kwargs)
         before = snapshot(root)

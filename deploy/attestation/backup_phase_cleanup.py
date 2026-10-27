@@ -43,7 +43,7 @@ def main():
     owned_file(private / 'live-manifest.json', 0o600)
     manifest = json.loads((private / 'live-manifest.json').read_text())
     source = pathlib.Path(__file__).parent
-    for name in ('stop-live', 'stop-helpers', 'stop-router', 'stop-fault-proxy', 'stop-air-reference', 'stop-aws-latency'):
+    for name in ('stop-live', 'stop-helpers', 'stop-router', 'stop-fault-proxy', 'stop-air-reference', 'stop-aws-latency', 'stop-soak'):
         stop_marker(private / name)
     evidence = {}
     programs = ['backup_live_verify.py', 'backup_cleanup.py']
@@ -115,7 +115,7 @@ def main():
                 owned_file(path, 0o600)
                 path.unlink()
         for name in ('live-processes.json', 'router-process.json', 'fault-status.json', 'air-reference-process.json',
-                     'start-live-gateway', 'stop-live', 'stop-helpers', 'stop-router', 'stop-fault-proxy', 'stop-air-reference', 'stop-aws-latency'):
+                     'aws-direct-control.json', 'start-live-gateway', 'stop-live', 'stop-helpers', 'stop-router', 'stop-fault-proxy', 'stop-air-reference', 'stop-aws-latency', 'stop-soak'):
             (private / name).unlink(missing_ok=True)
         evidence['phase_credentials_removed'] = not any((private / name).exists() for name in secrets)
     else:

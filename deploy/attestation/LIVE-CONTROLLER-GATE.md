@@ -35,3 +35,11 @@ The draft is reviewable; permanent rollout remains no-go pending direct
 AWS→Other-Pro authentication and reviewed unattended ownership/transport.
 No production routing, queue, helper, credentials, firewall or persistent service
 was changed. The original remaining-gate list is superseded by the final report.
+
+## Direct-path continuation
+
+See `BACKUP-DIRECT-QUALIFICATION-20261027.md`: human authentication resolved;
+current-binary direct Live/failover/recovery, direct16 soak and matching600-proof
+AWS latency completed with independent teardown. The original direct-auth
+no-go condition is historical. Permanent installation/cutover remains subject
+to the staged proposal and later human greenlight.

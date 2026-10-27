@@ -24,6 +24,20 @@ class DockerActorTests(unittest.TestCase):
         manifest.chmod(0o600)
         return root
 
+    def test_reaped_group_permission_race_is_not_a_cleanup_failure(self):
+        from unittest.mock import Mock, patch
+        child = Mock(pid=12345)
+        child.poll.side_effect = [None, 0]
+        with patch('backup_docker_host.os.killpg', side_effect=PermissionError):
+            Runner.terminate(child)
+
+    def test_live_group_permission_denial_is_not_hidden(self):
+        from unittest.mock import Mock, patch
+        child = Mock(pid=12345)
+        child.poll.return_value = None
+        with patch('backup_docker_host.os.killpg', side_effect=PermissionError):
+            with self.assertRaises(PermissionError):Runner.terminate(child)
+
     def test_root_manifest_identity(self):
         root = self.fixture()
         self.assertEqual(validate_root(root, '012345abcdef')['root'], str(root))

@@ -15,6 +15,7 @@ import time
 from backup_helpers import OTHER, ssh_prefix
 from backup_latency import percentile
 from backup_modes import mode_guard, set_modes, wait_modes
+from backup_direct_control import apply_case
 from backup_router import validate_payload
 
 RESOURCE = r'''
@@ -27,11 +28,11 @@ swap=int(re.search(r'Swapouts:\s+(\d+)',vm).group(1))
 top=subprocess.check_output(['top','-l','2','-s','1','-n','0'],text=True)
 cpu=re.findall(r'CPU usage: ([\d.]+)% user, ([\d.]+)% sys, ([\d.]+)% idle',top)[-1]
 rows=[]
-for line in subprocess.check_output(['ps','-axo','pid=,pgid=,rss=,pcpu=,comm='],text=True).splitlines():
- a=line.strip().split(None,4)
- if len(a)==5 and int(a[1])==HELPER_GROUP:
-  rows.append({'pid':int(a[0]),'rss_kib':int(a[2]),'cpu_percent_one_core':float(a[3]),'kind':'helper' if 'inferno-backup-qualification-' in a[4] else 'helper-child'})
-print(json.dumps({'at':time.time(),'pressure':pressure,'swapouts':swap,'cpu_busy_percent':round(float(cpu[0])+float(cpu[1]),2),'processes':rows}))
+for line in subprocess.check_output(['ps','-axo','pid=,pgid=,rss=,pcpu=,time=,comm='],text=True).splitlines():
+ a=line.strip().split(None,5)
+ if len(a)==6 and int(a[1])==HELPER_GROUP:
+  rows.append({'pid':int(a[0]),'rss_kib':int(a[2]),'cpu_percent_one_core':float(a[3]),'cpu_time':a[4],'kind':'helper' if 'inferno-backup-qualification-' in a[5] else 'helper-child'})
+print(json.dumps({'at':time.time(),'pressure':pressure,'swapouts':swap,'cpu_busy_percent':round(float(cpu[0])+float(cpu[1]),2),'logical_cpus':int(subprocess.check_output(['sysctl','-n','hw.ncpu'],text=True)),'processes':rows}))
 '''
 
 
@@ -49,13 +50,20 @@ def main():
     root, backend = pathlib.Path(sys.argv[1]).resolve(), sys.argv[2]
     if backend not in ('this-mac', 'other-pro'):
         raise ValueError('candidate backend only')
+    direct = sys.argv[3:] == ['--direct']
+    if sys.argv[3:] and not direct:raise ValueError('unexpected soak flags')
+    if direct and backend != 'other-pro':raise ValueError('direct soak is for Other-Pro path')
     private = root / 'private'
     token = (private / 'router-token').read_text().strip()
     mode = ('healthy', 'refuse') if backend == 'this-mac' else ('refuse', 'healthy')
     samples, latency, seen, errors = [], [], set(), []
     reason = None
-    set_modes(private, *mode)
-    initial_modes = wait_modes(private, *mode)
+    if direct:
+        direct_state = apply_case(root, 'direct-air-this-down-other')
+        initial_modes = None
+    else:
+        set_modes(private, *mode)
+        initial_modes = wait_modes(private, *mode)
     time.sleep(3.3)
     audit = pathlib.Path(json.loads((private / 'router-config.json').read_text())['audit'])
     prior = len(audit.read_text().splitlines())
@@ -82,6 +90,9 @@ def main():
         with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
             for batch in range(120):
                 tick = time.monotonic()
+                if (private / 'stop-soak').exists():
+                    reason = 'independent_monitor_stop'
+                    break
                 if batch % 5 == 0:
                     sample = resource(private, backend)
                     samples.append(sample)
@@ -113,12 +124,15 @@ def main():
             reason = reason or 'final_resource_gate'
 
         time.sleep(.3)
-        final_modes = wait_modes(private, *mode)
-        refused = 'other-pro' if backend == 'this-mac' else 'this-mac'
-        unused_backend_untouched = all(final_modes['counts'][refused][key] == initial_modes['counts'][refused][key] for key in ('accepted', 'forwarded'))
         records = [json.loads(x) for x in audit.read_text().splitlines()[prior:]]
+        if direct:
+            unused_backend_untouched = all(attempt['result'] == 'transport' for row in records for attempt in row['attempts'] if attempt['backend'] != backend)
+        else:
+            final_modes = wait_modes(private, *mode)
+            refused = 'other-pro' if backend == 'this-mac' else 'this-mac'
+            unused_backend_untouched = all(final_modes['counts'][refused][key] == initial_modes['counts'][refused][key] for key in ('accepted', 'forwarded'))
         selected = [x.get('selected') for x in records if x.get('status') == 200]
-        evidence = {'backend': backend, 'concurrency': 16, 'max_batches': 120,
+        evidence = {'backend': backend, 'topology': 'operator client -> AWS selector -> direct AWS SSH -> Other helper' if direct else 'operator selector -> candidate helper', 'concurrency': 16, 'max_batches': 120,
                     'paced_batch_interval_s': 1, 'elapsed_s': round(time.monotonic() - started, 3),
                     'valid_distinct_proofs': len(seen), 'errors': errors, 'stop_reason': reason,
                     'all_selections_expected': bool(selected) and all(x == backend for x in selected),
@@ -131,10 +145,11 @@ def main():
         if latency:
             evidence['latency']['max_ms'] = round(max(latency), 3)
         evidence['passed'] = reason is None and not errors and len(seen) == 1920 and evidence['all_selections_expected'] and evidence['exact_audit_match'] and unused_backend_untouched
-        (root / ('soak-' + backend + '.json')).write_text(json.dumps(evidence, indent=2))
+        (root / ('soak-' + ('direct-' if direct else '') + backend + '.json')).write_text(json.dumps(evidence, indent=2))
         print(json.dumps({k: v for k, v in evidence.items() if k != 'resource_samples'}), flush=True)
+        if not evidence['passed']:raise SystemExit(1)
     finally:
-        set_modes(private, 'healthy', 'healthy')
+        if not direct:set_modes(private, 'healthy', 'healthy')
 
 
 if __name__ == '__main__':

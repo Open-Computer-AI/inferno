@@ -8,6 +8,7 @@ import secrets
 import shlex
 import subprocess
 import sys
+import stat
 import tarfile
 
 from backup_helpers import OTHER, owned_file, ssh_prefix
@@ -20,6 +21,16 @@ def write_private(path, text):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, 'w') as stream:
         stream.write(text)
+
+
+def prepare_executable(path, expected_hash):
+    info = path.lstat()
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+            or stat.S_IMODE(info.st_mode) not in {0o600, 0o700}):
+        raise ValueError('candidate executable ownership/mode')
+    if hashlib.sha256(path.read_bytes()).hexdigest() != expected_hash:
+        raise ValueError('candidate executable identity mismatch')
+    path.chmod(0o700)
 
 
 def main():
@@ -63,10 +74,14 @@ print(p.stdout)
     # JSON flow mappings are valid YAML; no extra local Python dependency.
     write_private(private / 'live-gateway-config.yaml', json.dumps(config, indent=2))
     write_private(private / 'live-postgres.env', 'POSTGRES_USER=sub2api\nPOSTGRES_DB=sub2api\nPOSTGRES_PASSWORD=' + password + '\n')
+    direct = (private / 'production-identity.json').exists()
+    binary_name = 'aws-gateway-server-direct' if direct else 'aws-gateway-server'
+    identity_name = 'gateway-binary-identity-direct.json' if direct else 'gateway-binary-identity.json'
     manifest = {'root': remote, 'run_id': run_id, 'imported_snapshot': False,
-                'hashes': {'server': json.loads((root / 'gateway-binary-identity.json').read_text())['sha256'],
+                'hashes': {'server': json.loads((root / identity_name).read_text())['sha256'],
                            'probe': hashlib.sha256((private / 'attestation-probe-linux').read_bytes()).hexdigest()},
                 'actor_roles': ['router', 'fault-proxy'] if mode == 'live' else [], 'fresh_database': True}
+    prepare_executable(private / binary_name, manifest['hashes']['server'])
     manifest.update(json.loads((root / 'candidate-docker-identity.json').read_text()))
     path = private / 'live-manifest.json'
     path.write_text(json.dumps(manifest))
@@ -84,7 +99,7 @@ print(p.stdout)
                 owned_file(target, 0o600)
             target.write_text(json.dumps(data))
             target.chmod(0o600)
-    files = [(private / 'aws-gateway-server', 'server'),
+    files = [(private / binary_name, 'server'),
              (private / 'attestation-probe-linux', 'probe'), (private / 'live-gateway-config.yaml', 'config.yaml'),
              (private / 'live-postgres.env', 'postgres.env'),
              (private / 'live-manifest.json', 'manifest.json')]

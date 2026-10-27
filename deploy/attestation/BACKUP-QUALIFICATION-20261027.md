@@ -1,6 +1,12 @@
 # Three-Mac attestation qualification — 27 October 2026
 
-## Decision
+## Historical overnight decision
+
+**Update:** direct AWS→Other authentication and tests subsequently completed.
+See `BACKUP-DIRECT-QUALIFICATION-20261027.md` for the current results and
+`BACKUP-ROLLOUT-PROPOSAL-20261027.md` for the later approval-dependent plan.
+The following preserves the earlier snapshot and its then-pending gates.
+
 
 **The isolated selector/failover candidate passed the tests below. Permanent
 rollout remains NO-GO. No production route or persistent service was changed.**
@@ -222,7 +228,8 @@ production configuration was never changed.
 For a later human-approved rollout: first qualify direct unattended backup
 transports on separate listeners, retain the exact working Air path and queue
 config, install separately reviewed service ownership, validate isolated Live,
-then drain attestation work before an atomic route switch. Monitor fresh proof,
+then fully drain affected established Live sessions before any gateway restart
+required for the route switch; draining attestation work alone is insufficient. Monitor fresh proof,
 real Live, record/usage/lease cleanup and queue error deltas. Restore the saved
 Air route immediately on failure; retain it until the new route passes an
 approved observation period. Do not merge, deploy, or perform that switch under

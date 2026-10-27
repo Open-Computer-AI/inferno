@@ -15,6 +15,7 @@ from backup_modes import mode_guard, set_modes, wait_modes
 from backup_phase_cleanup import stop_marker
 from backup_production_check import production_case
 from backup_air_reference import reference_state
+from backup_direct_control import apply_case
 
 
 
@@ -73,7 +74,18 @@ def main():
              'both-unavailable': ('refuse', 'refuse', None),
              'recovered-primary': ('healthy', 'healthy', 'this-mac'),
              'established-session-helpers-down': ('healthy', 'healthy', 'this-mac')}
-    first, second, expected_backend = cases[scenario]
+    direct_cases = {'direct-other-healthy': 'other-pro', 'direct-tunnel-down-air': 'air',
+                    'direct-two-down-this': 'this-mac', 'direct-all-down': None,
+                    'direct-recovered': 'other-pro', 'direct-air-healthy': 'air',
+                    'direct-air-down-this': 'this-mac', 'direct-air-this-down-other': 'other-pro'}
+    is_direct = scenario in direct_cases
+    if is_direct:
+        first, second, expected_backend = 'healthy', 'healthy', direct_cases[scenario]
+        direct_state = apply_case(root, scenario)
+    else:
+        first, second, expected_backend = cases[scenario]
+        direct_state = None
+
     if scenario.startswith('pool-'):
         config = json.loads((private / 'router-config.json').read_text())
         if [x['name'] for x in config['backends']] != ['air', 'this-mac', 'other-pro']:
@@ -89,8 +101,9 @@ def main():
         else:
             raise RuntimeError('candidate Air forward did not close')
     air_reference = reference_state(private, expected_backend == 'air') if scenario.startswith('pool-') else None
-    set_modes(private, first, second)
-    wait_modes(private, first, second)
+    if not is_direct:
+        set_modes(private, first, second)
+        wait_modes(private, first, second)
     time.sleep(3.3)
     before = snapshot(root)
     if any(before['leases'].values()) or any(x['state'] != 'closed' for x in before['records']):
@@ -134,11 +147,12 @@ def main():
                 break
             time.sleep(2)
         records = [json.loads(line) for line in audit.read_text().splitlines()[prior:]]
-        selections = [row['selected'] for row in records if row.get('status') == 200]
+        proofs = [row for row in records if row.get('path', '/v1/attestation') == '/v1/attestation']
+        selections = [row['selected'] for row in proofs if row.get('status') == 200]
         passed = bool(result.get('success') and settled and
-                      (selections == [expected_backend] if expected_backend else not selections))
+                      (len(proofs) == 1 and selections == [expected_backend] if expected_backend else not selections))
         evidence = {'scenario': scenario, 'passed': passed, 'air_reference': air_reference, 'client_exit': child.returncode,
-                    'client': result, 'selected_backends': selections, 'proof_requests': len(records),
+                    'direct_control': direct_state, 'client': result, 'selected_backends': selections, 'proof_requests': len(records),
                     'attestation_records': records,
                     'usage_before': before['usage'], 'usage_after': after['usage'],
                     'closed_records_after': sum(x['state'] == 'closed' for x in after['records']),
@@ -155,7 +169,7 @@ def main():
         if child.poll() is None:
             child.kill()
             child.wait(timeout=5)
-        set_modes(private, 'healthy', 'healthy')
+        if not is_direct:set_modes(private, 'healthy', 'healthy')
 
 
 if __name__ == '__main__':

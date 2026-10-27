@@ -173,6 +173,7 @@ class Router:
                 row['status'] = 404
                 await self.respond(writer, 404, b'{}')
                 return
+            row['path'], row['method'] = path, method
             if 'transfer-encoding' in headers or headers.get('content-length', '0') != '0':
                 raise ValueError('unexpected request body')
             if self.in_flight >= self.limit:
