@@ -1,0 +1,402 @@
+{
+  "artifact_root": "/Users/saksham/Documents/Codex/2026-10-27/attestation-backups",
+  "proofs_tokens_credentials_sdp_audio_retained_in_this_manifest": false,
+  "entries": [
+    {
+      "name": "actual-helper-fault-matrix.json",
+      "sha256": "7513fdaaeb24293470a23eb00b30c4b55f89d10435f2d31845ddc5a934e71e69"
+    },
+    {
+      "name": "aws-direct-controller-kill-gate.json",
+      "sha256": "57289af10567d9220c42738e62372878a298286a918f14cd2167045eb2e484c4"
+    },
+    {
+      "name": "aws-latency-controller-kill-gate.json",
+      "sha256": "655273bcdb7bde048d20d9655c20ff845bc2edd2503649f2b9c19786099afe7f"
+    },
+    {
+      "name": "aws-latency-independent-cleanup-4b57f5804425fef2.json",
+      "sha256": "1b96093bf7e2bf37abb6aadaf366274918d9a9a364b059b2faae0ee038c00d37"
+    },
+    {
+      "name": "aws-latency-independent-cleanup-579214cc8ab86ef0.json",
+      "sha256": "177c9ce6278570facf457535ebcb4064f63c900f4ae89ca7a41ba6f87eb8f003"
+    },
+    {
+      "name": "aws-latency-independent-cleanup-751e78699146006f.json",
+      "sha256": "cbed6cfa894ca268673a63fab94cf6cdf493da8874245a8cd4ac7737b6da4263"
+    },
+    {
+      "name": "aws-latency-independent-cleanup-b61c7868e477e93e.json",
+      "sha256": "8c8f6ddd0b0eca1ccbb4858487a46a2dde75d46828f65118c84a43dbf6fbfd1e"
+    },
+    {
+      "name": "aws-latency-independent-cleanup-cc57e933a38fcccf.json",
+      "sha256": "5677785155b340fc5ff52c29f753f87adfe13d69b7caa9099abe3011fc39471d"
+    },
+    {
+      "name": "aws-latency-independent-cleanup-e3578a9715fd772c.json",
+      "sha256": "1774b7db260c9c2b1a80434d7ac81ae21ffda86edc62e4d4d00839f48d718a5d"
+    },
+    {
+      "name": "aws-origin-direct-latency-summary.json",
+      "sha256": "a5d6be701b43902744adf45bc120db2e7fbfceb5b00522165f718c8ec66c5d84"
+    },
+    {
+      "name": "aws-origin-direct-paired-latency.json",
+      "sha256": "fef476d7e018339038ace6b1728e880afc55c3b9a8a1a7d9ce85427bcb5dcd01"
+    },
+    {
+      "name": "aws-origin-latency-summary.json",
+      "sha256": "1682091c696dc09b780daeab06171fc6d28bc78101b7a6bb4a024306b5236e60"
+    },
+    {
+      "name": "aws-origin-paired-latency.json",
+      "sha256": "73a20ae1be5772992bd2af4e1bb26d66639ba81e6c1162518098866eb600bd07"
+    },
+    {
+      "name": "aws-production-monitor-4b57f5804425fef2.jsonl",
+      "sha256": "99d728f265b5a89d193e4efac0edd147bfccd1fe39a196dd4e2db608ada33360"
+    },
+    {
+      "name": "aws-production-monitor-579214cc8ab86ef0.jsonl",
+      "sha256": "f0aefb5e30ab02c5fc3a50bf8b4eeb955e2d40925ffceca2918547dcff2807b5"
+    },
+    {
+      "name": "aws-production-monitor-b61c7868e477e93e.jsonl",
+      "sha256": "0d7b8b020636efe80c0415e211811647bf1099bd5834e4d5249d40b5b8650dd7"
+    },
+    {
+      "name": "aws-production-monitor-cc57e933a38fcccf.jsonl",
+      "sha256": "5458d9735e32a5004914115312bff496ec4b71b3cfac3019d94ff81ddc217631"
+    },
+    {
+      "name": "aws-production-monitor-e3578a9715fd772c.jsonl",
+      "sha256": "4b9a9d96a640848ebce1eec5602ddc6c1e05a559d2516bcd49422f5ef0cc0ee2"
+    },
+    {
+      "name": "controller-cleanup-1793073869720263000.json",
+      "sha256": "4d097f2ea4a7294dedee4e133b82ba54c7c6cbf85bbb9fb75ae4ea11bd0b9b9e"
+    },
+    {
+      "name": "direct-aws-other-authenticated-recheck.json",
+      "sha256": "b948b973076f1e8cea8f20fa93a512c7a5d1e3a3c1fe8d4ca62b6aed6d9440d1"
+    },
+    {
+      "name": "direct-aws-other-final-auth-check.json",
+      "sha256": "a411b53e84a3dc766c7f591cf29f957ececaa6786298e6f1285408a3cc836a19"
+    },
+    {
+      "name": "direct-binary-partial-transfer.json",
+      "sha256": "4e71378bbb6689f624923ccfe9910f2f0cf25efbce5b5657d8c6dfd7e5279bda"
+    },
+    {
+      "name": "direct-client-identity-preflight.json",
+      "sha256": "54a41e2eaa72707944f1d0b7cbfb7301336c43c4930339a1edf03ddfe9d9c5b6"
+    },
+    {
+      "name": "direct-phase-production-identity.json",
+      "sha256": "fbbbff13fe38552b118a56df454beed44e0df5aa4e9d05c90e9e561b8d1af4e9"
+    },
+    {
+      "name": "direct-phase-production-inventory.json",
+      "sha256": "7be2dc0f1fccacf5a9e38b1cb8f1bdb80fa0b5a499665488d94847671ea62c28"
+    },
+    {
+      "name": "direct-phase-resources-after.json",
+      "sha256": "a7e6b427aefc2ec1e52b719c1777ee984006ac902d86ac16488dd8475fd08ae7"
+    },
+    {
+      "name": "direct-phase-resources-before.json",
+      "sha256": "d94657db7fabf6744ebfefb840a46f04fe75cbac09abbbbd190839b709e2d9ef"
+    },
+    {
+      "name": "gateway-binary-identity-direct.json",
+      "sha256": "69c7c5e34eb28caa990cac7a879ea03479a4092f292334087d7f25c0ee656126"
+    },
+    {
+      "name": "helper-receipts-1793073869720263000.json",
+      "sha256": "e68f13e18942e85b55304504429b014ae0aac5188b1351ccad89a66e9b67032e"
+    },
+    {
+      "name": "independent-cleanup-1793074590733987000.json",
+      "sha256": "9f33b74de9b77b2ddafa441d32b6a4680b49d783ee14549d26b1e5933811030d"
+    },
+    {
+      "name": "live-case-both-unavailable.json",
+      "sha256": "bb93fb6499817838d98dd69d486084ba71235419e37992ffff013c5001903c0c"
+    },
+    {
+      "name": "live-case-direct-air-down-this.json",
+      "sha256": "4ce4961d5a1106fb54f4a2ef62e3f177b0c97d59366e19c886dca89a33f6999d"
+    },
+    {
+      "name": "live-case-direct-air-healthy.json",
+      "sha256": "1d096ea3b1668032216b6104230b67d629bd14dfb2e210826ff2f6c2c7a0cbf8"
+    },
+    {
+      "name": "live-case-direct-air-this-down-other.json",
+      "sha256": "44e471a4e0e3a21c85b572831cf347dc59743976351e2f70f834b9fd0e47d568"
+    },
+    {
+      "name": "live-case-direct-all-down.json",
+      "sha256": "e0873ee7fad02d2fb5f0966632dc2bf79f3289e3ab0e4cdb9bd7fb7bcafb5056"
+    },
+    {
+      "name": "live-case-direct-other-healthy.json",
+      "sha256": "f6cde8ed0abf1a9e84b319d9c783b2642f8980119ba691283627315fa342a940"
+    },
+    {
+      "name": "live-case-direct-recovered.json",
+      "sha256": "2dc1ca878051e406cd91795ddbe7542969928b71910ffa097295e1842cc71780"
+    },
+    {
+      "name": "live-case-direct-tunnel-down-air.json",
+      "sha256": "b858f7aaf8a5c753c9230e915412e4d2836a681ac728e8755d69a2f05f289224"
+    },
+    {
+      "name": "live-case-direct-two-down-this.json",
+      "sha256": "4a84b8163f5890d98e27bf06774c0a8425f838fc250eb34ab6d7923155289549"
+    },
+    {
+      "name": "live-case-established-session-helpers-down.json",
+      "sha256": "83e1b2084cf2633554d856634edc43e3b1605fe34377dfda7604e174fc6ce56c"
+    },
+    {
+      "name": "live-case-other-pro-after-busy.json",
+      "sha256": "cd3263f4b1f13a895cc7ecee23ce41131873cb2bd69cd4246b9af4034e84a938"
+    },
+    {
+      "name": "live-case-other-pro-after-hang.json",
+      "sha256": "4a85ff2da6b5d47b6894ca537e608aee891eec63ce18ec341032ea8b34eb0771"
+    },
+    {
+      "name": "live-case-other-pro-after-malformed.json",
+      "sha256": "791cad41140300807324a65739c9af06fa035bf4442b8a90273a2d4a6e33357b"
+    },
+    {
+      "name": "live-case-other-pro-after-refusal.json",
+      "sha256": "f46d0d6243852eecc74ff2b357c57b3f79a02f5fa7b52182d60afea9fa1d4daa"
+    },
+    {
+      "name": "live-case-pool-air-down-this-mac.json",
+      "sha256": "773a2d648e6e62e329c13a194bcf115a0548fe1bb129d6ae01435206eba1ee0f"
+    },
+    {
+      "name": "live-case-pool-air-healthy.json",
+      "sha256": "cfde6dbcddd8dcd3c54568bb992da2bb0c4bec5866a2ccf8f5d871507b6c9d6d"
+    },
+    {
+      "name": "live-case-pool-air-recovered.json",
+      "sha256": "2e26fd50c452435dc4927cd002e4c623ac18eebfffef9ef61f462dd88cbd364d"
+    },
+    {
+      "name": "live-case-pool-all-down.json",
+      "sha256": "bf449b06dc8573cf54555a1ef044525aaeba5608a146f89a7e622b1013a7a232"
+    },
+    {
+      "name": "live-case-pool-two-down-other-pro.json",
+      "sha256": "53f94d82ac2c13462e5d6ff84527d5bbe34ed6f3240d0418cf2508ade8dad9e4"
+    },
+    {
+      "name": "live-case-recovered-primary.json",
+      "sha256": "b26ad55faad0f60ecd8dd8a88d9cae854784100b8de8efff2ed866c85085f340"
+    },
+    {
+      "name": "live-independent-cleanup-0ae8022331cb.json",
+      "sha256": "d8e9931bd9b75a5ecd3ea18456f3b605864c3e2139edbb33ce3a2a3dd027e291"
+    },
+    {
+      "name": "live-independent-cleanup-2037f8a8fdf0.json",
+      "sha256": "b3b6a4153a91ca3f42222b0c716f1c8c40aa69b225271c4e420626b93ccd1dec"
+    },
+    {
+      "name": "live-independent-cleanup-ae7b3f158b78.json",
+      "sha256": "5851583fb555248800397dbf004e436bc8509867d663a75794a9c03e15da6bbd"
+    },
+    {
+      "name": "live-independent-cleanup-c8b57b69486a.json",
+      "sha256": "ac8991a080ad42e93e883991dbf8979766a62638afb441d602c10e3a468d7bbe"
+    },
+    {
+      "name": "live-independent-cleanup-ebd1423896d7.json",
+      "sha256": "7486d71f7fc971267e385ea8570669876cfb8c6d6e4ab802fd4b945bcb03723c"
+    },
+    {
+      "name": "live-independent-cleanup-f385ebb72e78.json",
+      "sha256": "2fb9c9dd54952b301afeadc721870e927c3cc3f01ffed5b635ea1eb794a040e3"
+    },
+    {
+      "name": "native-compatibility-proofs.json",
+      "sha256": "42107aa3eba73f4d66c588fbdcc077cf39e37a09ef136e1edc26acc7a5b5591e"
+    },
+    {
+      "name": "paired-latency-other-pro.json",
+      "sha256": "9ac37d85918f9389d49cc9115d13492da77e8c8fc362d60294798b3b570da517"
+    },
+    {
+      "name": "paired-latency-this-mac.json",
+      "sha256": "e10af8e078106435a8718cf8fa5827ee3afaa42308313c26a7ecd30b903b3ac2"
+    },
+    {
+      "name": "phase-cleanup-1793051750410534000.json",
+      "sha256": "16b02a6aa6914ad629e9ca01d0dba45756a308061bb8e3c37e9f9082b723d218"
+    },
+    {
+      "name": "phase-cleanup-1793051842805104000.json",
+      "sha256": "16b02a6aa6914ad629e9ca01d0dba45756a308061bb8e3c37e9f9082b723d218"
+    },
+    {
+      "name": "phase-cleanup-1793052159713917000.json",
+      "sha256": "16b02a6aa6914ad629e9ca01d0dba45756a308061bb8e3c37e9f9082b723d218"
+    },
+    {
+      "name": "phase-cleanup-1793052298098183000.json",
+      "sha256": "211034e9b748c5cf2fb373bd799c82bcbc58b1bb263159e4e88f3f3650e4e443"
+    },
+    {
+      "name": "phase-cleanup-1793052775220015000.json",
+      "sha256": "211034e9b748c5cf2fb373bd799c82bcbc58b1bb263159e4e88f3f3650e4e443"
+    },
+    {
+      "name": "phase-cleanup-1793056588178316000.json",
+      "sha256": "53fcebe097b2f63aa3773f0fa30c34b368045b9fa64bf13d34f0296d5dbb4dd7"
+    },
+    {
+      "name": "phase-cleanup-1793056622701593000.json",
+      "sha256": "c1cf1cafd6727d26affe24d24c7ae44bcab0bb577d16586a173474121bb48ce7"
+    },
+    {
+      "name": "phase-cleanup-1793074590777824000.json",
+      "sha256": "0834f6d2335fe746a2757470b7073fed10fe96d0f70cfb8a8024ce00351ddead"
+    },
+    {
+      "name": "pool-case-air-recovered.json",
+      "sha256": "92673d5640bc2201f25b1f3f4a21cb45b9d0bcae5e68ecce5d43f87d5f03dfac"
+    },
+    {
+      "name": "pool-case-air-tunnel-down.json",
+      "sha256": "0ae693cbb3154e4565e3d67794f2fa958e3c5265981778c14fec34b9d54253ca"
+    },
+    {
+      "name": "pool-case-all-down.json",
+      "sha256": "617650204e0b4f76a490eb16dfe404d04223e19171a43dc2114e6c0702c3cca1"
+    },
+    {
+      "name": "pool-case-healthy-air.json",
+      "sha256": "2d561fb77295eba16d486114c2f126c0fe37c4a91370c94d901429fdc1931b89"
+    },
+    {
+      "name": "pool-case-two-down.json",
+      "sha256": "f08cd4079cac7a922d12991d37e9bbcc1fb407e8636f95ff7c5170ee2500a664"
+    },
+    {
+      "name": "production-case-air-recovered.json",
+      "sha256": "6970fd597a43658c03663ebef33ca23d8d5af4a5b29f30490703d22c8412e9e3"
+    },
+    {
+      "name": "production-case-air-tunnel-down.json",
+      "sha256": "b28c1aa74bc57e1917286f4df5adb15e554513a4e172b704113c9675b0d34379"
+    },
+    {
+      "name": "production-case-all-down.json",
+      "sha256": "95fdc22645b293f9e028cd1dc73f4141aee1c29bb0b7da562db10eec4f693268"
+    },
+    {
+      "name": "production-case-direct-air-down-this.json",
+      "sha256": "871e1218b5f336f28ffe99ae0d04ac2be76bf9e8c41355c1f201b11fce8764c3"
+    },
+    {
+      "name": "production-case-direct-air-healthy.json",
+      "sha256": "17ca67643411fc8699d614c865175067c7e5d40a9b3663c31ad5be21057432d0"
+    },
+    {
+      "name": "production-case-direct-air-this-down-other.json",
+      "sha256": "49a4afdd153dab42d8ddef610570f3ad463f17b9528780a86bad8c2fb3e8e7dd"
+    },
+    {
+      "name": "production-case-direct-all-down.json",
+      "sha256": "942f8bdf86ddf1f373224916ae92e33dc635b414ac6d2c98874022697c1ef692"
+    },
+    {
+      "name": "production-case-direct-other-healthy.json",
+      "sha256": "b4522ae109fae268a026de2e6b4df9940dbe98561ef122104f695b2df8721147"
+    },
+    {
+      "name": "production-case-direct-recovered.json",
+      "sha256": "88f979ab34358a72d79b289a7668019227cd1b6769784a9a9a3b1ca0add44fb9"
+    },
+    {
+      "name": "production-case-direct-tunnel-down-air.json",
+      "sha256": "bfef9d12c7f9c7b5df1f2958132034f096d7e205bf3aafeeb09a6077ae82941a"
+    },
+    {
+      "name": "production-case-direct-two-down-this.json",
+      "sha256": "27cfb7e9e2d1dd35a582a8131e65007d6dfa2c6560be2e274cc3f9bc60e5d460"
+    },
+    {
+      "name": "production-case-healthy-air.json",
+      "sha256": "03aae21c49cee26d0ac38806312ac8091453b3f0720d0ddd1c9ef7344c9bc422"
+    },
+    {
+      "name": "production-case-pool-air-down-this-mac.json",
+      "sha256": "3ec6f72759558afdb05e594e815fcb29eb5de793bd653e991a5e30ee0fea3ef4"
+    },
+    {
+      "name": "production-case-pool-air-healthy.json",
+      "sha256": "1b35215693d2c720688793556e50f01ee23d70f323d3296ecf0bb480977515a8"
+    },
+    {
+      "name": "production-case-pool-air-recovered.json",
+      "sha256": "cd1fe9edd19b00a8b4064cbed89f0dcb3ae2e87670bab36c6036e227666cb14e"
+    },
+    {
+      "name": "production-case-pool-all-down.json",
+      "sha256": "e84355eeddc7fa690f5b7f4a3860abee53f14e55cb80f2fc9bae2282e34c5ac7"
+    },
+    {
+      "name": "production-case-pool-two-down-other-pro.json",
+      "sha256": "8cdf3cc9786fd2bd2a90f74b2b8399503c935b2c997d170b021489a425197f9e"
+    },
+    {
+      "name": "production-case-two-down.json",
+      "sha256": "201ed520dced41fc693e94834bab064aef2c41e5b4d3e1e237986e9f7ffdb236"
+    },
+    {
+      "name": "production-counter-window-summary.json",
+      "sha256": "3b48370e6162a56c75ea77bab54b71c778a3290f043a0f797753964603df3699"
+    },
+    {
+      "name": "production-queue-connection-mode.json",
+      "sha256": "3c3f8e971ce2fd82a738d45171d9c232fd0a4310307f2a247f4164fc81032fdf"
+    },
+    {
+      "name": "soak-direct-concurrent-resources.json",
+      "sha256": "2cc1396516ee3103014d2722a4e7c1579b101196785d89c0e3c694f5aedb8eff"
+    },
+    {
+      "name": "soak-direct-other-pro.json",
+      "sha256": "2db86a24f6bf75869f32b64fdb9ba63da60ef23efbe9b62307cc1313e5c6abfe"
+    },
+    {
+      "name": "soak-direct-summary.json",
+      "sha256": "1cc939449368f7b45974b0a43046849881b39b5b0c0bad83b763a1c5b1b98766"
+    },
+    {
+      "name": "soak-other-pro-postreview-proxy-metadata.json",
+      "sha256": "21c8f75c1cca571e83b0a749046c2fc94898af8f3dd51872686dc5759ee4908e"
+    },
+    {
+      "name": "soak-other-pro.json",
+      "sha256": "2aa23fa8c279d5c4fa16ba7e31e359580c7a19e9e0a039f03d8bcc125e219995"
+    },
+    {
+      "name": "soak-this-mac-resource-summary.json",
+      "sha256": "082d0d331bb7a647048cdf15245acc5241d7532474e90c78ef7d88cf7447b05f"
+    },
+    {
+      "name": "soak-this-mac.json",
+      "sha256": "cca0cbc168eb6458dcbd851b3f15793b5dad03063ebc673c8b35efc64f9c8f1d"
+    }
+  ]
+}
