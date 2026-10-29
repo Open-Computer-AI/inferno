@@ -85,7 +85,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	affiliateRepository := repository.NewAffiliateRepository(client, db)
 	affiliateService := service.NewAffiliateService(affiliateRepository, settingService, apiKeyAuthCacheInvalidator, billingCacheService)
 	orgService := service.NewOrgService(client)
-	mcpoAuthRepository := repository.NewMCPOAuthRepository(db)
+	mcpoAuthRepository := repository.NewMCPOAuthRepository(client, db)
 	mcpoAuthService := service.NewMCPOAuthService(mcpoAuthRepository, userRepository)
 	authService := service.ProvideAuthService(client, userRepository, redeemCodeRepository, refreshTokenCache, configConfig, settingService, emailService, turnstileService, tencentCaptchaService, aliyunCaptchaService, emailQueueService, promoService, subscriptionService, affiliateService, serviceUserPlatformQuotaRepository, orgService, mcpoAuthService)
 	userService := service.NewUserService(userRepository, settingRepository, apiKeyAuthCacheInvalidator, billingCache)
