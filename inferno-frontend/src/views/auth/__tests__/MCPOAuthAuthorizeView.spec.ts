@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import MCPOAuthAuthorizeView from '../MCPOAuthAuthorizeView.vue'
 import type { MCPAuthorization, MCPConsent } from '@/api/mcp'
 
+vi.mock('@/components/layout/AppLayout.vue', () => ({ default: { template: '<main><slot /></main>' } }))
+
 const { auth, previewAuthorization, authorize, routeState, assign } = vi.hoisted(() => ({
   auth: { isAdmin: false, user: { email: 'user@example.com' } },
   previewAuthorization: vi.fn(), authorize: vi.fn(), assign: vi.fn(),
