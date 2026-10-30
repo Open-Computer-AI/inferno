@@ -5,8 +5,9 @@ package service
 import (
 	"context"
 	"fmt"
+	"io"
+	"log"
 	"math"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -436,6 +437,21 @@ func attachInflightSnapshot(svc *GatewayService, snap *inflightSnapshotCacheStub
 func TestInflightEstimate_AccountMappingNoDBAndBoundedMemory(t *testing.T) {
 	groupID := int64(40)
 	svc := newInflightEstimateGateway(t, nil)
+	// Refresh-disabled pricing fixture: NewPricingService without Initialize,
+	// so pricingData changes only if the request path writes it. All three
+	// model-keyed stores reachable from the estimate path (fallbackPrices,
+	// fallbackWarnSeen, pricingData) become directly observable.
+	pricing := NewPricingService(svc.cfg, nil)
+	svc.billingService = NewBillingService(svc.cfg, pricing)
+	svc.resolver = NewModelPricingResolver(nil, svc.billingService)
+	storeSizes := func() (fallback, warn, data int) {
+		fallback = len(svc.billingService.fallbackPrices)
+		svc.billingService.fallbackWarnSeen.Range(func(_, _ any) bool { warn++; return true })
+		pricing.mu.RLock()
+		data = len(pricing.pricingData)
+		pricing.mu.RUnlock()
+		return
+	}
 	snap := &inflightSnapshotCacheStub{byBucket: map[string][]Account{inflightBucketKey(groupID, PlatformAnthropic): {
 		{ID: 1, Platform: PlatformAnthropic, Credentials: map[string]any{"model_mapping": map[string]any{"acct-alias-40": "claude-sonnet-4-5"}}},
 	}}}
@@ -449,19 +465,38 @@ func TestInflightEstimate_AccountMappingNoDBAndBoundedMemory(t *testing.T) {
 	}
 	require.Zero(t, snap.reads.Load(), "priced models must never trigger account-mapping lookup")
 
-	var before, after runtime.MemStats
-	runtime.GC()
-	runtime.ReadMemStats(&before)
+	baseFallback, baseWarn, baseData := storeSizes()
+	var afterFallback, afterWarn, afterData int
 	const n = 20000
 	for i := 0; i < n; i++ {
 		_, priced := svc.EstimateInflightReservation(ctx, apiKey, InflightEstimateRequest{Model: fmt.Sprintf("rand-%d-%d", i, time.Now().UnixNano()), BodyBytes: 4000, MaxTokens: 1000})
 		require.False(t, priced)
 	}
-	runtime.GC()
-	runtime.ReadMemStats(&after)
 	require.Zero(t, repo.dbCalls.Load(), "no direct DB query on the request path")
 	require.Equal(t, int64(n), snap.reads.Load(), "unpriced lookups read the scheduler snapshot only")
-	require.Less(t, int64(after.HeapAlloc)-int64(before.HeapAlloc), int64(8<<20), "no per-model cache growth")
+
+	afterFallback, afterWarn, afterData = storeSizes()
+	require.Equal(t, baseFallback, afterFallback, "fail-closed lookups must not grow fallbackPrices")
+	require.Equal(t, baseWarn, afterWarn, "fail-closed lookups must not grow fallbackWarnSeen")
+	require.Equal(t, baseData, afterData, "fail-closed lookups must not grow pricingData")
+
+	// Growth-detection control: distinct unknown DeepSeek spellings hit the
+	// hardcoded fallback table (deepseek- prefix), one fallbackWarnSeen entry
+	// per distinct model. This proves the assertions above genuinely detect
+	// per-model growth instead of passing vacuously. The per-model fallback
+	// warn log is expected here; keep the gate log readable.
+	prevLogWriter := log.Writer()
+	log.SetOutput(io.Discard)
+	defer log.SetOutput(prevLogWriter)
+	const m = 2000
+	for i := 0; i < m; i++ {
+		_, priced := svc.EstimateInflightReservation(ctx, apiKey, InflightEstimateRequest{Model: fmt.Sprintf("deepseek-unknown-%d", i), BodyBytes: 4000, MaxTokens: 1000})
+		require.True(t, priced, "control model must price via the fallback table")
+	}
+	finalFallback, finalWarn, finalData := storeSizes()
+	require.Equal(t, baseFallback, finalFallback, "control must not grow fallbackPrices")
+	require.Equal(t, baseWarn+m, finalWarn, "control proves the store assertions detect per-model growth")
+	require.Equal(t, baseData, finalData, "control must not grow pricingData")
 }
 
 // 无分组 API Key：使用调度器的未分组账号池，估算与计费回退的账号映射模型同口径。
