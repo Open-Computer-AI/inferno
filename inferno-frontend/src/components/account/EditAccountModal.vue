@@ -307,9 +307,29 @@
               </button>
             </div>
 
+            <GrokModelDiagnosticsPanel
+              v-if="account.platform === 'grok'"
+              :key="'grok-diagnostics-' + account.id"
+              :diagnostics="grokDiagnostics"
+              :loading="diagnosticsLoading"
+              :dirty="grokDiagnosticsDirty"
+              :refresh-failed="diagnosticsRefreshFailed"
+              :can-sync="Boolean(account.id)"
+              :syncing="isGrokCatalogSyncing"
+              @sync="requestGrokCatalogSync"
+            />
+
             <!-- Whitelist Mode -->
             <div v-if="modelRestrictionMode === 'whitelist'">
-              <ModelWhitelistSelector v-model="allowedModels" :model-mappings="modelMappings" :platform="account?.platform || 'anthropic'" :account-id="account?.id" />
+              <ModelWhitelistSelector
+                ref="grokApiKeyWhitelistRef"
+                v-model="allowedModels"
+                :model-mappings="modelMappings"
+                :platform="account?.platform || 'anthropic'"
+                :account-id="account?.id"
+                :show-sync-button="account.platform !== 'grok' || !account.id"
+                @upstream-sync-finished="refreshGrokDiagnostics"
+              />
               <p class="text-xs text-gray-500 dark:text-gray-400">
                 {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
                 <span v-if="allowedModels.length === 0 && modelMappings.length === 0">{{
@@ -784,9 +804,29 @@
             </button>
           </div>
 
+          <GrokModelDiagnosticsPanel
+            v-if="account.platform === 'grok'"
+            :key="'grok-diagnostics-' + account.id"
+            :diagnostics="grokDiagnostics"
+            :loading="diagnosticsLoading"
+            :dirty="grokDiagnosticsDirty"
+            :refresh-failed="diagnosticsRefreshFailed"
+            :can-sync="Boolean(account.id)"
+            :syncing="isGrokCatalogSyncing"
+            @sync="requestGrokCatalogSync"
+          />
+
           <!-- Whitelist Mode -->
           <div v-if="modelRestrictionMode === 'whitelist'">
-            <ModelWhitelistSelector v-model="allowedModels" :model-mappings="modelMappings" :platform="account?.platform || 'anthropic'" :account-id="account?.id" />
+            <ModelWhitelistSelector
+              ref="grokOAuthWhitelistRef"
+              v-model="allowedModels"
+              :model-mappings="modelMappings"
+              :platform="account?.platform || 'anthropic'"
+              :account-id="account?.id"
+              :show-sync-button="account.platform !== 'grok' || !account.id"
+              @upstream-sync-finished="refreshGrokDiagnostics"
+            />
             <p class="text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
               <span v-if="allowedModels.length === 0 && modelMappings.length === 0">{{
@@ -3099,13 +3139,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, nextTick, onMounted } from 'vue'
+import { ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { adminAPI } from '@/api/admin'
 import { useQuotaNotifyState } from '@/composables/useQuotaNotifyState'
-import type {
+import type { GrokModelDiagnostics,
   Account,
   Proxy,
   AdminGroup,
@@ -3139,6 +3179,7 @@ import OpenCodeGoProtocolRulesEditor from '@/components/account/OpenCodeGoProtoc
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
+import GrokModelDiagnosticsPanel from '@/components/account/GrokModelDiagnosticsPanel.vue'
 import CnBaseUrlPresets from '@/components/account/CnBaseUrlPresets.vue'
 import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
 import OllamaCloudUsageSettings from '@/components/account/OllamaCloudUsageSettings.vue'
@@ -3583,6 +3624,153 @@ const grokClientToolCacheEnabled = ref(true)
 const isGrokOAuthAccount = computed(
   () => props.account?.platform === 'grok' && props.account?.type === 'oauth'
 )
+
+// Grok model catalog diagnostics (ported from upstream EditAccountModal)
+const GROK_API_KEY_DEFAULT_BASE_URL = 'https://api.x.ai/v1'
+const grokDiagnostics = ref<GrokModelDiagnostics | null>(null)
+const diagnosticsLoading = ref(false)
+const diagnosticsRefreshFailed = ref(false)
+const grokDiagnosticsSyncing = ref(false)
+let diagnosticsGeneration = 0
+let grokDiagnosticsSyncVersion = 0
+
+function normalizedGrokMapping(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object') return {}
+  const mapping: Record<string, string> = {}
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof raw !== 'string') continue
+    const from = key.trim()
+    const to = raw.trim()
+    if (!from || !to) continue
+    mapping[from] = to
+  }
+  return mapping
+}
+
+function sameGrokMapping(left: Record<string, string>, right: Record<string, string>): boolean {
+  const leftKeys = Object.keys(left).sort()
+  const rightKeys = Object.keys(right).sort()
+  return leftKeys.length === rightKeys.length
+    && leftKeys.every((key, index) => key === rightKeys[index] && left[key] === right[key])
+}
+
+const grokDiagnosticsDirty = computed(() => {
+  if (props.account?.platform !== 'grok') return false
+  const credentials = (props.account.credentials as Record<string, unknown> | undefined) || {}
+  if (!sameGrokMapping(normalizedGrokMapping(credentials.model_mapping), normalizedGrokMapping(buildModelRestrictionMapping()))) {
+    return true
+  }
+
+  const savedBase = typeof credentials.base_url === 'string' ? credentials.base_url.trim() : ''
+  if (props.account.type === 'oauth') {
+    const savedCustom = isCustomGrokBaseUrl(savedBase)
+    if (grokOAuthCustomBaseUrlEnabled.value !== savedCustom) return true
+    return grokOAuthCustomBaseUrlEnabled.value && grokOAuthBaseUrl.value.trim() !== savedBase
+  }
+  if (props.account.type === 'apikey') {
+    const savedEffective = savedBase || GROK_API_KEY_DEFAULT_BASE_URL
+    const current = editBaseUrl.value.trim() || GROK_API_KEY_DEFAULT_BASE_URL
+    return current !== savedEffective
+  }
+  return false
+})
+
+const resetGrokDiagnostics = () => {
+  diagnosticsGeneration += 1
+  grokDiagnosticsSyncVersion += 1
+  grokDiagnostics.value = null
+  diagnosticsLoading.value = false
+  diagnosticsRefreshFailed.value = false
+  grokDiagnosticsSyncing.value = false
+}
+
+const refreshGrokDiagnostics = async () => {
+  const id = props.account?.id
+  if (!props.show || props.account?.platform !== 'grok' || !id) return
+  const generation = ++diagnosticsGeneration
+  diagnosticsLoading.value = true
+  diagnosticsRefreshFailed.value = false
+  try {
+    const fresh = await adminAPI.accounts.getById(id)
+    if (generation !== diagnosticsGeneration || !props.show || props.account?.id !== id) return
+    grokDiagnostics.value = fresh.grok_model_diagnostics ?? null
+  } catch {
+    if (generation === diagnosticsGeneration) diagnosticsRefreshFailed.value = true
+  } finally {
+    if (generation === diagnosticsGeneration) diagnosticsLoading.value = false
+  }
+}
+
+const syncGrokDiagnostics = async () => {
+  const id = props.account?.id
+  if (!props.show || props.account?.platform !== 'grok' || !id || grokDiagnosticsSyncing.value) return
+  const syncVersion = grokDiagnosticsSyncVersion
+  grokDiagnosticsSyncing.value = true
+  try {
+    const result = await adminAPI.accounts.syncUpstreamModels(id)
+    if (syncVersion !== grokDiagnosticsSyncVersion || !props.show || props.account?.id !== id) return
+    const warnings = result.warnings ?? []
+    if (result.discovery_source === 'configured_fallback') {
+      appStore.showWarning(t('admin.accounts.grokModelDiagnostics.configuredFallback'))
+    }
+    const hasIncompleteMetadata = warnings.some((warning) => warning.code === 'upstream_model_metadata_incomplete')
+    const hasPartialMetadata = warnings.some((warning) => warning.code === 'upstream_model_metadata_partial')
+    if (hasIncompleteMetadata) {
+      appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataIncomplete'))
+    } else if (hasPartialMetadata) {
+      appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataPartial'))
+    }
+  } catch (error) {
+    if (syncVersion !== grokDiagnosticsSyncVersion || !props.show || props.account?.id !== id) return
+    const message = extractApiErrorMessage(error, t('admin.accounts.syncUpstreamModelsFailed'))
+    appStore.showError(t('admin.accounts.syncUpstreamModelsError', { message }))
+  } finally {
+    if (syncVersion === grokDiagnosticsSyncVersion && props.show && props.account?.id === id) {
+      grokDiagnosticsSyncing.value = false
+      await refreshGrokDiagnostics()
+    }
+  }
+}
+
+const grokApiKeyWhitelistRef = ref<InstanceType<typeof ModelWhitelistSelector> | null>(null)
+const grokOAuthWhitelistRef = ref<InstanceType<typeof ModelWhitelistSelector> | null>(null)
+const activeGrokWhitelist = computed(() => props.account?.type === 'oauth'
+  ? grokOAuthWhitelistRef.value : grokApiKeyWhitelistRef.value)
+const isGrokCatalogSyncing = computed(() => grokDiagnosticsSyncing.value
+  || Boolean(activeGrokWhitelist.value?.isSyncingUpstream))
+const requestGrokCatalogSync = async () => {
+  if (!props.show || props.account?.platform !== 'grok' || !props.account.id
+      || diagnosticsLoading.value || isGrokCatalogSyncing.value) return
+  const mode = modelRestrictionMode.value
+  const selector = activeGrokWhitelist.value
+  if (mode === 'whitelist') {
+    if (!selector) return
+    await selector.syncUpstreamModels()
+    return
+  }
+  await syncGrokDiagnostics()
+}
+
+watch(
+  [() => props.show, () => props.account?.id, () => props.account?.platform],
+  ([show, id, platform], previous) => {
+    const wasShow = previous?.[0]
+    const previousId = previous?.[1]
+    if (!show || platform !== 'grok' || !id) {
+      resetGrokDiagnostics()
+      return
+    }
+    if (!wasShow || id !== previousId) {
+      resetGrokDiagnostics()
+      void refreshGrokDiagnostics()
+    }
+  },
+  { immediate: true }
+)
+
+onBeforeUnmount(() => {
+  resetGrokDiagnostics()
+})
 const grokMediaEligibilityMode = ref<GrokMediaEligibilityMode>('auto')
 const grokMediaEligibilityInitialMode = ref<GrokMediaEligibilityMode>('auto')
 const grokMediaEligibilityState = ref<GrokMediaEligibilityState | null>(null)
