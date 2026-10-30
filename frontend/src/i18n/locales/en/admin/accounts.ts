@@ -1,20 +1,4 @@
 export default {
-  concurrencyPolicy: {
-    mode: 'Concurrency mode',
-    shared: 'Shared limit',
-    split: 'Separate Live and request limits',
-    live: 'Live current / limit',
-    requests: 'Requests current / limit',
-    liveLimit: 'Live limit',
-    requestsLimit: 'Request limit',
-    aggregate: 'Aggregate current',
-    aggregateValue: '{value} total active',
-    hint: 'Split mode requires positive integer limits for both workloads.',
-    positiveInteger: 'Enter a positive whole number up to {max}.',
-    unknown: 'Unknown',
-    invalid: 'Enter valid positive Live and request limits.',
-    unsupportedImportHint: 'This import method does not support concurrency policies; the selected policy was reset.'
-  },
     accounts: {
       title: 'Account Management',
       description: 'Manage AI platform accounts and credentials',
@@ -565,8 +549,6 @@ export default {
         failed: 'Bulk update failed',
         noSelection: 'Please select accounts to edit',
         noFieldsSelected: 'Select at least one field to update',
-        concurrencyPolicyHint: 'Only selected OpenAI OAuth accounts can receive a concurrency policy.',
-        concurrencyPolicySelectedOnly: 'Concurrency policies can only be applied to selected accounts.',
         rateSyncWarning: 'Accounts with upstream rate sync enabled cannot be changed in bulk. Disable sync in the account editor first.',
         rateSyncConflict: 'Cannot change account rates: {count} target account(s) have upstream rate sync enabled.',
         longContextShadowHint: 'Long-context billing belongs to the parent account. Selected shadow accounts keep following their parent, including when targets come from a filter.',

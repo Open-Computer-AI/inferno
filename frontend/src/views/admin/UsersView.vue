@@ -574,19 +574,9 @@
           </template>
 
           <template #cell-concurrency="{ row }">
-            <ConcurrencyPolicyCell
-              v-if="row.concurrency_mode === 'split'"
-              :live-current="row.current_live_concurrency"
-              :live-limit="row.live_concurrency"
-              :request-current="row.current_request_concurrency"
-              :request-limit="row.request_concurrency"
-              :aggregate-current="row.current_concurrency"
-            />
             <UserConcurrencyCell
-              v-else
-              :current="row.current_concurrency"
+              :current="row.current_concurrency ?? 0"
               :max="row.concurrency"
-              :unknown-label="t('admin.concurrencyPolicy.unknown')"
             />
           </template>
 
@@ -828,7 +818,6 @@ import Select from '@/components/common/Select.vue'
 import { buildApiKeyGroupFilterOptions } from './apiKeyGroupFilterOptions'
 import UserAttributesConfigModal from '@/components/user/UserAttributesConfigModal.vue'
 import UserConcurrencyCell from '@/components/user/UserConcurrencyCell.vue'
-import ConcurrencyPolicyCell from '@/components/admin/ConcurrencyPolicyCell.vue'
 import PlatformUsageBreakdown from '@/components/user/PlatformUsageBreakdown.vue'
 import PlatformCostCell from '@/components/user/PlatformCostCell.vue'
 import UserPlatformQuotaCell from '@/components/user/UserPlatformQuotaCell.vue'

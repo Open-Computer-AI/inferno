@@ -822,39 +822,6 @@
         </div>
       </div>
 
-      <div
-        v-if="canEditSplitPolicy"
-        class="border-t border-gray-200 pt-4 dark:border-dark-600"
-        data-test="bulk-concurrency-policy-section"
-      >
-        <div class="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <label class="input-label mb-0" for="bulk-edit-concurrency-policy-enabled">
-              {{ t('admin.concurrencyPolicy.mode') }}
-            </label>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t('admin.accounts.bulkEdit.concurrencyPolicyHint') }}
-            </p>
-          </div>
-          <input
-            v-model="enableConcurrencyPolicy"
-            id="bulk-edit-concurrency-policy-enabled"
-            type="checkbox"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-          />
-        </div>
-        <ConcurrencyPolicyFields
-          v-if="enableConcurrencyPolicy"
-          :mode="concurrencyMode"
-          :live="liveConcurrency"
-          :requests="requestConcurrency"
-          :disabled="submitting"
-          @update:mode="concurrencyMode = $event"
-          @update:live="liveConcurrency = $event"
-          @update:requests="requestConcurrency = $event"
-        />
-      </div>
-
       <!-- Status -->
       <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div class="mb-3 flex items-center justify-between">
@@ -1516,7 +1483,6 @@ import type {
   AdminGroup,
   AccountPlatform,
   AccountType,
-  ConcurrencyMode,
   OpenAICompactMode,
   OpenAIEndpointCapability,
   OpenAIResponsesMode
@@ -1528,7 +1494,6 @@ import ProxySelector from '@/components/common/ProxySelector.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import Icon from '@/components/icons/Icon.vue'
-import ConcurrencyPolicyFields from '@/components/admin/ConcurrencyPolicyFields.vue'
 import {
   buildModelMappingObject as buildModelMappingPayload,
   getPresetMappingsByPlatform
@@ -1552,34 +1517,23 @@ import {
   resolveOpenAIWSModeHintKey
 } from '@/utils/openaiWsMode'
 import type { OpenAIWSMode } from '@/utils/openaiWsMode'
-import {
-  buildConcurrencyPolicy,
-  isOpenAIAuthModeLiveConcurrencyEligible,
-  type ConcurrencyLimitInput
-} from '@/utils/concurrencyPolicy'
 interface Props {
   show: boolean
   accountIds: number[]
   selectedPlatforms: AccountPlatform[]
   selectedTypes: AccountType[]
-  selectedAuthModes?: string[]
-  selectedAuthModesComplete?: boolean
   target?: {
     mode: 'selected' | 'filtered'
     filters?: Record<string, unknown>
     previewCount?: number
     selectedPlatforms?: AccountPlatform[]
     selectedTypes?: AccountType[]
-    selectedAuthModes?: string[]
-    selectedAuthModesComplete?: boolean
   }
   proxies: ProxyConfig[]
   groups: AdminGroup[]
 }
 
-const props = withDefaults(defineProps<Props>(), {
-  selectedAuthModesComplete: true
-})
+const props = defineProps<Props>()
 const emit = defineEmits<{
   close: []
   updated: []
@@ -1593,12 +1547,6 @@ const targetMode = computed(() => props.target?.mode ?? 'selected')
 const targetPreviewCount = computed(() => props.target?.previewCount ?? props.accountIds.length)
 const targetSelectedPlatforms = computed(() => props.target?.selectedPlatforms ?? props.selectedPlatforms)
 const targetSelectedTypes = computed(() => props.target?.selectedTypes ?? props.selectedTypes)
-const targetSelectedAuthModes = computed(() =>
-  props.target?.selectedAuthModes ?? props.selectedAuthModes ?? []
-)
-const targetSelectedAuthModesComplete = computed(() =>
-  props.target?.selectedAuthModesComplete ?? props.selectedAuthModesComplete ?? true
-)
 // Grok 快捷端点仅在所选账号全部为 grok 平台时展示（其他平台不显示）
 const allTargetsGrok = computed(
   () =>
@@ -1634,13 +1582,6 @@ const allOpenAIOAuthOnly = computed(() => {
     targetSelectedTypes.value.every(t => t === 'oauth')
   )
 })
-
-const canEditSplitPolicy = computed(() =>
-  targetMode.value === 'selected' &&
-  allOpenAIOAuthOnly.value &&
-  targetSelectedAuthModesComplete.value &&
-  targetSelectedAuthModes.value.every(isOpenAIAuthModeLiveConcurrencyEligible)
-)
 
 const allOpenAIAPIKey = computed(() => {
   return (
@@ -1712,7 +1653,6 @@ const enableInterceptWarmup = ref(false)
 const enableHeaderOverride = ref(false)
 const enableProxy = ref(false)
 const enableConcurrency = ref(false)
-const enableConcurrencyPolicy = ref(false)
 const enableLoadFactor = ref(false)
 const enablePriority = ref(false)
 const enableRateMultiplier = ref(false)
@@ -1748,9 +1688,6 @@ const headerOverrideEnabled = ref(false)
 const headerOverrideRows = ref<HeaderOverrideRow[]>([])
 const proxyId = ref<number | null>(null)
 const concurrency = ref(1)
-const concurrencyMode = ref<ConcurrencyMode>('shared')
-const liveConcurrency = ref<ConcurrencyLimitInput>('')
-const requestConcurrency = ref<ConcurrencyLimitInput>('')
 const loadFactor = ref<number | null>(null)
 const priority = ref(1)
 const rateMultiplier = ref(1)
@@ -2008,17 +1945,6 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
 
   if (enableConcurrency.value) {
     updates.concurrency = concurrency.value
-  }
-
-  if (enableConcurrencyPolicy.value) {
-    const policy = buildConcurrencyPolicy(
-      concurrencyMode.value,
-      liveConcurrency.value,
-      requestConcurrency.value
-    )
-    if (policy) {
-      updates.concurrency_policy = policy
-    }
   }
 
   if (enableLoadFactor.value) {
@@ -2288,7 +2214,6 @@ const handleSubmit = async () => {
     enableHeaderOverride.value ||
     enableProxy.value ||
     enableConcurrency.value ||
-    enableConcurrencyPolicy.value ||
     enableLoadFactor.value ||
     enablePriority.value ||
     enableRateMultiplier.value ||
@@ -2307,16 +2232,6 @@ const handleSubmit = async () => {
 
   if (!hasAnyFieldEnabled) {
     appStore.showError(t('admin.accounts.bulkEdit.noFieldsSelected'))
-    return
-  }
-
-  if (enableConcurrencyPolicy.value && !canEditSplitPolicy.value) {
-    appStore.showError(t('admin.accounts.bulkEdit.concurrencyPolicySelectedOnly'))
-    return
-  }
-  if (enableConcurrencyPolicy.value &&
-      !buildConcurrencyPolicy(concurrencyMode.value, liveConcurrency.value, requestConcurrency.value)) {
-    appStore.showError(t('admin.concurrencyPolicy.invalid'))
     return
   }
 
@@ -2357,10 +2272,6 @@ const handleSubmit = async () => {
 }
 
 const submitBulkUpdate = async (baseUpdates: Record<string, unknown>) => {
-  if ('concurrency_policy' in baseUpdates && targetMode.value !== 'selected') {
-    appStore.showError(t('admin.accounts.bulkEdit.concurrencyPolicySelectedOnly'))
-    return
-  }
   // 无论是预检查确认还是 409 兜底确认，只要 mixedChannelConfirmed 为 true 就带上 flag
   const updates = mixedChannelConfirmed.value
     ? { ...baseUpdates, confirm_mixed_channel_risk: true }
@@ -2449,7 +2360,6 @@ watch(
       enableHeaderOverride.value = false
       enableProxy.value = false
       enableConcurrency.value = false
-      enableConcurrencyPolicy.value = false
       enableLoadFactor.value = false
       enablePriority.value = false
       enableRateMultiplier.value = false
@@ -2488,9 +2398,6 @@ watch(
       headerOverrideRows.value = []
       proxyId.value = null
       concurrency.value = 1
-      concurrencyMode.value = 'shared'
-      liveConcurrency.value = ''
-      requestConcurrency.value = ''
       loadFactor.value = null
       priority.value = 1
       rateMultiplier.value = 1

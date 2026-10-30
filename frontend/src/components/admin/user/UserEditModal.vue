@@ -54,14 +54,6 @@
         />
         <p class="input-hint">{{ t('admin.users.form.concurrencyHint') }}</p>
       </div>
-      <ConcurrencyPolicyFields
-        :mode="concurrencyMode"
-        :live="liveConcurrency"
-        :requests="requestConcurrency"
-        @update:mode="updateConcurrencyMode"
-        @update:live="updateLiveConcurrency"
-        @update:requests="updateRequestConcurrency"
-      />
       <div>
         <label class="input-label">{{ t('admin.users.form.rpmLimit') }}</label>
         <input
@@ -96,20 +88,13 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useClipboard } from '@/composables/useClipboard'
 import { adminAPI } from '@/api/admin'
-import type { AdminUser, ConcurrencyMode, UserAttributeValuesMap } from '@/types'
+import type { AdminUser, UserAttributeValuesMap } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
 import UserAttributeForm from '@/components/user/UserAttributeForm.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useStepUp, isStepUpBlocked, isStepUpCancelled, stepUpBlockReason } from '@/composables/useStepUp'
 import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
-import ConcurrencyPolicyFields from '@/components/admin/ConcurrencyPolicyFields.vue'
-import {
-  buildConcurrencyPolicy,
-  concurrencyInputValue,
-  getConcurrencyMode,
-  type ConcurrencyLimitInput
-} from '@/utils/concurrencyPolicy'
 
 const props = defineProps<{ show: boolean, user: AdminUser | null }>()
 const emit = defineEmits(['close', 'success'])
@@ -130,34 +115,13 @@ const form = reactive({
   rpm_limit: 0,
   customAttributes: {} as UserAttributeValuesMap
 })
-const concurrencyMode = ref<ConcurrencyMode>('shared')
-const liveConcurrency = ref<ConcurrencyLimitInput>('')
-const requestConcurrency = ref<ConcurrencyLimitInput>('')
-const concurrencyPolicyDirty = ref(false)
 
 watch(() => props.user, (u) => {
   if (u) {
     Object.assign(form, { email: u.email, password: '', username: u.username || '', notes: u.notes || '', role: u.role || 'user', concurrency: u.concurrency, rpm_limit: u.rpm_limit ?? 0, customAttributes: {} })
-    concurrencyMode.value = getConcurrencyMode(u)
-    liveConcurrency.value = concurrencyInputValue(u.live_concurrency)
-    requestConcurrency.value = concurrencyInputValue(u.request_concurrency)
-    concurrencyPolicyDirty.value = false
     passwordCopied.value = false
   }
 }, { immediate: true })
-
-const updateConcurrencyMode = (value: ConcurrencyMode) => {
-  concurrencyMode.value = value
-  concurrencyPolicyDirty.value = true
-}
-const updateLiveConcurrency = (value: string) => {
-  liveConcurrency.value = value
-  concurrencyPolicyDirty.value = true
-}
-const updateRequestConcurrency = (value: string) => {
-  requestConcurrency.value = value
-  concurrencyPolicyDirty.value = true
-}
 
 const generatePassword = () => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%^&*'
@@ -182,18 +146,10 @@ const handleUpdateUser = async () => {
     appStore.showError(t('admin.users.concurrencyNonNegative'))
     return
   }
-  const concurrencyPolicy = concurrencyPolicyDirty.value
-    ? buildConcurrencyPolicy(concurrencyMode.value, liveConcurrency.value, requestConcurrency.value)
-    : undefined
-  if (concurrencyPolicyDirty.value && concurrencyPolicy === null) {
-    appStore.showError(t('admin.concurrencyPolicy.invalid'))
-    return
-  }
   const userId = props.user.id
   submitting.value = true
   try {
     const data: any = { email: form.email, username: form.username, notes: form.notes, role: form.role, concurrency: form.concurrency, rpm_limit: form.rpm_limit }
-    if (concurrencyPolicy) data.concurrency_policy = concurrencyPolicy
     if (form.password.trim()) data.password = form.password.trim()
     // 提升为管理员属敏感操作：后端返回 STEP_UP_REQUIRED 时弹 TOTP 验证并重试
     await stepUp.run(() => adminAPI.users.update(userId, data))

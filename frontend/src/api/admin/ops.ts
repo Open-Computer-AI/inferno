@@ -296,10 +296,6 @@ export interface OpsJobHeartbeat {
 export interface PlatformConcurrencyInfo {
   platform: string
   current_in_use: number
-  current_concurrency?: number | null
-  current_live_concurrency?: number | null
-  current_request_concurrency?: number | null
-  concurrency_read_error?: string | null
   max_capacity: number
   load_percentage: number
   waiting_in_queue: number
@@ -310,10 +306,6 @@ export interface GroupConcurrencyInfo {
   group_name: string
   platform: string
   current_in_use: number
-  current_concurrency?: number | null
-  current_live_concurrency?: number | null
-  current_request_concurrency?: number | null
-  concurrency_read_error?: string | null
   max_capacity: number
   load_percentage: number
   waiting_in_queue: number
@@ -326,10 +318,6 @@ export interface AccountConcurrencyInfo {
   group_id: number
   group_name: string
   current_in_use: number
-  current_concurrency?: number | null
-  current_live_concurrency?: number | null
-  current_request_concurrency?: number | null
-  concurrency_read_error?: string | null
   max_capacity: number
   load_percentage: number
   waiting_in_queue: number
@@ -348,10 +336,6 @@ export interface UserConcurrencyInfo {
   user_email: string
   username: string
   current_in_use: number
-  current_concurrency?: number | null
-  current_live_concurrency?: number | null
-  current_request_concurrency?: number | null
-  concurrency_read_error?: string | null
   max_capacity: number
   load_percentage: number
   waiting_in_queue: number

@@ -35,10 +35,6 @@ export interface NotifyEmailEntry {
 // ==================== User & Auth Types ====================
 
 export type UserAuthProvider = 'email' | 'linuxdo' | 'oidc' | 'wechat' | 'github' | 'google' | 'dingtalk'
-export type ConcurrencyMode = 'shared' | 'split'
-export type ConcurrencyPolicyPatch =
-  | { mode: 'shared' }
-  | { mode: 'split'; live: number; requests: number }
 
 export interface UserAuthBindingStatus {
   bound?: boolean
@@ -92,9 +88,6 @@ export interface User {
   balance: number // User balance for API usage
   frozen_balance?: number // Balance currently held by async batch jobs
   concurrency: number // Allowed concurrent requests
-  concurrency_mode?: ConcurrencyMode
-  live_concurrency?: number | null
-  request_concurrency?: number | null
   rpm_limit?: number // User-level RPM cap (0 = unlimited); effective as fallback when group has no rpm_limit
   status: 'active' | 'disabled' // Account status
   allowed_groups: number[] | null // Allowed group IDs (null = all non-exclusive groups)
@@ -118,9 +111,7 @@ export interface AdminUser extends User {
   // 管理侧权限开关，普通用户接口不返回。
   restrict_public_groups?: boolean
   // 当前并发数（仅管理员列表接口返回）
-  current_concurrency?: number | null
-  current_live_concurrency?: number | null
-  current_request_concurrency?: number | null
+  current_concurrency?: number
 }
 
 export interface LoginRequest {
@@ -770,8 +761,7 @@ export interface ApiKey {
   expires_at: string | null // Expiration time (null = never expires)
   created_at: string
   updated_at: string
-  current_concurrency: number | null
-  concurrency_read_error?: string | null
+  current_concurrency: number
   group?: Group
   rate_limit_5h: number
   rate_limit_1d: number
@@ -1318,13 +1308,8 @@ export interface Account {
   proxy_fallback_origin_id?: number | null
   proxy_fallback_origin_name?: string | null
   concurrency: number
-  concurrency_mode?: ConcurrencyMode
-  live_concurrency?: number | null
-  request_concurrency?: number | null
   load_factor?: number | null
-  current_concurrency?: number | null // Aggregate runtime concurrency count
-  current_live_concurrency?: number | null
-  current_request_concurrency?: number | null
+  current_concurrency?: number // Real-time concurrency count from Redis
   scheduler_score?: {
     base_score: number
     sticky_score?: number
@@ -1609,7 +1594,6 @@ export interface CreateAccountRequest {
   extra?: Record<string, unknown>
   proxy_id?: number | null
   concurrency?: number
-  concurrency_policy?: ConcurrencyPolicyPatch
   load_factor?: number | null
   priority?: number
   rate_multiplier?: number // Account billing multiplier (>=0, 0 means free)
@@ -1628,7 +1612,6 @@ export interface UpdateAccountRequest {
   extra?: Record<string, unknown>
   proxy_id?: number | null
   concurrency?: number
-  concurrency_policy?: ConcurrencyPolicyPatch
   load_factor?: number | null
   priority?: number
   rate_multiplier?: number // Account billing multiplier (>=0, 0 means free)
@@ -1728,7 +1711,6 @@ export interface AdminDataAccount {
   extra?: Record<string, unknown>
   proxy_key?: string | null
   concurrency: number
-  concurrency_policy?: ConcurrencyPolicyPatch
   priority: number
   rate_multiplier?: number | null
   expires_at?: number | null
@@ -1759,7 +1741,6 @@ export interface CodexSessionImportRequest {
   group_ids?: number[]
   proxy_id?: number | null
   concurrency?: number
-  concurrency_policy?: ConcurrencyPolicyPatch
   priority?: number
   rate_multiplier?: number
   load_factor?: number | null
@@ -1779,7 +1760,6 @@ export interface OpenAICodexPATCreateRequest {
   group_ids?: number[]
   proxy_id?: number | null
   concurrency?: number
-  concurrency_policy?: ConcurrencyPolicyPatch
   priority?: number
   rate_multiplier?: number
   load_factor?: number | null
@@ -2158,19 +2138,6 @@ export interface ApiKeyUsageTrendPoint {
 
 // ==================== Admin User Management ====================
 
-export interface CreateUserRequest {
-  email: string
-  password: string
-  username?: string
-  notes?: string
-  role?: 'admin' | 'user'
-  balance?: number
-  concurrency?: number
-  concurrency_policy?: ConcurrencyPolicyPatch
-  rpm_limit?: number
-  allowed_groups?: number[] | null
-}
-
 export interface UpdateUserRequest {
   email?: string
   password?: string
@@ -2179,7 +2146,6 @@ export interface UpdateUserRequest {
   role?: 'admin' | 'user'
   balance?: number
   concurrency?: number
-  concurrency_policy?: ConcurrencyPolicyPatch
   rpm_limit?: number
   status?: 'active' | 'disabled'
   allowed_groups?: number[] | null
