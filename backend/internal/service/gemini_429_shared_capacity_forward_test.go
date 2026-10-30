@@ -48,7 +48,10 @@ func TestGeminiForwardNative_VertexSharedCapacityRetriesSameAccountWithoutCooldo
 		tokenProvider:    NewGeminiTokenProvider(repo, &fakeGeminiTokenCache{token: "vertex-token"}, nil),
 		httpUpstream:     upstream,
 		rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, nil),
-		cfg:              &config.Config{},
+		// Fixture sets the documented default explicitly: after the 4197fa620 port
+		// (configurable gateway.max_same_account_retries_gemini) a zero-value Config
+		// means zero same-account retries instead of the old hardcoded default.
+		cfg: &config.Config{Gateway: config.GatewayConfig{MaxSameAccountRetriesGemini: geminiDefaultSameAccountRetries}},
 	}
 	c, rec := newGeminiNativeTestContext(t)
 	result, err := svc.ForwardNative(context.Background(), c, newVertexTokenTestAccount(t), "gemini-3.8-flash", "generateContent", false,
