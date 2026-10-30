@@ -229,6 +229,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/mcp',
+    name: 'MCP',
+    component: () => import('@/views/user/MCPView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'MCP Connection',
+      titleKey: 'mcp.title',
+      descriptionKey: 'mcp.description'
+    }
+  },
+  {
     path: '/keys',
     name: 'Keys',
     component: () => import('@/views/user/KeysView.vue'),
@@ -443,6 +455,18 @@ const routes: RouteRecordRaw[] = [
     // post-login `router.push(redirectTo)`), with a JWT already in hand --
     // AuthorizeConsentView.vue is what re-issues the request, this time
     // authenticated, to actually complete the flow.
+    path: '/oauth/mcp/authorize',
+    name: 'MCPOAuthAuthorize',
+    component: () => import('@/views/auth/MCPOAuthAuthorizeView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      hideInMenu: true,
+      title: 'Authorize MCP Application',
+      titleKey: 'mcp.consentTitle'
+    }
+  },
+  {
     path: '/oauth/authorize',
     name: 'OAuthAuthorize',
     component: () => import('@/views/oauth/AuthorizeConsentView.vue'),

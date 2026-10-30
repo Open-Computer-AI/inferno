@@ -301,6 +301,9 @@ function buildSelfGroups(): NavGroup[] {
   const access: NavRow[] = [
     { path: '/keys', label: t('shell.apiKeys'), icon: 'hgi-key-01', dataTour: 'sidebar-my-keys' }
   ]
+  if (isFeatureFlagEnabled(FeatureFlags.mcp)) {
+    access.push({ path: '/mcp', label: t('mcp.title'), icon: 'hgi-plug-socket' })
+  }
   if (!isSimpleMode.value && isFeatureFlagEnabled(FeatureFlags.availableChannels)) {
     access.push({ path: '/available-channels', label: t('nav.channels'), icon: 'hgi-plug-socket' })
   }
@@ -491,6 +494,9 @@ const adminFlatSimple = computed((): NavRow[] => {
   rows.push(
     { path: '/admin/usage', label: t('nav.usage'), icon: 'hgi-dashboard-speed-01' },
     { path: '/keys', label: t('shell.apiKeys'), icon: 'hgi-key-01', dataTour: 'sidebar-my-keys' },
+    ...(isFeatureFlagEnabled(FeatureFlags.mcp)
+      ? [{ path: '/mcp', label: t('mcp.title'), icon: 'hgi-plug-socket' }]
+      : []),
     { path: '/admin/settings', label: t('nav.settings'), icon: 'hgi-settings-01' }
   )
   for (const cm of customMenuItemsForAdmin.value) {
