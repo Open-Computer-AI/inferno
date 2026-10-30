@@ -67,6 +67,10 @@ describe('MCP authorization through existing sign-in flows', () => {
     mounted.push(wrapper)
     await flushPromises()
     await wrapper.get('#email').setValue('user@example.com')
+    // June's LoginView is a two-stage form: step one collects the address and
+    // advances (no server call), step two collects the password and signs in.
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
     await wrapper.get('#password').setValue('local-test-password')
     await wrapper.get('form').trigger('submit')
     await flushPromises()

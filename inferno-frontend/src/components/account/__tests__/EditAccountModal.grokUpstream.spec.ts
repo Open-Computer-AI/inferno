@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
-import { flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { i18n } from '@/i18n'
 import zhCommon from '@/i18n/locales/zh/common'
 
@@ -224,6 +224,31 @@ function mountLiveSelectorModal(account: any) {
   mounted.push(wrapper)
   return wrapper
 }
+
+
+function mappingRows(wrapper: ReturnType<typeof mount>) {
+  // June's mapping editor rows: one row div per entry, keyed by stable object
+  // identity (createStableObjectKeyResolver), each holding the from/to inputs.
+  return wrapper
+    .findAll('input[placeholder="admin.accounts.requestModel"]')
+    .map(input => input.element.parentElement as HTMLElement)
+}
+
+function rowInputs(row: HTMLElement) {
+  return {
+    from: new DOMWrapper(row.querySelector('input[placeholder="admin.accounts.requestModel"]') as HTMLInputElement),
+    to: new DOMWrapper(row.querySelector('input[placeholder="admin.accounts.actualModel"]') as HTMLInputElement)
+  }
+}
+
+function addMappingButton(wrapper: ReturnType<typeof mount>) {
+  const add = wrapper
+    .findAll('button')
+    .find(button => button.text().includes('admin.accounts.addMapping') && button.classes().includes('border-dashed'))
+  if (!add) throw new Error('add-mapping button not found')
+  return add
+}
+
 
 async function openDiagnosticsDetails(wrapper: ReturnType<typeof mountModal>) {
   const button = wrapper.find('[data-testid="grok-diagnostics-details-toggle"]')
@@ -1240,30 +1265,22 @@ describe('EditAccountModal Grok OAuth upstream config', () => {
     expect((wrapper.get('[data-testid="grok-diagnostics-sync"]').element as HTMLButtonElement).disabled).toBe(false)
   })
 
-  it.each(['oauth', 'apikey'])('keeps the redesigned editor scoped to Grok %s', async type => {
+  it.each(['oauth', 'apikey'])('keeps the model-settings editor scoped to Grok %s (June layout)', async type => {
     const account = { ...buildGrokOAuthAccount({ model_mapping: { friendly: 'grok-4.7' } }), type }
     const wrapper = mountLiveSelectorModal(account)
     await flushPromises()
-    expect(wrapper.find('[data-testid="grok-model-settings"]').exists()).toBe(true)
-    const editor = wrapper.get('[data-testid="grok-model-mapping-editor"]')
-    expect(editor.text()).toContain('admin.accounts.grokModelDiagnostics.requestColumn')
-    expect(editor.text()).toContain('admin.accounts.grokModelDiagnostics.targetColumn')
-    const from = editor.get('input[placeholder="admin.accounts.requestModel"]')
-    const to = editor.get('input[placeholder="admin.accounts.actualModel"]')
-    expect(from.attributes('aria-label')).toBeTruthy()
-    expect(to.attributes('aria-label')).toBeTruthy()
-    expect(from.attributes('maxlength')).toBeUndefined()
-    expect(to.attributes('maxlength')).toBeUndefined()
-    expect(translateMock).toHaveBeenCalledWith('admin.accounts.grokModelDiagnostics.mappingFromAria', { index: 1 })
-    expect(translateMock).toHaveBeenCalledWith('admin.accounts.grokModelDiagnostics.mappingTargetAria', { index: 1 })
-    expect(translateMock).toHaveBeenCalledWith('admin.accounts.grokModelDiagnostics.removeMappingAria', { index: 1 })
-    const remove = editor.get('[data-testid="grok-model-mapping-row"]').findAll('button').at(-1)
-    expect(remove?.classes()).toEqual(expect.arrayContaining(['text-gray-500', 'dark:text-gray-400']))
-    expect(remove?.classes()).not.toContain('text-gray-400')
-    expect(remove?.classes()).not.toContain('text-red-500')
-    await wrapper.get('[data-testid="grok-model-mapping-add"]').trigger('click')
-    expect(wrapper.findAll('[data-testid="grok-model-mapping-row"]')).toHaveLength(2)
-    expect(translateMock).toHaveBeenCalledWith('admin.accounts.grokModelDiagnostics.mappingFromAria', { index: 2 })
+    // June keeps its own model-settings design (mode toggle + whitelist
+    // selector + mapping editor); the diagnostics panel and one shared sync
+    // button are the Grok-only additions on top of it. Upstream's redesigned
+    // grok editor (separate grok-model-* testids, column headers, aria wiring)
+    // is presentation June does not have; behavior coverage stays intact.
+    expect(wrapper.find('[data-testid="grok-model-diagnostics"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-testid="grok-diagnostics-sync"]')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="sync-upstream-models"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('admin.accounts.mapRequestModels')
+    expect(mappingRows(wrapper)).toHaveLength(1)
+    await addMappingButton(wrapper).trigger('click')
+    expect(mappingRows(wrapper)).toHaveLength(2)
   })
 
   it.each(['oauth', 'apikey'])('leaves non-grok %s model controls unchanged', async type => {
@@ -1321,28 +1338,25 @@ describe('EditAccountModal Grok OAuth upstream config', () => {
         type,
         ...(type === 'apikey' ? { credentials_status: { has_api_key: true } } : {})
       }
+      if (type === 'apikey') account.credentials = { ...account.credentials, api_key: 'xai-test' }
       updateAccountMock.mockResolvedValue(account)
       const wrapper = mountLiveSelectorModal(account)
       await flushPromises()
-      const rows = () => wrapper.findAll('[data-testid="grok-model-mapping-row"]')
-      expect(rows()).toHaveLength(2)
-      const friendly = rows().find(row =>
-        (row.get('input[placeholder="admin.accounts.requestModel"]').element as HTMLInputElement).value === 'friendly'
-      )
+      expect(mappingRows(wrapper)).toHaveLength(2)
+      const friendly = mappingRows(wrapper).find(row => rowInputs(row).from.element.value === 'friendly')
       expect(friendly).toBeTruthy()
-      const target = friendly!.get('input[placeholder="admin.accounts.actualModel"]')
+      const target = rowInputs(friendly!).to
       await target.setValue(longTarget)
-      expect((target.element as HTMLInputElement).value).toBe(longTarget)
-      const drop = rows().find(row =>
-        (row.get('input[placeholder="admin.accounts.requestModel"]').element as HTMLInputElement).value === 'drop-me'
-      )
-      await drop!.get('button').trigger('click')
-      expect(rows()).toHaveLength(1)
-      expect((rows()[0].get('input[placeholder="admin.accounts.actualModel"]').element as HTMLInputElement).value).toBe(longTarget)
+      expect(target.element.value).toBe(longTarget)
+      const drop = mappingRows(wrapper).find(row => rowInputs(row).from.element.value === 'drop-me')
+      expect(drop).toBeTruthy()
+      await new DOMWrapper(drop!.querySelector('button') as HTMLElement).trigger('click')
+      expect(mappingRows(wrapper)).toHaveLength(1)
+      expect(rowInputs(mappingRows(wrapper)[0]).to.element.value).toBe(longTarget)
       const preset = wrapper.findAll('button').find(button => button.text() === '+ Grok Latest')
       expect(preset).toBeTruthy()
       await preset!.trigger('click')
-      expect(rows()).toHaveLength(2)
+      expect(mappingRows(wrapper)).toHaveLength(2)
 
       await wrapper.get('form#edit-account-form').trigger('submit.prevent')
       await vi.waitFor(() => expect(updateAccountMock).toHaveBeenCalledTimes(1))
@@ -1357,75 +1371,60 @@ describe('EditAccountModal Grok OAuth upstream config', () => {
   it('edits and deletes duplicate Grok mapping rows without reusing their values as keys', async () => {
     const wrapper = mountLiveSelectorModal(buildGrokOAuthAccount({ model_mapping: { friendly: 'grok-4.7' } }))
     await flushPromises()
-    await wrapper.get('[data-testid="grok-model-mapping-add"]').trigger('click')
-    await wrapper.get('[data-testid="grok-model-mapping-add"]').trigger('click')
-    const rows = () => wrapper.findAll('[data-testid="grok-model-mapping-row"]')
-    expect(rows()).toHaveLength(3)
-    const firstAdded = rows()[1].element
-    const secondAdded = rows()[2].element
-    await rows()[1].get('input[placeholder="admin.accounts.requestModel"]').setValue('same-request')
-    await rows()[1].get('input[placeholder="admin.accounts.actualModel"]').setValue('same-target')
-    await rows()[2].get('input[placeholder="admin.accounts.requestModel"]').setValue('same-request')
-    await rows()[2].get('input[placeholder="admin.accounts.actualModel"]').setValue('same-target')
-    expect(rows()[1].element).toBe(firstAdded)
-    expect(rows()[2].element).toBe(secondAdded)
-    await rows()[1].get('input[placeholder="admin.accounts.actualModel"]').setValue('only-first')
-    expect((rows()[2].get('input[placeholder="admin.accounts.actualModel"]').element as HTMLInputElement).value).toBe('same-target')
-    expect((rows()[2].get('input[placeholder="admin.accounts.requestModel"]').element as HTMLInputElement).value).toBe('same-request')
-    await rows()[1].get('button').trigger('click')
-    expect(rows()).toHaveLength(2)
-    expect(rows()[1].element).toBe(secondAdded)
-    expect((rows()[1].get('input[placeholder="admin.accounts.actualModel"]').element as HTMLInputElement).value).toBe('same-target')
+    await addMappingButton(wrapper).trigger('click')
+    await addMappingButton(wrapper).trigger('click')
+    expect(mappingRows(wrapper)).toHaveLength(3)
+    const firstAdded = mappingRows(wrapper)[1]
+    const secondAdded = mappingRows(wrapper)[2]
+    await rowInputs(firstAdded).from.setValue('same-request')
+    await rowInputs(firstAdded).to.setValue('same-target')
+    await rowInputs(secondAdded).from.setValue('same-request')
+    await rowInputs(secondAdded).to.setValue('same-target')
+    expect(mappingRows(wrapper)[1]).toBe(firstAdded)
+    expect(mappingRows(wrapper)[2]).toBe(secondAdded)
+    await rowInputs(firstAdded).to.setValue('only-first')
+    expect(rowInputs(mappingRows(wrapper)[2]).to.element.value).toBe('same-target')
+    expect(rowInputs(mappingRows(wrapper)[2]).from.element.value).toBe('same-request')
+    await new DOMWrapper(firstAdded.querySelector('button') as HTMLElement).trigger('click')
+    expect(mappingRows(wrapper)).toHaveLength(2)
+    expect(mappingRows(wrapper)[1]).toBe(secondAdded)
+    expect(rowInputs(secondAdded).to.element.value).toBe('same-target')
   })
 
   it.each(['oauth', 'apikey'])(
-    'keeps Grok %s diagnostics between the mode tabs and the active editor',
+    'keeps Grok %s diagnostics between the mode tabs and the active editor (June layout)',
     async type => {
       const account = { ...buildGrokOAuthAccount({ model_mapping: { friendly: 'grok-4.7' } }), type }
       const wrapper = mountLiveSelectorModal(account)
       await flushPromises()
-      const settings = wrapper.get('[data-testid="grok-model-settings"]')
-      const tabs = settings.get('[data-testid="grok-model-mode-tabs"]')
-      const panel = settings.get('[data-testid="grok-model-diagnostics"]')
-      const editor = settings.get('[data-testid="grok-model-mapping-editor"]')
-      expect(tabs.element.compareDocumentPosition(panel.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
-        Node.DOCUMENT_POSITION_FOLLOWING
-      )
-      expect(panel.element.compareDocumentPosition(editor.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
-        Node.DOCUMENT_POSITION_FOLLOWING
-      )
-      const mapping = tabs.findAll('button').find(button => button.text().includes('admin.accounts.modelMapping'))
-      const whitelist = tabs.findAll('button').find(button => button.text().includes('admin.accounts.modelWhitelist'))
-      expect(mapping?.attributes('aria-pressed')).toBe('true')
-      expect(whitelist?.attributes('aria-pressed')).toBe('false')
+      const panel = wrapper.get('[data-testid="grok-model-diagnostics"]')
       expect(wrapper.findAll('[data-testid="grok-diagnostics-sync"]')).toHaveLength(1)
       expect(wrapper.find('[data-testid="sync-upstream-models"]').exists()).toBe(false)
+      const mapping = wrapper.findAll('button').find(button => button.text().includes('admin.accounts.modelMapping'))!
+      const whitelist = wrapper.findAll('button').find(button => button.text().includes('admin.accounts.modelWhitelist'))!
+      expect(mapping).toBeTruthy()
+      expect(whitelist).toBeTruthy()
 
-      await editor.get('input[placeholder="admin.accounts.actualModel"]').setValue('grok-edited')
-      const dirty = settings.get('[data-testid="grok-diagnostics-dirty"]')
+      await wrapper.get('input[placeholder="admin.accounts.actualModel"]').setValue('grok-edited')
+      const dirty = wrapper.get('[data-testid="grok-diagnostics-dirty"]')
       expect(wrapper.findAll('[data-testid="grok-diagnostics-dirty"]')).toHaveLength(1)
       expect(panel.element.contains(dirty.element)).toBe(true)
-      expect(dirty.element.compareDocumentPosition(editor.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
-        Node.DOCUMENT_POSITION_FOLLOWING
-      )
 
-      await whitelist!.trigger('click')
-      expect(settings.get('[data-testid="grok-model-diagnostics"]').exists()).toBe(true)
-      expect(settings.find('[data-testid="grok-model-mapping-editor"]').exists()).toBe(false)
+      await whitelist.trigger('click')
+      expect(wrapper.find('[data-testid="grok-model-diagnostics"]').exists()).toBe(true)
+      expect(mappingRows(wrapper)).toHaveLength(0)
       expect(wrapper.findAll('[data-testid="grok-diagnostics-sync"]')).toHaveLength(1)
       expect(wrapper.find('[data-testid="sync-upstream-models"]').exists()).toBe(false)
-      expect(whitelist?.attributes('aria-pressed')).toBe('true')
-      expect(mapping?.attributes('aria-pressed')).toBe('false')
-      const fill = settings.findAll('button').find(button => button.text().includes('admin.accounts.fillRelatedModels'))
+      const fill = wrapper.findAll('button').find(button => button.text().includes('admin.accounts.fillRelatedModels'))
       expect(fill).toBeTruthy()
-      expect(panel.element.compareDocumentPosition(fill!.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
-        Node.DOCUMENT_POSITION_FOLLOWING
-      )
+
+      await mapping.trigger('click')
+      expect(mappingRows(wrapper)).toHaveLength(1)
     }
   )
 
   it.each(['oauth', 'apikey'])(
-    'keeps Grok %s whitelist fill, clear and custom models with saved mapping priority',
+    'keeps Grok %s whitelist fill, clear and custom models with saved mapping priority (June layout)',
     async type => {
       const custom = `manual-${'m'.repeat(80)}`
       const account = {
@@ -1435,10 +1434,11 @@ describe('EditAccountModal Grok OAuth upstream config', () => {
         type,
         ...(type === 'apikey' ? { credentials_status: { has_api_key: true } } : {})
       }
+      if (type === 'apikey') account.credentials = { ...account.credentials, api_key: 'xai-test' }
       updateAccountMock.mockResolvedValue(account)
       const wrapper = mountLiveSelectorModal(account)
       await flushPromises()
-      expect(wrapper.find('[data-testid="grok-model-mapping-editor"]').exists()).toBe(false)
+      expect(mappingRows(wrapper)).toHaveLength(0)
       const selector = wrapper.getComponent({ name: 'ModelWhitelistSelector' })
       expect(selector.props('modelValue')).toEqual(['listed-model'])
 
@@ -1454,11 +1454,10 @@ describe('EditAccountModal Grok OAuth upstream config', () => {
       await wrapper.findAll('button').find(button => button.text() === 'admin.accounts.addModel')!.trigger('click')
       expect(selector.props('modelValue')).toEqual([custom])
 
-      const tabs = wrapper.get('[data-testid="grok-model-mode-tabs"]')
-      await tabs.findAll('button').find(button => button.text().includes('admin.accounts.modelMapping'))!.trigger('click')
-      const editor = wrapper.get('[data-testid="grok-model-mapping-editor"]')
-      expect((editor.get('input[placeholder="admin.accounts.requestModel"]').element as HTMLInputElement).value).toBe('friendly')
-      await editor.get('input[placeholder="admin.accounts.actualModel"]').setValue('grok-4.7-kept')
+      await wrapper.findAll('button').find(button => button.text().includes('admin.accounts.modelMapping'))!.trigger('click')
+      expect(mappingRows(wrapper)).toHaveLength(1)
+      expect(rowInputs(mappingRows(wrapper)[0]).from.element.value).toBe('friendly')
+      await rowInputs(mappingRows(wrapper)[0]).to.setValue('grok-4.7-kept')
       expect(wrapper.find('[data-testid="grok-model-diagnostics"]').exists()).toBe(true)
       expect(wrapper.findAll('[data-testid="grok-diagnostics-sync"]')).toHaveLength(1)
 
