@@ -142,6 +142,8 @@ type OAuthBackingKeyConfig struct {
 	// ErrNoGroupForOAuthKey so the operator gets a readable 403 instead of a
 	// backing row bound to whichever group happened to sort first.
 	GroupName string `mapstructure:"group_name"`
+}
+
 // MCPConfig fixes the public resource URL used by OAuth discovery and tokens.
 // Setting it is also the explicit opt-in that enables MCP.
 type MCPConfig struct {
