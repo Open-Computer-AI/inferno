@@ -238,17 +238,32 @@ func newFakeAppProvider(t *testing.T, mode string) *darwinProvider {
 			t.Fatal(err)
 		}
 	}
+	// The fake Node is /bin/sh and therefore arch independent: pin arm64 so
+	// the helper and fallback paths run on any build machine, whatever arch
+	// the host happens to be.
 	provider := &darwinProvider{
 		appSessionID: "test-session",
 		appPaths:     []string{app},
 		helper:       newDeviceCheckHelper(),
 		fallbacks:    make(chan struct{}, maxOneShotFallbacks),
+		goarch:       "arm64",
 	}
 	provider.signalReader = func(context.Context) (deviceSignals, error) {
 		return deviceSignals{SchemaVersion: 1, Locale: "en_IN", PreferredLanguages: []string{"en-IN"}, Timezone: "Asia/Kolkata", ScreenScale: 2, AppSessionID: "test-session"}, nil
 	}
 	t.Cleanup(provider.helper.stop)
 	return provider
+}
+
+// The production guard rejects unsupported architectures by design; pin that
+// contract on every build machine. resolveRuntime fails before the app paths,
+// helper, or Node process are touched, so the fake app is never used.
+func TestProviderGenerateRejectedOnUnsupportedArch(t *testing.T) {
+	provider := newFakeAppProvider(t, "ok")
+	provider.goarch = "amd64"
+	if _, err := provider.Generate(context.Background()); err == nil || !strings.Contains(err.Error(), "requires Apple Silicon") {
+		t.Fatalf("expected the Apple Silicon guard error, got %v", err)
+	}
 }
 
 func TestProviderConcurrentGenerateUsesTheWarmHelper(t *testing.T) {

@@ -52,6 +52,10 @@ type darwinProvider struct {
 	appSessionID string
 	appPaths     []string
 	signalReader func(context.Context) (deviceSignals, error)
+	// goarch overrides runtime.GOARCH in resolveRuntime; empty in production.
+	// It exists so tests with an arch-independent fake runtime can exercise
+	// the helper and fallback paths on any build machine.
+	goarch string
 
 	mu        sync.Mutex
 	signals   deviceSignals
@@ -170,7 +174,11 @@ func runtimeIdentity(nodePath, modulePath string) string {
 }
 
 func (p *darwinProvider) resolveRuntime(ctx context.Context) (string, string, string, error) {
-	if runtime.GOARCH != "arm64" {
+	goarch := p.goarch
+	if goarch == "" {
+		goarch = runtime.GOARCH
+	}
+	if goarch != "arm64" {
 		return "", "", "", errors.New("live attestation currently requires Apple Silicon; Intel macOS is not supported")
 	}
 	appPath, err := p.findApplication()
