@@ -16,10 +16,10 @@
 </p>
 
 <p align="center">
-  <img src="assets/admin-console.png" alt="Inferno admin console - live screenshot, account identifiers redacted" width="920"/>
+  <img src="assets/admin-dashboard.png" alt="Inferno admin dashboard - live screenshot" width="920"/>
 </p>
 
-<p align="center"><sub>The live Inferno admin console: a pool of provider accounts with per-account status and capacity. Account names, IDs, and credential expiry dates redacted.</sub></p>
+<p align="center"><sub>The live Inferno admin dashboard: account pool health, request volume, token usage, and cost at a glance.</sub></p>
 
 ---
 
