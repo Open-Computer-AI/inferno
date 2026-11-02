@@ -16,10 +16,10 @@
 </p>
 
 <p align="center">
-  <img src="assets/console-mockup.png" alt="Inferno admin console - mockup with demo data" width="920"/>
+  <img src="assets/admin-console.png" alt="Inferno admin console - live screenshot, account identifiers redacted" width="920"/>
 </p>
 
-<p align="center"><sub>Illustrative admin-console mockup with fictional demo data; not a screenshot of the live UI.</sub></p>
+<p align="center"><sub>The live Inferno admin console: a pool of provider accounts with per-account status and capacity. Account names, IDs, and credential expiry dates redacted.</sub></p>
 
 ---
 
