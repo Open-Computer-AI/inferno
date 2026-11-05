@@ -45,7 +45,7 @@ func newOpenAIImagesSizeRoutingTestHandler(t *testing.T, accounts []service.Acco
 	t.Cleanup(billingService.Stop)
 	handler := NewOpenAIGatewayHandler(
 		gatewayService,
-		service.NewConcurrencyService(nil),
+		newTestConcurrencyService(),
 		billingService,
 		service.NewAPIKeyService(nil, nil, nil, nil, nil, nil, cfg),
 		nil, nil, nil, nil,
