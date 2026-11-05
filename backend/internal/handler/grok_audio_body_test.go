@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
@@ -18,11 +19,14 @@ func TestGrokVoiceRequestBodyMemoryOverload(t *testing.T) {
 	cfg := &config.Config{RunMode: config.RunModeSimple}
 	billing := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
 	t.Cleanup(billing.Stop)
+	// Inferno's admission path needs a real concurrency helper; mirror the
+	// existing grok_audio_concurrency_test.go fixture (acquisition succeeds).
+	cache := &helperConcurrencyCacheStub{userSeq: []bool{true}}
 	h := &OpenAIGatewayHandler{
 		gatewayService:      &service.OpenAIGatewayService{},
 		billingCacheService: billing,
 		apiKeyService:       &service.APIKeyService{},
-		concurrencyHelper:   &ConcurrencyHelper{concurrencyService: service.NewConcurrencyService(nil)},
+		concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, time.Millisecond),
 		cfg:                 cfg,
 	}
 	for _, endpoint := range []string{"tts", "stt", "custom-voices"} {
@@ -33,6 +37,17 @@ func TestGrokVoiceRequestBodyMemoryOverload(t *testing.T) {
 				c.Set(string(middleware.ContextKeyAPIKey), &service.APIKey{
 					Group: &service.Group{Platform: service.PlatformGrok},
 					User:  &service.User{ID: 1},
+				})
+				// Inferno's GrokVoice requires the auth subject before reading the
+				// body (production api_key_auth middleware always sets it); upstream's
+				// fixture injected only the API key. Subject mirrors the API key's user.
+				live, requests := 4, 2
+				c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{
+					UserID:                      1,
+					Concurrency:                 8,
+					LiveConcurrency:             &live,
+					RequestConcurrency:          &requests,
+					ConcurrencyPolicyGeneration: 1,
 				})
 				c.Next()
 			})
