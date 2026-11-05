@@ -37,7 +37,7 @@ func newOpenAIImagesSizeRoutingTestHandler(t *testing.T, accounts []service.Acco
 		openAIImagesSizeRoutingAccountRepo{openAIImagesFailoverAccountRepo{accounts: accounts}},
 		nil, nil, nil, nil, nil, nil,
 		cfg,
-		nil, nil, nil, nil, nil,
+		nil, newTestConcurrencyService(), nil, nil, nil,
 		upstream,
 		nil, nil, nil, nil, nil, nil, nil, nil,
 	)
