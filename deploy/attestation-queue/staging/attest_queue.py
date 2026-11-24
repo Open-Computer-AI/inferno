@@ -282,6 +282,14 @@ if __name__ == "__main__":
         raise SystemExit("QUEUE_WARM needs QUEUE_KEEPALIVE=1")
     if not 0 < WARM_REFRESH_S < KEEPALIVE_IDLE_S:
         raise SystemExit("QUEUE_WARM_REFRESH_S must be above 0 and below the keep-alive idle limit")
+    if race_config := os.environ.get("QUEUE_RACE_CONFIG"):
+        import asyncio
+        from attest_race import load_queue, serve
+
+        if not WARM:
+            raise SystemExit("QUEUE_RACE_CONFIG needs QUEUE_WARM and QUEUE_KEEPALIVE=1")
+        asyncio.run(serve(load_queue(race_config, CONCURRENCY, WARM, WARM_REFRESH_S), LISTEN))
+        raise SystemExit(0)
     lock = threading.BoundedSemaphore(CONCURRENCY)
     if WARM:
         threading.Thread(target=warm_loop, daemon=True).start()
